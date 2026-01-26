@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 
 from .const import DOMAIN
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,6 +17,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Entity Manager component."""
     _LOGGER.debug("Setting up Entity Manager integration")
     hass.data.setdefault(DOMAIN, {})
+    
+    # Register services
+    await async_setup_services(hass)
+    
     return True
 
 
