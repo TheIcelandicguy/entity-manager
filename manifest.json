@@ -1,0 +1,12 @@
+{
+  "domain": "entity_manager",
+  "name": "Entity Manager",
+  "documentation": "https://github.com/TheIcelandicguy/entity-manager",
+  "issue_tracker": "https://github.com/TheIcelandicguy/entity-manager/issues",
+  "requirements": [],
+  "codeowners": ["@TheIcelandicguy"],
+  "config_flow": true,
+  "dependencies": [],
+  "version": "0.1.0",
+  "iot_class": "calculated"
+}
