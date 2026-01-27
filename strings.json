@@ -3,15 +3,25 @@
     "step": {
       "user": {
         "title": "Entity Manager Setup",
-        "description": "Enable the Entity Manager panel to manage disabled entities.",
-        "data": {}
+        "description": "Select which integrations you want to manage.",
+        "data": {
+          "integrations": "Integrations to manage (optional - can add more later)"
+        }
       }
+    },
+    "abort": {
+      "already_configured": "Entity Manager is already configured",
+      "no_integrations_found": "No integrations found in your Home Assistant setup"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Entity Manager Options"
+        "title": "Entity Manager Options",
+        "description": "Manage which integrations Entity Manager can control",
+        "data": {
+          "integrations": "Integrations to manage"
+        }
       }
     }
   }
