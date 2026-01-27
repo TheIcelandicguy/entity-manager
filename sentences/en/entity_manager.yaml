@@ -1,0 +1,17 @@
+language: "en"
+intents:
+  entity_manager_enable_entity:
+    data:
+      - sentences:
+          - "enable {entity}"
+          - "enable the {entity}"
+          - "turn on {entity}"
+          - "activate {entity}"
+  
+  entity_manager_disable_entity:
+    data:
+      - sentences:
+          - "disable {entity}"
+          - "disable the {entity}"
+          - "turn off {entity}"
+          - "deactivate {entity}"
