@@ -8,7 +8,7 @@ enable_entity:
       required: true
       example: "sensor.my_sensor"
       selector:
-        entity: {}
+        text:
 
 disable_entity:
   name: Disable Entity
@@ -20,4 +20,4 @@ disable_entity:
       required: true
       example: "sensor.my_sensor"
       selector:
-        entity: {}
+        text:

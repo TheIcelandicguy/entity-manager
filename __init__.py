@@ -37,18 +37,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Handle enable entity service call."""
         entity_id = call.data.get("entity_id")
         if entity_id:
-            entity_reg.async_update_entity(entity_id, disabled_by=None)
-            _LOGGER.info("Enabled entity: %s", entity_id)
+            try:
+                entity_reg.async_update_entity(entity_id, disabled_by=None)
+                _LOGGER.info("Enabled entity: %s", entity_id)
+            except ValueError as err:
+                _LOGGER.error("Failed to enable entity %s: %s", entity_id, err)
+            except Exception as err:
+                _LOGGER.error("Unexpected error enabling entity %s: %s", entity_id, err)
 
     async def handle_disable_entity(call):
         """Handle disable entity service call."""
         entity_id = call.data.get("entity_id")
         if entity_id:
-            entity_reg.async_update_entity(
-                entity_id, 
-                disabled_by=er.RegistryEntryDisabler.USER
-            )
-            _LOGGER.info("Disabled entity: %s", entity_id)
+            try:
+                entity_reg.async_update_entity(
+                    entity_id, 
+                    disabled_by=er.RegistryEntryDisabler.USER
+                )
+                _LOGGER.info("Disabled entity: %s", entity_id)
+            except ValueError as err:
+                _LOGGER.error("Failed to disable entity %s: %s", entity_id, err)
+            except Exception as err:
+                _LOGGER.error("Unexpected error disabling entity %s: %s", entity_id, err)
 
     hass.services.async_register(
         DOMAIN,
