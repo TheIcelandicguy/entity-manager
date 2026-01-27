@@ -87,8 +87,16 @@ class EntityManagerOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        # Get available integrations
-        available_integrations = get_available_integrations(self.hass)
+        # Get available integrations - need to get hass from config_entry
+        integrations = {}
+        hass = self.hass
+        
+        for entry in hass.config_entries.async_entries():
+            domain = entry.domain
+            if domain not in integrations:
+                integrations[domain] = entry.title or domain.replace("_", " ").title()
+        
+        available_integrations = dict(sorted(integrations.items()))
         current_integrations = self.config_entry.data.get("managed_integrations", [])
 
         data_schema = vol.Schema(
