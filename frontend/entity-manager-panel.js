@@ -59,22 +59,36 @@ class EntityManagerPanel extends HTMLElement {
       padding: 16px;
       max-width: 1400px;
       margin: 0 auto;
-      font-family: var(--paper-font-body1_-_font-family);
+      font-family: Roboto, sans-serif;
+      background: var(--primary-background-color);
+      min-height: 100vh;
     `;
     
     this.content.innerHTML = `
       <style>
+        * {
+          font-family: Roboto, sans-serif;
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
         .header {
           margin-bottom: 24px;
+          padding: 20px;
+          background: linear-gradient(135deg, #03a9f4 0%, #0277bd 100%);
+          border-radius: 12px;
+          color: white;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
         .header h1 {
           margin: 0 0 8px 0;
           font-size: 2em;
-          font-weight: 400;
+          font-weight: 500;
+          color: white;
         }
         .header p {
           margin: 0;
-          color: var(--secondary-text-color);
+          color: rgba(255, 255, 255, 0.9);
+          font-size: 14px;
         }
         .toolbar {
           display: flex;
@@ -88,17 +102,22 @@ class EntityManagerPanel extends HTMLElement {
           align-items: center;
         }
         .filter-toggle {
-          padding: 8px 12px;
-          border: 1px solid var(--divider-color);
+          padding: 8px 16px;
+          border: 2px solid #03a9f4;
           background: var(--card-background-color);
-          border-radius: 6px;
+          border-radius: 8px;
           cursor: pointer;
-          font-size: 13px;
-          color: var(--primary-text-color);
+          font-size: 14px;
+          font-weight: 500;
+          color: #03a9f4;
+          transition: all 0.2s;
+        }
+        .filter-toggle:hover {
+          background: rgba(3, 169, 244, 0.1);
         }
         .filter-toggle.active {
-          border-color: var(--primary-color);
-          color: var(--primary-color);
+          background: #03a9f4;
+          color: white;
         }
         .search-box {
           flex: 1;
@@ -120,11 +139,14 @@ class EntityManagerPanel extends HTMLElement {
           transition: background 0.2s;
         }
         .btn-primary {
-          background: var(--primary-color);
+          background: linear-gradient(135deg, #03a9f4 0%, #0277bd 100%);
           color: white;
+          font-weight: 600;
+          box-shadow: 0 2px 4px rgba(3, 169, 244, 0.3);
         }
         .btn-primary:hover {
-          background: var(--dark-primary-color);
+          box-shadow: 0 4px 8px rgba(3, 169, 244, 0.4);
+          transform: translateY(-1px);
         }
         .btn-secondary {
           background: var(--divider-color);
@@ -141,32 +163,40 @@ class EntityManagerPanel extends HTMLElement {
         }
         .stat-card {
           background: var(--card-background-color);
-          padding: 16px;
-          border-radius: 8px;
+          padding: 20px;
+          border-radius: 12px;
           flex: 1;
           min-width: 150px;
+          border-left: 4px solid #03a9f4;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
         .stat-label {
           color: var(--secondary-text-color);
           font-size: 12px;
           text-transform: uppercase;
-          margin-bottom: 4px;
+          margin-bottom: 8px;
+          font-weight: 500;
+          letter-spacing: 0.5px;
         }
         .stat-value {
-          font-size: 24px;
-          font-weight: 500;
-        }
-        .integration-group {
-          background: var(--card-background-color);
-          border-radius: 8px;
+          font-size: 32px;
+          font-weight: 6012px;
           margin-bottom: 12px;
           overflow: hidden;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+          border: 1px solid var(--divider-color);
         }
         .integration-header {
           display: flex;
           align-items: center;
           padding: 16px;
           cursor: pointer;
+          user-select: none;
+          border-bottom: 1px solid var(--divider-color);
+          transition: background 0.2s;
+        }
+        .integration-header:hover {
+          background: rgba(3, 169, 244, 0.05
           user-select: none;
           border-bottom: 1px solid var(--divider-color);
         }
@@ -176,6 +206,7 @@ class EntityManagerPanel extends HTMLElement {
         .integration-icon {
           margin-right: 12px;
           transition: transform 0.2s;
+          color: #03a9f4;
         }
         .integration-icon.expanded {
           transform: rotate(90deg);
@@ -185,8 +216,9 @@ class EntityManagerPanel extends HTMLElement {
         }
         .integration-name {
           font-size: 16px;
-          font-weight: 500;
+          font-weight: 600;
           margin-bottom: 4px;
+          color: var(--primary-text-color);
         }
         .integration-stats {
           font-size: 12px;
