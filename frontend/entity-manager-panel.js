@@ -15,6 +15,7 @@ class EntityManagerPanel extends HTMLElement {
     this.hass = info.hass;
     if (!this.content) {
       this.render();
+      this.showLoading();
       this.loadData();
     }
   }
@@ -364,6 +365,7 @@ class EntityManagerPanel extends HTMLElement {
     });
     
     this.content.querySelector('#refresh').addEventListener('click', () => {
+      this.showLoading();
       this.loadData();
     });
 
@@ -371,6 +373,7 @@ class EntityManagerPanel extends HTMLElement {
       btn.addEventListener('click', () => {
         this.viewState = btn.dataset.filter;
         this.setActiveFilter();
+        this.showLoading();
         this.loadData();
       });
     });
@@ -744,6 +747,16 @@ class EntityManagerPanel extends HTMLElement {
       <div class="empty-state">
         <h2>⚠️ Error</h2>
         <p>${message}</p>
+      </div>
+    `;
+  }
+
+  showLoading() {
+    const contentEl = this.content.querySelector('#content');
+    contentEl.innerHTML = `
+      <div class="empty-state">
+        <h2>⏳ Loading...</h2>
+        <p>Fetching entity data...</p>
       </div>
     `;
   }
