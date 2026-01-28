@@ -20,19 +20,20 @@ SERVICE_DISABLE_ENTITY = "disable_entity"
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Entity Manager component."""
+    # Register static path for frontend files early
+    integration_dir = os.path.dirname(__file__)
+    frontend_dir = os.path.join(integration_dir, "frontend")
+    
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(f"/{DOMAIN}", frontend_dir, cache_headers=False)
+    ])
+    
+    _LOGGER.info("Entity Manager static paths registered")
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Entity Manager from a config entry."""
-    
-    # Register static path for frontend files
-    integration_dir = os.path.dirname(__file__)
-    frontend_dir = os.path.join(integration_dir, "frontend")
-    
-    await hass.http.async_register_static_paths([
-        StaticPathConfig(f"/{DOMAIN}", frontend_dir, cache_headers=True)
-    ])
     
     # Register WebSocket API
     async_setup_ws_api(hass)
