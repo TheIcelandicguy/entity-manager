@@ -1,8 +1,10 @@
 """Entity Manager Integration."""
 import logging
+import os
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers import entity_registry as er
 
 from .websocket_api import async_setup_ws_api
@@ -23,6 +25,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Entity Manager from a config entry."""
+    
+    # Register static path for frontend files
+    integration_dir = os.path.dirname(__file__)
+    frontend_dir = os.path.join(integration_dir, "frontend")
+    
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(f"/{DOMAIN}", frontend_dir, cache_headers=False)
+    ])
     
     # Register WebSocket API
     async_setup_ws_api(hass)
