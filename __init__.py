@@ -31,7 +31,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     frontend_dir = os.path.join(integration_dir, "frontend")
     
     await hass.http.async_register_static_paths([
-        StaticPathConfig(f"/{DOMAIN}", frontend_dir, cache_headers=False)
+        StaticPathConfig(f"/{DOMAIN}", frontend_dir, cache_headers=True)
     ])
     
     # Register WebSocket API
@@ -92,12 +92,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={
             "_panel_custom": {
                 "name": "entity-manager-panel",
-                "embed_iframe": True,
+                "embed_iframe": False,
                 "trust_external": False,
                 "js_url": f"/{DOMAIN}/entity-manager-panel.js",
             }
         },
-        require_admin=True,
+        require_admin=False,
     )
 
     _LOGGER.info("Entity Manager panel registered")
