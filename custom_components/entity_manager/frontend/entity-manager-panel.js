@@ -67,14 +67,69 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   render() {
-    this.content = document.createElement('div');
+    // Create the app header for HA navigation
+    this.innerHTML = `
+      <style>
+        :host {
+          display: block;
+          height: 100%;
+        }
+        .app-header {
+          background-color: var(--app-header-background-color, var(--primary-color));
+          color: var(--app-header-text-color, #fff);
+          display: flex;
+          align-items: center;
+          height: 56px;
+          padding: 0 16px;
+          box-sizing: border-box;
+          position: sticky;
+          top: 0;
+          z-index: 1;
+        }
+        .menu-btn {
+          background: none;
+          border: none;
+          color: inherit;
+          cursor: pointer;
+          padding: 8px;
+          margin-right: 8px;
+          border-radius: 50%;
+        }
+        .menu-btn:hover {
+          background: rgba(255,255,255,0.1);
+        }
+        .menu-btn svg {
+          width: 24px;
+          height: 24px;
+          fill: currentColor;
+        }
+        .app-header-title {
+          font-size: 20px;
+          font-weight: 400;
+        }
+      </style>
+      <div class="app-header">
+        <button class="menu-btn" id="menu-btn" aria-label="Menu">
+          <svg viewBox="0 0 24 24"><path d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"/></svg>
+        </button>
+        <span class="app-header-title">Entity Manager</span>
+      </div>
+      <div id="main-content"></div>
+    `;
+
+    // Handle menu button click to open HA sidebar
+    this.querySelector('#menu-btn').addEventListener('click', () => {
+      this._fireEvent('hass-toggle-menu');
+    });
+
+    this.content = this.querySelector('#main-content');
     this.content.style.cssText = `
       padding: 16px;
       max-width: 1400px;
       margin: 0 auto;
       font-family: var(--paper-font-body1_-_font-family);
     `;
-    
+
     this.content.innerHTML = `
       <style>
         .header {
@@ -82,7 +137,7 @@ class EntityManagerPanel extends HTMLElement {
         }
         .header h1 {
           margin: 0 0 8px 0;
-          font-size: 2em;
+          font-size: 1.5em;
           font-weight: 400;
         }
         .header p {
@@ -727,6 +782,15 @@ class EntityManagerPanel extends HTMLElement {
         <p>${message}</p>
       </div>
     `;
+  }
+
+  _fireEvent(type, detail = {}) {
+    const event = new CustomEvent(type, {
+      bubbles: true,
+      composed: true,
+      detail,
+    });
+    this.dispatchEvent(event);
   }
 }
 
