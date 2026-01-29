@@ -1,7 +1,8 @@
 class EntityManagerPanel extends HTMLElement {
   constructor() {
     super();
-    this.hass = null;
+    this._hass = null;
+    this._panel = null;
     this.data = [];
     this.deviceInfo = {};
     this.expandedIntegrations = new Set();
@@ -11,12 +12,24 @@ class EntityManagerPanel extends HTMLElement {
     this.viewState = 'disabled';
   }
 
-  set panel(info) {
-    this.hass = info.hass;
-    if (!this.content) {
+  set hass(hass) {
+    this._hass = hass;
+    if (!this.content && hass) {
       this.render();
       this.loadData();
     }
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  set panel(panel) {
+    this._panel = panel;
+  }
+
+  get panel() {
+    return this._panel;
   }
 
   async loadData() {
