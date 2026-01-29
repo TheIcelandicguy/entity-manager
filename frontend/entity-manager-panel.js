@@ -156,6 +156,16 @@ class EntityManagerPanel extends HTMLElement {
         .btn-secondary:hover {
           background: var(--secondary-background-color);
         }
+        .btn-danger {
+          background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+          color: white;
+          font-weight: 600;
+          box-shadow: 0 2px 4px rgba(244, 67, 54, 0.3);
+        }
+        .btn-danger:hover {
+          box-shadow: 0 4px 8px rgba(244, 67, 54, 0.4);
+          transform: translateY(-1px);
+        }
         .stats {
           display: flex;
           gap: 16px;
@@ -181,11 +191,8 @@ class EntityManagerPanel extends HTMLElement {
         }
         .stat-value {
           font-size: 32px;
-          font-weight: 6012px;
+          font-weight: 600;
           margin-bottom: 12px;
-          overflow: hidden;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-          border: 1px solid var(--divider-color);
         }
         .integration-header {
           display: flex;
@@ -195,11 +202,6 @@ class EntityManagerPanel extends HTMLElement {
           user-select: none;
           border-bottom: 1px solid var(--divider-color);
           transition: background 0.2s;
-        }
-        .integration-header:hover {
-          background: rgba(3, 169, 244, 0.05
-          user-select: none;
-          border-bottom: 1px solid var(--divider-color);
         }
         .integration-header:hover {
           background: var(--secondary-background-color);
@@ -228,14 +230,18 @@ class EntityManagerPanel extends HTMLElement {
         .integration-actions {
           display: flex;
           gap: 8px;
+          margin-left: 16px;
         }
         .device-list {
           padding: 0 16px 16px 16px;
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 12px;
         }
         .device-item {
-          border-left: 2px solid var(--divider-color);
-          margin-left: 24px;
-          margin-bottom: 8px;
+          border: 1px solid var(--divider-color);
+          border-radius: 8px;
+          background: var(--card-background-color);
         }
         .device-header {
           display: flex;
@@ -254,7 +260,7 @@ class EntityManagerPanel extends HTMLElement {
         .device-count {
           font-size: 12px;
           color: var(--secondary-text-color);
-          margin-right: 12px;
+          margin-right: 16px;
         }
         .entity-list {
           padding: 0 12px 12px 36px;
@@ -300,10 +306,17 @@ class EntityManagerPanel extends HTMLElement {
           background: transparent;
           cursor: pointer;
           border-radius: 4px;
-          color: var(--primary-text-color);
+          font-size: 16px;
+          font-weight: bold;
         }
         .icon-btn:hover {
           background: var(--divider-color);
+        }
+        .icon-btn.enable {
+          color: #4caf50;
+        }
+        .icon-btn.disable {
+          color: #f44336;
         }
         .empty-state {
           text-align: center;
@@ -319,7 +332,7 @@ class EntityManagerPanel extends HTMLElement {
       
       <div class="header">
         <h1>Entity Manager</h1>
-        <p>Manage disabled entities by integration and device</p>
+        <p>Manage disabled entities by integration and device (Updated UI)</p>
       </div>
       
       <div class="stats" id="stats"></div>
@@ -490,6 +503,9 @@ class EntityManagerPanel extends HTMLElement {
             <button class="btn btn-primary" data-action="enable-integration" data-integration="${integration.integration}">
               Enable All
             </button>
+            <button class="btn btn-danger" data-action="disable-integration" data-integration="${integration.integration}">
+              Disable All
+            </button>
           </div>
         </div>
         ${isExpanded ? `
@@ -518,6 +534,9 @@ class EntityManagerPanel extends HTMLElement {
           <div class="device-count">${entityCount} shown • ${disabledCount} disabled • ${totalCount} total</div>
           <button class="btn btn-primary" data-action="enable-device" data-device="${deviceId}">
             Enable All
+          </button>
+          <button class="btn btn-danger" data-action="disable-device" data-device="${deviceId}">
+            Disable All
           </button>
         </div>
         ${isExpanded ? `
@@ -552,7 +571,7 @@ class EntityManagerPanel extends HTMLElement {
           ${isDisabled ? `<span class="entity-badge">disabled${entity.disabled_by ? ` by: ${entity.disabled_by}` : ''}</span>` : '<span class="entity-badge">enabled</span>'}
         </div>
         <div class="entity-actions">
-          <button class="icon-btn" data-action="${action}" data-entity="${entity.entity_id}" title="${actionLabel}">
+          <button class="icon-btn ${isDisabled ? 'enable' : 'disable'}" data-action="${action}" data-entity="${entity.entity_id}" title="${actionLabel}">
             ${actionIcon}
           </button>
         </div>
@@ -623,11 +642,15 @@ class EntityManagerPanel extends HTMLElement {
         if (action === 'enable-entity') {
           await this.enableEntity(btn.dataset.entity);
         } else if (action === 'enable-device') {
-          await this.enableDevice(btn.dataset.device);
+          await this.enableDeviceWithConfirm(btn.dataset.device);
         } else if (action === 'enable-integration') {
-          await this.enableIntegration(btn.dataset.integration);
+          await this.enableIntegrationWithConfirm(btn.dataset.integration);
         } else if (action === 'disable-entity') {
           await this.disableEntity(btn.dataset.entity);
+        } else if (action === 'disable-device') {
+          await this.disableDeviceWithConfirm(btn.dataset.device);
+        } else if (action === 'disable-integration') {
+          await this.disableIntegrationWithConfirm(btn.dataset.integration);
         }
       });
     });
@@ -647,15 +670,18 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
-  async enableDevice(deviceId) {
+  async enableDeviceWithConfirm(deviceId) {
     const integration = this.data.find(int => int.devices[deviceId]);
     if (!integration) return;
     
     const entityIds = integration.devices[deviceId].entities.map(e => e.entity_id);
+    const deviceName = this.getDeviceName(deviceId);
+    
+    if (!confirm(`Enable all ${entityIds.length} entities for device "${deviceName}"?`)) return;
     await this.bulkEnableEntities(entityIds);
   }
 
-  async enableIntegration(integrationName) {
+  async enableIntegrationWithConfirm(integrationName) {
     const integration = this.data.find(int => int.integration === integrationName);
     if (!integration) return;
     
@@ -666,7 +692,34 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
     
+    if (!confirm(`Enable all ${entityIds.length} entities for integration "${integrationName}"?`)) return;
     await this.bulkEnableEntities(entityIds);
+  }
+
+  async disableDeviceWithConfirm(deviceId) {
+    const integration = this.data.find(int => int.devices[deviceId]);
+    if (!integration) return;
+    
+    const entityIds = integration.devices[deviceId].entities.map(e => e.entity_id);
+    const deviceName = this.getDeviceName(deviceId);
+    
+    if (!confirm(`⚠️ WARNING: Disable all ${entityIds.length} entities for device "${deviceName}"? This may affect automations and dashboards.`)) return;
+    await this.bulkDisableEntities(entityIds);
+  }
+
+  async disableIntegrationWithConfirm(integrationName) {
+    const integration = this.data.find(int => int.integration === integrationName);
+    if (!integration) return;
+    
+    const entityIds = [];
+    Object.values(integration.devices).forEach(device => {
+      device.entities.forEach(entity => {
+        entityIds.push(entity.entity_id);
+      });
+    });
+    
+    if (!confirm(`⚠️ WARNING: Disable all ${entityIds.length} entities for integration "${integrationName}"? This may affect automations and dashboards.`)) return;
+    await this.bulkDisableEntities(entityIds);
   }
 
   async bulkEnable() {
@@ -718,6 +771,25 @@ class EntityManagerPanel extends HTMLElement {
     } catch (err) {
       console.error('Error bulk enabling:', err);
       alert('Failed to enable entities');
+    }
+  }
+
+  async bulkDisableEntities(entityIds) {
+    try {
+      const result = await this.hass.callWS({
+        type: 'entity_manager/bulk_disable',
+        entity_ids: entityIds,
+      });
+      
+      entityIds.forEach(id => this.selectedEntities.delete(id));
+      await this.loadData();
+      
+      if (result.failed.length > 0) {
+        alert(`Disabled ${result.success.length} entities. Failed: ${result.failed.length}`);
+      }
+    } catch (err) {
+      console.error('Error bulk disabling:', err);
+      alert('Failed to disable entities');
     }
   }
 
