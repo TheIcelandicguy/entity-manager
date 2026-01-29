@@ -132,18 +132,6 @@ class EntityManagerPanel extends HTMLElement {
 
     this.content.innerHTML = `
       <style>
-        .header {
-          margin-bottom: 24px;
-        }
-        .header h1 {
-          margin: 0 0 8px 0;
-          font-size: 1.5em;
-          font-weight: 400;
-        }
-        .header p {
-          margin: 0;
-          color: var(--secondary-text-color);
-        }
         .toolbar {
           display: flex;
           gap: 12px;
@@ -351,12 +339,7 @@ class EntityManagerPanel extends HTMLElement {
           margin-right: 12px;
         }
       </style>
-      
-      <div class="header">
-        <h1>Entity Manager</h1>
-        <p>Manage disabled entities by integration and device</p>
-      </div>
-      
+
       <div class="stats" id="stats"></div>
       
       <div class="toolbar">
