@@ -1,9 +1,11 @@
 """Entity Manager Integration."""
 import logging
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.components import frontend
-from homeassistant.helpers import entity_registry as er
+from pathlib import Path
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.components import frontend  # type: ignore
+from homeassistant.components.http import StaticPathConfig  # type: ignore
+from homeassistant.helpers import entity_registry as er  # type: ignore
 
 from .websocket_api import async_setup_ws_api
 from .voice_assistant import async_setup_intents
@@ -23,6 +25,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Entity Manager from a config entry."""
+    
+    # Register frontend resources
+    frontend_path = Path(__file__).parent / "frontend"
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            f"/api/{DOMAIN}/frontend",
+            str(frontend_path),
+            True
+        )
+    ])
     
     # Register WebSocket API
     async_setup_ws_api(hass)
@@ -72,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handle_disable_entity,
     )
 
-    # Register the sidebar panel
+    # Register the frontend resources
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -84,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-manager-panel",
                 "embed_iframe": True,
                 "trust_external": False,
-                "js_url": "/local/entity-manager-panel.js?v=2.0.0",
+                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js",
             }
         },
         require_admin=True,
