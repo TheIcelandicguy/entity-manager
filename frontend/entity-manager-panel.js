@@ -10,6 +10,7 @@ class EntityManagerPanel extends HTMLElement {
     this.selectedEntities = new Set();
     this.searchTerm = '';
     this.viewState = 'all';
+    this.isLoading = false;
   }
 
   set hass(hass) {
@@ -33,6 +34,7 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   async loadData() {
+    this.setLoading(true);
     try {
       const result = await this._hass.callWS({
         type: 'entity_manager/get_disabled_entities',
@@ -58,6 +60,8 @@ class EntityManagerPanel extends HTMLElement {
     } catch (error) {
       console.error('Entity Manager Error:', error);
       this.showErrorDialog(`Error loading entities: ${error.message}`);
+    } finally {
+      this.setLoading(false);
     }
   }
 
@@ -81,6 +85,17 @@ class EntityManagerPanel extends HTMLElement {
 
   getDeviceName(deviceId) {
     return (this.deviceInfo[deviceId]?.name_by_user || this.deviceInfo[deviceId]?.name) || deviceId;
+  }
+
+  setLoading(isLoading) {
+    this.isLoading = isLoading;
+    const enableBtn = this.content?.querySelector('#enable-selected');
+    const disableBtn = this.content?.querySelector('#disable-selected');
+    const refreshBtn = this.content?.querySelector('#refresh');
+    
+    if (enableBtn) enableBtn.disabled = isLoading;
+    if (disableBtn) disableBtn.disabled = isLoading;
+    if (refreshBtn) refreshBtn.disabled = isLoading;
   }
 
   render() {
@@ -920,6 +935,8 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   updateSelectedCount() {
+    if (!this.content) return;
+    
     const selectedCount = this.selectedEntities.size;
     const enableBtn = this.content.querySelector('#selected-count');
     const disableBtn = this.content.querySelector('#selected-count-2');
@@ -937,7 +954,7 @@ class EntityManagerPanel extends HTMLElement {
       this.updateSelectedCount();
       this.loadData();
     } catch (error) {
-      this.showErrorDialog(`Error enabling entity: ${error}`);
+      this.showErrorDialog(`Error enabling entity: ${error.message}`);
     }
   }
 
@@ -951,28 +968,34 @@ class EntityManagerPanel extends HTMLElement {
       this.updateSelectedCount();
       this.loadData();
     } catch (error) {
-      this.showErrorDialog(`Error disabling entity: ${error}`);
+      this.showErrorDialog(`Error disabling entity: ${error.message}`);
     }
   }
 
   async enableIntegration(integration) {
-    const entityIds = this.data
-      .find(int => int.integration === integration)
-      ?.devices && Object.values(this.data.find(int => int.integration === integration).devices)
-        .reduce((acc, device) => [...acc, ...device.entities.map(e => e.entity_id)], []);
-
-    if (entityIds && entityIds.length > 0) {
+    const integrationData = this.data.find(int => int.integration === integration);
+    if (!integrationData || !integrationData.devices) {
+      return;
+    }
+    
+    const entityIds = Object.values(integrationData.devices)
+      .flatMap(device => device.entities.map(e => e.entity_id));
+    
+    if (entityIds.length > 0) {
       await this.bulkEnableEntities(entityIds);
     }
   }
 
   async disableIntegration(integration) {
-    const entityIds = this.data
-      .find(int => int.integration === integration)
-      ?.devices && Object.values(this.data.find(int => int.integration === integration).devices)
-        .reduce((acc, device) => [...acc, ...device.entities.map(e => e.entity_id)], []);
-
-    if (entityIds && entityIds.length > 0) {
+    const integrationData = this.data.find(int => int.integration === integration);
+    if (!integrationData || !integrationData.devices) {
+      return;
+    }
+    
+    const entityIds = Object.values(integrationData.devices)
+      .flatMap(device => device.entities.map(e => e.entity_id));
+    
+    if (entityIds.length > 0) {
       await this.bulkDisable(entityIds);
     }
   }
@@ -982,7 +1005,12 @@ class EntityManagerPanel extends HTMLElement {
       this.showErrorDialog('No entities selected');
       return;
     }
-    await this.bulkEnableEntities(Array.from(this.selectedEntities));
+    this.setLoading(true);
+    try {
+      await this.bulkEnableEntities(Array.from(this.selectedEntities));
+    } finally {
+      this.setLoading(false);
+    }
   }
 
   async bulkDisable(entityIds = null) {
@@ -992,6 +1020,7 @@ class EntityManagerPanel extends HTMLElement {
       return;
     }
 
+    this.setLoading(true);
     try {
       await this._hass.callWS({
         type: 'entity_manager/bulk_disable',
@@ -1001,11 +1030,14 @@ class EntityManagerPanel extends HTMLElement {
       this.updateSelectedCount();
       this.loadData();
     } catch (error) {
-      this.showErrorDialog(`Error disabling entities: ${error}`);
+      this.showErrorDialog(`Error disabling entities: ${error.message}`);
+    } finally {
+      this.setLoading(false);
     }
   }
 
   async bulkEnableEntities(entityIds) {
+    this.setLoading(true);
     try {
       await this._hass.callWS({
         type: 'entity_manager/bulk_enable',
@@ -1015,7 +1047,9 @@ class EntityManagerPanel extends HTMLElement {
       this.updateSelectedCount();
       this.loadData();
     } catch (error) {
-      this.showErrorDialog(`Error enabling entities: ${error}`);
+      this.showErrorDialog(`Error enabling entities: ${error.message}`);
+    } finally {
+      this.setLoading(false);
     }
   }
 
