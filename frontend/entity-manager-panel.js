@@ -1,347 +1,587 @@
 class EntityManagerPanel extends HTMLElement {
   constructor() {
     super();
-    this.hass = null;
+    this._hass = null;
+    this._panel = null;
     this.data = [];
     this.deviceInfo = {};
     this.expandedIntegrations = new Set();
     this.expandedDevices = new Set();
     this.selectedEntities = new Set();
     this.searchTerm = '';
-    this.viewState = 'disabled';
+    this.viewState = 'all';
   }
 
-  set panel(info) {
-    this.hass = info.hass;
-    if (!this.content) {
+  set hass(hass) {
+    this._hass = hass;
+    if (!this.content && hass) {
       this.render();
-      this.showLoading();
       this.loadData();
     }
   }
 
+  get hass() {
+    return this._hass;
+  }
+
+  set panel(panel) {
+    this._panel = panel;
+  }
+
+  _fireEvent(type, detail = {}) {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
   async loadData() {
     try {
-      const result = await this.hass.callWS({
+      const result = await this._hass.callWS({
         type: 'entity_manager/get_disabled_entities',
-        state: this.viewState,
+        state: this.viewState, // Pass the current filter state (all, enabled, disabled)
       });
       
-      this.data = result;
+      this.data = Array.isArray(result) ? result.map(integration => {
+        const devicesObj = {};
+        Object.entries(integration.devices).forEach(([deviceId, device]) => {
+          devicesObj[deviceId] = {
+            name: device.name || deviceId,
+            entities: Array.isArray(device.entities) ? device.entities : [],
+          };
+        });
+        
+        return {
+          integration: integration.integration,
+          devices: devicesObj,
+        };
+      }) : [];
       
-      // Load device information
-      await this.loadDeviceInfo();
-      
-      this.updateView();
-    } catch (err) {
-      console.error('Error loading disabled entities:', err);
-      this.showError('Failed to load disabled entities');
+      this.loadDeviceInfo();
+    } catch (error) {
+      console.error('Entity Manager Error:', error);
+      this.showErrorDialog(`Error loading entities: ${error.message}`);
     }
   }
 
   async loadDeviceInfo() {
     try {
-      const deviceRegistry = await this.hass.callWS({
+      const result = await this._hass.callWS({
         type: 'config/device_registry/list',
       });
       
-      this.deviceInfo = {};
-      deviceRegistry.forEach(device => {
-        this.deviceInfo[device.id] = device;
-      });
-    } catch (err) {
-      console.error('Error loading device info:', err);
+      this.deviceInfo = result.reduce((acc, device) => {
+        acc[device.id] = device;
+        return acc;
+      }, {});
+      
+      this.updateView();
+    } catch (error) {
+      console.error('Entity Manager - Error loading device info:', error);
+      this.updateView();
     }
   }
 
+  getDeviceName(deviceId) {
+    return (this.deviceInfo[deviceId]?.name_by_user || this.deviceInfo[deviceId]?.name) || deviceId;
+  }
+
   render() {
-    this.content = document.createElement('div');
-    this.content.style.cssText = `
-      padding: 16px;
-      max-width: 1400px;
-      margin: 0 auto;
-      font-family: Roboto, sans-serif;
-      background: var(--primary-background-color);
-      min-height: 100vh;
-    `;
-    
-    this.content.innerHTML = `
-      <style>
-        * {
-          font-family: Roboto, sans-serif;
-          -webkit-font-smoothing: antialiased;
-          -moz-osx-font-smoothing: grayscale;
-        }
-        .header {
-          margin-bottom: 24px;
-          padding: 20px;
-          background: linear-gradient(135deg, #03a9f4 0%, #0277bd 100%);
-          border-radius: 12px;
-          color: white;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        .header h1 {
-          margin: 0 0 8px 0;
-          font-size: 2em;
-          font-weight: 500;
-          color: white;
-        }
-        .header p {
-          margin: 0;
-          color: rgba(255, 255, 255, 0.9);
-          font-size: 14px;
-        }
-        .toolbar {
-          display: flex;
-          gap: 12px;
-          margin-bottom: 16px;
-          flex-wrap: wrap;
-        }
-        .filter-group {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-        }
-        .filter-toggle {
-          padding: 8px 16px;
-          border: 2px solid #03a9f4;
-          background: var(--card-background-color);
-          border-radius: 8px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          color: #03a9f4;
-          transition: all 0.2s;
-        }
-        .filter-toggle:hover {
-          background: rgba(3, 169, 244, 0.1);
-        }
-        .filter-toggle.active {
-          background: #03a9f4;
-          color: white;
-        }
-        .search-box {
-          flex: 1;
-          min-width: 300px;
-          padding: 8px 12px;
-          border: 1px solid var(--divider-color);
-          border-radius: 4px;
-          font-size: 14px;
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
-        }
-        .btn {
-          padding: 8px 16px;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          transition: background 0.2s;
-        }
-        .btn-primary {
-          background: linear-gradient(135deg, #03a9f4 0%, #0277bd 100%);
-          color: white;
-          font-weight: 600;
-          box-shadow: 0 2px 4px rgba(3, 169, 244, 0.3);
-        }
-        .btn-primary:hover {
-          box-shadow: 0 4px 8px rgba(3, 169, 244, 0.4);
-          transform: translateY(-1px);
-        }
-        .btn-secondary {
-          background: var(--divider-color);
-          color: var(--primary-text-color);
-        }
-        .btn-secondary:hover {
-          background: var(--secondary-background-color);
-        }
-        .btn-danger {
-          background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
-          color: white;
-          font-weight: 600;
-          box-shadow: 0 2px 4px rgba(244, 67, 54, 0.3);
-        }
-        .btn-danger:hover {
-          box-shadow: 0 4px 8px rgba(244, 67, 54, 0.4);
-          transform: translateY(-1px);
-        }
-        .stats {
-          display: flex;
-          gap: 16px;
-          margin-bottom: 16px;
-          flex-wrap: wrap;
-        }
-        .stat-card {
-          background: var(--card-background-color);
-          padding: 20px;
-          border-radius: 12px;
-          flex: 1;
-          min-width: 150px;
-          border-left: 4px solid #03a9f4;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        .stat-label {
-          color: var(--secondary-text-color);
-          font-size: 12px;
-          text-transform: uppercase;
-          margin-bottom: 8px;
-          font-weight: 500;
-          letter-spacing: 0.5px;
-        }
-        .stat-value {
-          font-size: 32px;
-          font-weight: 600;
-          margin-bottom: 12px;
-        }
-        .integration-header {
-          display: flex;
-          align-items: center;
-          padding: 16px;
-          cursor: pointer;
-          user-select: none;
-          border-bottom: 1px solid var(--divider-color);
-          transition: background 0.2s;
-        }
-        .integration-header:hover {
-          background: var(--secondary-background-color);
-        }
-        .integration-icon {
-          margin-right: 12px;
-          transition: transform 0.2s;
-          color: #03a9f4;
-        }
-        .integration-icon.expanded {
-          transform: rotate(90deg);
-        }
-        .integration-info {
-          flex: 1;
-        }
-        .integration-name {
-          font-size: 16px;
-          font-weight: 600;
-          margin-bottom: 4px;
-          color: var(--primary-text-color);
-        }
-        .integration-stats {
-          font-size: 12px;
-          color: var(--secondary-text-color);
-        }
-        .integration-actions {
-          display: flex;
-          gap: 8px;
-          margin-left: 16px;
-        }
-        .device-list {
-          padding: 0 16px 16px 16px;
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-          gap: 12px;
-        }
-        .device-item {
-          border: 1px solid var(--divider-color);
-          border-radius: 8px;
-          background: var(--card-background-color);
-        }
-        .device-header {
-          display: flex;
-          align-items: center;
-          padding: 12px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .device-header:hover {
-          background: var(--secondary-background-color);
-        }
-        .device-name {
-          flex: 1;
-          font-weight: 500;
-        }
-        .device-count {
-          font-size: 12px;
-          color: var(--secondary-text-color);
-          margin-right: 16px;
-        }
-        .entity-list {
-          padding: 0 12px 12px 36px;
-        }
-        .entity-item {
-          display: flex;
-          align-items: center;
-          padding: 8px;
-          margin-bottom: 4px;
-          border-radius: 4px;
-        }
-        .entity-item:hover {
-          background: var(--secondary-background-color);
-        }
-        .entity-checkbox {
-          margin-right: 12px;
-          cursor: pointer;
-        }
-        .entity-info {
-          flex: 1;
-        }
-        .entity-id {
-          font-size: 13px;
-        }
-        .entity-name {
-          font-size: 11px;
-          color: var(--secondary-text-color);
-        }
-        .entity-badge {
-          font-size: 10px;
-          padding: 2px 6px;
-          border-radius: 3px;
-          background: var(--divider-color);
-          margin-left: 8px;
-        }
-        .entity-actions {
-          display: flex;
-          gap: 4px;
-        }
-        .icon-btn {
-          padding: 4px 8px;
-          border: none;
-          background: transparent;
-          cursor: pointer;
-          border-radius: 4px;
-          font-size: 16px;
-          font-weight: bold;
-        }
-        .icon-btn:hover {
-          background: var(--divider-color);
-        }
-        .icon-btn.enable {
-          color: #4caf50;
-        }
-        .icon-btn.disable {
-          color: #f44336;
-        }
-        .empty-state {
-          text-align: center;
-          padding: 48px;
-          color: var(--secondary-text-color);
-        }
-        .checkbox-group {
-          display: flex;
-          align-items: center;
-          margin-right: 12px;
-        }
-      </style>
+    // Clear any existing content
+    this.innerHTML = '';
+
+    // Create stylesheet with all modern styles
+    const styles = document.createElement('style');
+    styles.innerHTML = `
+      entity-manager-panel {
+        display: block;
+        font-family: var(--paper-font-body1_-_font-family);
+      }
       
+      .app-header {
+        background-color: var(--app-header-background-color, var(--primary-color));
+        color: var(--app-header-text-color, #fff);
+        display: flex;
+        align-items: center;
+        height: 56px;
+        padding: 0 16px;
+        box-sizing: border-box;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      
+      .menu-btn {
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        padding: 8px;
+        margin-right: 8px;
+        border-radius: 50%;
+      }
+      
+      .menu-btn:hover {
+        background: rgba(255,255,255,0.1);
+      }
+      
+      .menu-btn svg {
+        width: 24px;
+        height: 24px;
+        fill: currentColor;
+      }
+      
+      .app-header-title {
+        font-size: 20px;
+        font-weight: 400;
+      }
+      
+      #main-content {
+        padding: 16px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      
+      .header {
+        margin-bottom: 32px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--divider-color);
+      }
+      
+      .header h1 {
+        margin: 0 0 8px 0;
+        font-size: 2.2em;
+        font-weight: 600;
+        background: linear-gradient(135deg, var(--primary-color, #2196f3), var(--accent-color, #2196f3)) !important;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        color: transparent !important;
+      }
+      
+      .header p {
+        margin: 0;
+        color: var(--secondary-text-color);
+        font-size: 1em;
+        font-weight: 300;
+      }
+      
+      .toolbar {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      
+      .filter-group {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        background: var(--card-background-color);
+        padding: 4px;
+        border-radius: 12px;
+        border: 1px solid var(--divider-color);
+      }
+      
+      .filter-toggle {
+        padding: 10px 16px;
+        border: 2px solid #1565c0;
+        background: transparent;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--secondary-text-color);
+        transition: all 0.3s ease;
+      }
+      
+      .filter-toggle:hover {
+        color: var(--primary-text-color);
+        border-color: #2196f3;
+      }
+      
+      .filter-toggle.active {
+        background: #2196f3 !important;
+        color: white !important;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15) !important;
+        border-color: #2196f3 !important;
+      }
+      
+      .search-box {
+        flex: 1;
+        min-width: 280px;
+        padding: 12px 16px;
+        border: 2px solid #1565c0;
+        border-radius: 12px;
+        font-size: 18px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        transition: all 0.3s ease;
+        font-family: var(--paper-font-body1_-_font-family);
+      }
+      
+      .search-box:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+      }
+      
+      .btn {
+        padding: 10px 20px;
+        border: 2px solid transparent;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 18px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      
+      .btn:active {
+        transform: scale(0.98);
+      }
+      
+      .btn-primary {
+        background: linear-gradient(135deg, #2196f3, #1976d2) !important;
+        color: white !important;
+        border: 2px solid #1565c0 !important;
+      }
+      
+      .btn-primary:hover {
+        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4) !important;
+      }
+      
+      .btn-secondary {
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        border: 2px solid #1565c0;
+        font-size: 1.25em;
+      }
+      
+      .btn-secondary:hover {
+        background: var(--secondary-background-color);
+        border-color: #2196f3;
+      }
+      
+      .btn-secondary.enable-integration {
+        color: #4caf50 !important;
+        border: 2px solid #4caf50 !important;
+      }
+      
+      .btn-secondary.enable-integration:hover {
+        background: #4caf50 !important;
+        color: white !important;
+        border-color: #4caf50 !important;
+      }
+      
+      .btn-secondary.disable-integration {
+        color: #f44336 !important;
+        border: 2px solid #f44336 !important;
+      }
+      
+      .btn-secondary.disable-integration:hover {
+        background: #f44336 !important;
+        color: white !important;
+        border-color: #f44336 !important;
+      }
+      
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      
+      .stat-card {
+        background: var(--card-background-color);
+        padding: 24px;
+        border-radius: 16px;
+        border: 3px solid #1565c0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+      }
+      
+      .stat-card:hover {
+        border-color: var(--primary-color);
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+        transform: translateY(-2px);
+      }
+      
+      .stat-label {
+        color: var(--secondary-text-color);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      
+      .stat-value {
+        font-size: 32px;
+        font-weight: 700;
+        color: #2196f3 !important;
+      }
+      
+      .integration-group {
+        background: var(--card-background-color);
+        border-radius: 12px;
+        margin-bottom: 12px;
+        overflow: hidden;
+        border: 2px solid var(--divider-color);
+        transition: all 0.3s ease;
+      }
+      
+      .integration-group:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+      
+      .integration-header {
+        display: flex;
+        align-items: center;
+        padding: 18px 20px;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid var(--divider-color);
+        transition: background 0.2s ease;
+      }
+      
+      .integration-header:hover {
+        background: var(--secondary-background-color);
+      }
+      
+      .integration-icon {
+        margin-right: 12px;
+        transition: transform 0.3s ease;
+        font-size: 18px;
+        color: #2196f3 !important;
+      }
+      
+      .integration-icon.expanded {
+        transform: rotate(90deg);
+      }
+      
+      .integration-info {
+        flex: 1;
+      }
+      
+      .integration-name {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--primary-text-color);
+      }
+      
+      .integration-stats {
+        font-size: 15px;
+        color: var(--secondary-text-color);
+        font-weight: 500;
+      }
+      
+      .integration-actions {
+        display: flex;
+        gap: 8px;
+      }
+      
+      .device-list {
+        padding: 12px 20px 20px 20px;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      
+      .device-item {
+        border: 2px solid #2196f3 !important;
+        border-radius: 8px;
+        overflow: hidden;
+        transition: all 0.2s ease;
+        flex: 0 1 auto;
+        min-width: 300px;
+        background: var(--card-background-color);
+      }
+      
+      .device-item:hover {
+        border-left-color: #1976d2 !important;
+      }
+      
+      .device-header {
+        display: flex;
+        align-items: center;
+        padding: 14px 12px;
+        cursor: pointer;
+        user-select: none;
+        background: var(--secondary-background-color);
+        transition: background 0.2s ease;
+        border-bottom: 2px solid #1565c0;
+      }
+      
+      .device-header:hover {
+        background: var(--divider-color);
+      }
+      
+      .device-name {
+        flex: 1;
+        font-weight: 600;
+        color: var(--primary-text-color);
+        font-size: 1.25em;
+      }
+      
+      .device-count {
+        font-size: 15px;
+        color: var(--secondary-text-color);
+        margin-right: 12px;
+        font-weight: 500;
+      }
+      
+      .entity-list {
+        padding: 8px 12px 12px 12px;
+        background: var(--secondary-background-color);
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 12px;
+        border: 2px solid #1565c0;
+      }
+      
+      .entity-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 10px;
+        border-radius: 8px;
+        border: 2px solid white;
+        transition: all 0.2s ease;
+        font-size: 1.25em;
+        flex: 1 1 300px;
+        gap: 8px;
+      }
+      
+      .entity-item:hover {
+        background: var(--card-background-color);
+      }
+      
+      .entity-checkbox {
+        margin-right: 12px;
+        cursor: pointer;
+        accent-color: var(--primary-color);
+      }
+      
+      .entity-info {
+        flex: 1;
+      }
+      
+      .entity-id {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--primary-text-color);
+      }
+      
+      .entity-name {
+        font-size: 14px;
+        color: var(--secondary-text-color);
+        margin-top: 2px;
+      }
+      
+      .entity-badge {
+        font-size: 10px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: #2196f3 !important;
+        color: white !important;
+        margin-left: 8px;
+        font-weight: 600;
+      }
+      
+      .entity-actions {
+        display: flex;
+        gap: 4px;
+      }
+      
+      .icon-btn {
+        padding: 8px 12px;
+        border: 2px solid #e0e0e0;
+        background: #f5f5f5 !important;
+        cursor: pointer;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        font-size: 1.25em;
+      }
+      
+      .icon-btn.enable-entity {
+        color: #4caf50 !important;
+        border-color: #4caf50 !important;
+      }
+      
+      .icon-btn.enable-entity:hover {
+        background: #4caf50 !important;
+        color: white !important;
+      }
+      
+      .icon-btn.disable-entity {
+        color: #f44336 !important;
+        border-color: #f44336 !important;
+      }
+      
+      .icon-btn.disable-entity:hover {
+        background: #f44336 !important;
+        color: white !important;
+      }
+      
+      .empty-state {
+        text-align: center;
+        padding: 64px 32px;
+        color: var(--secondary-text-color);
+      }
+      
+      .empty-state h2 {
+        font-size: 24px;
+        margin-bottom: 12px;
+        color: var(--primary-text-color);
+      }
+      
+      .checkbox-group {
+        display: flex;
+        align-items: center;
+        margin-right: 12px;
+      }
+      
+      action-handler {
+        border: 2px solid #1565c0 !important;
+      }
+    `;
+    document.head.appendChild(styles);
+    
+    // Prepend styles to panel itself for proper scoping
+    this.insertBefore(styles.cloneNode(true), this.firstChild);
+
+    // Create app header
+    const header = document.createElement('div');
+    header.className = 'app-header';
+    header.innerHTML = `
+      <button class="menu-btn" id="menu-btn" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><path d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z" fill="currentColor"/></svg>
+      </button>
+      <span class="app-header-title">Entity Manager</span>
+    `;
+    this.appendChild(header);
+
+    // Create main content area
+    this.content = document.createElement('div');
+    this.content.id = 'main-content';
+    this.appendChild(this.content);
+
+    // Fill content with HTML
+    this.content.innerHTML = `
       <div class="header">
         <h1>Entity Manager</h1>
-        <p>Manage disabled entities by integration and device (Updated UI)</p>
+        <p>Manage disabled entities by integration and device</p>
       </div>
       
       <div class="stats" id="stats"></div>
       
       <div class="toolbar">
         <div class="filter-group">
-          <button class="filter-toggle" data-filter="disabled">Disabled</button>
-          <button class="filter-toggle" data-filter="enabled">Enabled</button>
           <button class="filter-toggle" data-filter="all">All</button>
+          <button class="filter-toggle" data-filter="enabled">Enabled</button>
+          <button class="filter-toggle" data-filter="disabled">Disabled</button>
         </div>
         <input 
           type="text" 
@@ -360,57 +600,83 @@ class EntityManagerPanel extends HTMLElement {
       
       <div id="content"></div>
     `;
-    
-    this.appendChild(this.content);
-    
-    // Event listeners
-    this.content.querySelector('#search-input').addEventListener('input', (e) => {
-      this.searchTerm = e.target.value.toLowerCase();
-      this.updateView();
-    });
-    
-    this.content.querySelector('#enable-selected').addEventListener('click', () => {
-      this.bulkEnable();
-    });
-    
-    this.content.querySelector('#disable-selected').addEventListener('click', () => {
-      this.bulkDisable();
-    });
-    
-    this.content.querySelector('#refresh').addEventListener('click', () => {
-      this.showLoading();
-      this.loadData();
-    });
 
+    // Attach event listeners
+    this.attachEventListeners();
+  }
+
+  attachEventListeners() {
+    // Handle menu button
+    const menuBtn = this.content.querySelector('#menu-btn');
+    if (menuBtn) {
+      menuBtn.addEventListener('click', () => {
+        this._fireEvent('hass-toggle-menu');
+      });
+    }
+
+    // Handle search
+    const searchInput = this.content.querySelector('#search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.searchTerm = e.target.value.toLowerCase();
+        this.updateView();
+      });
+    }
+
+    // Handle filter buttons
     this.content.querySelectorAll('[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         this.viewState = btn.dataset.filter;
         this.setActiveFilter();
-        this.showLoading();
         this.loadData();
       });
     });
 
+    // Handle bulk actions
+    const enableBtn = this.content.querySelector('#enable-selected');
+    if (enableBtn) {
+      enableBtn.addEventListener('click', () => this.bulkEnable());
+    }
+
+    const disableBtn = this.content.querySelector('#disable-selected');
+    if (disableBtn) {
+      disableBtn.addEventListener('click', () => this.bulkDisable());
+    }
+
+    const refreshBtn = this.content.querySelector('#refresh');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => this.loadData());
+    }
+
     this.setActiveFilter();
+  }
+
+  setActiveFilter() {
+    const buttons = this.content.querySelectorAll('[data-filter]');
+    buttons.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === this.viewState);
+    });
   }
 
   updateView() {
     const statsEl = this.content.querySelector('#stats');
     const contentEl = this.content.querySelector('#content');
-    
-    // Filter data based on search
+
     let filteredData = this.data;
+    
+    // When searching, show all matching entities regardless of enabled/disabled state
     if (this.searchTerm) {
       filteredData = this.data.map(integration => {
         const filteredDevices = {};
         Object.entries(integration.devices).forEach(([deviceId, device]) => {
-          const filteredEntities = device.entities.filter(entity => 
+          // Search shows ALL entities (enabled or disabled) that match
+          const filteredEntities = device.entities.filter(entity =>
             entity.entity_id.toLowerCase().includes(this.searchTerm) ||
             (entity.original_name && entity.original_name.toLowerCase().includes(this.searchTerm)) ||
             integration.integration.toLowerCase().includes(this.searchTerm) ||
             (this.getDeviceName(deviceId).toLowerCase().includes(this.searchTerm))
           );
-          
+
           if (filteredEntities.length > 0) {
             filteredDevices[deviceId] = {
               ...device,
@@ -418,26 +684,36 @@ class EntityManagerPanel extends HTMLElement {
             };
           }
         });
-        
+
         return {
           ...integration,
           devices: filteredDevices
         };
       }).filter(integration => Object.keys(integration.devices).length > 0);
     }
-    
-    // Update stats
+
+    // Calculate stats with enabled/disabled breakdown
     const totalIntegrations = filteredData.length;
     const totalDevices = filteredData.reduce((sum, int) => sum + Object.keys(int.devices).length, 0);
-    const totalEntities = filteredData.reduce(
-      (sum, integration) =>
-        sum + Object.values(integration.devices).reduce(
-          (deviceSum, device) => deviceSum + device.entities.length,
-          0,
-        ),
-      0,
-    );
     
+    let totalEntities = 0;
+    let disabledEntities = 0;
+    let enabledEntities = 0;
+    
+    filteredData.forEach(integration => {
+      Object.values(integration.devices).forEach(device => {
+        device.entities.forEach(entity => {
+          totalEntities++;
+          if (entity.is_disabled) {
+            disabledEntities++;
+          } else {
+            enabledEntities++;
+          }
+        });
+      });
+    });
+
+    // Render stats
     statsEl.innerHTML = `
       <div class="stat-card">
         <div class="stat-label">Integrations</div>
@@ -448,69 +724,90 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-value">${totalDevices}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Disabled Entities</div>
+        <div class="stat-label">Total Entities</div>
         <div class="stat-value">${totalEntities}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Selected</div>
-        <div class="stat-value">${this.selectedEntities.size}</div>
+        <div class="stat-label">Enabled</div>
+        <div class="stat-value" style="color: #4caf50 !important;">${enabledEntities}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Disabled</div>
+        <div class="stat-value" style="color: #f44336 !important;">${disabledEntities}</div>
       </div>
     `;
-    
-    // Update selected count in buttons
-    this.content.querySelector('#selected-count').textContent = this.selectedEntities.size;
-    this.content.querySelector('#selected-count-2').textContent = this.selectedEntities.size;
-    
-    // Render integrations
+
+    // Render content
     if (filteredData.length === 0) {
+      let emptyMessage = 'No entities found';
+      let emptyDesc = '';
+      
+      if (this.searchTerm) {
+        emptyMessage = 'No matching entities';
+        emptyDesc = `No entities match "${this.searchTerm}"`;
+      } else if (this.viewState === 'disabled') {
+        emptyMessage = 'No disabled entities';
+        emptyDesc = 'All entities are currently enabled';
+      } else if (this.viewState === 'enabled') {
+        emptyMessage = 'No enabled entities';
+        emptyDesc = 'All entities are currently disabled';
+      } else {
+        emptyMessage = 'No entities';
+        emptyDesc = 'No entities found in the system';
+      }
+      
       contentEl.innerHTML = `
         <div class="empty-state">
-          <h2>🎉 No disabled entities found</h2>
-          <p>All your entities are enabled, or they match your search criteria.</p>
+          <h2>${emptyMessage}</h2>
+          <p>${emptyDesc}</p>
         </div>
       `;
       return;
     }
-    
-    contentEl.innerHTML = filteredData.map(integration => this.renderIntegration(integration)).join('');
-    
-    // Attach event listeners
-    this.attachEventListeners();
+
+    contentEl.innerHTML = filteredData.map(integration =>
+      this.renderIntegration(integration)
+    ).join('');
+
+    // Re-attach event listeners for integration headers and entity checkboxes
+    this.attachIntegrationListeners();
   }
 
   renderIntegration(integration) {
     const isExpanded = this.expandedIntegrations.has(integration.integration);
     const deviceCount = Object.keys(integration.devices).length;
-    const shownEntities = Object.values(integration.devices).reduce(
-      (sum, device) => sum + device.entities.length,
-      0,
-    );
-    const disabledCount = integration.disabled_entities ?? 0;
-    const totalCount = integration.total_entities ?? shownEntities;
     
+    let entityCount = 0;
+    let disabledCount = 0;
+    let enabledCount = 0;
+    
+    Object.values(integration.devices).forEach(device => {
+      device.entities.forEach(entity => {
+        entityCount++;
+        if (entity.is_disabled) {
+          disabledCount++;
+        } else {
+          enabledCount++;
+        }
+      });
+    });
+
     return `
       <div class="integration-group">
         <div class="integration-header" data-integration="${integration.integration}">
-          <div class="integration-icon ${isExpanded ? 'expanded' : ''}">▶</div>
+          <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
-            <div class="integration-name">${integration.integration}</div>
-            <div class="integration-stats">
-              ${deviceCount} device${deviceCount !== 1 ? 's' : ''} • 
-              ${shownEntities} shown • ${disabledCount} disabled • ${totalCount} total
-            </div>
+            <div class="integration-name">${integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1)}</div>
+            <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount} enabled</span> / <span style="color: #f44336">${disabledCount} disabled</span>)</div>
           </div>
           <div class="integration-actions">
-            <button class="btn btn-primary" data-action="enable-integration" data-integration="${integration.integration}">
-              Enable All
-            </button>
-            <button class="btn btn-danger" data-action="disable-integration" data-integration="${integration.integration}">
-              Disable All
-            </button>
+            <button class="btn btn-secondary enable-integration" data-integration="${integration.integration}">Enable All</button>
+            <button class="btn btn-secondary disable-integration" data-integration="${integration.integration}">Disable All</button>
           </div>
         </div>
         ${isExpanded ? `
           <div class="device-list">
-            ${Object.entries(integration.devices).map(([deviceId, device]) => 
+            ${Object.entries(integration.devices).map(([deviceId, device]) =>
               this.renderDevice(deviceId, device, integration.integration)
             ).join('')}
           </div>
@@ -519,318 +816,217 @@ class EntityManagerPanel extends HTMLElement {
     `;
   }
 
-  renderDevice(deviceId, device, integrationName) {
+  renderDevice(deviceId, device, integration) {
     const isExpanded = this.expandedDevices.has(deviceId);
-    const deviceName = this.getDeviceName(deviceId);
-    const entityCount = device.entities.length;
-    const disabledCount = device.disabled_entities ?? 0;
-    const totalCount = device.total_entities ?? entityCount;
     
+    const enabledCount = device.entities.filter(e => !e.is_disabled).length;
+    const disabledCount = device.entities.filter(e => e.is_disabled).length;
+
     return `
       <div class="device-item">
         <div class="device-header" data-device="${deviceId}">
-          <div class="integration-icon ${isExpanded ? 'expanded' : ''}">▶</div>
-          <div class="device-name">${deviceName}</div>
-          <div class="device-count">${entityCount} shown • ${disabledCount} disabled • ${totalCount} total</div>
-          <button class="btn btn-primary" data-action="enable-device" data-device="${deviceId}">
-            Enable All
-          </button>
-          <button class="btn btn-danger" data-action="disable-device" data-device="${deviceId}">
-            Disable All
-          </button>
+          <span class="device-name">${this.getDeviceName(deviceId)}</span>
+          <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
         </div>
         ${isExpanded ? `
           <div class="entity-list">
-            ${device.entities.map(entity => this.renderEntity(entity)).join('')}
+            ${device.entities.map(entity => `
+              <div class="entity-item">
+                <div class="checkbox-group">
+                  <input type="checkbox" class="entity-checkbox" data-entity-id="${entity.entity_id}" data-integration="${integration}">
+                </div>
+                <div class="entity-info">
+                  <div class="entity-id">${entity.entity_id}</div>
+                  ${entity.original_name ? `<div class="entity-name">${entity.original_name}</div>` : ''}
+                </div>
+                <span class="entity-badge">${entity.state || 'unknown'}</span>
+                <div class="entity-actions">
+                  <button class="icon-btn enable-entity" data-entity-id="${entity.entity_id}" title="Enable">✓</button>
+                  <button class="icon-btn disable-entity" data-entity-id="${entity.entity_id}" title="Disable">✕</button>
+                </div>
+              </div>
+            `).join('')}
           </div>
         ` : ''}
       </div>
     `;
   }
 
-  renderEntity(entity) {
-    const isSelected = this.selectedEntities.has(entity.entity_id);
-    const displayName = entity.original_name || entity.entity_id.split('.')[1].replace(/_/g, ' ');
-    const isDisabled = !!entity.is_disabled;
-    const action = isDisabled ? 'enable-entity' : 'disable-entity';
-    const actionLabel = isDisabled ? 'Enable' : 'Disable';
-    const actionIcon = isDisabled ? '✓' : '✕';
-    
-    return `
-      <div class="entity-item">
-        <input 
-          type="checkbox" 
-          class="entity-checkbox" 
-          data-entity="${entity.entity_id}"
-          ${isSelected ? 'checked' : ''}
-        />
-        <div class="entity-info">
-          <div class="entity-id">${entity.entity_id}</div>
-          ${entity.original_name ? `<div class="entity-name">${entity.original_name}</div>` : ''}
-          ${entity.entity_category ? `<span class="entity-badge">${entity.entity_category}</span>` : ''}
-          ${isDisabled ? `<span class="entity-badge">disabled${entity.disabled_by ? ` by: ${entity.disabled_by}` : ''}</span>` : '<span class="entity-badge">enabled</span>'}
-        </div>
-        <div class="entity-actions">
-          <button class="icon-btn ${isDisabled ? 'enable' : 'disable'}" data-action="${action}" data-entity="${entity.entity_id}" title="${actionLabel}">
-            ${actionIcon}
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
-  getDeviceName(deviceId) {
-    if (!deviceId || deviceId === 'no_device') {
-      return '(No Device)';
-    }
-    const device = this.deviceInfo[deviceId];
-    return device ? (device.name_by_user || device.name || deviceId) : deviceId;
-  }
-
-  attachEventListeners() {
-    // Integration toggle
-    this.content.querySelectorAll('[data-integration]').forEach(el => {
-      if (el.classList.contains('integration-header')) {
-        el.addEventListener('click', (e) => {
-          if (e.target.closest('button')) return;
-          const integration = el.dataset.integration;
-          if (this.expandedIntegrations.has(integration)) {
-            this.expandedIntegrations.delete(integration);
-          } else {
-            this.expandedIntegrations.add(integration);
-          }
-          this.updateView();
-        });
-      }
-    });
-    
-    // Device toggle
-    this.content.querySelectorAll('[data-device]').forEach(el => {
-      if (el.classList.contains('device-header')) {
-        el.addEventListener('click', (e) => {
-          if (e.target.closest('button')) return;
-          const deviceId = el.dataset.device;
-          if (this.expandedDevices.has(deviceId)) {
-            this.expandedDevices.delete(deviceId);
-          } else {
-            this.expandedDevices.add(deviceId);
-          }
-          this.updateView();
-        });
-      }
-    });
-    
-    // Entity checkboxes
-    this.content.querySelectorAll('.entity-checkbox').forEach(checkbox => {
-      checkbox.addEventListener('change', (e) => {
-        const entityId = e.target.dataset.entity;
-        if (e.target.checked) {
-          this.selectedEntities.add(entityId);
+  attachIntegrationListeners() {
+    // Integration headers
+    this.content.querySelectorAll('.integration-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const integration = header.dataset.integration;
+        if (this.expandedIntegrations.has(integration)) {
+          this.expandedIntegrations.delete(integration);
         } else {
-          this.selectedEntities.delete(entityId);
+          this.expandedIntegrations.add(integration);
         }
         this.updateView();
       });
     });
-    
-    // Action buttons
-    this.content.querySelectorAll('[data-action]').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const action = btn.dataset.action;
-        
-        if (action === 'enable-entity') {
-          await this.enableEntity(btn.dataset.entity);
-        } else if (action === 'enable-device') {
-          await this.enableDeviceWithConfirm(btn.dataset.device);
-        } else if (action === 'enable-integration') {
-          await this.enableIntegrationWithConfirm(btn.dataset.integration);
-        } else if (action === 'disable-entity') {
-          await this.disableEntity(btn.dataset.entity);
-        } else if (action === 'disable-device') {
-          await this.disableDeviceWithConfirm(btn.dataset.device);
-        } else if (action === 'disable-integration') {
-          await this.disableIntegrationWithConfirm(btn.dataset.integration);
+
+    // Device headers
+    this.content.querySelectorAll('.device-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const deviceId = header.dataset.device;
+        if (this.expandedDevices.has(deviceId)) {
+          this.expandedDevices.delete(deviceId);
+        } else {
+          this.expandedDevices.add(deviceId);
         }
+        this.updateView();
       });
     });
+
+    // Entity checkboxes
+    this.content.querySelectorAll('.entity-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          this.selectedEntities.add(checkbox.dataset.entityId);
+        } else {
+          this.selectedEntities.delete(checkbox.dataset.entityId);
+        }
+        this.updateSelectedCount();
+      });
+    });
+
+    // Enable/Disable buttons
+    this.content.querySelectorAll('.enable-entity').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.enableEntity(btn.dataset.entityId);
+      });
+    });
+
+    this.content.querySelectorAll('.disable-entity').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.disableEntity(btn.dataset.entityId);
+      });
+    });
+
+    this.content.querySelectorAll('.enable-integration').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.enableIntegration(btn.dataset.integration);
+      });
+    });
+
+    this.content.querySelectorAll('.disable-integration').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.disableIntegration(btn.dataset.integration);
+      });
+    });
+  }
+
+  updateSelectedCount() {
+    const selectedCount = this.selectedEntities.size;
+    const enableBtn = this.content.querySelector('#selected-count');
+    const disableBtn = this.content.querySelector('#selected-count-2');
+    if (enableBtn) enableBtn.textContent = selectedCount;
+    if (disableBtn) disableBtn.textContent = selectedCount;
   }
 
   async enableEntity(entityId) {
     try {
-      await this.hass.callWS({
+      await this._hass.callWS({
         type: 'entity_manager/enable_entity',
         entity_id: entityId,
       });
       this.selectedEntities.delete(entityId);
-      await this.loadData();
-    } catch (err) {
-      console.error('Error enabling entity:', err);
-      alert(`Failed to enable ${entityId}: ${err.message}`);
-    }
-  }
-
-  async enableDeviceWithConfirm(deviceId) {
-    const integration = this.data.find(int => int.devices[deviceId]);
-    if (!integration) return;
-    
-    const entityIds = integration.devices[deviceId].entities.map(e => e.entity_id);
-    const deviceName = this.getDeviceName(deviceId);
-    
-    if (!confirm(`Enable all ${entityIds.length} entities for device "${deviceName}"?`)) return;
-    await this.bulkEnableEntities(entityIds);
-  }
-
-  async enableIntegrationWithConfirm(integrationName) {
-    const integration = this.data.find(int => int.integration === integrationName);
-    if (!integration) return;
-    
-    const entityIds = [];
-    Object.values(integration.devices).forEach(device => {
-      device.entities.forEach(entity => {
-        entityIds.push(entity.entity_id);
-      });
-    });
-    
-    if (!confirm(`Enable all ${entityIds.length} entities for integration "${integrationName}"?`)) return;
-    await this.bulkEnableEntities(entityIds);
-  }
-
-  async disableDeviceWithConfirm(deviceId) {
-    const integration = this.data.find(int => int.devices[deviceId]);
-    if (!integration) return;
-    
-    const entityIds = integration.devices[deviceId].entities.map(e => e.entity_id);
-    const deviceName = this.getDeviceName(deviceId);
-    
-    if (!confirm(`⚠️ WARNING: Disable all ${entityIds.length} entities for device "${deviceName}"? This may affect automations and dashboards.`)) return;
-    await this.bulkDisableEntities(entityIds);
-  }
-
-  async disableIntegrationWithConfirm(integrationName) {
-    const integration = this.data.find(int => int.integration === integrationName);
-    if (!integration) return;
-    
-    const entityIds = [];
-    Object.values(integration.devices).forEach(device => {
-      device.entities.forEach(entity => {
-        entityIds.push(entity.entity_id);
-      });
-    });
-    
-    if (!confirm(`⚠️ WARNING: Disable all ${entityIds.length} entities for integration "${integrationName}"? This may affect automations and dashboards.`)) return;
-    await this.bulkDisableEntities(entityIds);
-  }
-
-  async bulkEnable() {
-    if (this.selectedEntities.size === 0) {
-      alert('No entities selected');
-      return;
-    }
-    
-    await this.bulkEnableEntities(Array.from(this.selectedEntities));
-  }
-
-  async bulkDisable() {
-    if (this.selectedEntities.size === 0) {
-      alert('No entities selected');
-      return;
-    }
-    
-    try {
-      const result = await this.hass.callWS({
-        type: 'entity_manager/bulk_disable',
-        entity_ids: Array.from(this.selectedEntities),
-      });
-      
-      this.selectedEntities.clear();
-      await this.loadData();
-      
-      if (result.failed.length > 0) {
-        alert(`Disabled ${result.success.length} entities. Failed: ${result.failed.length}`);
-      }
-    } catch (err) {
-      console.error('Error bulk disabling:', err);
-      alert('Failed to disable entities');
-    }
-  }
-
-  async bulkEnableEntities(entityIds) {
-    try {
-      const result = await this.hass.callWS({
-        type: 'entity_manager/bulk_enable',
-        entity_ids: entityIds,
-      });
-      
-      entityIds.forEach(id => this.selectedEntities.delete(id));
-      await this.loadData();
-      
-      if (result.failed.length > 0) {
-        alert(`Enabled ${result.success.length} entities. Failed: ${result.failed.length}`);
-      }
-    } catch (err) {
-      console.error('Error bulk enabling:', err);
-      alert('Failed to enable entities');
-    }
-  }
-
-  async bulkDisableEntities(entityIds) {
-    try {
-      const result = await this.hass.callWS({
-        type: 'entity_manager/bulk_disable',
-        entity_ids: entityIds,
-      });
-      
-      entityIds.forEach(id => this.selectedEntities.delete(id));
-      await this.loadData();
-      
-      if (result.failed.length > 0) {
-        alert(`Disabled ${result.success.length} entities. Failed: ${result.failed.length}`);
-      }
-    } catch (err) {
-      console.error('Error bulk disabling:', err);
-      alert('Failed to disable entities');
+      this.updateSelectedCount();
+      this.loadData();
+    } catch (error) {
+      this.showErrorDialog(`Error enabling entity: ${error}`);
     }
   }
 
   async disableEntity(entityId) {
     try {
-      await this.hass.callWS({
+      await this._hass.callWS({
         type: 'entity_manager/disable_entity',
         entity_id: entityId,
       });
       this.selectedEntities.delete(entityId);
-      await this.loadData();
-    } catch (err) {
-      console.error('Error disabling entity:', err);
-      alert(`Failed to disable ${entityId}: ${err.message}`);
+      this.updateSelectedCount();
+      this.loadData();
+    } catch (error) {
+      this.showErrorDialog(`Error disabling entity: ${error}`);
     }
   }
 
-  setActiveFilter() {
-    this.content.querySelectorAll('[data-filter]').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.filter === this.viewState);
+  async enableIntegration(integration) {
+    const entityIds = this.data
+      .find(int => int.integration === integration)
+      ?.devices && Object.values(this.data.find(int => int.integration === integration).devices)
+        .reduce((acc, device) => [...acc, ...device.entities.map(e => e.entity_id)], []);
+
+    if (entityIds && entityIds.length > 0) {
+      await this.bulkEnableEntities(entityIds);
+    }
+  }
+
+  async disableIntegration(integration) {
+    const entityIds = this.data
+      .find(int => int.integration === integration)
+      ?.devices && Object.values(this.data.find(int => int.integration === integration).devices)
+        .reduce((acc, device) => [...acc, ...device.entities.map(e => e.entity_id)], []);
+
+    if (entityIds && entityIds.length > 0) {
+      await this.bulkDisable(entityIds);
+    }
+  }
+
+  async bulkEnable() {
+    if (this.selectedEntities.size === 0) {
+      this.showErrorDialog('No entities selected');
+      return;
+    }
+    await this.bulkEnableEntities(Array.from(this.selectedEntities));
+  }
+
+  async bulkDisable(entityIds = null) {
+    const toDisable = entityIds || Array.from(this.selectedEntities);
+    if (toDisable.length === 0) {
+      this.showErrorDialog('No entities selected');
+      return;
+    }
+
+    try {
+      await this._hass.callWS({
+        type: 'entity_manager/bulk_disable',
+        entity_ids: toDisable,
+      });
+      this.selectedEntities.clear();
+      this.updateSelectedCount();
+      this.loadData();
+    } catch (error) {
+      this.showErrorDialog(`Error disabling entities: ${error}`);
+    }
+  }
+
+  async bulkEnableEntities(entityIds) {
+    try {
+      await this._hass.callWS({
+        type: 'entity_manager/bulk_enable',
+        entity_ids: entityIds,
+      });
+      this.selectedEntities.clear();
+      this.updateSelectedCount();
+      this.loadData();
+    } catch (error) {
+      this.showErrorDialog(`Error enabling entities: ${error}`);
+    }
+  }
+
+  showErrorDialog(message) {
+    this._fireEvent('hass-notification', {
+      message,
+      action: {
+        action: 'dismiss',
+        text: 'Dismiss',
+      },
     });
-  }
-
-  showError(message) {
-    const contentEl = this.content.querySelector('#content');
-    contentEl.innerHTML = `
-      <div class="empty-state">
-        <h2>⚠️ Error</h2>
-        <p>${message}</p>
-      </div>
-    `;
-  }
-
-  showLoading() {
-    const contentEl = this.content.querySelector('#content');
-    contentEl.innerHTML = `
-      <div class="empty-state">
-        <h2>⏳ Loading...</h2>
-        <p>Fetching entity data...</p>
-      </div>
-    `;
   }
 }
 
