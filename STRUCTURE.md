@@ -9,17 +9,27 @@ entity-manager/
 │       ├── manifest.json               # Integration metadata
 │       ├── strings.json                # UI strings
 │       ├── websocket_api.py            # WebSocket API endpoints
+│       ├── voice_assistant.py          # Voice assistant intent handlers
+│       ├── services.yaml               # Service definitions
 │       ├── frontend/
 │       │   └── entity-manager-panel.js # Frontend web component
-│       └── translations/
-│           └── en.json                 # English translations
-├── docs/                               # Documentation (optional)
+│       ├── translations/
+│       │   └── en.json                 # English translations
+│       └── sentences/
+│           └── en/
+│               └── entity_manager.yaml # Voice command patterns
 ├── .gitignore                          # Git ignore file
 ├── hacs.json                           # HACS configuration
 ├── info.md                             # HACS info page
+├── icon.svg                            # Integration icon
+├── logo.svg                            # Integration logo
 ├── INSTALL.md                          # Installation guide
 ├── LICENSE                             # MIT License
-└── README.md                           # Main documentation
+├── README.md                           # Main documentation
+├── QUICKSTART.md                       # Quick reference guide
+├── STRUCTURE.md                        # This file - project structure
+├── PROJECT_SUMMARY.md                  # Project overview
+└── CLAUDE.md                           # AI assistant guide
 
 ```
 
