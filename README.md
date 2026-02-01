@@ -26,7 +26,7 @@ No additional configuration is required.
 
 ## Features
 
-- **Dashboard Card**: Manage entities directly from your Lovelace dashboard
+- **Sidebar Panel**: Manage entities directly from a dedicated sidebar panel in Home Assistant
 - **Services**: Enable/disable entities programmatically through automations and scripts
 - **Voice Assistant Support**: Control entities through voice commands (requires additional setup)
 - **WebSocket API**: Real-time entity management through WebSocket commands
@@ -56,7 +56,15 @@ Disable an entity.
 
 **Service Data:**
 - `entity_id` (required): The entity ID to disable.
-Voice Assistant Integration
+
+**Example:**
+```yaml
+service: entity_manager.disable_entity
+data:
+  entity_id: sensor.my_sensor
+```
+
+## Voice Assistant Integration
 
 Entity Manager provides services that can be used with voice assistants like Alexa and Google Home through automations.
 
@@ -92,28 +100,6 @@ automation:
 3. Say: "Alexa, turn on voice disable entity" or "Hey Google, activate voice enable entity"
 
 Alternatively, create routines in your Alexa or Google Home app that call the Entity Manager services directly.
-
-## Dashboard Card
-
-Entity Manager includes a Lovelace card for managing entities from your dashboard:
-
-```yaml
-type: custom:entity-manager-card
-```
-
-The card provides:
-- Search and filter entities by ID, device, or integration
-- Multi-select entity management
-- Bulk enable/disable operations
-- Expandable groups by integration and device
-
-## 
-**Example:**
-```yaml
-service: entity_manager.disable_entity
-data:
-  entity_id: sensor.my_sensor
-```
 
 ## Use Cases
 
