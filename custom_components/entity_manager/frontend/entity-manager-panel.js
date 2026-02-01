@@ -1,3 +1,4 @@
+// Entity Manager Panel - Updated UI v2.0
 class EntityManagerPanel extends HTMLElement {
   constructor() {
     super();
@@ -10,7 +11,38 @@ class EntityManagerPanel extends HTMLElement {
     this.selectedEntities = new Set();
     this.searchTerm = '';
     this.viewState = 'all';
+    this.selectedDomain = 'all';
+    this.domainOptions = [];
     this.isLoading = false;
+    
+    // Listen for theme changes
+    this._themeObserver = new MutationObserver(() => {
+      this.updateTheme();
+    });
+  }
+
+  connectedCallback() {
+    // Observe theme changes on document
+    this._themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['style', 'class']
+    });
+    this.updateTheme();
+  }
+
+  disconnectedCallback() {
+    if (this._themeObserver) {
+      this._themeObserver.disconnect();
+    }
+  }
+
+  updateTheme() {
+    // Force re-read of CSS variables by updating a data attribute
+    if (this.content) {
+      const isDark = document.documentElement.style.getPropertyValue('--primary-text-color')?.includes('fff') ||
+                     getComputedStyle(document.documentElement).getPropertyValue('--primary-background-color')?.includes('111');
+      this.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    }
   }
 
   set hass(hass) {
@@ -55,6 +87,9 @@ class EntityManagerPanel extends HTMLElement {
           devices: devicesObj,
         };
       }) : [];
+
+      this.domainOptions = this.extractDomains(this.data);
+      this.updateDomainOptions();
       
       this.loadDeviceInfo();
     } catch (error) {
@@ -87,6 +122,39 @@ class EntityManagerPanel extends HTMLElement {
     return (this.deviceInfo[deviceId]?.name_by_user || this.deviceInfo[deviceId]?.name) || deviceId;
   }
 
+  extractDomains(data) {
+    const domains = new Set();
+    data.forEach(integration => {
+      Object.values(integration.devices).forEach(device => {
+        device.entities.forEach(entity => {
+          if (entity.entity_id && entity.entity_id.includes('.')) {
+            domains.add(entity.entity_id.split('.')[0]);
+          }
+        });
+      });
+    });
+    return Array.from(domains).sort();
+  }
+
+  updateDomainOptions() {
+    if (!this.content) return;
+    const menu = this.content.querySelector('#domain-menu');
+    const label = this.content.querySelector('#domain-button-label');
+    if (!menu || !label) return;
+
+    const current = this.domainOptions.includes(this.selectedDomain) ? this.selectedDomain : 'all';
+    this.selectedDomain = current;
+
+    label.textContent = current === 'all' ? 'All domains' : current;
+
+    const options = ['all', ...this.domainOptions];
+    menu.innerHTML = options.map(domain => {
+      const text = domain === 'all' ? 'All domains' : domain;
+      const activeClass = domain === current ? 'active' : '';
+      return `<div class="domain-option ${activeClass}" data-domain="${domain}">${text}</div>`;
+    }).join('');
+  }
+
   setLoading(isLoading) {
     this.isLoading = isLoading;
     const enableBtn = this.content?.querySelector('#enable-selected');
@@ -107,34 +175,60 @@ class EntityManagerPanel extends HTMLElement {
     styles.innerHTML = `
       entity-manager-panel {
         display: block;
-        font-family: var(--paper-font-body1_-_font-family);
+        font-family: var(--paper-font-body1_-_font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+      }
+      
+      /* Root variables - automatically adapt to HA theme */
+      entity-manager-panel {
+        --em-primary: var(--primary-color);
+        --em-success: var(--success-color, #4caf50);
+        --em-danger: var(--error-color, #f44336);
+        --em-warning: var(--warning-color, #ff9800);
+        --em-text-primary: var(--primary-text-color);
+        --em-text-secondary: var(--secondary-text-color);
+        --em-bg-primary: var(--card-background-color);
+        --em-bg-secondary: var(--secondary-background-color);
+        --em-border: var(--divider-color);
       }
       
       .app-header {
-        background-color: var(--app-header-background-color, var(--primary-color));
-        color: var(--app-header-text-color, #fff);
+        background: var(--em-bg-primary);
+        color: var(--em-text-primary);
         display: flex;
         align-items: center;
-        height: 56px;
-        padding: 0 16px;
+        justify-content: space-between;
+        height: 64px;
+        padding: 0 24px;
         box-sizing: border-box;
         position: sticky;
         top: 0;
-        z-index: 1;
+        z-index: 100;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border-bottom: 1px solid var(--em-border);
+      }
+      
+      .app-header-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
       }
       
       .menu-btn {
-        background: none;
-        border: none;
-        color: inherit;
+        background: transparent;
+        border: 1px solid var(--em-border);
+        color: var(--em-text-primary);
         cursor: pointer;
         padding: 8px;
-        margin-right: 8px;
-        border-radius: 50%;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       
       .menu-btn:hover {
-        background: rgba(255,255,255,0.1);
+        background: var(--em-bg-secondary);
+        border-color: var(--em-primary);
       }
       
       .menu-btn svg {
@@ -144,38 +238,49 @@ class EntityManagerPanel extends HTMLElement {
       }
       
       .app-header-title {
-        font-size: 20px;
-        font-weight: 400;
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        color: var(--em-text-primary);
       }
       
       #main-content {
-        padding: 16px;
-        max-width: 1400px;
+        padding: 24px;
+        max-width: 1600px;
         margin: 0 auto;
+        min-height: 100vh;
+        background: var(--em-bg-secondary);
       }
       
       .header {
         margin-bottom: 32px;
-        padding-bottom: 24px;
-        border-bottom: 1px solid var(--divider-color);
+        animation: slideInDown 0.4s ease;
+      }
+      
+      @keyframes slideInDown {
+        from {
+          opacity: 0;
+          transform: translateY(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
       
       .header h1 {
         margin: 0 0 8px 0;
-        font-size: 2.2em;
-        font-weight: 600;
-        background: linear-gradient(135deg, var(--primary-color, #2196f3), var(--accent-color, #2196f3)) !important;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        color: transparent !important;
+        font-size: 2.5em;
+        font-weight: 700;
+        color: var(--em-text-primary);
+        letter-spacing: -0.5px;
       }
       
       .header p {
         margin: 0;
-        color: var(--secondary-text-color);
+        color: var(--em-text-secondary);
         font-size: 1em;
-        font-weight: 300;
+        font-weight: 400;
       }
       
       .toolbar {
@@ -219,6 +324,254 @@ class EntityManagerPanel extends HTMLElement {
         box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15) !important;
         border-color: #2196f3 !important;
       }
+
+      .filter-select {
+        padding: 10px 12px;
+        border: 2px solid #1565c0;
+        border-radius: 10px;
+        background: var(--input-fill-color, var(--card-background-color));
+        color: var(--primary-text-color);
+        font-size: 16px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        min-width: 160px;
+        color-scheme: light dark;
+      }
+
+      .filter-select option {
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+      }
+
+      .domain-dropdown {
+        position: relative;
+        min-width: 180px;
+      }
+
+      .domain-button {
+        width: 100%;
+        padding: 10px 12px;
+        border: 2px solid #1565c0;
+        border-radius: 10px;
+        background: var(--card-background-color) !important;
+        color: var(--primary-text-color);
+        font-size: 16px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .domain-button:hover {
+        border-color: var(--primary-color);
+      }
+
+      .domain-button:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+      }
+
+      .domain-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        background: #fff !important;
+        border: 2px solid #1565c0 !important;
+        border-radius: 10px;
+        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.5);
+        max-height: 240px;
+        overflow-y: auto;
+        z-index: 1000 !important;
+        display: none;
+        color: #333;
+      }
+      
+      [data-theme="dark"] .domain-menu {
+        background: #1e1e1e !important;
+        color: #fff;
+        border-color: #2196f3 !important;
+      }
+
+      .domain-menu.open {
+        display: block;
+      }
+
+      .domain-option {
+        padding: 10px 12px;
+        cursor: pointer;
+        color: #333;
+      }
+
+      .domain-option:hover {
+        background: #f0f0f0;
+      }
+
+      .domain-option.active {
+        background: rgba(33, 150, 243, 0.15);
+      }
+      
+      [data-theme="dark"] .domain-option {
+        color: #fff;
+      }
+      
+      [data-theme="dark"] .domain-option:hover {
+        background: rgba(33, 150, 243, 0.2);
+      }
+
+      .filter-select:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+      }
+      
+      /* Confirmation Dialog Styles */
+      .confirm-dialog-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(4px);
+        animation: fadeIn 0.2s ease;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      .confirm-dialog-box {
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        max-width: 500px;
+        width: 90%;
+        animation: slideUp 0.3s ease;
+        overflow: hidden;
+      }
+      
+      @keyframes slideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      [data-theme="dark"] .confirm-dialog-box {
+        background: #2c2c2c;
+        color: #fff;
+      }
+      
+      .confirm-dialog-header {
+        padding: 24px 24px 16px 24px;
+        border-bottom: 2px solid #e0e0e0;
+      }
+      
+      [data-theme="dark"] .confirm-dialog-header {
+        border-bottom-color: #444;
+      }
+      
+      .confirm-dialog-header h2 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 600;
+        color: #333;
+      }
+      
+      [data-theme="dark"] .confirm-dialog-header h2 {
+        color: #fff;
+      }
+      
+      .confirm-dialog-content {
+        padding: 24px;
+      }
+      
+      .confirm-dialog-content p {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #666;
+      }
+      
+      [data-theme="dark"] .confirm-dialog-content p {
+        color: #ccc;
+      }
+      
+      .confirm-dialog-actions {
+        padding: 16px 24px 24px 24px;
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+      }
+      
+      .confirm-dialog-actions .btn {
+        min-width: 80px;
+      }
+      
+      .confirm-no {
+        background: #e0e0e0 !important;
+        color: #333 !important;
+      }
+      
+      .confirm-no:hover {
+        background: #d0d0d0 !important;
+      }
+      
+      [data-theme="dark"] .confirm-no {
+        background: #444 !important;
+        color: #fff !important;
+      }
+      
+      [data-theme="dark"] .confirm-no:hover {
+        background: #555 !important;
+      }
+      
+      .confirm-yes {
+        background: #2196f3 !important;
+        color: #fff !important;
+      }
+      
+      .confirm-yes:hover {
+        background: #1976d2 !important;
+      }
+      
+      .rename-input {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #2196f3;
+        border-radius: 8px;
+        font-size: 16px;
+        font-family: monospace;
+        background: #f5f5f5;
+        color: #333;
+      }
+      
+      .rename-input:focus {
+        outline: none;
+        border-color: #1976d2;
+        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
+      }
+      
+      [data-theme="dark"] .rename-input {
+        background: #333;
+        color: #fff;
+        border-color: #2196f3;
+      }
+
       
       .search-box {
         flex: 1;
@@ -309,14 +662,14 @@ class EntityManagerPanel extends HTMLElement {
         background: var(--card-background-color);
         padding: 24px;
         border-radius: 16px;
-        border: 3px solid #1565c0;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        border: 2px solid var(--em-primary);
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15), inset 0 0 0 1px rgba(33, 150, 243, 0.1);
         transition: all 0.3s ease;
       }
       
       .stat-card:hover {
         border-color: var(--primary-color);
-        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
         transform: translateY(-2px);
       }
       
@@ -336,16 +689,39 @@ class EntityManagerPanel extends HTMLElement {
       }
       
       .integration-group {
-        background: var(--card-background-color);
+        background: var(--em-bg-primary);
         border-radius: 12px;
         margin-bottom: 12px;
         overflow: hidden;
-        border: 2px solid var(--divider-color);
-        transition: all 0.3s ease;
+        border: 2px solid var(--em-primary);
+        border-left: 5px solid var(--em-primary);
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
       }
       
       .integration-group:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 4px 16px rgba(33, 150, 243, 0.4), inset 0 0 0 1px rgba(33, 150, 243, 0.3);
+        border-color: var(--em-primary);
+        border-left-color: var(--em-primary);
+        filter: brightness(1.1);
+      }
+      
+      .integration-logo-container {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(33, 150, 243, 0.1);
+        margin-right: 16px;
+        flex-shrink: 0;
+      }
+      
+      .integration-logo {
+        width: 40px;
+        height: 40px;
+        object-fit: contain;
       }
       
       .integration-header {
@@ -598,6 +974,13 @@ class EntityManagerPanel extends HTMLElement {
           <button class="filter-toggle" data-filter="enabled">Enabled</button>
           <button class="filter-toggle" data-filter="disabled">Disabled</button>
         </div>
+        <div class="domain-dropdown" id="domain-dropdown">
+          <button class="domain-button" id="domain-button" aria-label="Filter by domain" type="button">
+            <span id="domain-button-label">All domains</span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          <div class="domain-menu" id="domain-menu" role="listbox" aria-label="Domain options"></div>
+        </div>
         <input 
           type="text" 
           class="search-box" 
@@ -621,8 +1004,8 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   attachEventListeners() {
-    // Handle menu button
-    const menuBtn = this.content.querySelector('#menu-btn');
+    // Handle menu button (it's outside content div)
+    const menuBtn = this.querySelector('#menu-btn');
     if (menuBtn) {
       menuBtn.addEventListener('click', () => {
         this._fireEvent('hass-toggle-menu');
@@ -646,6 +1029,35 @@ class EntityManagerPanel extends HTMLElement {
         this.loadData();
       });
     });
+
+    // Handle domain filter
+    const domainButton = this.content.querySelector('#domain-button');
+    const domainMenu = this.content.querySelector('#domain-menu');
+    if (domainButton && domainMenu) {
+      domainButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        domainMenu.classList.toggle('open');
+      });
+
+      domainMenu.addEventListener('click', (e) => {
+        const option = e.target.closest('.domain-option');
+        if (!option) return;
+        this.selectedDomain = option.dataset.domain;
+        domainMenu.classList.remove('open');
+        this.updateView();
+      });
+
+      if (!this._domainOutsideHandler) {
+        this._domainOutsideHandler = (event) => {
+          if (!domainMenu.classList.contains('open')) return;
+          if (!this.contains(event.target)) return;
+          if (!domainMenu.contains(event.target) && !domainButton.contains(event.target)) {
+            domainMenu.classList.remove('open');
+          }
+        };
+        document.addEventListener('click', this._domainOutsideHandler);
+      }
+    }
 
     // Handle bulk actions
     const enableBtn = this.content.querySelector('#enable-selected');
@@ -677,20 +1089,36 @@ class EntityManagerPanel extends HTMLElement {
     const statsEl = this.content.querySelector('#stats');
     const contentEl = this.content.querySelector('#content');
 
+    this.updateDomainOptions();
+
     let filteredData = this.data;
+    const hasDomainFilter = this.selectedDomain && this.selectedDomain !== 'all';
+    const hasSearch = Boolean(this.searchTerm);
     
-    // When searching, show all matching entities regardless of enabled/disabled state
-    if (this.searchTerm) {
+    // Apply domain and search filters
+    if (hasDomainFilter || hasSearch) {
       filteredData = this.data.map(integration => {
         const filteredDevices = {};
         Object.entries(integration.devices).forEach(([deviceId, device]) => {
-          // Search shows ALL entities (enabled or disabled) that match
-          const filteredEntities = device.entities.filter(entity =>
-            entity.entity_id.toLowerCase().includes(this.searchTerm) ||
-            (entity.original_name && entity.original_name.toLowerCase().includes(this.searchTerm)) ||
-            integration.integration.toLowerCase().includes(this.searchTerm) ||
-            (this.getDeviceName(deviceId).toLowerCase().includes(this.searchTerm))
-          );
+          // Filter entities by domain and search
+          const filteredEntities = device.entities.filter(entity => {
+            const matchesDomain = !hasDomainFilter || entity.entity_id.startsWith(`${this.selectedDomain}.`);
+            if (!matchesDomain) return false;
+
+            if (!hasSearch) return true;
+
+            const entityId = entity.entity_id.toLowerCase();
+            const originalName = entity.original_name ? entity.original_name.toLowerCase() : '';
+            const integrationName = integration.integration.toLowerCase();
+            const deviceName = this.getDeviceName(deviceId).toLowerCase();
+
+            return (
+              entityId.includes(this.searchTerm) ||
+              originalName.includes(this.searchTerm) ||
+              integrationName.includes(this.searchTerm) ||
+              deviceName.includes(this.searchTerm)
+            );
+          });
 
           if (filteredEntities.length > 0) {
             filteredDevices[deviceId] = {
@@ -757,9 +1185,12 @@ class EntityManagerPanel extends HTMLElement {
       let emptyMessage = 'No entities found';
       let emptyDesc = '';
       
-      if (this.searchTerm) {
+      if (hasSearch) {
         emptyMessage = 'No matching entities';
         emptyDesc = `No entities match "${this.searchTerm}"`;
+      } else if (hasDomainFilter) {
+        emptyMessage = 'No entities in domain';
+        emptyDesc = `No entities found for domain "${this.selectedDomain}"`;
       } else if (this.viewState === 'disabled') {
         emptyMessage = 'No disabled entities';
         emptyDesc = 'All entities are currently enabled';
@@ -810,6 +1241,9 @@ class EntityManagerPanel extends HTMLElement {
     return `
       <div class="integration-group">
         <div class="integration-header" data-integration="${integration.integration}">
+          <div class="integration-logo-container">
+            <img class="integration-logo" src="https://brands.home-assistant.io/${integration.integration}/icon.png" alt="${integration.integration}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${integration.integration.charAt(0).toUpperCase()}</text></svg>'">
+          </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
             <div class="integration-name">${integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1)}</div>
@@ -856,6 +1290,7 @@ class EntityManagerPanel extends HTMLElement {
                 </div>
                 <span class="entity-badge">${entity.state || 'unknown'}</span>
                 <div class="entity-actions">
+                  <button class="icon-btn rename-entity" data-entity-id="${entity.entity_id}" title="Rename">✎</button>
                   <button class="icon-btn enable-entity" data-entity-id="${entity.entity_id}" title="Enable">✓</button>
                   <button class="icon-btn disable-entity" data-entity-id="${entity.entity_id}" title="Disable">✕</button>
                 </div>
@@ -907,6 +1342,13 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     // Enable/Disable buttons
+    this.content.querySelectorAll('.rename-entity').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showRenameDialog(btn.dataset.entityId);
+      });
+    });
+
     this.content.querySelectorAll('.enable-entity').forEach(btn => {
       btn.addEventListener('click', () => {
         this.enableEntity(btn.dataset.entityId);
@@ -922,14 +1364,24 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.enable-integration').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.enableIntegration(btn.dataset.integration);
+        const integration = btn.dataset.integration;
+        this.showConfirmDialog(
+          `Enable all entities in ${integration}?`,
+          `Are you sure you want to enable all entities in the ${integration} integration?`,
+          () => this.enableIntegration(integration)
+        );
       });
     });
 
     this.content.querySelectorAll('.disable-integration').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.disableIntegration(btn.dataset.integration);
+        const integration = btn.dataset.integration;
+        this.showConfirmDialog(
+          `Disable all entities in ${integration}?`,
+          `Are you sure you want to disable all entities in the ${integration} integration? This may affect automations and dashboards.`,
+          () => this.disableIntegration(integration)
+        );
       });
     });
   }
@@ -1061,6 +1513,133 @@ class EntityManagerPanel extends HTMLElement {
         text: 'Dismiss',
       },
     });
+  }
+
+  showConfirmDialog(title, message, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-dialog-box">
+        <div class="confirm-dialog-header">
+          <h2>${title}</h2>
+        </div>
+        <div class="confirm-dialog-content">
+          <p>${message}</p>
+        </div>
+        <div class="confirm-dialog-actions">
+          <button class="btn btn-secondary confirm-no">No</button>
+          <button class="btn btn-primary confirm-yes">Yes</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const yesBtn = overlay.querySelector('.confirm-yes');
+    const noBtn = overlay.querySelector('.confirm-no');
+
+    const closeDialog = () => {
+      overlay.remove();
+    };
+
+    yesBtn.addEventListener('click', () => {
+      closeDialog();
+      onConfirm();
+    });
+
+    noBtn.addEventListener('click', closeDialog);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        closeDialog();
+      }
+    });
+  }
+
+  showRenameDialog(entityId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-dialog-box">
+        <div class="confirm-dialog-header">
+          <h2>Rename Entity</h2>
+        </div>
+        <div class="confirm-dialog-content">
+          <p style="margin-bottom: 12px;">Current Entity ID: <strong>${entityId}</strong></p>
+          <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
+          <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${entityId.split('.')[1]}">
+          <p style="margin-top: 8px; font-size: 14px; color: #f44336;">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
+        </div>
+        <div class="confirm-dialog-actions">
+          <button class="btn btn-secondary confirm-no">Cancel</button>
+          <button class="btn btn-primary confirm-yes">Rename</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#rename-input');
+    const yesBtn = overlay.querySelector('.confirm-yes');
+    const noBtn = overlay.querySelector('.confirm-no');
+
+    const closeDialog = () => {
+      overlay.remove();
+    };
+
+    input.focus();
+    input.select();
+
+    const performRename = async () => {
+      const newName = input.value.trim();
+      if (!newName) {
+        this.showErrorDialog('Please enter a valid entity name');
+        return;
+      }
+      
+      const domain = entityId.split('.')[0];
+      const newEntityId = `${domain}.${newName}`;
+      
+      if (newEntityId === entityId) {
+        closeDialog();
+        return;
+      }
+      
+      closeDialog();
+      await this.renameEntity(entityId, newEntityId);
+    };
+
+    yesBtn.addEventListener('click', performRename);
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        performRename();
+      }
+    });
+
+    noBtn.addEventListener('click', closeDialog);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        closeDialog();
+      }
+    });
+  }
+
+  async renameEntity(oldEntityId, newEntityId) {
+    try {
+      await this._hass.callWS({
+        type: 'entity_manager/rename_entity',
+        old_entity_id: oldEntityId,
+        new_entity_id: newEntityId,
+      });
+      
+      this._fireEvent('hass-notification', {
+        message: `Entity renamed from ${oldEntityId} to ${newEntityId}`,
+      });
+      
+      await this.loadData();
+    } catch (error) {
+      console.error('Error renaming entity:', error);
+      this.showErrorDialog(`Error renaming entity: ${error.message}`);
+    }
   }
 }
 

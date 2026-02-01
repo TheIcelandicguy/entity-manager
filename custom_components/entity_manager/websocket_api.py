@@ -205,6 +205,48 @@ async def handle_bulk_disable(
     connection.send_result(msg["id"], results)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/rename_entity",
+        vol.Required("old_entity_id"): str,
+        vol.Required("new_entity_id"): str,
+    }
+)
+@websocket_api.async_response
+async def handle_rename_entity(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle rename entity request."""
+    entity_reg = er.async_get(hass)
+    old_entity_id = msg["old_entity_id"]
+    new_entity_id = msg["new_entity_id"]
+    
+    try:
+        # Validate that old entity exists
+        old_entity = entity_reg.async_get(old_entity_id)
+        if not old_entity:
+            raise ValueError(f"Entity {old_entity_id} not found")
+        
+        # Check if new entity ID is already taken
+        if entity_reg.async_get(new_entity_id):
+            raise ValueError(f"Entity {new_entity_id} already exists")
+        
+        # Update the entity ID in the entity registry
+        entity_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
+        
+        _LOGGER.info("Renamed entity from %s to %s", old_entity_id, new_entity_id)
+        connection.send_result(msg["id"], {
+            "success": True,
+            "old_entity_id": old_entity_id,
+            "new_entity_id": new_entity_id
+        })
+    except Exception as err:
+        _LOGGER.error("Error renaming entity from %s to %s: %s", old_entity_id, new_entity_id, err)
+        connection.send_error(msg["id"], "rename_failed", str(err))
+
+
 @callback
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
@@ -213,4 +255,5 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_disable_entity)
     websocket_api.async_register_command(hass, handle_bulk_enable)
     websocket_api.async_register_command(hass, handle_bulk_disable)
+    websocket_api.async_register_command(hass, handle_rename_entity)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")
