@@ -293,36 +293,41 @@ class EntityManagerPanel extends HTMLElement {
       
       .filter-group {
         display: flex;
-        gap: 6px;
+        gap: 4px;
         align-items: center;
-        background: var(--card-background-color);
-        padding: 4px;
-        border-radius: 12px;
-        border: 1px solid var(--divider-color);
+        background: linear-gradient(145deg, var(--card-background-color), var(--secondary-background-color));
+        padding: 5px;
+        border-radius: 14px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5);
       }
-      
+
       .filter-toggle {
-        padding: 10px 16px;
-        border: 2px solid #1565c0;
+        padding: 10px 18px;
+        border: none;
         background: transparent;
         border-radius: 10px;
         cursor: pointer;
-        font-size: 16px;
-        font-weight: 500;
+        font-size: 14px;
+        font-weight: 600;
         color: var(--secondary-text-color);
-        transition: all 0.3s ease;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
       }
-      
-      .filter-toggle:hover {
+
+      .filter-toggle:hover:not(.active) {
         color: var(--primary-text-color);
-        border-color: #2196f3;
+        background: rgba(33, 150, 243, 0.08);
       }
-      
+
       .filter-toggle.active {
-        background: #2196f3 !important;
+        background: linear-gradient(135deg, #2196f3, #1976d2) !important;
         color: white !important;
-        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15) !important;
-        border-color: #2196f3 !important;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.35) !important;
+      }
+
+      .filter-toggle:active {
+        transform: scale(0.97);
       }
 
       .filter-select {
@@ -350,51 +355,64 @@ class EntityManagerPanel extends HTMLElement {
 
       .domain-button {
         width: 100%;
-        padding: 10px 12px;
-        border: 2px solid #1565c0;
-        border-radius: 10px;
-        background: var(--card-background-color) !important;
+        padding: 14px 16px;
+        border: 1px solid rgba(33, 150, 243, 0.25);
+        border-radius: 14px;
+        background: linear-gradient(145deg, var(--card-background-color), var(--secondary-background-color)) !important;
         color: var(--primary-text-color);
-        font-size: 16px;
-        font-weight: 500;
+        font-size: 14px;
+        font-weight: 600;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
+        gap: 10px;
         cursor: pointer;
-        transition: all 0.3s ease;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
       }
 
       .domain-button:hover {
-        border-color: var(--primary-color);
+        border-color: #2196f3;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
       }
 
       .domain-button:focus {
         outline: none;
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        border-color: #2196f3;
+        box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.12);
       }
 
       .domain-menu {
         position: absolute;
-        top: calc(100% + 6px);
+        top: calc(100% + 8px);
         left: 0;
         right: 0;
-        background: #fff !important;
-        border: 2px solid #1565c0 !important;
-        border-radius: 10px;
-        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.5);
-        max-height: 240px;
+        background: var(--card-background-color) !important;
+        border: 1px solid rgba(33, 150, 243, 0.2) !important;
+        border-radius: 14px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+        max-height: 280px;
         overflow-y: auto;
         z-index: 1000 !important;
         display: none;
-        color: #333;
+        color: var(--primary-text-color);
+        animation: dropdownSlide 0.2s ease;
       }
-      
+
+      @keyframes dropdownSlide {
+        from {
+          opacity: 0;
+          transform: translateY(-8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
       [data-theme="dark"] .domain-menu {
-        background: #1e1e1e !important;
-        color: #fff;
-        border-color: #2196f3 !important;
+        background: #2a2a2a !important;
+        border-color: rgba(33, 150, 243, 0.3) !important;
       }
 
       .domain-menu.open {
@@ -402,25 +420,32 @@ class EntityManagerPanel extends HTMLElement {
       }
 
       .domain-option {
-        padding: 10px 12px;
+        padding: 12px 16px;
         cursor: pointer;
-        color: #333;
+        color: var(--primary-text-color);
+        transition: all 0.15s ease;
+        border-radius: 8px;
+        margin: 4px 6px;
+        font-size: 14px;
+      }
+
+      .domain-option:first-child {
+        margin-top: 6px;
+      }
+
+      .domain-option:last-child {
+        margin-bottom: 6px;
       }
 
       .domain-option:hover {
-        background: #f0f0f0;
+        background: rgba(33, 150, 243, 0.1);
+        color: #2196f3;
       }
 
       .domain-option.active {
-        background: rgba(33, 150, 243, 0.15);
-      }
-      
-      [data-theme="dark"] .domain-option {
-        color: #fff;
-      }
-      
-      [data-theme="dark"] .domain-option:hover {
-        background: rgba(33, 150, 243, 0.2);
+        background: linear-gradient(135deg, rgba(33, 150, 243, 0.15), rgba(33, 150, 243, 0.08));
+        color: #2196f3;
+        font-weight: 600;
       }
 
       .filter-select:focus {
@@ -429,503 +454,811 @@ class EntityManagerPanel extends HTMLElement {
         box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
       }
       
-      /* Confirmation Dialog Styles */
+      /* Confirmation Dialog Styles - Modern Design */
       .confirm-dialog-overlay {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 10000;
-        backdrop-filter: blur(4px);
-        animation: fadeIn 0.2s ease;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        animation: dialogFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      
-      @keyframes fadeIn {
+
+      @keyframes dialogFadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
       }
-      
+
       .confirm-dialog-box {
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-        max-width: 500px;
+        background: linear-gradient(145deg, #ffffff, #f8f9fa);
+        border-radius: 20px;
+        box-shadow:
+          0 25px 50px -12px rgba(0, 0, 0, 0.4),
+          0 0 0 1px rgba(255, 255, 255, 0.1),
+          inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        max-width: 480px;
         width: 90%;
-        animation: slideUp 0.3s ease;
+        animation: dialogSlideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
         overflow: hidden;
+        border: 1px solid rgba(33, 150, 243, 0.2);
       }
-      
-      @keyframes slideUp {
+
+      @keyframes dialogSlideUp {
         from {
           opacity: 0;
-          transform: translateY(20px);
+          transform: translateY(30px) scale(0.95);
         }
         to {
           opacity: 1;
-          transform: translateY(0);
+          transform: translateY(0) scale(1);
         }
       }
-      
+
       [data-theme="dark"] .confirm-dialog-box {
-        background: #2c2c2c;
+        background: linear-gradient(145deg, #2d2d2d, #252525);
         color: #fff;
+        border-color: rgba(33, 150, 243, 0.3);
+        box-shadow:
+          0 25px 50px -12px rgba(0, 0, 0, 0.6),
+          0 0 0 1px rgba(255, 255, 255, 0.05),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
       }
-      
+
       .confirm-dialog-header {
-        padding: 24px 24px 16px 24px;
-        border-bottom: 2px solid #e0e0e0;
+        padding: 24px 28px 20px 28px;
+        background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(33, 150, 243, 0.05));
+        border-bottom: 1px solid rgba(33, 150, 243, 0.15);
+        display: flex;
+        align-items: center;
+        gap: 14px;
       }
-      
+
+      .confirm-dialog-header::before {
+        content: '';
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+        flex-shrink: 0;
+      }
+
+      .confirm-dialog-header.warning::before {
+        background: linear-gradient(135deg, #ff9800, #f57c00);
+        box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+      }
+
+      .confirm-dialog-header.danger::before {
+        background: linear-gradient(135deg, #f44336, #d32f2f);
+        box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+      }
+
+      .confirm-dialog-header.success::before {
+        background: linear-gradient(135deg, #4caf50, #388e3c);
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+      }
+
       [data-theme="dark"] .confirm-dialog-header {
-        border-bottom-color: #444;
+        background: linear-gradient(135deg, rgba(33, 150, 243, 0.15), rgba(33, 150, 243, 0.05));
+        border-bottom-color: rgba(33, 150, 243, 0.2);
       }
-      
+
       .confirm-dialog-header h2 {
         margin: 0;
-        font-size: 22px;
+        font-size: 20px;
         font-weight: 600;
-        color: #333;
+        color: #1a1a1a;
+        letter-spacing: -0.3px;
       }
-      
+
       [data-theme="dark"] .confirm-dialog-header h2 {
         color: #fff;
       }
-      
+
       .confirm-dialog-content {
-        padding: 24px;
+        padding: 28px;
       }
-      
+
       .confirm-dialog-content p {
         margin: 0;
-        font-size: 16px;
-        line-height: 1.5;
-        color: #666;
+        font-size: 15px;
+        line-height: 1.6;
+        color: #555;
       }
-      
+
       [data-theme="dark"] .confirm-dialog-content p {
-        color: #ccc;
+        color: #bbb;
       }
-      
+
       .confirm-dialog-actions {
-        padding: 16px 24px 24px 24px;
+        padding: 20px 28px 28px 28px;
         display: flex;
         gap: 12px;
         justify-content: flex-end;
+        background: rgba(0, 0, 0, 0.02);
+        border-top: 1px solid rgba(0, 0, 0, 0.05);
       }
-      
+
+      [data-theme="dark"] .confirm-dialog-actions {
+        background: rgba(0, 0, 0, 0.15);
+        border-top-color: rgba(255, 255, 255, 0.05);
+      }
+
       .confirm-dialog-actions .btn {
-        min-width: 80px;
+        min-width: 100px;
+        padding: 12px 24px;
+        font-size: 14px;
+        font-weight: 600;
+        border-radius: 12px;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      
+
       .confirm-no {
-        background: #e0e0e0 !important;
-        color: #333 !important;
+        background: linear-gradient(145deg, #f0f0f0, #e5e5e5) !important;
+        color: #555 !important;
+        border: 1px solid rgba(0, 0, 0, 0.1) !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
       }
-      
+
       .confirm-no:hover {
-        background: #d0d0d0 !important;
+        background: linear-gradient(145deg, #e5e5e5, #d5d5d5) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
       }
-      
+
+      .confirm-no:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+
       [data-theme="dark"] .confirm-no {
-        background: #444 !important;
-        color: #fff !important;
+        background: linear-gradient(145deg, #404040, #353535) !important;
+        color: #ddd !important;
+        border-color: rgba(255, 255, 255, 0.1) !important;
       }
-      
+
       [data-theme="dark"] .confirm-no:hover {
-        background: #555 !important;
+        background: linear-gradient(145deg, #4a4a4a, #404040) !important;
       }
-      
+
       .confirm-yes {
-        background: #2196f3 !important;
+        background: linear-gradient(135deg, #2196f3, #1976d2) !important;
         color: #fff !important;
+        border: none !important;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.35);
       }
-      
+
       .confirm-yes:hover {
-        background: #1976d2 !important;
+        background: linear-gradient(135deg, #42a5f5, #2196f3) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.45);
       }
-      
+
+      .confirm-yes:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+      }
+
+      .confirm-yes.danger {
+        background: linear-gradient(135deg, #f44336, #d32f2f) !important;
+        box-shadow: 0 4px 12px rgba(244, 67, 54, 0.35);
+      }
+
+      .confirm-yes.danger:hover {
+        background: linear-gradient(135deg, #ef5350, #f44336) !important;
+        box-shadow: 0 6px 20px rgba(244, 67, 54, 0.45);
+      }
+
+      .confirm-yes.success {
+        background: linear-gradient(135deg, #4caf50, #388e3c) !important;
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.35);
+      }
+
+      .confirm-yes.success:hover {
+        background: linear-gradient(135deg, #66bb6a, #4caf50) !important;
+        box-shadow: 0 6px 20px rgba(76, 175, 80, 0.45);
+      }
+
       .rename-input {
         width: 100%;
-        padding: 12px;
-        border: 2px solid #2196f3;
-        border-radius: 8px;
-        font-size: 16px;
-        font-family: monospace;
-        background: #f5f5f5;
+        padding: 14px 16px;
+        border: 2px solid rgba(33, 150, 243, 0.3);
+        border-radius: 12px;
+        font-size: 15px;
+        font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+        background: linear-gradient(145deg, #f8f9fa, #ffffff);
         color: #333;
+        transition: all 0.2s ease;
+        box-sizing: border-box;
       }
-      
+
       .rename-input:focus {
         outline: none;
-        border-color: #1976d2;
-        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
-      }
-      
-      [data-theme="dark"] .rename-input {
-        background: #333;
-        color: #fff;
         border-color: #2196f3;
+        box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.15);
+        background: #fff;
+      }
+
+      .rename-input::placeholder {
+        color: #999;
+      }
+
+      [data-theme="dark"] .rename-input {
+        background: linear-gradient(145deg, #353535, #2d2d2d);
+        color: #fff;
+        border-color: rgba(33, 150, 243, 0.4);
+      }
+
+      [data-theme="dark"] .rename-input:focus {
+        background: #333;
+        box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.2);
+      }
+
+      [data-theme="dark"] .rename-input::placeholder {
+        color: #777;
+      }
+
+      /* Dialog icon styles */
+      .dialog-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        flex-shrink: 0;
+      }
+
+      .dialog-icon.info {
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+      }
+
+      .dialog-icon.warning {
+        background: linear-gradient(135deg, #ff9800, #f57c00);
+        box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+      }
+
+      .dialog-icon.danger {
+        background: linear-gradient(135deg, #f44336, #d32f2f);
+        box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+      }
+
+      .dialog-icon.success {
+        background: linear-gradient(135deg, #4caf50, #388e3c);
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
       }
 
       
       .search-box {
         flex: 1;
         min-width: 280px;
-        padding: 12px 16px;
-        border: 2px solid #1565c0;
-        border-radius: 12px;
-        font-size: 18px;
-        background: var(--card-background-color);
+        padding: 14px 20px;
+        border: 1px solid rgba(33, 150, 243, 0.25);
+        border-radius: 14px;
+        font-size: 15px;
+        background: linear-gradient(145deg, var(--card-background-color), var(--secondary-background-color));
         color: var(--primary-text-color);
-        transition: all 0.3s ease;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         font-family: var(--paper-font-body1_-_font-family);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5);
       }
-      
+
+      .search-box::placeholder {
+        color: var(--secondary-text-color);
+        opacity: 0.7;
+      }
+
       .search-box:focus {
         outline: none;
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        border-color: #2196f3;
+        box-shadow: 0 0 0 4px rgba(33, 150, 243, 0.12), 0 4px 12px rgba(33, 150, 243, 0.1);
+        background: var(--card-background-color);
       }
       
       .btn {
-        padding: 10px 20px;
-        border: 2px solid transparent;
-        border-radius: 10px;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 12px;
         cursor: pointer;
-        font-size: 18px;
+        font-size: 15px;
         font-weight: 600;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        position: relative;
+        overflow: hidden;
+        letter-spacing: 0.3px;
       }
-      
+
+      .btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 50%);
+        pointer-events: none;
+      }
+
       .btn:active {
-        transform: scale(0.98);
+        transform: scale(0.97);
       }
-      
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none !important;
+      }
+
       .btn-primary {
-        background: linear-gradient(135deg, #2196f3, #1976d2) !important;
+        background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%) !important;
         color: white !important;
-        border: 2px solid #1565c0 !important;
+        box-shadow: 0 4px 14px rgba(33, 150, 243, 0.35);
       }
-      
-      .btn-primary:hover {
-        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4) !important;
+
+      .btn-primary:hover:not(:disabled) {
+        background: linear-gradient(135deg, #42a5f5 0%, #2196f3 100%) !important;
+        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.45);
+        transform: translateY(-2px);
       }
-      
+
+      .btn-primary:active {
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+      }
+
       .btn-secondary {
-        background: var(--card-background-color);
+        background: linear-gradient(145deg, var(--card-background-color), var(--secondary-background-color));
         color: var(--primary-text-color);
-        border: 2px solid #1565c0;
-        font-size: 1.25em;
+        border: 2px solid rgba(33, 150, 243, 0.3);
+        font-size: 15px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
       }
-      
-      .btn-secondary:hover {
-        background: var(--secondary-background-color);
+
+      .btn-secondary:hover:not(:disabled) {
         border-color: #2196f3;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
+        transform: translateY(-1px);
       }
-      
+
       .btn-secondary.enable-integration {
         color: #4caf50 !important;
-        border: 2px solid #4caf50 !important;
+        border: 2px solid rgba(76, 175, 80, 0.4) !important;
+        background: linear-gradient(145deg, rgba(76, 175, 80, 0.05), rgba(76, 175, 80, 0.02));
       }
-      
-      .btn-secondary.enable-integration:hover {
-        background: #4caf50 !important;
+
+      .btn-secondary.enable-integration:hover:not(:disabled) {
+        background: linear-gradient(135deg, #4caf50, #43a047) !important;
         color: white !important;
         border-color: #4caf50 !important;
+        box-shadow: 0 4px 14px rgba(76, 175, 80, 0.4);
+        transform: translateY(-2px);
       }
-      
+
       .btn-secondary.disable-integration {
         color: #f44336 !important;
-        border: 2px solid #f44336 !important;
+        border: 2px solid rgba(244, 67, 54, 0.4) !important;
+        background: linear-gradient(145deg, rgba(244, 67, 54, 0.05), rgba(244, 67, 54, 0.02));
       }
-      
-      .btn-secondary.disable-integration:hover {
-        background: #f44336 !important;
+
+      .btn-secondary.disable-integration:hover:not(:disabled) {
+        background: linear-gradient(135deg, #f44336, #e53935) !important;
         color: white !important;
         border-color: #f44336 !important;
+        box-shadow: 0 4px 14px rgba(244, 67, 54, 0.4);
+        transform: translateY(-2px);
       }
       
       .stats {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 16px;
-        margin-bottom: 24px;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 20px;
+        margin-bottom: 28px;
       }
-      
+
       .stat-card {
-        background: var(--card-background-color);
+        background: linear-gradient(145deg, var(--card-background-color), var(--secondary-background-color));
         padding: 24px;
-        border-radius: 16px;
-        border: 2px solid var(--em-primary);
-        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15), inset 0 0 0 1px rgba(33, 150, 243, 0.1);
-        transition: all 0.3s ease;
+        border-radius: 18px;
+        border: 1px solid rgba(33, 150, 243, 0.15);
+        box-shadow:
+          0 4px 20px rgba(0, 0, 0, 0.06),
+          0 1px 3px rgba(0, 0, 0, 0.04);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
       }
-      
+
+      .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #2196f3, #42a5f5);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
       .stat-card:hover {
-        border-color: var(--primary-color);
-        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
-        transform: translateY(-2px);
+        border-color: rgba(33, 150, 243, 0.3);
+        box-shadow:
+          0 8px 30px rgba(33, 150, 243, 0.15),
+          0 4px 10px rgba(0, 0, 0, 0.05);
+        transform: translateY(-4px);
       }
-      
+
+      .stat-card:hover::before {
+        opacity: 1;
+      }
+
       .stat-label {
         color: var(--secondary-text-color);
-        font-size: 11px;
+        font-size: 12px;
         text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 8px;
+        letter-spacing: 1.2px;
+        margin-bottom: 10px;
         font-weight: 600;
+        opacity: 0.8;
       }
-      
+
       .stat-value {
-        font-size: 32px;
-        font-weight: 700;
+        font-size: 36px;
+        font-weight: 800;
         color: #2196f3 !important;
+        letter-spacing: -1px;
+        line-height: 1;
+        background: linear-gradient(135deg, #2196f3, #1976d2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .stat-card:nth-child(4) .stat-value {
+        background: linear-gradient(135deg, #4caf50, #388e3c) !important;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .stat-card:nth-child(5) .stat-value {
+        background: linear-gradient(135deg, #f44336, #d32f2f) !important;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
       }
       
       .integration-group {
         background: var(--em-bg-primary);
-        border-radius: 12px;
-        margin-bottom: 12px;
+        border-radius: 16px;
+        margin-bottom: 16px;
         overflow: hidden;
-        border: 2px solid var(--em-primary);
-        border-left: 5px solid var(--em-primary);
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
+        border: 1px solid rgba(33, 150, 243, 0.2);
+        border-left: 4px solid #2196f3;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow:
+          0 4px 20px rgba(0, 0, 0, 0.04),
+          0 1px 3px rgba(0, 0, 0, 0.02);
       }
-      
+
       .integration-group:hover {
-        box-shadow: 0 4px 16px rgba(33, 150, 243, 0.4), inset 0 0 0 1px rgba(33, 150, 243, 0.3);
-        border-color: var(--em-primary);
-        border-left-color: var(--em-primary);
-        filter: brightness(1.1);
+        box-shadow:
+          0 8px 30px rgba(33, 150, 243, 0.12),
+          0 4px 10px rgba(0, 0, 0, 0.04);
+        border-color: rgba(33, 150, 243, 0.35);
+        border-left-color: #1976d2;
+        transform: translateX(2px);
       }
-      
+
       .integration-logo-container {
-        width: 48px;
-        height: 48px;
-        border-radius: 8px;
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(33, 150, 243, 0.1);
-        margin-right: 16px;
+        background: linear-gradient(135deg, rgba(33, 150, 243, 0.12), rgba(33, 150, 243, 0.06));
+        margin-right: 18px;
         flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.1);
+        border: 1px solid rgba(33, 150, 243, 0.1);
       }
-      
+
       .integration-logo {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
         object-fit: contain;
       }
-      
+
       .integration-header {
         display: flex;
         align-items: center;
-        padding: 18px 20px;
+        padding: 20px 24px;
         cursor: pointer;
         user-select: none;
-        border-bottom: 1px solid var(--divider-color);
-        transition: background 0.2s ease;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        transition: all 0.25s ease;
+        background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.01));
       }
-      
+
       .integration-header:hover {
-        background: var(--secondary-background-color);
+        background: linear-gradient(180deg, rgba(33, 150, 243, 0.04), rgba(33, 150, 243, 0.02));
       }
-      
+
       .integration-icon {
-        margin-right: 12px;
-        transition: transform 0.3s ease;
-        font-size: 18px;
+        margin-right: 14px;
+        transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        font-size: 20px;
         color: #2196f3 !important;
+        font-weight: bold;
       }
-      
+
       .integration-icon.expanded {
         transform: rotate(90deg);
       }
-      
+
       .integration-info {
         flex: 1;
       }
-      
+
       .integration-name {
-        font-size: 20px;
-        font-weight: 600;
+        font-size: 18px;
+        font-weight: 700;
         margin-bottom: 4px;
         color: var(--primary-text-color);
+        letter-spacing: -0.3px;
       }
-      
+
       .integration-stats {
-        font-size: 15px;
+        font-size: 14px;
         color: var(--secondary-text-color);
         font-weight: 500;
       }
-      
+
       .integration-actions {
         display: flex;
-        gap: 8px;
+        gap: 10px;
       }
-      
+
       .device-list {
-        padding: 12px 20px 20px 20px;
+        padding: 16px 24px 24px 24px;
         display: flex;
         flex-direction: row;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 16px;
+        background: rgba(0, 0, 0, 0.015);
       }
-      
+
       .device-item {
-        border: 2px solid #2196f3 !important;
-        border-radius: 8px;
+        border: 1px solid rgba(33, 150, 243, 0.25);
+        border-radius: 14px;
         overflow: hidden;
-        transition: all 0.2s ease;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         flex: 0 1 auto;
-        min-width: 300px;
+        min-width: 320px;
         background: var(--card-background-color);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
       }
-      
+
       .device-item:hover {
-        border-left-color: #1976d2 !important;
+        border-color: rgba(33, 150, 243, 0.5);
+        box-shadow: 0 6px 20px rgba(33, 150, 243, 0.12);
+        transform: translateY(-2px);
       }
-      
+
       .device-header {
         display: flex;
         align-items: center;
-        padding: 14px 12px;
+        padding: 16px 18px;
         cursor: pointer;
         user-select: none;
-        background: var(--secondary-background-color);
-        transition: background 0.2s ease;
-        border-bottom: 2px solid #1565c0;
+        background: linear-gradient(145deg, var(--secondary-background-color), var(--card-background-color));
+        transition: all 0.25s ease;
+        border-bottom: 1px solid rgba(33, 150, 243, 0.15);
       }
-      
+
       .device-header:hover {
-        background: var(--divider-color);
+        background: linear-gradient(145deg, rgba(33, 150, 243, 0.08), rgba(33, 150, 243, 0.04));
       }
-      
+
       .device-name {
         flex: 1;
         font-weight: 600;
         color: var(--primary-text-color);
-        font-size: 1.25em;
+        font-size: 16px;
+        letter-spacing: -0.2px;
       }
-      
+
       .device-count {
-        font-size: 15px;
+        font-size: 13px;
         color: var(--secondary-text-color);
         margin-right: 12px;
         font-weight: 500;
+        background: rgba(0, 0, 0, 0.05);
+        padding: 4px 10px;
+        border-radius: 20px;
       }
-      
+
       .entity-list {
-        padding: 8px 12px 12px 12px;
-        background: var(--secondary-background-color);
+        padding: 14px 16px 16px 16px;
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.02), transparent);
         display: flex;
         flex-direction: row;
         flex-wrap: wrap;
-        gap: 12px;
-        border: 2px solid #1565c0;
+        gap: 10px;
       }
-      
+
       .entity-item {
         display: flex;
         align-items: center;
-        padding: 12px 10px;
-        border-radius: 8px;
-        border: 2px solid white;
-        transition: all 0.2s ease;
-        font-size: 1.25em;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        font-size: 14px;
         flex: 1 1 300px;
-        gap: 8px;
-      }
-      
-      .entity-item:hover {
+        gap: 12px;
         background: var(--card-background-color);
       }
-      
-      .entity-checkbox {
-        margin-right: 12px;
-        cursor: pointer;
-        accent-color: var(--primary-color);
+
+      .entity-item:hover {
+        background: linear-gradient(145deg, var(--card-background-color), rgba(33, 150, 243, 0.04));
+        border-color: rgba(33, 150, 243, 0.2);
+        box-shadow: 0 2px 8px rgba(33, 150, 243, 0.08);
       }
-      
+
+      .entity-checkbox {
+        width: 20px;
+        height: 20px;
+        margin-right: 8px;
+        cursor: pointer;
+        accent-color: #2196f3;
+        border-radius: 4px;
+      }
+
       .entity-info {
         flex: 1;
+        min-width: 0;
       }
-      
+
       .entity-id {
-        font-size: 16px;
-        font-weight: 500;
-        color: var(--primary-text-color);
-      }
-      
-      .entity-name {
         font-size: 14px;
-        color: var(--secondary-text-color);
-        margin-top: 2px;
+        font-weight: 600;
+        color: var(--primary-text-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      
+
+      .entity-name {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .entity-badge {
         font-size: 10px;
-        padding: 4px 8px;
-        border-radius: 6px;
-        background: #2196f3 !important;
+        padding: 5px 10px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #2196f3, #1976d2) !important;
         color: white !important;
         margin-left: 8px;
         font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3);
       }
-      
+
       .entity-actions {
         display: flex;
-        gap: 4px;
+        gap: 6px;
       }
-      
+
       .icon-btn {
-        padding: 8px 12px;
-        border: 2px solid #e0e0e0;
-        background: #f5f5f5 !important;
+        padding: 8px 14px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        background: linear-gradient(145deg, #f8f9fa, #f0f0f0) !important;
         cursor: pointer;
-        border-radius: 8px;
+        border-radius: 10px;
         font-weight: 600;
-        transition: all 0.2s ease;
-        font-size: 1.25em;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        font-size: 14px;
       }
-      
+
+      .icon-btn:active {
+        transform: scale(0.95);
+      }
+
+      .icon-btn.rename-entity {
+        color: #2196f3 !important;
+        border-color: rgba(33, 150, 243, 0.3) !important;
+      }
+
+      .icon-btn.rename-entity:hover {
+        background: linear-gradient(135deg, #2196f3, #1976d2) !important;
+        color: white !important;
+        border-color: #2196f3 !important;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.35);
+        transform: translateY(-2px);
+      }
+
       .icon-btn.enable-entity {
         color: #4caf50 !important;
-        border-color: #4caf50 !important;
+        border-color: rgba(76, 175, 80, 0.3) !important;
       }
-      
+
       .icon-btn.enable-entity:hover {
-        background: #4caf50 !important;
+        background: linear-gradient(135deg, #4caf50, #43a047) !important;
         color: white !important;
+        border-color: #4caf50 !important;
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.35);
+        transform: translateY(-2px);
       }
-      
+
       .icon-btn.disable-entity {
         color: #f44336 !important;
-        border-color: #f44336 !important;
+        border-color: rgba(244, 67, 54, 0.3) !important;
       }
-      
+
       .icon-btn.disable-entity:hover {
-        background: #f44336 !important;
+        background: linear-gradient(135deg, #f44336, #e53935) !important;
         color: white !important;
+        border-color: #f44336 !important;
+        box-shadow: 0 4px 12px rgba(244, 67, 54, 0.35);
+        transform: translateY(-2px);
+      }
+
+      [data-theme="dark"] .icon-btn {
+        background: linear-gradient(145deg, #3a3a3a, #2d2d2d) !important;
+        border-color: rgba(255, 255, 255, 0.1);
       }
       
       .empty-state {
         text-align: center;
-        padding: 64px 32px;
+        padding: 80px 40px;
         color: var(--secondary-text-color);
+        background: linear-gradient(145deg, var(--card-background-color), var(--secondary-background-color));
+        border-radius: 20px;
+        border: 2px dashed rgba(33, 150, 243, 0.2);
+        margin: 20px 0;
       }
-      
+
+      .empty-state::before {
+        content: '';
+        display: block;
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 24px;
+        background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(33, 150, 243, 0.05));
+        border-radius: 50%;
+        border: 2px solid rgba(33, 150, 243, 0.2);
+      }
+
       .empty-state h2 {
-        font-size: 24px;
-        margin-bottom: 12px;
+        font-size: 22px;
+        margin-bottom: 10px;
         color: var(--primary-text-color);
+        font-weight: 600;
+      }
+
+      .empty-state p {
+        font-size: 15px;
+        color: var(--secondary-text-color);
+        max-width: 400px;
+        margin: 0 auto;
+        line-height: 1.5;
       }
       
       .checkbox-group {
@@ -1366,9 +1699,10 @@ class EntityManagerPanel extends HTMLElement {
         e.stopPropagation();
         const integration = btn.dataset.integration;
         this.showConfirmDialog(
-          `Enable all entities in ${integration}?`,
-          `Are you sure you want to enable all entities in the ${integration} integration?`,
-          () => this.enableIntegration(integration)
+          `Enable All Entities`,
+          `Are you sure you want to enable all entities in the <strong>${integration}</strong> integration?`,
+          () => this.enableIntegration(integration),
+          { type: 'success', confirmText: 'Enable All', cancelText: 'Cancel' }
         );
       });
     });
@@ -1378,9 +1712,10 @@ class EntityManagerPanel extends HTMLElement {
         e.stopPropagation();
         const integration = btn.dataset.integration;
         this.showConfirmDialog(
-          `Disable all entities in ${integration}?`,
-          `Are you sure you want to disable all entities in the ${integration} integration? This may affect automations and dashboards.`,
-          () => this.disableIntegration(integration)
+          `Disable All Entities`,
+          `Are you sure you want to disable all entities in the <strong>${integration}</strong> integration? This may affect automations and dashboards.`,
+          () => this.disableIntegration(integration),
+          { type: 'warning', confirmText: 'Disable All', cancelText: 'Cancel' }
         );
       });
     });
@@ -1515,20 +1850,30 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
-  showConfirmDialog(title, message, onConfirm) {
+  showConfirmDialog(title, message, onConfirm, options = {}) {
+    const { type = 'info', confirmText = 'Yes', cancelText = 'No' } = options;
+
+    const iconMap = {
+      info: '?',
+      warning: '!',
+      danger: '!',
+      success: '✓'
+    };
+
     const overlay = document.createElement('div');
     overlay.className = 'confirm-dialog-overlay';
     overlay.innerHTML = `
       <div class="confirm-dialog-box">
-        <div class="confirm-dialog-header">
+        <div class="confirm-dialog-header ${type}">
+          <div class="dialog-icon ${type}">${iconMap[type] || '?'}</div>
           <h2>${title}</h2>
         </div>
         <div class="confirm-dialog-content">
           <p>${message}</p>
         </div>
         <div class="confirm-dialog-actions">
-          <button class="btn btn-secondary confirm-no">No</button>
-          <button class="btn btn-primary confirm-yes">Yes</button>
+          <button class="btn confirm-no">${cancelText}</button>
+          <button class="btn confirm-yes ${type === 'danger' ? 'danger' : ''}">${confirmText}</button>
         </div>
       </div>
     `;
@@ -1539,12 +1884,14 @@ class EntityManagerPanel extends HTMLElement {
     const noBtn = overlay.querySelector('.confirm-no');
 
     const closeDialog = () => {
-      overlay.remove();
+      overlay.style.animation = 'dialogFadeIn 0.2s ease reverse';
+      overlay.querySelector('.confirm-dialog-box').style.animation = 'dialogSlideUp 0.2s ease reverse';
+      setTimeout(() => overlay.remove(), 180);
     };
 
     yesBtn.addEventListener('click', () => {
       closeDialog();
-      onConfirm();
+      setTimeout(onConfirm, 100);
     });
 
     noBtn.addEventListener('click', closeDialog);
@@ -1553,6 +1900,15 @@ class EntityManagerPanel extends HTMLElement {
         closeDialog();
       }
     });
+
+    // Handle escape key
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        closeDialog();
+        document.removeEventListener('keydown', handleEscape);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
   }
 
   showRenameDialog(entityId) {
@@ -1560,18 +1916,24 @@ class EntityManagerPanel extends HTMLElement {
     overlay.className = 'confirm-dialog-overlay';
     overlay.innerHTML = `
       <div class="confirm-dialog-box">
-        <div class="confirm-dialog-header">
+        <div class="confirm-dialog-header info">
+          <div class="dialog-icon info">✎</div>
           <h2>Rename Entity</h2>
         </div>
         <div class="confirm-dialog-content">
-          <p style="margin-bottom: 12px;">Current Entity ID: <strong>${entityId}</strong></p>
-          <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
+          <p style="margin-bottom: 16px; padding: 12px 16px; background: rgba(33, 150, 243, 0.08); border-radius: 10px; border-left: 3px solid #2196f3;">
+            <strong style="color: var(--primary-text-color);">Current:</strong>
+            <code style="background: rgba(0,0,0,0.06); padding: 3px 8px; border-radius: 4px; margin-left: 8px; font-family: monospace;">${entityId}</code>
+          </p>
+          <p style="margin-bottom: 10px; font-size: 14px; color: var(--secondary-text-color);">Enter new entity ID (without domain prefix):</p>
           <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${entityId.split('.')[1]}">
-          <p style="margin-top: 8px; font-size: 14px; color: #f44336;">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
+          <p style="margin-top: 14px; font-size: 13px; padding: 10px 14px; background: rgba(255, 152, 0, 0.1); border-radius: 8px; border-left: 3px solid #ff9800; color: #e65100;">
+            This will update the entity ID across all automations, scripts, and helpers.
+          </p>
         </div>
         <div class="confirm-dialog-actions">
-          <button class="btn btn-secondary confirm-no">Cancel</button>
-          <button class="btn btn-primary confirm-yes">Rename</button>
+          <button class="btn confirm-no">Cancel</button>
+          <button class="btn confirm-yes">Rename</button>
         </div>
       </div>
     `;
@@ -1583,11 +1945,16 @@ class EntityManagerPanel extends HTMLElement {
     const noBtn = overlay.querySelector('.confirm-no');
 
     const closeDialog = () => {
-      overlay.remove();
+      overlay.style.animation = 'dialogFadeIn 0.2s ease reverse';
+      overlay.querySelector('.confirm-dialog-box').style.animation = 'dialogSlideUp 0.2s ease reverse';
+      setTimeout(() => overlay.remove(), 180);
     };
 
-    input.focus();
-    input.select();
+    // Focus and select after a small delay for animation
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 100);
 
     const performRename = async () => {
       const newName = input.value.trim();
@@ -1595,17 +1962,17 @@ class EntityManagerPanel extends HTMLElement {
         this.showErrorDialog('Please enter a valid entity name');
         return;
       }
-      
+
       const domain = entityId.split('.')[0];
       const newEntityId = `${domain}.${newName}`;
-      
+
       if (newEntityId === entityId) {
         closeDialog();
         return;
       }
-      
+
       closeDialog();
-      await this.renameEntity(entityId, newEntityId);
+      setTimeout(() => this.renameEntity(entityId, newEntityId), 100);
     };
 
     yesBtn.addEventListener('click', performRename);
@@ -1621,6 +1988,15 @@ class EntityManagerPanel extends HTMLElement {
         closeDialog();
       }
     });
+
+    // Handle escape key
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        closeDialog();
+        document.removeEventListener('keydown', handleEscape);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
   }
 
   async renameEntity(oldEntityId, newEntityId) {
