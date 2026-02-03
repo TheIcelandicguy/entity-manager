@@ -4,6 +4,8 @@ A powerful Home Assistant integration for managing entities across all your inte
 
 ![Version](https://img.shields.io/badge/version-2.5.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
+![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
+[![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
 
 ## ✨ Features
 
