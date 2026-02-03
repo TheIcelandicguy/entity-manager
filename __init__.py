@@ -85,6 +85,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Register the frontend resources
+    import time
+    version = int(time.time())  # Cache busting timestamp
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -96,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-manager-panel",
                 "embed_iframe": True,
                 "trust_external": False,
-                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js",
+                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={version}",
             }
         },
         require_admin=True,

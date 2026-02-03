@@ -1,149 +1,201 @@
-# entity-manager
-Home Assistant integration for managing disabled and enabled entities
+# Entity Manager for Home Assistant
 
-## Installation
+A powerful Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename entities, and manage firmware updates with a beautiful modern interface.
+
+![Version](https://img.shields.io/badge/version-2.5.0-blue)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
+
+## ✨ Features
+
+### 📊 **Entity Management**
+- View all entities organized by integration and device
+- Enable/disable individual entities or entire integrations
+- Bulk operations with confirmation dialogs
+- Real-time entity state display
+- Alphabetically sorted integrations for easy navigation
+
+### ✏️ **Entity Renaming**
+- Rename entities with a simple click
+- Automatic propagation across automations, scripts, and helpers
+- Validation to prevent conflicts
+- Domain preservation (e.g., `sensor.` prefix stays intact)
+
+### 🔄 **Firmware Update Manager**
+- View all available updates in one place
+- Filter updates by type: All, Stable Only, or Beta Only
+- Filter by category: All Types, Devices, or Integrations
+- Hide up-to-date items checkbox
+- **Select All** checkbox for bulk update selection
+- View release notes before updating
+- Bulk update multiple items at once
+- Automatic hide up-to-date when filtering
+
+### 🔍 **Advanced Filtering**
+- **Domain Filter**: Filter by entity domain (sensor, light, switch, binary_sensor, etc.)
+- **Text Search**: Search across entity IDs, names, and integrations
+- **State Filter**: Show All, Enabled, or Disabled entities with live counts
+- **Color-Coded Buttons**: 
+  - Green for Enabled filter
+  - Red for Disabled filter
+  - Amber for Updates filter
+  - Bold counts on all filter buttons
+
+### 📈 **Statistics Dashboard**
+- Integration count
+- Device count
+- Total entities count
+- Automation count
+- Script count
+- Helper count
+
+### 🎨 **Modern UI**
+- Automatic light/dark theme switching
+- Integration logos from Home Assistant brands
+- Colored borders and glow effects for better visibility
+- Smooth animations and transitions
+- Responsive design for mobile and desktop
+- Devices grouped by integration in popup dialogs
+
+### ⚠️ **Safety Features**
+- Confirmation dialogs for bulk operations
+- Clear warnings about automation impacts
+- Visual feedback for all actions
+
+## 📦 Installation
+
+### HACS (Recommended)
+1. Open HACS in Home Assistant
+2. Go to "Integrations"
+3. Click the three dots in the top right
+4. Select "Custom repositories"
+5. Add `https://github.com/TheIcelandicguy/entity-manager` as an Integration
+6. Click "Install"
+7. Restart Home Assistant
 
 ### Manual Installation
+1. Download the `entity_manager` folder from this repository
+2. Copy it to your Home Assistant `custom_components` directory
+3. Restart Home Assistant
 
-1. Copy the `custom_components/entity_manager` folder to your Home Assistant `custom_components` directory.
-2. Restart Home Assistant.
-3. The integration will be automatically loaded.
+## 🚀 Usage
 
-### HACS Installation (Future)
+### Accessing Entity Manager
+1. After installation, look for "Entity Manager" in the Home Assistant sidebar
+2. Or navigate to Configuration → Integrations and find Entity Manager
 
-This integration can be added to HACS for easier installation and updates.
+### Managing Entities
 
-## Configuration
+#### **View Entities**
+- Click an integration card to expand and see all entities
+- Entities show: ID, friendly name, device, state badge, and action buttons
+- Integrations are sorted alphabetically
 
-This integration can be added through the Home Assistant UI:
+#### **Enable/Disable Entities**
+- Click ✓ (checkmark) to enable an entity
+- Click ✕ (x) to disable an entity
+- Use "Enable All" or "Disable All" for entire integrations
 
-1. Go to **Settings** → **Devices & Services**
-2. Click **+ Add Integration**
-3. Search for "Entity Manager"
-4. Click to add it
+#### **Rename Entities**
+1. Click the ✎ (pencil) button next to an entity
+2. Edit the entity name (domain prefix is preserved)
+3. Click "Rename" to confirm
+4. The change propagates automatically across your entire Home Assistant
 
-No additional configuration is required.
+#### **Filter & Search**
+- Use the domain dropdown to filter by entity type
+- Use the search box to find specific entities
+- Toggle between All/Enabled/Disabled/Updates views
+- Filter buttons show live counts of entities
 
-## Features
+### Managing Updates
 
-- **Dashboard Card**: Manage entities directly from your Lovelace dashboard
-- **Services**: Enable/disable entities programmatically through automations and scripts
-- **Voice Assistant Support**: Control entities through voice commands (requires additional setup)
-- **WebSocket API**: Real-time entity management through WebSocket commands
-- **Bulk Operations**: Enable or disable multiple entities at once
+#### **View Updates**
+1. Click the "Updates" filter button
+2. See all available firmware/software updates
+3. Updates with available versions are highlighted
 
-## Services
+#### **Filter Updates**
+- **All Updates**: Show everything
+- **Stable Only**: Hide beta/RC/dev versions
+- **Beta Only**: Show only beta/RC/dev versions
+- **All Types / Devices / Integrations**: Filter by update category
+- **Hide Up-to-Date**: Toggle to show only items with pending updates
 
-The Entity Manager integration provides two services for managing entities:
+#### **Bulk Update**
+1. Use the "Select All" checkbox to select all available updates
+2. Or manually check individual items
+3. Click "Update Selected (N)" to update all selected items
 
-### `entity_manager.enable_entity`
+## 🎯 Use Cases
 
-Enable a disabled entity.
+### Perfect for:
+- **Cleaning up after integrations**: Disable unused entities from integrations that create many entities
+- **Organizing large systems**: Manage hundreds of entities efficiently
+- **Renaming entities**: Fix naming conventions across your setup
+- **Troubleshooting**: Quickly identify and manage problematic entities
+- **System optimization**: Disable unnecessary entities to improve performance
+- **Firmware management**: Keep all your devices and integrations up to date
 
-**Service Data:**
-- `entity_id` (required): The entity ID to enable.
+## 🔧 Technical Details
 
-**Example:**
-```yaml
-service: entity_manager.enable_entity
-data:
-  entity_id: sensor.my_sensor
-```
+### Requirements
+- Home Assistant 2024.1 or later
+- Modern web browser with ES6 support
 
-### `entity_manager.disable_entity`
+### Components
+- **Frontend**: Custom web component with vanilla JavaScript
+- **Backend**: Python WebSocket API integration
+- **Entity Registry**: Direct integration with Home Assistant's entity registry
 
-Disable an entity.
+### API Endpoints
+- `entity_manager/get_disabled_entities`: Fetch entities with filtering
+- `entity_manager/enable_entity`: Enable a single entity
+- `entity_manager/disable_entity`: Disable a single entity
+- `entity_manager/bulk_enable`: Enable multiple entities
+- `entity_manager/bulk_disable`: Disable multiple entities
+- `entity_manager/rename_entity`: Rename an entity
 
-**Service Data:**
-- `entity_id` (required): The entity ID to disable.
-Voice Assistant Integration
+## 📸 Screenshots
 
-Entity Manager provides services that can be used with voice assistants like Alexa and Google Home through automations.
+### Light Theme
+![Entity Manager Light Mode](screenshots/light-mode.png)
 
-### Setup Voice Commands
+### Dark Theme
+![Entity Manager Dark Mode](screenshots/dark-mode.png)
 
-Create automations to respond to voice commands:
+### Update Manager
+![Update Manager](screenshots/update-manager.png)
 
-```yaml
-automation:
-  - alias: "Voice - Disable Entity"
-    trigger:
-      - platform: conversation
-        command: "disable entity *"
-    action:
-      - service: entity_manager.disable_entity
-        data:
-          entity_id: "{{ trigger.sentence | replace('disable entity ', '') }}"
-  
-  - alias: "Voice - Enable Entity"
-    trigger:
-      - platform: conversation
-        command: "enable entity *"
-    action:
-      - service: entity_manager.enable_entity
-        data:
-          entity_id: "{{ trigger.sentence | replace('enable entity ', '') }}"
-```
+### Rename Dialog
+![Rename Entity](screenshots/rename-dialog.png)
 
-### Using with Alexa/Google Home
+## 🤝 Contributing
 
-1. Set up Home Assistant Cloud or Nabu Casa
-2. Expose the automation to your voice assistant
-3. Say: "Alexa, turn on voice disable entity" or "Hey Google, activate voice enable entity"
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-Alternatively, create routines in your Alexa or Google Home app that call the Entity Manager services directly.
+## 📝 License
 
-## Dashboard Card
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-Entity Manager includes a Lovelace card for managing entities from your dashboard:
+## 👤 Author
 
-```yaml
-type: custom:entity-manager-card
-```
+**TheIcelandicguy**
+- GitHub: [@TheIcelandicguy](https://github.com/TheIcelandicguy)
 
-The card provides:
-- Search and filter entities by ID, device, or integration
-- Multi-select entity management
-- Bulk enable/disable operations
-- Expandable groups by integration and device
+## 🙏 Acknowledgments
 
-## 
-**Example:**
-```yaml
-service: entity_manager.disable_entity
-data:
-  entity_id: sensor.my_sensor
-```
+- Home Assistant community for inspiration and support
+- Material Design Icons for the icon set
+- All contributors and users of Entity Manager
 
-## Use Cases
+## 📋 Changelog
 
-- Programmatically enable/disable entities based on conditions
-- Bulk entity management through automations
-- Dynamic entity control in scripts
-- Integration with other Home Assistant automations
+See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes.
 
-## Example Automation
+## ⚠️ Disclaimer
 
-```yaml
-automation:
-  - alias: "Disable sensor when away"
-    trigger:
-      - platform: state
-        entity_id: input_boolean.away_mode
-        to: 'on'
-    action:
-      - service: entity_manager.disable_entity
-        data:
-          entity_id: sensor.energy_monitor
-```
+This integration modifies your Home Assistant entity registry. While it includes safety features and confirmation dialogs, always backup your configuration before making bulk changes.
 
-## Notes
+---
 
-- Entities must exist in the entity registry to be managed
-- Disabled entities will not be available in the UI or automations until re-enabled
-- Changes take effect immediately but may require a page refresh to see in the UI
-
-## Support
-
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/TheIcelandicguy/entity-manager).
-
+**If you find this integration helpful, please consider giving it a ⭐ on GitHub!**
