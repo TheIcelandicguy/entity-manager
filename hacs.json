@@ -1,5 +1,6 @@
 {
   "name": "Entity Manager",
+  "filename": "entity_manager",
   "render_readme": true,
   "country": ["IS"],
   "homeassistant": "2024.1.0"
