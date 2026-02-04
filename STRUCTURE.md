@@ -9,14 +9,10 @@ entity-manager/
 │       ├── manifest.json               # Integration metadata
 │       ├── strings.json                # UI strings
 │       ├── websocket_api.py            # WebSocket API endpoints
-│       ├── voice_assistant.py          # Voice assistant intent handlers
 │       ├── frontend/
 │       │   └── entity-manager-panel.js # Frontend web component
 │       └── translations/
 │           └── en.json                 # English translations
-├── sentences/                          # Voice assistant sentences (root level)
-│   └── en/
-│       └── entity_manager.yaml         # English voice command sentences
 ├── docs/                               # Documentation (optional)
 ├── .gitignore                          # Git ignore file
 ├── hacs.json                           # HACS configuration
@@ -52,19 +48,6 @@ entity-manager/
 - Handles entity operations (enable/disable)
 - Provides data to frontend
 - Manages bulk operations
-
-**`voice_assistant.py`**
-- Implements voice assistant intent handlers
-- Processes enable/disable entity commands
-- Integrates with Home Assistant Assist
-
-### Voice Assistant Files
-
-**`sentences/en/entity_manager.yaml`**
-- Defines English voice command patterns
-- Maps spoken phrases to intents
-- Supports natural language entity control
-- Located at repository root (required for HA 2024.x+)
 
 ### Frontend Files
 

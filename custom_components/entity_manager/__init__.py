@@ -1,4 +1,5 @@
 """Entity Manager Integration."""
+import json
 import logging
 from pathlib import Path
 from homeassistant.config_entries import ConfigEntry  # type: ignore
@@ -7,12 +8,11 @@ from homeassistant.components import frontend  # type: ignore
 from homeassistant.components.http import StaticPathConfig  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
 
+from .const import DOMAIN
 from .websocket_api import async_setup_ws_api
 from .voice_assistant import async_setup_intents
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN = "entity_manager"
 
 SERVICE_ENABLE_ENTITY = "enable_entity"
 SERVICE_DISABLE_ENTITY = "disable_entity"
@@ -85,8 +85,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Register the frontend resources
-    import time
-    version = int(time.time())  # Cache busting timestamp
+    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
+    version = manifest["version"]
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -112,4 +112,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     frontend.async_remove_panel(hass, DOMAIN)
+    hass.services.async_remove(DOMAIN, SERVICE_ENABLE_ENTITY)
+    hass.services.async_remove(DOMAIN, SERVICE_DISABLE_ENTITY)
     return True

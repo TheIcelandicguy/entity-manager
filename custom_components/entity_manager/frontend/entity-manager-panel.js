@@ -22,11 +22,33 @@ class EntityManagerPanel extends HTMLElement {
     this.scriptCount = 0;
     this.helperCount = 0;
     this.updateCount = 0;
-    
+    this._undoStack = []; // Undo history for bulk operations
+    this._undoTimeout = null;
+
     // Listen for theme changes
     this._themeObserver = new MutationObserver(() => {
       this.updateTheme();
     });
+
+    // Keyboard shortcut handler
+    this._keyHandler = (e) => {
+      // Escape: close any open dialog
+      if (e.key === 'Escape') {
+        const overlay = document.querySelector('.confirm-dialog-overlay');
+        if (overlay) {
+          document.body.classList.remove('em-dialog-open');
+          overlay.remove();
+        }
+      }
+      // Ctrl+A / Cmd+A: select all visible entities
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        // Only act when not in a text input and entities view is active
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (this.viewState === 'updates') return;
+        e.preventDefault();
+        this.selectAllVisible();
+      }
+    };
   }
 
   connectedCallback() {
@@ -36,12 +58,19 @@ class EntityManagerPanel extends HTMLElement {
       attributeFilter: ['style', 'class']
     });
     this.updateTheme();
+    document.addEventListener('keydown', this._keyHandler);
   }
 
   disconnectedCallback() {
     if (this._themeObserver) {
       this._themeObserver.disconnect();
     }
+    if (this._domainOutsideHandler) {
+      document.removeEventListener('click', this._domainOutsideHandler);
+      this._domainOutsideHandler = null;
+    }
+    document.removeEventListener('keydown', this._keyHandler);
+    if (this._undoTimeout) clearTimeout(this._undoTimeout);
   }
 
   updateTheme() {
@@ -70,6 +99,13 @@ class EntityManagerPanel extends HTMLElement {
 
   _fireEvent(type, detail = {}) {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   async loadData() {
@@ -186,10 +222,31 @@ class EntityManagerPanel extends HTMLElement {
     const enableBtn = this.content?.querySelector('#enable-selected');
     const disableBtn = this.content?.querySelector('#disable-selected');
     const refreshBtn = this.content?.querySelector('#refresh');
-    
+    const exportBtn = this.content?.querySelector('#export-btn');
+
     if (enableBtn) enableBtn.disabled = isLoading;
     if (disableBtn) disableBtn.disabled = isLoading;
     if (refreshBtn) refreshBtn.disabled = isLoading;
+    if (exportBtn) exportBtn.disabled = isLoading;
+
+    // Show skeleton while loading initial data
+    const contentEl = this.content?.querySelector('#content');
+    if (contentEl && isLoading && this.data.length === 0) {
+      contentEl.innerHTML = this.renderSkeleton();
+    }
+  }
+
+  renderSkeleton() {
+    const cards = Array.from({ length: 5 }, () => `
+      <div class="skeleton-card">
+        <div class="skeleton-circle"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton-line medium"></div>
+          <div class="skeleton-line short"></div>
+        </div>
+      </div>
+    `).join('');
+    return `<div class="skeleton-container">${cards}</div>`;
   }
 
   render() {
@@ -1286,6 +1343,109 @@ class EntityManagerPanel extends HTMLElement {
         margin-right: 12px;
       }
       
+      /* Undo Toast */
+      .undo-toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--em-bg-primary, #333);
+        color: var(--em-text-primary, #fff);
+        border: 2px solid var(--em-primary, #2196f3);
+        border-radius: 12px;
+        padding: 12px 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        z-index: 10000;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.3s ease;
+        font-size: 14px;
+      }
+
+      .undo-toast .undo-btn {
+        background: var(--em-primary, #2196f3);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 6px 16px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 14px;
+        transition: opacity 0.2s;
+      }
+
+      .undo-toast .undo-btn:hover {
+        opacity: 0.85;
+      }
+
+      .undo-toast .undo-dismiss {
+        background: transparent;
+        border: none;
+        color: var(--em-text-secondary, #999);
+        cursor: pointer;
+        font-size: 18px;
+        padding: 0 4px;
+        line-height: 1;
+      }
+
+      @keyframes slideUp {
+        from { transform: translateX(-50%) translateY(40px); opacity: 0; }
+        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+      }
+
+      /* Loading Skeleton */
+      .skeleton-container {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        padding: 8px 0;
+      }
+
+      .skeleton-card {
+        background: var(--em-bg-primary);
+        border: 2px solid var(--em-border);
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .skeleton-circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(90deg, var(--em-border) 25%, var(--em-bg-secondary) 50%, var(--em-border) 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+        flex-shrink: 0;
+      }
+
+      .skeleton-lines {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .skeleton-line {
+        height: 14px;
+        border-radius: 4px;
+        background: linear-gradient(90deg, var(--em-border) 25%, var(--em-bg-secondary) 50%, var(--em-border) 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+      }
+
+      .skeleton-line.short { width: 40%; }
+      .skeleton-line.medium { width: 70%; }
+      .skeleton-line.long { width: 90%; }
+
+      @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+
       /* Update List Styles */
       .update-select-all {
         margin-bottom: 12px;
@@ -2042,6 +2202,7 @@ class EntityManagerPanel extends HTMLElement {
           Update Selected (<span id="update-count">0</span>)
         </button>
         <button class="btn btn-secondary" id="refresh">Refresh</button>
+        <button class="btn btn-secondary" id="export-btn" title="Export entity states as JSON">Export</button>
       </div>
       
       <div id="content"></div>
@@ -2226,6 +2387,11 @@ class EntityManagerPanel extends HTMLElement {
     const refreshBtn = this.content.querySelector('#refresh');
     if (refreshBtn) {
       refreshBtn.addEventListener('click', () => this.loadData());
+    }
+
+    const exportBtn = this.content.querySelector('#export-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => this.exportEntityStates());
     }
 
     this.setActiveFilter();
@@ -2419,11 +2585,11 @@ class EntityManagerPanel extends HTMLElement {
       <div class="integration-group">
         <div class="integration-header" data-integration="${integration.integration}">
           <div class="integration-logo-container">
-            <img class="integration-logo" src="https://brands.home-assistant.io/${integration.integration}/icon.png" alt="${integration.integration}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${integration.integration.charAt(0).toUpperCase()}</text></svg>'">
+            <img class="integration-logo" src="https://brands.home-assistant.io/${encodeURIComponent(integration.integration)}/icon.png" alt="${this.escapeHtml(integration.integration)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${this.escapeHtml(integration.integration.charAt(0).toUpperCase())}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
-            <div class="integration-name">${integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1)}</div>
+            <div class="integration-name">${this.escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1))}</div>
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount} enabled</span> / <span style="color: #f44336">${disabledCount} disabled</span>)</div>
           </div>
           <div class="integration-actions">
@@ -2439,9 +2605,9 @@ class EntityManagerPanel extends HTMLElement {
                   <input type="checkbox" class="entity-checkbox" data-entity-id="${entity.entity_id}" data-integration="${integration.integration}">
                 </div>
                 <div class="entity-info">
-                  ${entity.original_name ? `<div class="entity-name">${entity.original_name}</div>` : ''}
-                  <div class="entity-id">${entity.entity_id}</div>
-                  <div class="entity-device" style="font-size: 12px; color: var(--em-text-secondary); margin-top: 4px;">📱 ${entity.deviceName}</div>
+                  ${entity.original_name ? `<div class="entity-name">${this.escapeHtml(entity.original_name)}</div>` : ''}
+                  <div class="entity-id">${this.escapeHtml(entity.entity_id)}</div>
+                  <div class="entity-device" style="font-size: 12px; color: var(--em-text-secondary); margin-top: 4px;">📱 ${this.escapeHtml(entity.deviceName)}</div>
                 </div>
                 <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
                 <div class="entity-actions">
@@ -2466,7 +2632,7 @@ class EntityManagerPanel extends HTMLElement {
     return `
       <div class="device-item">
         <div class="device-header" data-device="${deviceId}">
-          <span class="device-name">${this.getDeviceName(deviceId)}</span>
+          <span class="device-name">${this.escapeHtml(this.getDeviceName(deviceId))}</span>
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
         </div>
         ${isExpanded ? `
@@ -2477,8 +2643,8 @@ class EntityManagerPanel extends HTMLElement {
                   <input type="checkbox" class="entity-checkbox" data-entity-id="${entity.entity_id}" data-integration="${integration}">
                 </div>
                 <div class="entity-info">
-                  ${entity.original_name ? `<div class="entity-name">${entity.original_name}</div>` : ''}
-                  <div class="entity-id">${entity.entity_id}</div>
+                  ${entity.original_name ? `<div class="entity-name">${this.escapeHtml(entity.original_name)}</div>` : ''}
+                  <div class="entity-id">${this.escapeHtml(entity.entity_id)}</div>
                 </div>
                 <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
                 <div class="entity-actions">
@@ -2588,6 +2754,21 @@ class EntityManagerPanel extends HTMLElement {
     if (disableBtn) disableBtn.textContent = selectedCount;
   }
 
+  selectAllVisible() {
+    const checkboxes = this.content?.querySelectorAll('.entity-checkbox');
+    if (!checkboxes || checkboxes.length === 0) return;
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => {
+      cb.checked = !allChecked;
+      if (!allChecked) {
+        this.selectedEntities.add(cb.dataset.entityId);
+      } else {
+        this.selectedEntities.delete(cb.dataset.entityId);
+      }
+    });
+    this.updateSelectedCount();
+  }
+
   async enableEntity(entityId) {
     try {
       await this._hass.callWS({
@@ -2651,7 +2832,9 @@ class EntityManagerPanel extends HTMLElement {
     }
     this.setLoading(true);
     try {
-      await this.bulkEnableEntities(Array.from(this.selectedEntities));
+      const entityIds = Array.from(this.selectedEntities);
+      await this.bulkEnableEntities(entityIds);
+      this.showUndoToast('disable', entityIds, `Enabled ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`);
     } finally {
       this.setLoading(false);
     }
@@ -2673,6 +2856,7 @@ class EntityManagerPanel extends HTMLElement {
       this.selectedEntities.clear();
       this.updateSelectedCount();
       this.loadData();
+      this.showUndoToast('enable', toDisable, `Disabled ${toDisable.length} entit${toDisable.length !== 1 ? 'ies' : 'y'}`);
     } catch (error) {
       this.showErrorDialog(`Error disabling entities: ${error.message}`);
     } finally {
@@ -2692,6 +2876,75 @@ class EntityManagerPanel extends HTMLElement {
       this.loadData();
     } catch (error) {
       this.showErrorDialog(`Error enabling entities: ${error.message}`);
+    } finally {
+      this.setLoading(false);
+    }
+  }
+
+  showUndoToast(undoAction, entityIds, message) {
+    // Remove any existing undo toast
+    const existing = document.querySelector('.undo-toast');
+    if (existing) existing.remove();
+    if (this._undoTimeout) clearTimeout(this._undoTimeout);
+
+    const toast = document.createElement('div');
+    toast.className = 'undo-toast';
+    toast.innerHTML = `
+      <span>${this.escapeHtml(message)}</span>
+      <button class="undo-btn">Undo</button>
+      <button class="undo-dismiss">&times;</button>
+    `;
+    document.body.appendChild(toast);
+
+    const dismiss = () => {
+      if (this._undoTimeout) clearTimeout(this._undoTimeout);
+      toast.remove();
+    };
+
+    toast.querySelector('.undo-dismiss').addEventListener('click', dismiss);
+
+    toast.querySelector('.undo-btn').addEventListener('click', async () => {
+      dismiss();
+      this.setLoading(true);
+      try {
+        if (undoAction === 'enable') {
+          await this._hass.callWS({ type: 'entity_manager/bulk_enable', entity_ids: entityIds });
+        } else {
+          await this._hass.callWS({ type: 'entity_manager/bulk_disable', entity_ids: entityIds });
+        }
+        this._fireEvent('hass-notification', { message: 'Undo successful' });
+        this.loadData();
+      } catch (error) {
+        this.showErrorDialog(`Undo failed: ${error.message}`);
+      } finally {
+        this.setLoading(false);
+      }
+    });
+
+    // Auto-dismiss after 10 seconds
+    this._undoTimeout = setTimeout(dismiss, 10000);
+  }
+
+  async exportEntityStates() {
+    this.setLoading(true);
+    try {
+      const result = await this._hass.callWS({
+        type: 'entity_manager/export_states',
+      });
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const date = new Date().toISOString().slice(0, 10);
+      a.download = `entity-manager-export-${date}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      this._fireEvent('hass-notification', { message: `Exported ${result.length} entities` });
+    } catch (error) {
+      console.error('Error exporting entities:', error);
+      this.showErrorDialog(`Error exporting entities: ${error.message}`);
     } finally {
       this.setLoading(false);
     }
@@ -2821,16 +3074,16 @@ class EntityManagerPanel extends HTMLElement {
         <input type="checkbox" class="update-checkbox" data-update-id="${entityId}" ${!hasUpdate ? 'disabled' : ''}>
         <div class="update-icon">📦</div>
         <div class="update-info">
-          <div class="update-title">${title}</div>
+          <div class="update-title">${this.escapeHtml(title)}</div>
           <div class="update-details">
             <div class="update-version">
               <span>Current:</span>
-              <span class="version-badge current">${currentVersion}</span>
+              <span class="version-badge current">${this.escapeHtml(currentVersion)}</span>
             </div>
             ${hasUpdate ? `
               <div class="update-version">
                 <span>→</span>
-                <span class="version-badge ${isBeta ? 'beta' : 'latest'}">${latestVersion}</span>
+                <span class="version-badge ${isBeta ? 'beta' : 'latest'}">${this.escapeHtml(latestVersion)}</span>
               </div>
             ` : '<span style="color: var(--em-success);">✓ Up to date</span>'}
           </div>
@@ -3021,16 +3274,16 @@ class EntityManagerPanel extends HTMLElement {
           const items = group.devices.map(d => `
             <div class="entity-list-item">
               <div class="entity-list-row">
-                <span class="entity-list-name">${d.name}</span>
-                <span class="entity-list-id-inline">${d.id}</span>
-                ${d.meta ? `<span class="entity-list-id-inline">${d.meta}</span>` : ''}
+                <span class="entity-list-name">${this.escapeHtml(d.name)}</span>
+                <span class="entity-list-id-inline">${this.escapeHtml(d.id)}</span>
+                ${d.meta ? `<span class="entity-list-id-inline">${this.escapeHtml(d.meta)}</span>` : ''}
               </div>
             </div>
           `).join('');
 
           return `
             <div class="entity-list-group">
-              <div class="entity-list-group-title">${groupTitle}</div>
+              <div class="entity-list-group-title">${this.escapeHtml(groupTitle)}</div>
               ${items}
             </div>
           `;
@@ -3094,9 +3347,9 @@ class EntityManagerPanel extends HTMLElement {
       const entityList = entities.map(e => `
         <div class="entity-list-item">
           <div class="entity-list-row">
-            <span class="entity-list-name">${e.name}</span>
-            <span class="entity-list-id-inline">${e.id}</span>
-            ${e.meta ? `<span class="entity-list-id-inline">${e.meta}</span>` : ''}
+            <span class="entity-list-name">${this.escapeHtml(e.name)}</span>
+            <span class="entity-list-id-inline">${this.escapeHtml(e.id)}</span>
+            ${e.meta ? `<span class="entity-list-id-inline">${this.escapeHtml(e.meta)}</span>` : ''}
             ${allowToggle ? `
               <button class="entity-list-toggle ${e.state === 'on' ? 'on' : 'off'}" data-entity-id="${e.id}" data-entity-type="${type}">
                 ${e.state === 'on' ? 'On' : 'Off'}
@@ -3163,7 +3416,7 @@ class EntityManagerPanel extends HTMLElement {
     overlay.innerHTML = `
       <div class="confirm-dialog-box ${extraClass}">
         <div class="confirm-dialog-header"${color ? ` style="border-color: ${color};"` : ''}>
-          <h2${color ? ` style="color: ${color};"` : ''}>${title}</h2>
+          <h2${color ? ` style="color: ${color};"` : ''}>${this.escapeHtml(title)}</h2>
         </div>
         ${contentHtml}
         <div class="confirm-dialog-actions">
@@ -3205,7 +3458,7 @@ class EntityManagerPanel extends HTMLElement {
       color: 'var(--em-primary)',
       contentHtml: `
         <div class="confirm-dialog-content">
-          <p>${message}</p>
+          <p>${this.escapeHtml(message)}</p>
         </div>
       `,
       actionsHtml: `
@@ -3231,9 +3484,9 @@ class EntityManagerPanel extends HTMLElement {
       color: 'var(--em-primary)',
       contentHtml: `
         <div class="confirm-dialog-content">
-          <p style="margin-bottom: 12px;">Current Entity ID: <strong>${entityId}</strong></p>
+          <p style="margin-bottom: 12px;">Current Entity ID: <strong>${this.escapeHtml(entityId)}</strong></p>
           <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
-          <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${entityId.split('.')[1]}">
+          <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${this.escapeHtml(entityId.split('.')[1])}" pattern="[a-z0-9_]+" title="Only lowercase letters, numbers, and underscores">
           <p style="margin-top: 8px; font-size: 14px; color: #f44336;">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
         </div>
       `,
@@ -3254,6 +3507,10 @@ class EntityManagerPanel extends HTMLElement {
       const newName = input.value.trim();
       if (!newName) {
         this.showErrorDialog('Please enter a valid entity name');
+        return;
+      }
+      if (!/^[a-z0-9_]+$/.test(newName)) {
+        this.showErrorDialog('Entity name can only contain lowercase letters, numbers, and underscores');
         return;
       }
       
