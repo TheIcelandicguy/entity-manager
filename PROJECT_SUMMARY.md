@@ -14,35 +14,40 @@ Solves the common problem of managing hundreds of disabled diagnostic entities (
 
 ## Project Stats
 
-- **Version**: 0.1.0
+- **Version**: 2.5.0
 - **License**: MIT
 - **Language**: Python (backend), JavaScript (frontend)
 - **HA Minimum**: 2024.1.0
-- **Lines of Code**: ~1000+ (including comments)
+- **Lines of Code**: ~3800+ (including comments)
 
 ## File Structure
 
 ```
-entity_manager/
-├── custom_components/entity_manager/    # Main integration
-│   ├── __init__.py                      # 50 lines
-│   ├── config_flow.py                   # 62 lines  
-│   ├── websocket_api.py                 # 175 lines
-│   ├── manifest.json
-│   ├── strings.json
-│   ├── frontend/
-│   │   └── entity-manager-panel.js      # 600+ lines
-│   └── translations/
-│       └── en.json
-├── README.md                             # Main docs
-├── INSTALL.md                            # Installation guide
-├── QUICKSTART.md                         # Quick reference
-├── STRUCTURE.md                          # Code structure
-├── hacs.json                             # HACS config
-├── info.md                               # HACS info
-└── LICENSE                               # MIT
-
-Total: ~900 lines of code + documentation
+entity-manager/
+├── __init__.py                     # Integration entry point
+├── config_flow.py                  # UI-based configuration flow
+├── const.py                        # Shared constants (DOMAIN)
+├── websocket_api.py                # WebSocket command handlers
+├── voice_assistant.py              # Voice intent handlers
+├── manifest.json                   # Integration metadata
+├── services.yaml                   # Service schema for HA UI
+├── strings.json                    # UI strings for config flow
+├── frontend/
+│   └── entity-manager-panel.js     # Custom web component UI (~3300 lines)
+├── translations/
+│   └── en.json                     # English translations
+├── sentences/en/
+│   └── entity_manager.yaml         # Voice assistant sentence patterns
+├── hacs.json                       # HACS configuration
+├── icon.svg                        # Custom integration icon
+├── logo.svg                        # Integration logo
+├── README.md                       # User documentation
+├── INSTALL.md                      # Installation guide
+├── QUICKSTART.md                   # Quick reference
+├── STRUCTURE.md                    # Code structure documentation
+├── CHANGELOG.md                    # Version history
+├── info.md                         # HACS info page
+└── LICENSE                         # MIT License
 ```
 
 ## Key Features
@@ -155,25 +160,13 @@ Before publishing:
 
 ## Release Checklist
 
-Before v0.1.0 release:
-
-- [ ] Create GitHub repository
-- [ ] Update repository URLs in files
-- [ ] Create initial release tag
+- [x] Create GitHub repository
+- [x] Update repository URLs in files
+- [x] Create initial release tag
 - [ ] Test HACS installation
 - [ ] Create screenshots
 - [ ] Record demo video (optional)
 - [ ] Submit to HACS default repositories (optional)
-
-## Files to Update Before Publishing
-
-Replace `yourusername` with your actual GitHub username in:
-
-1. `manifest.json` - documentation and issue_tracker URLs
-2. `README.md` - repository links
-3. `INSTALL.md` - repository URL
-4. `QUICKSTART.md` - repository URL
-5. `info.md` - any repository references
 
 ## Development Notes
 
@@ -223,7 +216,6 @@ MIT License - Free to use, modify, and distribute
 
 ---
 
-**Version**: 0.1.0  
-**Created**: January 2025  
-**Status**: Ready for testing and release  
-**Maintainer**: [Your GitHub username]
+**Version**: 2.5.0
+**Created**: January 2025
+**Maintainer**: @TheIcelandicguy

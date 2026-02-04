@@ -1,5 +1,6 @@
 """WebSocket API for Entity Manager."""
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -9,6 +10,8 @@ from homeassistant.helpers import entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
+VALID_ENTITY_ID = re.compile(r"^[a-z][a-z0-9_]*\.[a-z0-9_]+$")
+
 
 @websocket_api.websocket_command(
     {
@@ -16,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
         vol.Optional("state", default="disabled"): vol.In(["disabled", "enabled", "all"]),
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def handle_get_disabled_entities(
     hass: HomeAssistant,
@@ -105,6 +109,7 @@ async def handle_get_disabled_entities(
         vol.Required("entity_id"): str,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def handle_enable_entity(
     hass: HomeAssistant,
@@ -129,6 +134,7 @@ async def handle_enable_entity(
         vol.Required("entity_id"): str,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def handle_disable_entity(
     hass: HomeAssistant,
@@ -153,6 +159,7 @@ async def handle_disable_entity(
         vol.Required("entity_ids"): [str],
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def handle_bulk_enable(
     hass: HomeAssistant,
@@ -182,6 +189,7 @@ async def handle_bulk_enable(
         vol.Required("entity_ids"): [str],
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def handle_bulk_disable(
     hass: HomeAssistant,
@@ -212,6 +220,7 @@ async def handle_bulk_disable(
         vol.Required("new_entity_id"): str,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def handle_rename_entity(
     hass: HomeAssistant,
@@ -224,11 +233,27 @@ async def handle_rename_entity(
     new_entity_id = msg["new_entity_id"]
     
     try:
+        # Validate entity ID format
+        if not VALID_ENTITY_ID.match(new_entity_id):
+            raise ValueError(
+                f"Invalid entity ID format: {new_entity_id}. "
+                "Must be lowercase with format 'domain.object_id' "
+                "using only a-z, 0-9, and underscores."
+            )
+
         # Validate that old entity exists
         old_entity = entity_reg.async_get(old_entity_id)
         if not old_entity:
             raise ValueError(f"Entity {old_entity_id} not found")
-        
+
+        # Validate domain matches
+        old_domain = old_entity_id.split(".")[0]
+        new_domain = new_entity_id.split(".")[0]
+        if old_domain != new_domain:
+            raise ValueError(
+                f"Domain mismatch: cannot change domain from '{old_domain}' to '{new_domain}'"
+            )
+
         # Check if new entity ID is already taken
         if entity_reg.async_get(new_entity_id):
             raise ValueError(f"Entity {new_entity_id} already exists")

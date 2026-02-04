@@ -42,6 +42,10 @@ class EntityManagerPanel extends HTMLElement {
     if (this._themeObserver) {
       this._themeObserver.disconnect();
     }
+    if (this._domainOutsideHandler) {
+      document.removeEventListener('click', this._domainOutsideHandler);
+      this._domainOutsideHandler = null;
+    }
   }
 
   updateTheme() {
@@ -70,6 +74,13 @@ class EntityManagerPanel extends HTMLElement {
 
   _fireEvent(type, detail = {}) {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   async loadData() {
@@ -2419,11 +2430,11 @@ class EntityManagerPanel extends HTMLElement {
       <div class="integration-group">
         <div class="integration-header" data-integration="${integration.integration}">
           <div class="integration-logo-container">
-            <img class="integration-logo" src="https://brands.home-assistant.io/${integration.integration}/icon.png" alt="${integration.integration}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${integration.integration.charAt(0).toUpperCase()}</text></svg>'">
+            <img class="integration-logo" src="https://brands.home-assistant.io/${encodeURIComponent(integration.integration)}/icon.png" alt="${this.escapeHtml(integration.integration)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${this.escapeHtml(integration.integration.charAt(0).toUpperCase())}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
-            <div class="integration-name">${integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1)}</div>
+            <div class="integration-name">${this.escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1))}</div>
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount} enabled</span> / <span style="color: #f44336">${disabledCount} disabled</span>)</div>
           </div>
           <div class="integration-actions">
@@ -2439,9 +2450,9 @@ class EntityManagerPanel extends HTMLElement {
                   <input type="checkbox" class="entity-checkbox" data-entity-id="${entity.entity_id}" data-integration="${integration.integration}">
                 </div>
                 <div class="entity-info">
-                  ${entity.original_name ? `<div class="entity-name">${entity.original_name}</div>` : ''}
-                  <div class="entity-id">${entity.entity_id}</div>
-                  <div class="entity-device" style="font-size: 12px; color: var(--em-text-secondary); margin-top: 4px;">📱 ${entity.deviceName}</div>
+                  ${entity.original_name ? `<div class="entity-name">${this.escapeHtml(entity.original_name)}</div>` : ''}
+                  <div class="entity-id">${this.escapeHtml(entity.entity_id)}</div>
+                  <div class="entity-device" style="font-size: 12px; color: var(--em-text-secondary); margin-top: 4px;">📱 ${this.escapeHtml(entity.deviceName)}</div>
                 </div>
                 <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
                 <div class="entity-actions">
@@ -2466,7 +2477,7 @@ class EntityManagerPanel extends HTMLElement {
     return `
       <div class="device-item">
         <div class="device-header" data-device="${deviceId}">
-          <span class="device-name">${this.getDeviceName(deviceId)}</span>
+          <span class="device-name">${this.escapeHtml(this.getDeviceName(deviceId))}</span>
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
         </div>
         ${isExpanded ? `
@@ -2477,8 +2488,8 @@ class EntityManagerPanel extends HTMLElement {
                   <input type="checkbox" class="entity-checkbox" data-entity-id="${entity.entity_id}" data-integration="${integration}">
                 </div>
                 <div class="entity-info">
-                  ${entity.original_name ? `<div class="entity-name">${entity.original_name}</div>` : ''}
-                  <div class="entity-id">${entity.entity_id}</div>
+                  ${entity.original_name ? `<div class="entity-name">${this.escapeHtml(entity.original_name)}</div>` : ''}
+                  <div class="entity-id">${this.escapeHtml(entity.entity_id)}</div>
                 </div>
                 <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
                 <div class="entity-actions">
@@ -2821,16 +2832,16 @@ class EntityManagerPanel extends HTMLElement {
         <input type="checkbox" class="update-checkbox" data-update-id="${entityId}" ${!hasUpdate ? 'disabled' : ''}>
         <div class="update-icon">📦</div>
         <div class="update-info">
-          <div class="update-title">${title}</div>
+          <div class="update-title">${this.escapeHtml(title)}</div>
           <div class="update-details">
             <div class="update-version">
               <span>Current:</span>
-              <span class="version-badge current">${currentVersion}</span>
+              <span class="version-badge current">${this.escapeHtml(currentVersion)}</span>
             </div>
             ${hasUpdate ? `
               <div class="update-version">
                 <span>→</span>
-                <span class="version-badge ${isBeta ? 'beta' : 'latest'}">${latestVersion}</span>
+                <span class="version-badge ${isBeta ? 'beta' : 'latest'}">${this.escapeHtml(latestVersion)}</span>
               </div>
             ` : '<span style="color: var(--em-success);">✓ Up to date</span>'}
           </div>
@@ -3021,16 +3032,16 @@ class EntityManagerPanel extends HTMLElement {
           const items = group.devices.map(d => `
             <div class="entity-list-item">
               <div class="entity-list-row">
-                <span class="entity-list-name">${d.name}</span>
-                <span class="entity-list-id-inline">${d.id}</span>
-                ${d.meta ? `<span class="entity-list-id-inline">${d.meta}</span>` : ''}
+                <span class="entity-list-name">${this.escapeHtml(d.name)}</span>
+                <span class="entity-list-id-inline">${this.escapeHtml(d.id)}</span>
+                ${d.meta ? `<span class="entity-list-id-inline">${this.escapeHtml(d.meta)}</span>` : ''}
               </div>
             </div>
           `).join('');
 
           return `
             <div class="entity-list-group">
-              <div class="entity-list-group-title">${groupTitle}</div>
+              <div class="entity-list-group-title">${this.escapeHtml(groupTitle)}</div>
               ${items}
             </div>
           `;
@@ -3094,9 +3105,9 @@ class EntityManagerPanel extends HTMLElement {
       const entityList = entities.map(e => `
         <div class="entity-list-item">
           <div class="entity-list-row">
-            <span class="entity-list-name">${e.name}</span>
-            <span class="entity-list-id-inline">${e.id}</span>
-            ${e.meta ? `<span class="entity-list-id-inline">${e.meta}</span>` : ''}
+            <span class="entity-list-name">${this.escapeHtml(e.name)}</span>
+            <span class="entity-list-id-inline">${this.escapeHtml(e.id)}</span>
+            ${e.meta ? `<span class="entity-list-id-inline">${this.escapeHtml(e.meta)}</span>` : ''}
             ${allowToggle ? `
               <button class="entity-list-toggle ${e.state === 'on' ? 'on' : 'off'}" data-entity-id="${e.id}" data-entity-type="${type}">
                 ${e.state === 'on' ? 'On' : 'Off'}
@@ -3163,7 +3174,7 @@ class EntityManagerPanel extends HTMLElement {
     overlay.innerHTML = `
       <div class="confirm-dialog-box ${extraClass}">
         <div class="confirm-dialog-header"${color ? ` style="border-color: ${color};"` : ''}>
-          <h2${color ? ` style="color: ${color};"` : ''}>${title}</h2>
+          <h2${color ? ` style="color: ${color};"` : ''}>${this.escapeHtml(title)}</h2>
         </div>
         ${contentHtml}
         <div class="confirm-dialog-actions">
@@ -3205,7 +3216,7 @@ class EntityManagerPanel extends HTMLElement {
       color: 'var(--em-primary)',
       contentHtml: `
         <div class="confirm-dialog-content">
-          <p>${message}</p>
+          <p>${this.escapeHtml(message)}</p>
         </div>
       `,
       actionsHtml: `
@@ -3231,9 +3242,9 @@ class EntityManagerPanel extends HTMLElement {
       color: 'var(--em-primary)',
       contentHtml: `
         <div class="confirm-dialog-content">
-          <p style="margin-bottom: 12px;">Current Entity ID: <strong>${entityId}</strong></p>
+          <p style="margin-bottom: 12px;">Current Entity ID: <strong>${this.escapeHtml(entityId)}</strong></p>
           <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
-          <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${entityId.split('.')[1]}">
+          <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${this.escapeHtml(entityId.split('.')[1])}" pattern="[a-z0-9_]+" title="Only lowercase letters, numbers, and underscores">
           <p style="margin-top: 8px; font-size: 14px; color: #f44336;">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
         </div>
       `,
@@ -3254,6 +3265,10 @@ class EntityManagerPanel extends HTMLElement {
       const newName = input.value.trim();
       if (!newName) {
         this.showErrorDialog('Please enter a valid entity name');
+        return;
+      }
+      if (!/^[a-z0-9_]+$/.test(newName)) {
+        this.showErrorDialog('Entity name can only contain lowercase letters, numbers, and underscores');
         return;
       }
       
