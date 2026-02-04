@@ -272,6 +272,43 @@ async def handle_rename_entity(
         connection.send_error(msg["id"], "rename_failed", str(err))
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/export_states",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_export_states(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle export entity states request."""
+    try:
+        entity_reg = er.async_get(hass)
+
+        export_data = []
+        for entity in entity_reg.entities.values():
+            export_data.append(
+                {
+                    "entity_id": entity.entity_id,
+                    "platform": entity.platform or "unknown",
+                    "device_id": entity.device_id,
+                    "disabled_by": entity.disabled_by.value if entity.disabled_by else None,
+                    "is_disabled": bool(entity.disabled),
+                    "original_name": entity.original_name,
+                    "entity_category": entity.entity_category.value if entity.entity_category else None,
+                }
+            )
+
+        export_data.sort(key=lambda e: e["entity_id"])
+        connection.send_result(msg["id"], export_data)
+    except Exception as err:
+        _LOGGER.error("Error exporting entity states: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "export_failed", str(err))
+
+
 @callback
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
@@ -281,4 +318,5 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_bulk_enable)
     websocket_api.async_register_command(hass, handle_bulk_disable)
     websocket_api.async_register_command(hass, handle_rename_entity)
+    websocket_api.async_register_command(hass, handle_export_states)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")

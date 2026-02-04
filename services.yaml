@@ -64,3 +64,7 @@ rename_entity:
       example: "sensor.new_name"
       selector:
         text:
+
+export_states:
+  name: Export Entity States
+  description: Export all entity states as JSON for backup
