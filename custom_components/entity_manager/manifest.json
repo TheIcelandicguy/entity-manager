@@ -8,6 +8,7 @@
   "config_flow": true,
   "dependencies": [],
   "version": "2.5.0",
+  "integration_type": "service",
   "iot_class": "calculated",
   "icon": "icon.svg"
 }
