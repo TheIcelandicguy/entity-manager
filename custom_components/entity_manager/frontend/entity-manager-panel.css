@@ -223,17 +223,18 @@ entity-manager-panel {
 }
 
 .theme-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
+  top: 72px;
+  right: 24px;
   background: var(--em-bg-primary);
   border: 1px solid var(--em-border);
   border-radius: 8px;
   box-shadow: var(--em-shadow-hover);
-  min-width: 200px;
-  z-index: 200;
+  min-width: 220px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 10000;
   display: none;
-  overflow: hidden;
 }
 
 .theme-dropdown-menu.active {
