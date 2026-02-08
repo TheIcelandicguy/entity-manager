@@ -607,7 +607,7 @@ entity-manager-panel.has-bg-image .app-header {
 
 #main-content {
   padding: var(--dialog-padding);
-  max-width: 1600px;
+  max-width: 100%;
   margin: 0 auto;
   min-height: 100vh;
   background: var(--em-bg-secondary);
@@ -653,6 +653,9 @@ entity-manager-panel.has-bg-image .app-header {
   margin-bottom: 24px;
   flex-wrap: wrap;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .filter-group {
@@ -663,18 +666,24 @@ entity-manager-panel.has-bg-image .app-header {
   padding: 4px;
   border-radius: 12px;
   border: 2px solid var(--em-primary-dark);
+  flex-wrap: wrap;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filter-toggle {
-  padding: 10px 16px;
+  padding: 8px 12px;
   border: 2px solid var(--em-primary-dark);
   background: transparent;
   border-radius: 10px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--em-text-secondary);
   transition: all 0.3s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .filter-toggle:hover {
@@ -739,7 +748,8 @@ entity-manager-panel.has-bg-image .app-header {
 
 .domain-dropdown {
   position: relative;
-  min-width: 180px;
+  min-width: 120px;
+  flex-shrink: 1;
 }
 
 .domain-button {
@@ -1158,8 +1168,9 @@ body.em-dialog-open {
 }
 
 .search-box {
-  flex: 1;
-  min-width: 280px;
+  flex: 1 1 200px;
+  min-width: 150px;
+  max-width: 100%;
   padding: 12px 16px;
   border: 2px solid var(--em-primary-dark);
   border-radius: 12px;
@@ -1207,14 +1218,16 @@ body.em-dialog-open {
 }
 
 .btn {
-  padding: 10px 20px;
+  padding: 8px 16px;
   border: 2px solid transparent;
   border-radius: 10px;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn:active {
@@ -1282,23 +1295,25 @@ body.em-dialog-open {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
   margin-bottom: 24px;
+  width: 100%;
   max-width: 100%;
   overflow: hidden;
 }
 
 .stat-card {
   background: var(--em-bg-primary);
-  padding: 24px;
+  padding: 16px;
   border-radius: 16px;
   border: 2px solid var(--em-primary);
   box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15), inset 0 0 0 1px rgba(33, 150, 243, 0.1);
   transition: all 0.3s ease;
   text-align: center;
   flex: 1 1 auto;
-  min-width: 120px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stat-card:hover {
@@ -1371,11 +1386,13 @@ body.em-dialog-open {
 .integration-header {
   display: flex;
   align-items: center;
-  padding: 18px 20px;
+  padding: 14px 16px;
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid var(--divider-color);
   transition: background 0.2s ease;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .integration-header:hover {
@@ -2670,7 +2687,7 @@ kbd {
   height: calc(100vh - 64px); /* Fallback height (viewport minus header) */
   overflow: hidden;
   width: 100%;
-  max-width: 100%;
+  max-width: 100vw;
 }
 
 #main-content {
@@ -2678,13 +2695,15 @@ kbd {
   overflow-y: auto;
   overflow-x: hidden;
   transition: margin-left 0.3s ease;
-  padding: 0;
+  padding: 24px;
   min-width: 0; /* Allow flex item to shrink below content size */
-  max-width: 100%;
+  max-width: calc(100vw - 250px);
+  box-sizing: border-box;
 }
 
 #main-content.sidebar-collapsed {
   margin-left: 0;
+  max-width: calc(100vw - 50px);
 }
 
 /* ===== ACTIVITY LOG ===== */
