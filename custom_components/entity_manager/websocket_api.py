@@ -111,9 +111,6 @@ async def handle_get_disabled_entities(
         vol.Required("entity_id"): cv.entity_id,
     }
 )
-        vol.Required("entity_id"): str,
-    }
-)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def handle_enable_entity(
@@ -124,7 +121,7 @@ async def handle_enable_entity(
     """Handle enable entity request."""
     entity_reg = er.async_get(hass)
     entity_id = msg["entity_id"]
-    
+
     try:
         entity_reg.async_update_entity(entity_id, disabled_by=None)
         connection.send_result(msg["id"], {"success": True})
@@ -139,9 +136,6 @@ async def handle_enable_entity(
         vol.Required("entity_id"): cv.entity_id,
     }
 )
-        vol.Required("entity_id"): str,
-    }
-)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def handle_disable_entity(
@@ -152,7 +146,7 @@ async def handle_disable_entity(
     """Handle disable entity request."""
     entity_reg = er.async_get(hass)
     entity_id = msg["entity_id"]
-    
+
     try:
         entity_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
         connection.send_result(msg["id"], {"success": True})
@@ -167,9 +161,6 @@ async def handle_disable_entity(
         vol.Required("entity_ids"): vol.All([cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)),
     }
 )
-        vol.Required("entity_ids"): [str],
-    }
-)
 @websocket_api.require_admin
 @websocket_api.async_response
 async def handle_bulk_enable(
@@ -180,9 +171,9 @@ async def handle_bulk_enable(
     """Handle bulk enable request."""
     entity_reg = er.async_get(hass)
     entity_ids = msg["entity_ids"]
-    
+
     results = {"success": [], "failed": []}
-    
+
     for entity_id in entity_ids:
         try:
             entity_reg.async_update_entity(entity_id, disabled_by=None)
@@ -190,7 +181,7 @@ async def handle_bulk_enable(
         except Exception as err:
             _LOGGER.error("Error enabling entity %s: %s", entity_id, err)
             results["failed"].append({"entity_id": entity_id, "error": str(err)})
-    
+
     connection.send_result(msg["id"], results)
 
 
@@ -198,9 +189,6 @@ async def handle_bulk_enable(
     {
         vol.Required("type"): "entity_manager/bulk_disable",
         vol.Required("entity_ids"): vol.All([cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)),
-    }
-)
-        vol.Required("entity_ids"): [str],
     }
 )
 @websocket_api.require_admin
@@ -213,9 +201,9 @@ async def handle_bulk_disable(
     """Handle bulk disable request."""
     entity_reg = er.async_get(hass)
     entity_ids = msg["entity_ids"]
-    
+
     results = {"success": [], "failed": []}
-    
+
     for entity_id in entity_ids:
         try:
             entity_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
@@ -223,7 +211,7 @@ async def handle_bulk_disable(
         except Exception as err:
             _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
             results["failed"].append({"entity_id": entity_id, "error": str(err)})
-    
+
     connection.send_result(msg["id"], results)
 
 
@@ -232,10 +220,6 @@ async def handle_bulk_disable(
         vol.Required("type"): "entity_manager/rename_entity",
         vol.Required("old_entity_id"): cv.entity_id,
         vol.Required("new_entity_id"): cv.entity_id,
-    }
-)
-        vol.Required("old_entity_id"): str,
-        vol.Required("new_entity_id"): str,
     }
 )
 @websocket_api.require_admin
@@ -249,7 +233,7 @@ async def handle_rename_entity(
     entity_reg = er.async_get(hass)
     old_entity_id = msg["old_entity_id"]
     new_entity_id = msg["new_entity_id"]
-    
+
     try:
         # Validate entity ID format
         if not VALID_ENTITY_ID.match(new_entity_id):
@@ -263,7 +247,6 @@ async def handle_rename_entity(
         old_entity = entity_reg.async_get(old_entity_id)
         if not old_entity:
             raise ValueError(f"Entity {old_entity_id} not found")
-        
 
         # Validate domain matches
         old_domain = old_entity_id.split(".")[0]
@@ -276,10 +259,10 @@ async def handle_rename_entity(
         # Check if new entity ID is already taken
         if entity_reg.async_get(new_entity_id):
             raise ValueError(f"Entity {new_entity_id} already exists")
-        
+
         # Update the entity ID in the entity registry
         entity_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
-        
+
         _LOGGER.info("Renamed entity from %s to %s", old_entity_id, new_entity_id)
         connection.send_result(msg["id"], {
             "success": True,

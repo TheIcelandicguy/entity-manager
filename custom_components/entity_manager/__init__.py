@@ -1,5 +1,4 @@
 """Entity Manager Integration."""
-import json
 import logging
 from pathlib import Path
 
@@ -11,15 +10,11 @@ from homeassistant.components.http import StaticPathConfig  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
 
-from homeassistant.helpers import entity_registry as er  # type: ignore
-
 from .const import DOMAIN
 from .websocket_api import async_setup_ws_api
 from .voice_assistant import async_setup_intents
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN = "entity_manager"
 
 SERVICE_ENABLE_ENTITY = "enable_entity"
 SERVICE_DISABLE_ENTITY = "disable_entity"
@@ -27,9 +22,6 @@ SERVICE_DISABLE_ENTITY = "disable_entity"
 SERVICE_SCHEMA = vol.Schema({
     vol.Required("entity_id"): cv.entity_id,
 })
-
-SERVICE_ENABLE_ENTITY = "enable_entity"
-SERVICE_DISABLE_ENTITY = "disable_entity"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -39,7 +31,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Entity Manager from a config entry."""
-    
+
     # Register frontend resources
     frontend_path = Path(__file__).parent / "frontend"
     await hass.http.async_register_static_paths([
@@ -49,7 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             True
         )
     ])
-    
+
     # Register WebSocket API
     async_setup_ws_api(hass)
 
@@ -57,12 +49,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_setup_intents(hass)
 
     # Register services
-    entity_reg = er.async_get(hass)
-
     async def handle_enable_entity(call):
         """Handle enable entity service call."""
         entity_id = call.data.get("entity_id")
         if entity_id:
+            entity_reg = er.async_get(hass)
             try:
                 entity_reg.async_update_entity(entity_id, disabled_by=None)
                 _LOGGER.info("Enabled entity: %s", entity_id)
@@ -75,9 +66,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Handle disable entity service call."""
         entity_id = call.data.get("entity_id")
         if entity_id:
+            entity_reg = er.async_get(hass)
             try:
                 entity_reg.async_update_entity(
-                    entity_id, 
+                    entity_id,
                     disabled_by=er.RegistryEntryDisabler.USER
                 )
                 _LOGGER.info("Disabled entity: %s", entity_id)
@@ -102,13 +94,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register the frontend panel
     manifest_path = Path(__file__).parent / "manifest.json"
-    with open(manifest_path, encoding="utf-8") as f:
-        version = json.load(f).get("version", "0")
-    )
+    manifest = await hass.async_add_executor_job(manifest_path.read_text)
+    import json
+    version = json.loads(manifest).get("version", "0")
 
-    # Register the frontend resources
-    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
-    version = manifest["version"]
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -127,7 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     _LOGGER.info("Entity Manager panel registered")
-    
+
     return True
 
 
