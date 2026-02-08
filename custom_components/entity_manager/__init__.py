@@ -11,6 +11,9 @@ from homeassistant.components.http import StaticPathConfig  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 from homeassistant.helpers import entity_registry as er  # type: ignore
 
+from homeassistant.helpers import entity_registry as er  # type: ignore
+
+from .const import DOMAIN
 from .websocket_api import async_setup_ws_api
 from .voice_assistant import async_setup_intents
 
@@ -24,6 +27,9 @@ SERVICE_DISABLE_ENTITY = "disable_entity"
 SERVICE_SCHEMA = vol.Schema({
     vol.Required("entity_id"): cv.entity_id,
 })
+
+SERVICE_ENABLE_ENTITY = "enable_entity"
+SERVICE_DISABLE_ENTITY = "disable_entity"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -98,6 +104,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manifest_path = Path(__file__).parent / "manifest.json"
     with open(manifest_path, encoding="utf-8") as f:
         version = json.load(f).get("version", "0")
+    )
+
+    # Register the frontend resources
+    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text())
+    version = manifest["version"]
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
