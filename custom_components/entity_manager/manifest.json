@@ -7,6 +7,6 @@
   "codeowners": ["@TheIcelandicguy"],
   "config_flow": true,
   "dependencies": [],
-  "version": "2.6.0",
+  "version": "2.6.1",
   "iot_class": "calculated"
 }
