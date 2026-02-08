@@ -655,7 +655,7 @@ entity-manager-panel.has-bg-image .app-header {
   align-items: center;
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .filter-group {
