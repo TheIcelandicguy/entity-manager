@@ -6,9 +6,9 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN
 
-DOMAIN = "entity_manager"
+_LOGGER = logging.getLogger(__name__)
 
 
 class EntityManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
