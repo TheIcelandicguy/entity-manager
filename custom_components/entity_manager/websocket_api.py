@@ -6,10 +6,12 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
+MAX_BULK_ENTITIES = 500
 VALID_ENTITY_ID = re.compile(r"^[a-z][a-z0-9_]*\.[a-z0-9_]+$")
 
 
@@ -106,6 +108,9 @@ async def handle_get_disabled_entities(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/enable_entity",
+        vol.Required("entity_id"): cv.entity_id,
+    }
+)
         vol.Required("entity_id"): str,
     }
 )
@@ -131,6 +136,9 @@ async def handle_enable_entity(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/disable_entity",
+        vol.Required("entity_id"): cv.entity_id,
+    }
+)
         vol.Required("entity_id"): str,
     }
 )
@@ -156,6 +164,9 @@ async def handle_disable_entity(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/bulk_enable",
+        vol.Required("entity_ids"): vol.All([cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)),
+    }
+)
         vol.Required("entity_ids"): [str],
     }
 )
@@ -186,6 +197,9 @@ async def handle_bulk_enable(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/bulk_disable",
+        vol.Required("entity_ids"): vol.All([cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)),
+    }
+)
         vol.Required("entity_ids"): [str],
     }
 )
@@ -216,6 +230,10 @@ async def handle_bulk_disable(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/rename_entity",
+        vol.Required("old_entity_id"): cv.entity_id,
+        vol.Required("new_entity_id"): cv.entity_id,
+    }
+)
         vol.Required("old_entity_id"): str,
         vol.Required("new_entity_id"): str,
     }
@@ -245,6 +263,7 @@ async def handle_rename_entity(
         old_entity = entity_reg.async_get(old_entity_id)
         if not old_entity:
             raise ValueError(f"Entity {old_entity_id} not found")
+        
 
         # Validate domain matches
         old_domain = old_entity_id.split(".")[0]

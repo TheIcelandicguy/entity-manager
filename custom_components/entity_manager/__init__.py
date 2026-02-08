@@ -2,10 +2,15 @@
 import json
 import logging
 from pathlib import Path
+
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.components import frontend  # type: ignore
 from homeassistant.components.http import StaticPathConfig  # type: ignore
+from homeassistant.helpers import config_validation as cv  # type: ignore
+from homeassistant.helpers import entity_registry as er  # type: ignore
+
 from homeassistant.helpers import entity_registry as er  # type: ignore
 
 from .const import DOMAIN
@@ -13,6 +18,15 @@ from .websocket_api import async_setup_ws_api
 from .voice_assistant import async_setup_intents
 
 _LOGGER = logging.getLogger(__name__)
+
+DOMAIN = "entity_manager"
+
+SERVICE_ENABLE_ENTITY = "enable_entity"
+SERVICE_DISABLE_ENTITY = "disable_entity"
+
+SERVICE_SCHEMA = vol.Schema({
+    vol.Required("entity_id"): cv.entity_id,
+})
 
 SERVICE_ENABLE_ENTITY = "enable_entity"
 SERVICE_DISABLE_ENTITY = "disable_entity"
@@ -76,12 +90,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN,
         SERVICE_ENABLE_ENTITY,
         handle_enable_entity,
+        schema=SERVICE_SCHEMA,
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_DISABLE_ENTITY,
         handle_disable_entity,
+        schema=SERVICE_SCHEMA,
+    )
+
+    # Register the frontend panel
+    manifest_path = Path(__file__).parent / "manifest.json"
+    with open(manifest_path, encoding="utf-8") as f:
+        version = json.load(f).get("version", "0")
     )
 
     # Register the frontend resources
