@@ -1,5 +1,15 @@
 # Changelog
 
+## Version 2.6.1 - Bug Fix
+
+### 🐛 Bug Fixes
+- **Fixed Icon Availability**: Removed invalid `"icon"` field from manifest.json that was not supported by Home Assistant
+  - The `"icon"` field in manifest.json is not part of the official Home Assistant integration manifest specification
+  - Integration icons must be submitted to the [home-assistant/brands](https://github.com/home-assistant/brands) repository to appear in the UI
+  - This fix ensures the integration manifest is compliant with Home Assistant standards
+
+---
+
 ## Version 2.5.0 - Update Manager & UI Improvements
 
 ### 🔄 Firmware Update Manager
