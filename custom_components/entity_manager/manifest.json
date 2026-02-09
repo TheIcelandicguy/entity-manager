@@ -6,7 +6,8 @@
   "requirements": [],
   "codeowners": ["@TheIcelandicguy"],
   "config_flow": true,
-  "dependencies": [],
-  "version": "2.6.1",
+  "dependencies": ["frontend"],
+  "version": "2.7.0",
+  "integration_type": "service",
   "iot_class": "calculated"
 }
