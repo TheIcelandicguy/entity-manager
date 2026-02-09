@@ -27,7 +27,6 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Export & Import](#export--import)
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
-  - [Keyboard Shortcuts](#keyboard-shortcuts)
   - [Voice Assistant](#voice-assistant)
   - [Statistics Dashboard](#statistics-dashboard)
   - [Mobile & Responsive Design](#mobile--responsive-design)
@@ -197,22 +196,7 @@ Right-click any entity (or multi-selection) for a full context menu:
 - Bulk Add Labels
 - Bulk Compare
 - Clear Selection
-### Keyboard Shortcuts
-| Shortcut | Action |
-|---|---|
-| `Ctrl+F` | Focus search box |
-| `Ctrl+A` | Select all visible entities |
-| `Ctrl+Shift+A` | Deselect all |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
-| `Ctrl+R` | Refresh data |
-| `Ctrl+B` | Toggle sidebar |
-| `Ctrl+E` | Export configuration |
-| `Ctrl+G` | Toggle smart groups |
-| `Ctrl+Shift+R` | Open bulk rename |
-| `Delete` | Disable selected entities |
-| `Escape` | Close dialogs |
-| `?` | Show keyboard shortcuts help |
+
 ### Voice Assistant
 Control Entity Manager hands-free with voice commands:
 - *"Enable entity {name}"*
