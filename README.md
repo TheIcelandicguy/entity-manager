@@ -1,48 +1,380 @@
 # Entity Manager for Home Assistant
-
-Entity Manager is a powerful integration tool designed for Home Assistant users, offering centralized management of all entities within your smart home ecosystem. This tool enhances organization, efficiency, and ease of use with a modern, responsive user interface. It provides a comprehensive suite of features to simplify the way you handle and customize your devices and integrations.
-
-## 🛠 Features
-
-### Centralized Entity Management
-- View and organize all entities by integration and device.
-- Bulk-enable or disable entities based on need.
-- Perform real-time entity state updates.
-
-### Customization Tools
-- Rename entities while maintaining domain consistency (e.g., 'sensor.').
-- Propagate name changes across scripts, automations, and helpers.
-- Customize themes and layout preferences.
-
-### Firmware Update Assistant
-- Manage updates across devices and integrations in a single place.
-- View detailed release notes before applying updates.
-- Handle bulk updates with easy, intuitive controls.
-
-### Filtering and Search
-- Advanced search tools to locate entities using name, domain type, or integration ID.
-- Apply domain filters (e.g., lights, motion sensors) for focused management.
-- Use live state filters for enabled, disabled, or to-be-updated entities.
-
-### User Interface
-- Sleek UI with automatic light/dark mode based on system preferences.
-- Responsive design tailored for both mobile and desktop platforms.
-
-### Support Features
-- Interactive help guides and tooltips for new users.
-- Clear confirmation dialogs to prevent accidental changes.
-- Log and activity tracking for transparency.
-
-## 🚀 Getting Started
-
-### Installation
-Entity Manager can be installed through HACS (Home Assistant Community Store) for seamless setup.
-- Open HACS and add the Entity Manager repository.
-- Restart Home Assistant and navigate to the integration panel.
-
-### Usage
-- After installation, find Entity Manager in your Home Assistant sidebar.
-- Use the dashboard to manage entities, perform updates, and customize your setup.
-
-## 🤝 Contributions
-Contributions are welcome. Feel free to report issues or submit pull requests to enhance the project. Let us make smart home management even smarter!
+A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, compare, analyze, and bulk-manage entities and firmware updates from a single modern interface.
+![Version](https://img.shields.io/badge/version-2.6.1-blue)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
+![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
+[![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
+![License](https://img.shields.io/badge/license-MIT-green)
+---
+## Table of Contents
+- [Features](#features)
+  - [Entity Management](#entity-management)
+  - [Entity Renaming](#entity-renaming)
+  - [Search & Filtering](#search--filtering)
+  - [Sidebar Navigation](#sidebar-navigation)
+  - [Smart Grouping](#smart-grouping)
+  - [Favorites](#favorites)
+  - [Custom Tags](#custom-tags)
+  - [Entity Aliases](#entity-aliases)
+  - [Labels Integration](#labels-integration)
+  - [Entity Comparison](#entity-comparison)
+  - [Entity Analysis](#entity-analysis)
+  - [Activity Log](#activity-log)
+  - [Undo / Redo](#undo--redo)
+  - [Filter Presets](#filter-presets)
+  - [Column Customization](#column-customization)
+  - [Firmware Update Manager](#firmware-update-manager)
+  - [Export & Import](#export--import)
+  - [Theme System](#theme-system)
+  - [Context Menu](#context-menu)
+  - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Voice Assistant](#voice-assistant)
+  - [Statistics Dashboard](#statistics-dashboard)
+  - [Mobile & Responsive Design](#mobile--responsive-design)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Technical Details](#technical-details)
+- [Screenshots](#screenshots)
+- [Contributing](#contributing)
+- [License](#license)
+---
+## Features
+### Entity Management
+- View all entities organized by **Integration > Device > Entity**
+- Enable or disable individual entities with one click
+- Bulk enable/disable with confirmation dialogs (up to 500 entities at once)
+- Real-time entity state display with color-coded status badges
+- Alphabetically sorted integrations for easy navigation
+- Device grouping with entity counts per device and integration
+### Entity Renaming
+- Click-to-rename any entity directly from the panel
+- **Domain preservation** -- the `sensor.`, `light.`, etc. prefix is locked and stays intact
+- **Automatic propagation** across automations, scripts, and helpers
+- Conflict validation prevents duplicate entity IDs
+- **Bulk rename** with regex find/replace -- preview changes before applying
+- Case-sensitive and regex pattern matching options
+### Search & Filtering
+Entity Manager provides multiple ways to find exactly what you need:
+| Filter Type | Description |
+|---|---|
+| **Text Search** | Search across entity IDs, names, integrations, and devices in real time |
+| **Domain Filter** | Dropdown to filter by entity type (sensor, light, switch, binary_sensor, etc.) |
+| **State Filter** | Toggle between All, Enabled, or Disabled with live entity counts |
+| **Integration Filter** | Click an integration in the sidebar to show only its entities |
+| **Label Filter** | Filter by Home Assistant labels |
+| **Tag Filter** | Filter by custom tags using `#tagname` syntax |
+| **Filter Presets** | Save and load your favorite filter combinations |
+All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
+### Sidebar Navigation
+A collapsible sidebar provides quick access to every feature:
+- **Actions** -- Undo, Redo, Export, Import
+- **Quick Filters** -- Favorites, Activity Log, Comparison View, Column Settings
+- **Labels** -- Browse and filter by Home Assistant labels with entity counts
+- **Smart Groups** -- Switch between grouping modes
+- **Integrations** -- Quick-filter list with integration icons from Home Assistant Brands
+- **Help** -- Built-in guide and keyboard shortcuts reference
+Toggle the sidebar with **Ctrl+B** or the mobile menu button. Collapse state is remembered between sessions.
+### Smart Grouping
+Group entities by different criteria to get the view you need:
+- **Integration** (default) -- organized by integration and device
+- **Room / Area** -- grouped by Home Assistant area assignments
+- **Type** -- grouped by entity domain (all sensors together, all lights together, etc.)
+Toggle with **Ctrl+G** or from the sidebar. Your preference is saved.
+### Favorites
+- Star any entity to mark it as a favorite
+- Dedicated **Favorites** filter in the sidebar shows only starred entities
+- Favorites count displayed in the sidebar
+- Add/remove via right-click context menu or bulk selection
+- Persisted in browser local storage
+### Custom Tags
+- Add unlimited custom tags to any entity (e.g., `#critical`, `#outdoor`, `#basement`)
+- Tag chips displayed on entities with one-click removal
+- Search entities by tag using `#` prefix in the search box
+- Auto-complete suggestions from your existing tags
+- Manage tags via right-click context menu
+- Persisted in browser local storage
+### Entity Aliases
+- Create custom display names for entities without renaming them
+- Non-destructive -- the actual entity ID is unchanged
+- Set aliases through the right-click context menu
+- Persisted in browser local storage
+### Labels Integration
+- View and filter by **Home Assistant's built-in label system**
+- Create new labels directly from Entity Manager
+- Labels shown in the sidebar with entity counts
+- Expandable list with refresh capability
+- Label data is cached for performance
+### Entity Comparison
+- Compare up to **4 entities side-by-side** in a table view
+- View all properties and metadata for each entity
+- Add entities via right-click context menu or sidebar
+- Comparison counter shown in the sidebar
+- Clear comparison with one click
+### Entity Analysis
+Right-click any entity to access deep analysis tools:
+- **Impact Analysis** -- shows which automations reference the entity and would be affected by changes
+- **Dependencies** -- displays all related automations and scripts
+- **Statistics** -- detailed entity properties, metadata, and configuration
+- **State History** -- view entity state changes over time
+### Activity Log
+- Tracks your recent operations: enables, disables, renames, and bulk actions
+- Stores up to **100 recent activities** with timestamps
+- Accessible from the sidebar
+- Clear log button to start fresh
+- Persisted in browser local storage
+### Undo / Redo
+Full operation history with unlimited undo/redo:
+- **Ctrl+Z** to undo the last operation
+- **Ctrl+Shift+Z** or **Ctrl+Y** to redo
+- Supports: enable, disable, rename, and all bulk operations
+- Undo/Redo buttons also available in the sidebar
+### Filter Presets
+- Save your current filter configuration (domain, search term, state) as a named preset
+- Load any saved preset to instantly restore a filter combination
+- Delete presets you no longer need
+- Quick-access buttons for each saved preset
+### Column Customization
+Choose which columns to display in the entity table:
+- Entity ID
+- State
+- Device
+- Entity Category
+- Disabled By
+- Automations Count
+- Tags
+- Alias
+Toggle columns from the sidebar **Columns** button. Preferences are saved between sessions.
+### Firmware Update Manager
+A dedicated **Updates** tab to manage all firmware and software updates:
+- View all available updates in one place
+- **Filter by stability**: All Updates, Stable Only, Beta Only
+- **Filter by category**: All Types, Devices Only, Integrations Only
+- **Hide up-to-date** checkbox to focus on pending updates
+- **Select All** checkbox for quick bulk selection
+- View **release notes** before updating
+- **Bulk update** multiple items at once
+- Alphabetical sorting by title
+- Live update count tracking
+### Export & Import
+- **Export entity configurations** to JSON -- includes enabled/disabled states for all entities
+- **Import configurations** from a previously exported JSON file to restore states
+- **Export/Import custom themes** separately
+- Date-stamped export files for easy versioning
+- Access from the sidebar or **Ctrl+E**
+### Theme System
+Entity Manager ships with a comprehensive theming engine:
+**4 Built-in Themes:**
+1. **Default** -- follows your Home Assistant theme
+2. **Dark** -- dedicated dark mode
+3. **High Contrast** -- optimized for accessibility
+4. **Purple** -- alternative color scheme
+**Custom Theme Editor:**
+- Create unlimited custom themes with a visual color picker
+- Customize every color: primary, success, danger, warning, text, backgrounds, borders, shadows
+- **Background image support** with adjustable overlay opacity
+- Light/dark mode toggle per theme
+- Real-time preview with color chips
+- Import/export themes as JSON to share with others
+**Automatic Mode:**
+- Detects Home Assistant light/dark mode
+- Respects system color scheme preferences
+- Manual override available per theme
+### Context Menu
+Right-click any entity (or multi-selection) for a full context menu:
+**Single entity:**
+- Rename / Enable / Disable
+- Add to Favorites
+- Manage Tags / Labels / Alias
+- Add to Comparison
+- View Statistics / State History
+- Show Dependencies / Analyze Impact
+- Copy Entity ID
+- Open in Home Assistant
+**Multiple entities selected:**
+- Bulk Rename (with regex)
+- Bulk Enable / Disable
+- Bulk Add to Favorites
+- Bulk Add Labels
+- Bulk Compare
+- Clear Selection
+### Keyboard Shortcuts
+| Shortcut | Action |
+|---|---|
+| `Ctrl+F` | Focus search box |
+| `Ctrl+A` | Select all visible entities |
+| `Ctrl+Shift+A` | Deselect all |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
+| `Ctrl+R` | Refresh data |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+E` | Export configuration |
+| `Ctrl+G` | Toggle smart groups |
+| `Ctrl+Shift+R` | Open bulk rename |
+| `Delete` | Disable selected entities |
+| `Escape` | Close dialogs |
+| `?` | Show keyboard shortcuts help |
+### Voice Assistant
+Control Entity Manager hands-free with voice commands:
+- *"Enable entity {name}"*
+- *"Disable entity {name}"*
+- *"Activate entity {name}"*
+- *"Deactivate entity {name}"*
+- *"Registry enable/disable {name}"*
+Voice commands enforce admin-only access for safety.
+### Statistics Dashboard
+The toolbar displays live stats for your Home Assistant instance:
+- Integration count
+- Device count
+- Total entity count
+- Automation count
+- Script count
+- Helper count
+- Update count (amber-highlighted when updates are available)
+### Mobile & Responsive Design
+- Fully responsive layout for phones, tablets, and desktops
+- Collapsible sidebar with dedicated mobile toggle button
+- Touch-friendly buttons and controls
+- Optimized dialogs and overlays for small screens
+- Auto-close sidebar on mobile when tapping outside
+---
+## Installation
+### HACS (Recommended)
+1. Open **HACS** in Home Assistant
+2. Go to **Integrations**
+3. Click the three dots menu in the top right
+4. Select **Custom repositories**
+5. Add `https://github.com/TheIcelandicguy/entity-manager` as an **Integration**
+6. Click **Install**
+7. Restart Home Assistant
+### Manual Installation
+1. Download the `custom_components/entity_manager` folder from this repository
+2. Copy it to your Home Assistant `custom_components` directory
+3. Restart Home Assistant
+---
+## Usage
+### Getting Started
+1. After installation, go to **Settings > Integrations > Add Integration**
+2. Search for **Entity Manager** and add it
+3. The **Entity Manager** panel will appear in your Home Assistant sidebar
+4. Click it to open the full management interface
+### Managing Entities
+- **Expand an integration** to see all its devices and entities
+- Click the **checkmark** to enable or the **X** to disable an entity
+- Use **Enable All / Disable All** buttons for entire integrations
+- **Select multiple entities** with checkboxes, then use bulk actions in the toolbar
+### Renaming Entities
+1. Click the **pencil icon** next to any entity
+2. Edit the name (the domain prefix is locked)
+3. Click **Rename** to confirm
+4. The change automatically propagates across all automations, scripts, and helpers
+### Using Filters
+- Pick a **domain** from the dropdown to narrow by entity type
+- Type in the **search box** to find entities by name, ID, or integration
+- Click **Enabled / Disabled / Updates** buttons to filter by state
+- Click an **integration** in the sidebar to show only its entities
+- Use **#tagname** in search to find tagged entities
+### Managing Updates
+1. Click the **Updates** filter button in the toolbar
+2. Use the filter dropdowns to narrow by stability or category
+3. Check the **Select All** box or pick individual updates
+4. Click **Update Selected** to apply
+---
+## Technical Details
+### Requirements
+- **Home Assistant** 2024.1.0 or later
+- Modern web browser with ES6+ support
+- Admin user account (all operations require admin privileges)
+### Architecture
+```
+Frontend (Vanilla JS Web Component)
+         | WebSocket
+Backend (Python WebSocket API)
+         |
+Home Assistant Entity & Device Registries
+```
+### Components
+| Component | Description |
+|---|---|
+| `__init__.py` | Integration setup, service registration, sidebar panel |
+| `websocket_api.py` | 7 WebSocket command handlers |
+| `voice_assistant.py` | Voice intent handlers |
+| `config_flow.py` | UI-based configuration flow |
+| `entity-manager-panel.js` | Full frontend as a single web component |
+| `entity-manager-panel.css` | Extracted stylesheet |
+### WebSocket API
+| Command | Parameters | Description |
+|---|---|---|
+| `entity_manager/get_disabled_entities` | `state`: disabled, enabled, or all | Fetch entities grouped by integration/device |
+| `entity_manager/enable_entity` | `entity_id` | Enable a single entity |
+| `entity_manager/disable_entity` | `entity_id` | Disable a single entity |
+| `entity_manager/bulk_enable` | `entity_ids` (max 500) | Enable multiple entities |
+| `entity_manager/bulk_disable` | `entity_ids` (max 500) | Disable multiple entities |
+| `entity_manager/rename_entity` | `entity_id`, `new_entity_id` | Rename an entity |
+| `entity_manager/export_states` | -- | Export all entity states to JSON |
+### Home Assistant Services
+- `entity_manager.enable_entity`
+- `entity_manager.disable_entity`
+- `entity_manager.bulk_enable`
+- `entity_manager.bulk_disable`
+- `entity_manager.rename_entity`
+- `entity_manager.export_states`
+### Local Storage Keys
+Entity Manager stores user preferences in the browser:
+| Key | Data |
+|---|---|
+| `em-favorites` | Starred entities |
+| `em-activity-log` | Recent operation history |
+| `em-custom-themes` | User-created themes |
+| `em-active-theme` | Currently selected theme |
+| `em-entity-tags` | Custom entity tags |
+| `em-entity-aliases` | Entity display aliases |
+| `em-filter-presets` | Saved filter combinations |
+| `em-visible-columns` | Column visibility preferences |
+| `em-sidebar-collapsed` | Sidebar state |
+| `em-smart-group-mode` | Active grouping mode |
+| `em-entity-order` | Custom entity ordering |
+---
+## Screenshots
+### Light Theme
+![Entity Manager Light Mode](screenshots/light-mode.png)
+### Rename Dialog
+![Rename Entity](screenshots/rename-dialog.png)
+---
+## Use Cases
+- **Cleaning up after integrations** -- disable the dozens of unused entities that some integrations create
+- **Organizing large systems** -- manage hundreds of entities efficiently with filters, tags, and groups
+- **Standardizing naming** -- bulk rename entities with regex to fix naming conventions across your setup
+- **Troubleshooting** -- analyze entity dependencies and automation impact before making changes
+- **Performance optimization** -- disable unnecessary entities to reduce system load
+- **Firmware management** -- keep all devices and integrations up to date from one screen
+- **Backup & restore** -- export entity configurations before major changes, import to roll back
+---
+## Troubleshooting
+### Panel Not Showing
+- Ensure the integration is added via **Settings > Integrations**
+- Check that your user has **admin privileges**
+### Frontend Not Updating
+- Clear your browser cache (Ctrl+Shift+R)
+- Check the browser console for JavaScript errors
+### Debug Logging
+Add to your `configuration.yaml`:
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.entity_manager: debug
+```
+---
+## Contributing
+Contributions are welcome! Please feel free to submit a Pull Request.
+## License
+This project is licensed under the MIT License -- see the [LICENSE](LICENSE) file for details.
+## Author
+**TheIcelandicguy**
+- GitHub: [@TheIcelandicguy](https://github.com/TheIcelandicguy)
+## Acknowledgments
+- Home Assistant community for inspiration and support
+- [Home Assistant Brands](https://github.com/home-assistant/brands) for integration icons
+- All contributors and users of Entity Manager
+---
+**If you find this integration helpful, please consider giving it a star on GitHub!**
