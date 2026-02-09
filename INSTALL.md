@@ -15,7 +15,7 @@
 3. Click the **three dots** (⋮) in the top right corner
 4. Select **Custom repositories**
 5. Add the following:
-   - **Repository**: `https://github.com/yourusername/entity-manager`
+   - **Repository**: `https://github.com/TheIcelandicguy/entity-manager`
    - **Category**: `Integration`
 6. Click **Add**
 
