@@ -107,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={
             "_panel_custom": {
                 "name": "entity-manager-panel",
-                "embed_iframe": True,
+                "embed_iframe": False,
                 "trust_external": False,
                 "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={version}",
             }
