@@ -1,33 +1,48 @@
-# Entity Manager
+# Entity Manager for Home Assistant
 
-![Version](https://img.shields.io/badge/version-2.7.0-blue.svg)
+Entity Manager is a powerful integration tool designed for Home Assistant users, offering centralized management of all entities within your smart home ecosystem. This tool enhances organization, efficiency, and ease of use with a modern, responsive user interface. It provides a comprehensive suite of features to simplify the way you handle and customize your devices and integrations.
 
-## Overview
-Entity Manager is a powerful and lightweight library for managing entities in your application with ORM capabilities. With version 2.7.0, we introduce several enhancements to improve performance and usability.
+## 🛠 Features
 
-## Features
-- **New Features:**  
-  - **Asynchronous Operations:** Added support for asynchronous entity management. This allows for non-blocking operations for optimal performance.
-  - **Data Validation:** Introduced a robust data validation layer that helps ensure the integrity of entity data.
-  - **GraphQL Integration:** Full support for GraphQL has been implemented, allowing seamless integration with modern APIs.
+### Centralized Entity Management
+- View and organize all entities by integration and device.
+- Bulk-enable or disable entities based on need.
+- Perform real-time entity state updates.
 
-## Fixes
-- **Bug Fixes:**  
-  - Fixed an issue where entity states were not properly retained during transactions.  
-  - Improved error handling to provide more descriptive messages in case of failures.
+### Customization Tools
+- Rename entities while maintaining domain consistency (e.g., 'sensor.').
+- Propagate name changes across scripts, automations, and helpers.
+- Customize themes and layout preferences.
 
-## Removals
-- **Deprecated Features:**  
-  - Removed the legacy API which was previously marked as deprecated in earlier versions. Users are encouraged to migrate to the new API for improved functionality.
+### Firmware Update Assistant
+- Manage updates across devices and integrations in a single place.
+- View detailed release notes before applying updates.
+- Handle bulk updates with easy, intuitive controls.
 
-## Technical Details
-This version continues to build on the principles of efficiency and ease of use, with an emphasis on modern development practices. Our commitment is to provide a seamless experience for developers.
+### Filtering and Search
+- Advanced search tools to locate entities using name, domain type, or integration ID.
+- Apply domain filters (e.g., lights, motion sensors) for focused management.
+- Use live state filters for enabled, disabled, or to-be-updated entities.
 
-## Installation
-To update to version 2.7.0, simply run:
-```bash
-pip install entity-manager --upgrade
-```
+### User Interface
+- Sleek UI with automatic light/dark mode based on system preferences.
+- Responsive design tailored for both mobile and desktop platforms.
 
-## Contributions
-We welcome contributions from the community! Please check our [contributing guide](CONTRIBUTING.md) for more details.
+### Support Features
+- Interactive help guides and tooltips for new users.
+- Clear confirmation dialogs to prevent accidental changes.
+- Log and activity tracking for transparency.
+
+## 🚀 Getting Started
+
+### Installation
+Entity Manager can be installed through HACS (Home Assistant Community Store) for seamless setup.
+- Open HACS and add the Entity Manager repository.
+- Restart Home Assistant and navigate to the integration panel.
+
+### Usage
+- After installation, find Entity Manager in your Home Assistant sidebar.
+- Use the dashboard to manage entities, perform updates, and customize your setup.
+
+## 🤝 Contributions
+Contributions are welcome. Feel free to report issues or submit pull requests to enhance the project. Let us make smart home management even smarter!
