@@ -4643,19 +4643,26 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-label">Total Entities</div>
         <div class="stat-value">${totalEntities}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable-stat" data-stat-type="automation" title="Click to view automations">
         <div class="stat-label">Automations</div>
         <div class="stat-value" style="color: #2196f3 !important;">${this.automationCount}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable-stat" data-stat-type="script" title="Click to view scripts">
         <div class="stat-label">Scripts</div>
         <div class="stat-value" style="color: #2196f3 !important;">${this.scriptCount}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable-stat" data-stat-type="helper" title="Click to view helpers">
         <div class="stat-label">Helpers</div>
         <div class="stat-value" style="color: #2196f3 !important;">${this.helperCount}</div>
       </div>
     `;
+
+    // Attach click listeners to clickable stat cards
+    statsEl.querySelectorAll('.clickable-stat[data-stat-type]').forEach(card => {
+      card.addEventListener('click', () => {
+        this.showEntityListDialog(card.dataset.statType);
+      });
+    });
 
     const allBtn = this.content.querySelector('[data-filter="all"]');
     const enabledBtn = this.content.querySelector('[data-filter="enabled"]');
@@ -5676,11 +5683,19 @@ class EntityManagerPanel extends HTMLElement {
             <span class="entity-list-name">${e.name}</span>
             <span class="entity-list-id-inline">${e.id}</span>
             ${e.meta ? `<span class="entity-list-id-inline">${e.meta}</span>` : ''}
-            ${allowToggle ? `
-              <button class="entity-list-toggle ${e.state === 'on' ? 'on' : 'off'}" data-entity-id="${e.id}" data-entity-type="${type}">
-                ${e.state === 'on' ? 'On' : 'Off'}
+            <span class="entity-list-actions">
+              ${allowToggle ? `
+                <button class="entity-list-toggle ${e.state === 'on' ? 'on' : 'off'}" data-entity-id="${e.id}" data-entity-type="${type}">
+                  ${e.state === 'on' ? 'On' : 'Off'}
+                </button>
+              ` : ''}
+              <button class="entity-list-action-btn info-btn" data-entity-id="${e.id}" title="Show info">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" fill="currentColor"/></svg>
               </button>
-            ` : ''}
+              <button class="entity-list-action-btn edit-btn" data-entity-id="${e.id}" data-entity-type="${type}" title="Edit in HA">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z" fill="currentColor"/></svg>
+              </button>
+            </span>
           </div>
         </div>
       `).join('');
@@ -5707,7 +5722,7 @@ class EntityManagerPanel extends HTMLElement {
             e.stopPropagation();
             const entityId = btn.dataset.entityId;
             const currentlyOn = btn.classList.contains('on');
-            
+
             btn.disabled = true;
             btn.style.opacity = '0.7';
             try {
@@ -5728,7 +5743,49 @@ class EntityManagerPanel extends HTMLElement {
           });
         });
       }
-      
+
+      // Info buttons - open HA's more-info dialog
+      overlay.querySelectorAll('.entity-list-action-btn.info-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const entityId = btn.dataset.entityId;
+          const event = new CustomEvent('hass-more-info', {
+            detail: { entityId },
+            bubbles: true,
+            composed: true,
+          });
+          document.querySelector('home-assistant')?.dispatchEvent(event) ||
+            this.dispatchEvent(event);
+        });
+      });
+
+      // Edit buttons - navigate to HA's edit page
+      overlay.querySelectorAll('.entity-list-action-btn.edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const entityId = btn.dataset.entityId;
+          const entityType = btn.dataset.entityType;
+          let editPath = '';
+
+          if (entityType === 'automation') {
+            // automation.my_auto -> my_auto
+            const autoId = entityId.replace('automation.', '');
+            editPath = `/config/automation/edit/${autoId}`;
+          } else if (entityType === 'script') {
+            const scriptId = entityId.replace('script.', '');
+            editPath = `/config/script/edit/${scriptId}`;
+          } else if (entityType === 'helper') {
+            editPath = `/config/helpers`;
+          }
+
+          if (editPath) {
+            closeDialog();
+            history.pushState(null, '', editPath);
+            window.dispatchEvent(new CustomEvent('location-changed'));
+          }
+        });
+      });
+
     } catch (error) {
       console.error('Error loading entity list:', error);
       this.showErrorDialog(`Error loading ${title}: ${error.message}`);
