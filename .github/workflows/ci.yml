@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-progress runs for the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JavaScript Lint
+  # ─────────────────────────────────────────────
+  javascript-lint:
+    name: JavaScript Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run ESLint
+        run: npx eslint .
+
+  # ─────────────────────────────────────────────
+  # Python Lint & Type Check
+  # ─────────────────────────────────────────────
+  python-lint-type-check:
+    name: Python Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements_dev.txt
+          pip install ruff mypy
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Mypy type check
+        run: mypy custom_components/entity_manager --ignore-missing-imports
+
+  # ─────────────────────────────────────────────
+  # Python Tests (3.11)
+  # ─────────────────────────────────────────────
+  python-tests-311:
+    name: Python Tests (3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements_dev.txt
+          pip install pytest pytest-asyncio pytest-homeassistant-custom-component
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short
+
+  # ─────────────────────────────────────────────
+  # Python Tests (3.12)
+  # ─────────────────────────────────────────────
+  python-tests-312:
+    name: Python Tests (3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements_dev.txt
+          pip install pytest pytest-asyncio pytest-homeassistant-custom-component
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short
+
+  # ─────────────────────────────────────────────
+  # Frontend Tests
+  # ─────────────────────────────────────────────
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run Vitest
+        run: npx vitest run
+
+  # ─────────────────────────────────────────────
+  # E2E Tests
+  # ─────────────────────────────────────────────
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [python-tests-312, frontend-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements_dev.txt
+          pip install pytest playwright
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test
+
+  # ─────────────────────────────────────────────
+  # Security Scan
+  # ─────────────────────────────────────────────
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install security tools
+        run: pip install bandit safety pip-audit
+
+      - name: Bandit (Python security linter)
+        run: bandit -r custom_components/ -f json -o bandit-report.json || true
+
+      - name: Bandit results
+        if: always()
+        run: bandit -r custom_components/ --severity-level medium
+
+      - name: pip-audit (dependency vulnerabilities)
+        run: |
+          pip install -r requirements_dev.txt 2>/dev/null || true
+          pip-audit --strict || true
+
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: bandit-report.json
