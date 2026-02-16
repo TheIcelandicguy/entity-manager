@@ -30,13 +30,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-    - run: pip install ruff mypy homeassistant voluptuous
-    - name: Ruff lint
-      run: ruff check custom_components/
-    - name: Ruff format check
-      run: ruff format --check custom_components/
-    - name: Mypy
-      run: mypy custom_components/entity_manager --ignore-missing-imports || echo "Type check warnings found - non-blocking"
+      - run: pip install ruff mypy homeassistant voluptuous
+      - name: Ruff lint
+        run: ruff check custom_components/
+      - name: Ruff format check
+        run: ruff format --check custom_components/
+      - name: Mypy
+        run: mypy custom_components/entity_manager --ignore-missing-imports || echo "Type check warnings found - non-blocking"
 
   python-tests-311:
     name: Python Tests (3.11)
