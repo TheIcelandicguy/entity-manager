@@ -1,3 +1,5 @@
+import globals from "globals";
+
 export default [
   {
     files: ["**/*.js"],
@@ -5,19 +7,9 @@ export default [
       ecmaVersion: 2022,
       sourceType: "module",
       globals: {
-        window: "readonly",
-        document: "readonly",
-        customElements: "readonly",
-        HTMLElement: "readonly",
-        CSS: "readonly",
-        fetch: "readonly",
-        console: "readonly",
-        setTimeout: "readonly",
-        clearTimeout: "readonly",
-        setInterval: "readonly",
-        clearInterval: "readonly",
-        requestAnimationFrame: "readonly",
-        MutationObserver: "readonly",
+        ...globals.browser,
+        PREDEFINED_THEMES: "readonly",
+        module: "readonly",
       },
     },
     rules: {
