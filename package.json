@@ -1,0 +1,10 @@
+{
+  "name": "entity-manager",
+  "version": "2.7.0",
+  "private": true,
+  "description": "Entity Manager - Home Assistant custom integration",
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0"
+  }
+}
