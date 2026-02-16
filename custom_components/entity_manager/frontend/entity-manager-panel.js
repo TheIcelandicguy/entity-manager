@@ -355,7 +355,7 @@ class EntityManagerPanel extends HTMLElement {
         const data = JSON.parse(text);
         
         if (!data.themes || typeof data.themes !== 'object') {
-          alert('Invalid theme file format');
+          this._showToast('Invalid theme file format', 'error');
           return;
         }
         
@@ -387,9 +387,9 @@ class EntityManagerPanel extends HTMLElement {
         
         this._saveThemesToStorage();
         this._updateThemeDropdownList();
-        alert(`Imported ${importCount} theme(s) successfully!`);
+        this._showToast(`Imported ${importCount} theme(s) successfully!`, 'success');
       } catch (err) {
-        alert('Failed to import themes: ' + err.message);
+        this._showToast('Failed to import themes: ' + err.message, 'error');
       }
     };
     input.click();
@@ -472,31 +472,33 @@ class EntityManagerPanel extends HTMLElement {
   }
   
   _saveCurrentTheme() {
-    const name = prompt('Enter a name for this theme:', `Theme ${Object.keys(this.customThemes).length + 1}`);
-    if (!name) return;
-    
-    // Check for reserved names
-    if (name === 'default' || PREDEFINED_THEMES[name]) {
-      alert(`"${name}" is a reserved theme name. Please choose a different name.`);
-      return;
-    }
-    
-    const theme = this._getCurrentThemeVariables();
-    this.customThemes[name] = theme;
-    this._saveThemesToStorage();
-    this._updateThemeDropdownList();
-    this._setActiveTheme(name);
+    this._showPromptDialog(
+      'Save Theme',
+      'Enter a name for this theme:',
+      `Theme ${Object.keys(this.customThemes).length + 1}`,
+      (name) => {
+        if (name === 'default' || PREDEFINED_THEMES[name]) {
+          this._showToast(`"${name}" is a reserved theme name.`, 'error');
+          return;
+        }
+        const theme = this._getCurrentThemeVariables();
+        this.customThemes[name] = theme;
+        this._saveThemesToStorage();
+        this._updateThemeDropdownList();
+        this._setActiveTheme(name);
+      }
+    );
   }
   
   _deleteCustomTheme(name) {
-    if (confirm(`Delete theme "${name}"?`)) {
+    this.showConfirmDialog('Delete Theme', `Delete theme "${name}"?`, () => {
       delete this.customThemes[name];
       this._saveThemesToStorage();
       if (this.activeTheme === name) {
         this._setActiveTheme('default');
       }
       this._updateThemeDropdownList();
-    }
+    });
   }
   
   _setActiveTheme(name) {
@@ -529,29 +531,33 @@ class EntityManagerPanel extends HTMLElement {
     // Add predefined themes section
     html += '<div style="padding: 4px 16px; color: var(--em-text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Predefined</div>';
     Object.keys(PREDEFINED_THEMES).forEach(name => {
+      const safeName = this._escapeHtml(name);
+      const safeAttrName = this._escapeAttr(name);
       html += `
-        <div class="theme-dropdown-item ${this.activeTheme === name ? 'active' : ''}" data-theme="${name}">
+        <div class="theme-dropdown-item ${this.activeTheme === name ? 'active' : ''}" data-theme="${safeAttrName}">
           <svg viewBox="0 0 24 24"><path d="M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z" fill="currentColor"/></svg>
-          <span style="flex:1">${name}</span>
+          <span style="flex:1">${safeName}</span>
         </div>
       `;
     });
-    
+
     // Add custom themes section
     const customThemeNames = Object.keys(this.customThemes);
     html += '<div class="theme-dropdown-divider"></div>';
     html += '<div style="padding: 4px 16px; color: var(--em-text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Custom</div>';
-    
+
     if (customThemeNames.length === 0) {
       html += '<div class="theme-dropdown-item" style="color: var(--em-text-secondary); font-style: italic; font-size: 12px;">No saved themes</div>';
     } else {
       customThemeNames.forEach(name => {
+        const safeName = this._escapeHtml(name);
+        const safeAttrName = this._escapeAttr(name);
         html += `
-          <div class="theme-dropdown-item ${this.activeTheme === name ? 'active' : ''}" data-theme="${name}">
+          <div class="theme-dropdown-item ${this.activeTheme === name ? 'active' : ''}" data-theme="${safeAttrName}">
             <svg viewBox="0 0 24 24"><path d="M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z" fill="currentColor"/></svg>
-            <span style="flex:1">${name}</span>
-            <span class="edit-theme-btn" data-edit="${name}" style="color: inherit; font-size: 14px; padding: 2px 4px; opacity: 0.7;" title="Edit theme">✎</span>
-            <span class="delete-theme-btn" data-delete="${name}" style="color: var(--em-danger); font-size: 16px;" title="Delete theme">&times;</span>
+            <span style="flex:1">${safeName}</span>
+            <span class="edit-theme-btn" data-edit="${safeAttrName}" style="color: inherit; font-size: 14px; padding: 2px 4px; opacity: 0.7;" title="Edit theme">✎</span>
+            <span class="delete-theme-btn" data-delete="${safeAttrName}" style="color: var(--em-danger); font-size: 16px;" title="Delete theme">&times;</span>
           </div>
         `;
       });
@@ -784,19 +790,19 @@ class EntityManagerPanel extends HTMLElement {
   _createThemeFromEditor() {
     const name = this.querySelector('#theme-editor-name')?.value?.trim();
     if (!name) {
-      alert('Please enter a theme name');
+      this._showToast('Please enter a theme name', 'error');
       return;
     }
-    
+
     if (name === 'default' || PREDEFINED_THEMES[name]) {
-      alert(`"${name}" is a reserved theme name. Please choose a different name.`);
+      this._showToast(`"${name}" is a reserved theme name.`, 'error');
       return;
     }
-    
+
     // Check if name conflicts with another theme (when editing)
     const isEditing = !!this._editingThemeName;
     if (isEditing && name !== this._editingThemeName && this.customThemes[name]) {
-      alert(`A theme named "${name}" already exists. Please choose a different name.`);
+      this._showToast(`A theme named "${name}" already exists.`, 'error');
       return;
     }
     
@@ -1873,23 +1879,35 @@ class EntityManagerPanel extends HTMLElement {
     localStorage.setItem('em-filter-presets', JSON.stringify(this.filterPresets));
   }
   
-  _saveCurrentFilterPreset() {
-    const name = prompt('Enter preset name:');
-    if (!name) return;
-    
-    const preset = {
-      id: Date.now(),
-      name,
-      viewState: this.viewState,
-      selectedDomain: this.selectedDomain,
-      searchTerm: this.searchTerm,
-      smartGroupMode: this.smartGroupMode
+  _saveCurrentFilterPreset(presetName) {
+    const savePreset = (name) => {
+      const preset = {
+        id: Date.now(),
+        name,
+        filters: {
+          viewState: this.viewState,
+          selectedDomain: this.selectedDomain,
+          searchTerm: this.searchTerm,
+          smartGroupMode: this.smartGroupMode
+        },
+        // Keep flat properties for backwards compatibility
+        viewState: this.viewState,
+        selectedDomain: this.selectedDomain,
+        searchTerm: this.searchTerm,
+        smartGroupMode: this.smartGroupMode
+      };
+
+      this.filterPresets.push(preset);
+      this._saveFilterPresets();
+      this._showToast(`Preset "${name}" saved`, 'success');
+      this._updateFilterPresetsUI();
     };
-    
-    this.filterPresets.push(preset);
-    this._saveFilterPresets();
-    this._showToast(`Preset "${name}" saved`, 'success');
-    this._updateFilterPresetsUI();
+
+    if (presetName) {
+      savePreset(presetName);
+    } else {
+      this._showPromptDialog('Save Filter Preset', 'Enter preset name:', '', savePreset);
+    }
   }
   
   _applyFilterPreset(presetId) {
@@ -5783,6 +5801,42 @@ class EntityManagerPanel extends HTMLElement {
       onConfirm();
     });
 
+    noBtn.addEventListener('click', closeDialog);
+  }
+
+  _showPromptDialog(title, message, defaultValue, onSubmit) {
+    const { overlay, closeDialog } = this.createDialog({
+      title,
+      color: 'var(--em-primary)',
+      contentHtml: `
+        <div class="confirm-dialog-content">
+          <p>${this._escapeHtml(message)}</p>
+          <input type="text" class="rename-input" id="prompt-dialog-input" value="${this._escapeAttr(defaultValue || '')}" style="margin-top: 8px;">
+        </div>
+      `,
+      actionsHtml: `
+        <button class="btn btn-secondary confirm-no">Cancel</button>
+        <button class="btn btn-primary confirm-yes">OK</button>
+      `
+    });
+
+    const input = overlay.querySelector('#prompt-dialog-input');
+    const yesBtn = overlay.querySelector('.confirm-yes');
+    const noBtn = overlay.querySelector('.confirm-no');
+
+    input.focus();
+    input.select();
+
+    const submit = () => {
+      const value = input.value.trim();
+      closeDialog();
+      if (value) onSubmit(value);
+    };
+
+    yesBtn.addEventListener('click', submit);
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') submit();
+    });
     noBtn.addEventListener('click', closeDialog);
   }
 

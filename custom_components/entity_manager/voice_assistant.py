@@ -1,18 +1,17 @@
 """Voice assistant intents for Entity Manager."""
 
 import logging
-import re
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 
+from .const import VALID_ENTITY_ID
+
 _LOGGER = logging.getLogger(__name__)
 
 INTENT_ENABLE_ENTITY = "entity_manager_enable_entity"
 INTENT_DISABLE_ENTITY = "entity_manager_disable_entity"
-
-VALID_ENTITY_ID = re.compile(r"^[a-z][a-z0-9_]*\.[a-z0-9_]+$")
 
 
 class EnableEntityIntentHandler(intent.IntentHandler):
@@ -22,14 +21,18 @@ class EnableEntityIntentHandler(intent.IntentHandler):
 
     async def async_handle(self, intent_obj) -> intent.IntentResponse:
         """Handle the enable entity intent."""
-        # Check admin permission
+        # Check admin permission - deny if no user context or non-admin
         user = intent_obj.context.user_id
-        if user:
-            user_obj = await self.hass.auth.async_get_user(user)
-            if user_obj and not user_obj.is_admin:
-                response = intent_obj.create_response()
-                response.async_set_speech("Only administrators can enable entities")
-                return response
+        if not user:
+            response = intent_obj.create_response()
+            response.async_set_speech("Only administrators can enable entities")
+            return response
+
+        user_obj = await self.hass.auth.async_get_user(user)
+        if not user_obj or not user_obj.is_admin:
+            response = intent_obj.create_response()
+            response.async_set_speech("Only administrators can enable entities")
+            return response
 
         entity_id = intent_obj.slots.get("entity", {}).get("value")
 
@@ -64,14 +67,18 @@ class DisableEntityIntentHandler(intent.IntentHandler):
 
     async def async_handle(self, intent_obj) -> intent.IntentResponse:
         """Handle the disable entity intent."""
-        # Check admin permission
+        # Check admin permission - deny if no user context or non-admin
         user = intent_obj.context.user_id
-        if user:
-            user_obj = await self.hass.auth.async_get_user(user)
-            if user_obj and not user_obj.is_admin:
-                response = intent_obj.create_response()
-                response.async_set_speech("Only administrators can disable entities")
-                return response
+        if not user:
+            response = intent_obj.create_response()
+            response.async_set_speech("Only administrators can disable entities")
+            return response
+
+        user_obj = await self.hass.auth.async_get_user(user)
+        if not user_obj or not user_obj.is_admin:
+            response = intent_obj.create_response()
+            response.async_set_speech("Only administrators can disable entities")
+            return response
 
         entity_id = intent_obj.slots.get("entity", {}).get("value")
 

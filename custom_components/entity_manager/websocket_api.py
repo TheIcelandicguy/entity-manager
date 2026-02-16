@@ -1,7 +1,6 @@
 """WebSocket API for Entity Manager."""
 
 import logging
-import re
 from typing import Any
 
 import voluptuous as vol
@@ -10,10 +9,27 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 
+from .const import DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
+
 _LOGGER = logging.getLogger(__name__)
 
-MAX_BULK_ENTITIES = 500
-VALID_ENTITY_ID = re.compile(r"^[a-z][a-z0-9_]*\.[a-z0-9_]+$")
+
+def enable_entity(hass: HomeAssistant, entity_id: str) -> None:
+    """Enable a single entity. Raises ValueError if entity not found."""
+    entity_reg = er.async_get(hass)
+    if not entity_reg.async_get(entity_id):
+        raise ValueError(f"Entity {entity_id} not found")
+    entity_reg.async_update_entity(entity_id, disabled_by=None)
+
+
+def disable_entity(hass: HomeAssistant, entity_id: str) -> None:
+    """Disable a single entity. Raises ValueError if entity not found."""
+    entity_reg = er.async_get(hass)
+    if not entity_reg.async_get(entity_id):
+        raise ValueError(f"Entity {entity_id} not found")
+    entity_reg.async_update_entity(
+        entity_id, disabled_by=er.RegistryEntryDisabler.USER
+    )
 
 
 @websocket_api.websocket_command(
@@ -126,14 +142,16 @@ async def handle_enable_entity(
     msg: dict[str, Any],
 ) -> None:
     """Handle enable entity request."""
-    entity_reg = er.async_get(hass)
     entity_id = msg["entity_id"]
 
     try:
-        entity_reg.async_update_entity(entity_id, disabled_by=None)
+        enable_entity(hass, entity_id)
         connection.send_result(msg["id"], {"success": True})
-    except Exception as err:
+    except ValueError as err:
         _LOGGER.error("Error enabling entity %s: %s", entity_id, err)
+        connection.send_error(msg["id"], "enable_failed", str(err))
+    except Exception as err:
+        _LOGGER.error("Unexpected error enabling entity %s: %s", entity_id, err)
         connection.send_error(msg["id"], "enable_failed", str(err))
 
 
@@ -151,16 +169,16 @@ async def handle_disable_entity(
     msg: dict[str, Any],
 ) -> None:
     """Handle disable entity request."""
-    entity_reg = er.async_get(hass)
     entity_id = msg["entity_id"]
 
     try:
-        entity_reg.async_update_entity(
-            entity_id, disabled_by=er.RegistryEntryDisabler.USER
-        )
+        disable_entity(hass, entity_id)
         connection.send_result(msg["id"], {"success": True})
-    except Exception as err:
+    except ValueError as err:
         _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
+        connection.send_error(msg["id"], "disable_failed", str(err))
+    except Exception as err:
+        _LOGGER.error("Unexpected error disabling entity %s: %s", entity_id, err)
         connection.send_error(msg["id"], "disable_failed", str(err))
 
 
@@ -180,14 +198,13 @@ async def handle_bulk_enable(
     msg: dict[str, Any],
 ) -> None:
     """Handle bulk enable request."""
-    entity_reg = er.async_get(hass)
     entity_ids = msg["entity_ids"]
 
     results = {"success": [], "failed": []}
 
     for entity_id in entity_ids:
         try:
-            entity_reg.async_update_entity(entity_id, disabled_by=None)
+            enable_entity(hass, entity_id)
             results["success"].append(entity_id)
         except Exception as err:
             _LOGGER.error("Error enabling entity %s: %s", entity_id, err)
@@ -212,16 +229,13 @@ async def handle_bulk_disable(
     msg: dict[str, Any],
 ) -> None:
     """Handle bulk disable request."""
-    entity_reg = er.async_get(hass)
     entity_ids = msg["entity_ids"]
 
     results = {"success": [], "failed": []}
 
     for entity_id in entity_ids:
         try:
-            entity_reg.async_update_entity(
-                entity_id, disabled_by=er.RegistryEntryDisabler.USER
-            )
+            disable_entity(hass, entity_id)
             results["success"].append(entity_id)
         except Exception as err:
             _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
