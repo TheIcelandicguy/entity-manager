@@ -1,4 +1,5 @@
 """Config flow for Entity Manager integration."""
+
 import logging
 from typing import Any
 
@@ -16,7 +17,9 @@ class EntityManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
         """Handle a flow initialized by the user."""
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
