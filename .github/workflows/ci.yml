@@ -14,7 +14,7 @@ jobs:
   # ─────────────────────────────────────────────
   # JavaScript Lint
   # ─────────────────────────────────────────────
-  javascript-lint:
+ javascript-lint:
     name: JavaScript Lint
     runs-on: ubuntu-latest
     steps:
@@ -24,11 +24,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install ESLint
-        run: npm install -g eslint
+      - name: Install ESLint locally
+        run: npm init -y && npm install eslint
 
       - name: Run ESLint
-        run: eslint custom_components/entity_manager/frontend/
+        run: npx eslint custom_components/entity_manager/frontend/
 
   # ─────────────────────────────────────────────
   # Python Lint & Type Check
