@@ -1,4 +1,5 @@
 """WebSocket API for Entity Manager."""
+
 import logging
 import re
 from typing import Any
@@ -18,7 +19,9 @@ VALID_ENTITY_ID = re.compile(r"^[a-z][a-z0-9_]*\.[a-z0-9_]+$")
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/get_disabled_entities",
-        vol.Optional("state", default="disabled"): vol.In(["disabled", "enabled", "all"]),
+        vol.Optional("state", default="disabled"): vol.In(
+            ["disabled", "enabled", "all"]
+        ),
     }
 )
 @websocket_api.require_admin
@@ -79,9 +82,13 @@ async def handle_get_disabled_entities(
                         "entity_id": entity.entity_id,
                         "platform": platform,
                         "device_id": entity.device_id,
-                        "disabled_by": entity.disabled_by.value if entity.disabled_by else None,
+                        "disabled_by": entity.disabled_by.value
+                        if entity.disabled_by
+                        else None,
                         "original_name": entity.original_name,
-                        "entity_category": entity.entity_category.value if entity.entity_category else None,
+                        "entity_category": entity.entity_category.value
+                        if entity.entity_category
+                        else None,
                         "is_disabled": is_disabled,
                     }
                 )
@@ -148,7 +155,9 @@ async def handle_disable_entity(
     entity_id = msg["entity_id"]
 
     try:
-        entity_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+        entity_reg.async_update_entity(
+            entity_id, disabled_by=er.RegistryEntryDisabler.USER
+        )
         connection.send_result(msg["id"], {"success": True})
     except Exception as err:
         _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
@@ -158,7 +167,9 @@ async def handle_disable_entity(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/bulk_enable",
-        vol.Required("entity_ids"): vol.All([cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)),
+        vol.Required("entity_ids"): vol.All(
+            [cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)
+        ),
     }
 )
 @websocket_api.require_admin
@@ -188,7 +199,9 @@ async def handle_bulk_enable(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/bulk_disable",
-        vol.Required("entity_ids"): vol.All([cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)),
+        vol.Required("entity_ids"): vol.All(
+            [cv.entity_id], vol.Length(min=1, max=MAX_BULK_ENTITIES)
+        ),
     }
 )
 @websocket_api.require_admin
@@ -206,7 +219,9 @@ async def handle_bulk_disable(
 
     for entity_id in entity_ids:
         try:
-            entity_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+            entity_reg.async_update_entity(
+                entity_id, disabled_by=er.RegistryEntryDisabler.USER
+            )
             results["success"].append(entity_id)
         except Exception as err:
             _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
@@ -264,13 +279,18 @@ async def handle_rename_entity(
         entity_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
 
         _LOGGER.info("Renamed entity from %s to %s", old_entity_id, new_entity_id)
-        connection.send_result(msg["id"], {
-            "success": True,
-            "old_entity_id": old_entity_id,
-            "new_entity_id": new_entity_id
-        })
+        connection.send_result(
+            msg["id"],
+            {
+                "success": True,
+                "old_entity_id": old_entity_id,
+                "new_entity_id": new_entity_id,
+            },
+        )
     except Exception as err:
-        _LOGGER.error("Error renaming entity from %s to %s: %s", old_entity_id, new_entity_id, err)
+        _LOGGER.error(
+            "Error renaming entity from %s to %s: %s", old_entity_id, new_entity_id, err
+        )
         connection.send_error(msg["id"], "rename_failed", str(err))
 
 
@@ -297,10 +317,14 @@ async def handle_export_states(
                     "entity_id": entity.entity_id,
                     "platform": entity.platform or "unknown",
                     "device_id": entity.device_id,
-                    "disabled_by": entity.disabled_by.value if entity.disabled_by else None,
+                    "disabled_by": entity.disabled_by.value
+                    if entity.disabled_by
+                    else None,
                     "is_disabled": bool(entity.disabled),
                     "original_name": entity.original_name,
-                    "entity_category": entity.entity_category.value if entity.entity_category else None,
+                    "entity_category": entity.entity_category.value
+                    if entity.entity_category
+                    else None,
                 }
             )
 

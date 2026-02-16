@@ -1,4 +1,5 @@
 """Entity Manager Integration."""
+
 import logging
 from pathlib import Path
 
@@ -19,9 +20,11 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_ENABLE_ENTITY = "enable_entity"
 SERVICE_DISABLE_ENTITY = "disable_entity"
 
-SERVICE_SCHEMA = vol.Schema({
-    vol.Required("entity_id"): cv.entity_id,
-})
+SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -34,13 +37,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Register frontend resources
     frontend_path = Path(__file__).parent / "frontend"
-    await hass.http.async_register_static_paths([
-        StaticPathConfig(
-            f"/api/{DOMAIN}/frontend",
-            str(frontend_path),
-            True
-        )
-    ])
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(f"/api/{DOMAIN}/frontend", str(frontend_path), True)]
+    )
 
     # Register WebSocket API
     async_setup_ws_api(hass)
@@ -69,14 +68,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entity_reg = er.async_get(hass)
             try:
                 entity_reg.async_update_entity(
-                    entity_id,
-                    disabled_by=er.RegistryEntryDisabler.USER
+                    entity_id, disabled_by=er.RegistryEntryDisabler.USER
                 )
                 _LOGGER.info("Disabled entity: %s", entity_id)
             except ValueError as err:
                 _LOGGER.error("Failed to disable entity %s: %s", entity_id, err)
             except Exception as err:
-                _LOGGER.error("Unexpected error disabling entity %s: %s", entity_id, err)
+                _LOGGER.error(
+                    "Unexpected error disabling entity %s: %s", entity_id, err
+                )
 
     hass.services.async_register(
         DOMAIN,
@@ -96,6 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     manifest_path = Path(__file__).parent / "manifest.json"
     manifest = await hass.async_add_executor_job(manifest_path.read_text)
     import json
+
     version = json.loads(manifest).get("version", "0")
 
     frontend.async_register_built_in_panel(

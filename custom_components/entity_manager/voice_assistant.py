@@ -1,4 +1,5 @@
 """Voice assistant intents for Entity Manager."""
+
 import logging
 import re
 
@@ -27,9 +28,7 @@ class EnableEntityIntentHandler(intent.IntentHandler):
             user_obj = await self.hass.auth.async_get_user(user)
             if user_obj and not user_obj.is_admin:
                 response = intent_obj.create_response()
-                response.async_set_speech(
-                    "Only administrators can enable entities"
-                )
+                response.async_set_speech("Only administrators can enable entities")
                 return response
 
         entity_id = intent_obj.slots.get("entity", {}).get("value")
@@ -71,9 +70,7 @@ class DisableEntityIntentHandler(intent.IntentHandler):
             user_obj = await self.hass.auth.async_get_user(user)
             if user_obj and not user_obj.is_admin:
                 response = intent_obj.create_response()
-                response.async_set_speech(
-                    "Only administrators can disable entities"
-                )
+                response.async_set_speech("Only administrators can disable entities")
                 return response
 
         entity_id = intent_obj.slots.get("entity", {}).get("value")
