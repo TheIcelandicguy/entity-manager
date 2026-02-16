@@ -236,9 +236,9 @@ const result = await this.hass.callWS({
 
 ## Version Information
 
-- **Current Version**: 1.0.0
+- **Current Version**: 2.8.0
 - **Minimum Home Assistant**: 2024.1.0
-- **IoT Class**: local_push
+- **IoT Class**: calculated
 - **HACS Compatible**: Yes
 
 ## Git Workflow

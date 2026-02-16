@@ -1,4 +1,4 @@
-// Entity Manager Panel - Updated UI v2.0
+// Entity Manager Panel - v2.8.0
 // Loads external CSS for cleaner code organization
 
 // Determine base URL for loading external resources

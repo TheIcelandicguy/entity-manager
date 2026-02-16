@@ -2,6 +2,17 @@
 
 All notable changes to Entity Manager will be documented in this file.
 
+## [2.8.0] - 2026-02-16
+
+### Added
+- **Clickable Stat Cards**: Automations, Scripts, and Helpers stat cards now open entity list dialogs with info and edit action buttons per entity
+- **GitHub Actions CI Pipeline**: Comprehensive CI workflow covering JavaScript linting (ESLint), Python linting/formatting (Ruff), type checking (Mypy), Python tests (3.11 & 3.12), frontend tests, E2E tests, and security scanning (Bandit)
+- **ESLint Configuration**: `eslint.config.js` with ES2022 rules for consistent JavaScript code quality
+
+### Changed
+- **Python Formatting**: Applied Ruff auto-formatting across all Python source files
+- **README**: Comprehensive rewrite with full feature documentation, usage instructions, and technical details
+
 ## [2.7.0] - 2026-02-09
 
 ### Fixed

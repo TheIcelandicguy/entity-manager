@@ -1,5 +1,38 @@
 # Changelog
 
+## Version 2.8.0 - CI, Linting & Interactive Stats
+
+### ✨ New Features
+- **Clickable Stat Cards**: Automations, Scripts, and Helpers stat cards are now clickable, opening an entity list dialog with info and edit actions per entity
+
+### 🔧 CI & Code Quality
+- **GitHub Actions CI Pipeline**: Added comprehensive CI workflow with JavaScript linting (ESLint), Python linting and formatting (Ruff), type checking (Mypy), Python tests (3.11 & 3.12), frontend tests, E2E tests, and security scanning (Bandit)
+- **ESLint Configuration**: Added `eslint.config.js` with ES2022 rules for JavaScript code quality
+- **Ruff Auto-Formatting**: Applied consistent formatting across all Python files
+
+### 📝 Documentation
+- **README Rewrite**: Comprehensive rewrite with full feature documentation, detailed usage instructions, and updated technical details
+
+---
+
+## Version 2.7.0 - CSS & Scrolling Fixes
+
+### 🐛 Bug Fixes
+- **CSS Loading**: Fixed critical issue where CSS styles were not applied due to Home Assistant's panel isolation; CSS now injected directly as a `<style>` element
+- **Theme Dropdown**: Fixed dropdown appearing behind page content with `position: fixed` and proper z-index
+- **Mobile Sidebar Scrolling**: Fixed navigation sidebar not scrolling on mobile devices with viewport height calculations and touch scrolling support
+- **Desktop Sidebar Scrolling**: Fixed sidebar scrolling with sticky header
+
+### 🗑️ Removed
+- **Keyboard Shortcuts**: Removed all keyboard shortcut functionality and associated UI elements
+- **Debug Logging**: Removed console.log debug statements (kept console.error for actual errors)
+
+### 🔧 Technical Improvements
+- **CSS Cache Busting**: Added timestamp-based cache busting for CSS URLs
+- **Base URL Fallback**: Corrected fallback URL to `/api/entity_manager/frontend/`
+
+---
+
 ## Version 2.6.1 - Bug Fix
 
 ### 🐛 Bug Fixes
