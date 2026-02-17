@@ -7,16 +7,28 @@ All notable changes to Entity Manager will be documented in this file.
 ### Added
 - Complete changelog entries for v2.8.0 and v2.8.1 in root repository
 - Aligned version references across all project files (manifest, README, package.json, docs)
+- **Lovelace Dashboard Card Documentation**: Comprehensive guide for using `custom:entity-manager-card` on Lovelace dashboards
+  - Card configuration options (state_filter, integration_filter, domain_filter, show_disabled_only, compact_mode)
+  - Feature overview and dashboard examples
+  - Integration with Lovelace views and cards
+- **Template Sensors Configuration**: Support for entity statistics tracking
+  - Disabled/enabled entities count sensors
+  - Total entities sensor
+  - Integration statistics sensor
+  - JSON export sensor for automation integration
+  - Examples for using in automations and conditions
 
 ### Changed
 - Updated README version badge to 2.9.0
 - Updated manifest.json version to 2.9.0
 - Updated package.json version to 2.9.0
 - Updated PROJECT_SUMMARY.md version references to 2.9.0
+- Enhanced Table of Contents with new Lovelace and Template Sensors sections
 
 ### Documentation
 - Ensured consistency between Git tags, releases, and version references
 - All documentation now reflects accurate release history
+- Added comprehensive integration examples for dashboard cards and template sensors
 
 ---
 

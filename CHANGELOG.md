@@ -10,7 +10,18 @@
 ### 📚 Version Alignment
 - Updated all version references (manifest, README, package.json, docs) to 2.9.0
 - Synchronized version across frontend, backend, and configuration files
-
+### ✨ New Features
+- **Lovelace Dashboard Card** - Added documentation and configuration guide for custom `entity-manager-card`
+  - Search and filter entities directly from dashboard
+  - Bulk operations support
+  - Compact and full-size layout options
+  - Integration and domain filtering
+- **Template Sensors** - Added configuration examples for entity statistics
+  - Disabled entities count
+  - Enabled entities count
+  - Total entities tracking
+  - Integration-based statistics
+  - Automation-ready sensor states
 ---
 
 ## Version 2.8.1 - UI Polish & Safety

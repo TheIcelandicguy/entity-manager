@@ -28,6 +28,8 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
+  - [Lovelace Dashboard Card](#lovelace-dashboard-card)
+  - [Template Sensors](#template-sensors)
   - [Statistics Dashboard](#statistics-dashboard)
   - [Mobile & Responsive Design](#mobile--responsive-design)
 - [Installation](#installation)
@@ -205,6 +207,104 @@ Control Entity Manager hands-free with voice commands:
 - *"Deactivate entity {name}"*
 - *"Registry enable/disable {name}"*
 Voice commands enforce admin-only access for safety.
+
+### Lovelace Dashboard Card
+Embed Entity Manager directly into your Lovelace dashboard with the custom card:
+
+```yaml
+type: custom:entity-manager-card
+```
+
+**Card Features:**
+- Search and filter entities by ID, device, or integration
+- Multi-select entity management with bulk operations
+- Quick enable/disable toggle for entities
+- Expandable groups by integration and device
+- Live entity counts and status badges
+- Mobile-friendly responsive layout
+
+**Example Dashboard Configuration:**
+```yaml
+views:
+  - title: Entity Management
+    cards:
+      - type: custom:entity-manager-card
+        title: Manage Entities
+```
+
+**Card Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `state_filter` | string | Filter: `all`, `enabled`, or `disabled` |
+| `integration_filter` | string | Show only entities from specific integration |
+| `domain_filter` | string | Show only entities of specific domain (e.g., `sensor`, `light`) |
+| `show_disabled_only` | boolean | Show only disabled entities (default: false) |
+| `compact_mode` | boolean | Reduce card height with compact layout (default: false) |
+
+### Template Sensors
+Entity Manager exposes template sensors for entity statistics and automation conditions:
+
+**Available Template Sensors:**
+```yaml
+template:
+  - sensor:
+      - name: Entity Manager Disabled Entities
+        unique_id: entity_manager_disabled_count
+        state: "{{ states.entity_manager.disabled_entity_count | default(0) }}"
+        unit_of_measurement: entities
+        state_class: measurement
+        icon: mdi:checkbox-marked-outline
+
+      - name: Entity Manager Enabled Entities
+        unique_id: entity_manager_enabled_count
+        state: "{{ states.entity_manager.enabled_entity_count | default(0) }}"
+        unit_of_measurement: entities
+        state_class: measurement
+        icon: mdi:checkbox-blank-outline
+
+      - name: Entity Manager Total Entities
+        unique_id: entity_manager_total_count
+        state: "{{ states.entity_manager.total_entity_count | default(0) }}"
+        unit_of_measurement: entities
+        state_class: measurement
+        icon: mdi:layers
+
+      - name: Entity Manager Disabled Entities by Integration
+        unique_id: entity_manager_integration_stats
+        state: "{{ states.entity_manager.integration_disabled_stats | default('{}') }}"
+        icon: mdi:layers-multiple
+```
+
+**Using in Automations:**
+```yaml
+automation:
+  - alias: "Alert on too many disabled entities"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.entity_manager_disabled_entities
+        above: 100
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "Entity Manager Alert"
+          message: >
+            {{ trigger.to_state.state }} entities are currently disabled.
+            Consider reviewing in Entity Manager panel.
+```
+
+**JSON Sensor for Advanced Tracking:**
+```yaml
+template:
+  - sensor:
+      - name: Entity Manager Export
+        unique_id: entity_manager_export
+        state: "{{ now().isoformat() }}"
+        attributes:
+          disabled_entities: "{{ state_attr('sensor.entity_manager_export', 'disabled_entities') }}"
+          by_integration: "{{ state_attr('sensor.entity_manager_export', 'by_integration') }}"
+          by_domain: "{{ state_attr('sensor.entity_manager_export', 'by_domain') }}"
+```
+
 ### Statistics Dashboard
 The toolbar displays live stats for your Home Assistant instance:
 - Integration count
