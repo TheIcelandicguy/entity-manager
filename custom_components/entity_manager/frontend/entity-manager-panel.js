@@ -3709,10 +3709,9 @@ class EntityManagerPanel extends HTMLElement {
       // Count HACS-installed items via backend scan
       try {
         const hacsItems = await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
-        const integrations = hacsItems?.integrations || [];
-        const frontend = hacsItems?.frontend || [];
+        const installed = hacsItems?.installed || [];
         this.hacsItems = hacsItems;
-        this.hacsCount = integrations.length + frontend.length;
+        this.hacsCount = installed.length;
       } catch (e) {
         this.hacsItems = null;
         this.hacsCount = 0;
@@ -5753,67 +5752,101 @@ class EntityManagerPanel extends HTMLElement {
 
           try {
             const hacsItems = this.hacsItems || await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
-            const integrations = hacsItems?.integrations || [];
-            const frontend = hacsItems?.frontend || [];
+            const installed = hacsItems?.installed || [];
+            const newDownloads = hacsItems?.new_downloads || [];
+            const store = hacsItems?.store || [];
+            const cutoffDays = hacsItems?.cutoff_days || 7;
 
-            const integrationItems = integrations.map(item => ({
-              id: item.path,
+            const toListItem = (item, fallbackCategory) => ({
+              id: item.path || item.full_name || item.name,
               name: item.name,
-              meta: item.path
-            }));
-            const frontendItems = frontend.map(item => ({
-              id: item.path,
-              name: item.name,
-              meta: item.path
-            }));
+              meta: item.path || item.full_name || '',
+              category: (item.category || fallbackCategory || 'unknown').toLowerCase(),
+              mtime: item.mtime || 0
+            });
 
-            const totalCount = integrationItems.length + frontendItems.length;
+            const installedItems = installed.map(item => toListItem(item, 'integration'));
+            const newItems = newDownloads.map(item => toListItem(item, 'integration'));
+            const storeItems = store.map(item => toListItem(item, item.category || 'unknown'));
+
+            const totalCount = installedItems.length;
+            const newCount = newItems.length;
+            const storeCount = storeItems.length;
+
+            const filters = [
+              { id: 'all', label: 'All' },
+              { id: 'integration', label: 'Integrations' },
+              { id: 'frontend', label: 'Frontend' },
+              { id: 'theme', label: 'Themes' },
+              { id: 'plugin', label: 'Plugins' },
+              { id: 'addon', label: 'Add-ons' },
+            ];
+
+            const filtersHtml = filters.map(filter => `
+              <button class="btn btn-secondary hacs-filter-btn" data-hacs-filter="${filter.id}">${filter.label}</button>
+            `).join('');
+
             const summaryHtml = `
               <div class="entity-list-group" style="margin-bottom: 12px;">
                 <div class="entity-list-group-title">Summary</div>
                 <div class="entity-list-item">
                   <div class="entity-list-row">
-                    <span class="entity-list-name">Integrations</span>
-                    <span class="entity-list-id-inline">${integrationItems.length}</span>
-                  </div>
-                </div>
-                <div class="entity-list-item">
-                  <div class="entity-list-row">
-                    <span class="entity-list-name">Frontend</span>
-                    <span class="entity-list-id-inline">${frontendItems.length}</span>
-                  </div>
-                </div>
-                <div class="entity-list-item">
-                  <div class="entity-list-row">
-                    <span class="entity-list-name">Total</span>
+                    <span class="entity-list-name">Total Downloads</span>
                     <span class="entity-list-id-inline">${totalCount}</span>
                   </div>
                 </div>
+                <div class="entity-list-item">
+                  <div class="entity-list-row">
+                    <span class="entity-list-name">New Downloads (last ${cutoffDays} days)</span>
+                    <span class="entity-list-id-inline">${newCount}</span>
+                  </div>
+                </div>
+                <div class="entity-list-item">
+                  <div class="entity-list-row">
+                    <span class="entity-list-name">All Downloads (Store)</span>
+                    <span class="entity-list-id-inline">${storeCount}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="entity-list-group" style="margin-bottom: 12px;">
+                <div class="entity-list-group-title">Filter by type</div>
+                <div class="entity-list-row" style="gap: 8px; flex-wrap: wrap;">${filtersHtml}</div>
               </div>
             `;
 
-            entities = [...integrationItems, ...frontendItems];
-            const renderItems = (items) => items.map(item => `
-              <div class="entity-list-item">
-                <div class="entity-list-row">
-                  <span class="entity-list-name">${this._escapeHtml(item.name)}</span>
-                  <span class="entity-list-id-inline">${this._escapeHtml(item.id)}</span>
-                  ${item.meta ? `<span class="entity-list-id-inline">${this._escapeHtml(item.meta)}</span>` : ''}
+            const renderItems = (items) => items.map(item => {
+              const dateLabel = item.mtime ? new Date(item.mtime * 1000).toLocaleDateString() : '';
+              const meta = item.meta ? this._escapeHtml(item.meta) : '';
+              const metaText = [meta, dateLabel].filter(Boolean).join(' • ');
+              return `
+                <div class="entity-list-item" data-hacs-category="${this._escapeAttr(item.category)}">
+                  <div class="entity-list-row">
+                    <span class="entity-list-name">${this._escapeHtml(item.name)}</span>
+                    <span class="entity-list-id-inline">${this._escapeHtml(item.id)}</span>
+                    ${metaText ? `<span class="entity-list-id-inline">${metaText}</span>` : ''}
+                  </div>
                 </div>
-              </div>
-            `).join('');
+              `;
+            }).join('');
 
             groupedHtml = `
               ${summaryHtml}
               <div class="entity-list-group">
-                <div class="entity-list-group-title">Integrations (${integrationItems.length})</div>
-                ${renderItems(integrationItems) || '<p style="text-align: center; padding: 12px;">No custom integrations found</p>'}
+                <div class="entity-list-group-title">Installed Downloads (${installedItems.length})</div>
+                ${renderItems(installedItems) || '<p style="text-align: center; padding: 12px;">No downloads found</p>'}
               </div>
               <div class="entity-list-group" style="margin-top: 16px;">
-                <div class="entity-list-group-title">Frontend (${frontendItems.length})</div>
-                ${renderItems(frontendItems) || '<p style="text-align: center; padding: 12px;">No frontend repos found</p>'}
+                <div class="entity-list-group-title">New Downloads (${newItems.length})</div>
+                ${renderItems(newItems) || `<p style="text-align: center; padding: 12px;">No new downloads in last ${cutoffDays} days</p>`}
+              </div>
+              <div class="entity-list-group" style="margin-top: 16px;">
+                <div class="entity-list-group-title">All Downloads (Store) (${storeItems.length})</div>
+                ${renderItems(storeItems.slice(0, 200)) || '<p style="text-align: center; padding: 12px;">Store data not available</p>'}
+                ${storeItems.length > 200 ? '<p style="text-align: center; padding: 12px;">Showing first 200 items</p>' : ''}
               </div>
             `;
+
+            entities = [...installedItems, ...newItems, ...storeItems];
           } catch (e) {
             entities = [{
               id: 'hacs-not-found',
@@ -5920,6 +5953,30 @@ class EntityManagerPanel extends HTMLElement {
             }
           });
         });
+      }
+
+      // HACS filter buttons
+      const hacsFilterButtons = overlay.querySelectorAll('.hacs-filter-btn');
+      if (hacsFilterButtons.length > 0) {
+        const applyHacsFilter = (filter) => {
+          overlay.querySelectorAll('[data-hacs-category]').forEach(item => {
+            const category = item.dataset.hacsCategory || 'unknown';
+            item.style.display = filter === 'all' || category === filter ? '' : 'none';
+          });
+          hacsFilterButtons.forEach(btn => {
+            btn.classList.toggle('btn-primary', btn.dataset.hacsFilter === filter);
+            btn.classList.toggle('btn-secondary', btn.dataset.hacsFilter !== filter);
+          });
+        };
+
+        hacsFilterButtons.forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            applyHacsFilter(btn.dataset.hacsFilter || 'all');
+          });
+        });
+
+        applyHacsFilter('all');
       }
 
       // Info buttons - open HA's more-info dialog

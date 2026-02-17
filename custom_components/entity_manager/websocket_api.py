@@ -1,6 +1,8 @@
 """WebSocket API for Entity Manager."""
 
+import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -364,25 +366,76 @@ async def handle_list_hacs_items(
 ) -> None:
     """Handle list HACS-installed items request."""
 
-    def _list_dirs(path: Path) -> list[dict[str, str]]:
+    def _list_dirs(path: Path, category: str) -> list[dict[str, Any]]:
         if not path.exists():
             return []
-        items: list[dict[str, str]] = []
+        items: list[dict[str, Any]] = []
         for entry in sorted(path.iterdir(), key=lambda p: p.name.lower()):
             if not entry.is_dir() or entry.name.startswith("."):
                 continue
-            items.append({"name": entry.name, "path": str(entry)})
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            items.append(
+                {
+                    "name": entry.name,
+                    "path": str(entry),
+                    "category": category,
+                    "mtime": mtime,
+                }
+            )
         return items
+
+    def _load_hacs_storage(path: Path) -> list[dict[str, Any]]:
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+        raw = data.get("data", data) if isinstance(data, dict) else {}
+        repos = raw.get("repositories", []) if isinstance(raw, dict) else []
+        store: list[dict[str, Any]] = []
+        for repo in repos:
+            if not isinstance(repo, dict):
+                continue
+            store.append(
+                {
+                    "name": repo.get("name")
+                    or repo.get("full_name")
+                    or repo.get("repository")
+                    or "unknown",
+                    "full_name": repo.get("full_name") or repo.get("repository") or "",
+                    "category": (repo.get("category") or repo.get("type") or "unknown").lower(),
+                    "installed": bool(repo.get("installed")),
+                }
+            )
+        return store
 
     try:
         base_path = Path(hass.config.path())
         custom_components = base_path / "custom_components"
         community = base_path / "www" / "community"
+        hacs_storage = base_path / ".storage" / "hacs"
+
+        now_ts = datetime.now(timezone.utc).timestamp()
+        new_cutoff_ts = now_ts - (7 * 24 * 60 * 60)
 
         def _scan() -> dict[str, Any]:
+            integrations = _list_dirs(custom_components, "integration")
+            frontend = _list_dirs(community, "frontend")
+            installed = integrations + frontend
+            new_downloads = [item for item in installed if item.get("mtime", 0) >= new_cutoff_ts]
+            store = _load_hacs_storage(hacs_storage)
             return {
-                "integrations": _list_dirs(custom_components),
-                "frontend": _list_dirs(community),
+                "integrations": integrations,
+                "frontend": frontend,
+                "installed": installed,
+                "new_downloads": new_downloads,
+                "store": store,
+                "cutoff_days": 7,
             }
 
         result = await hass.async_add_executor_job(_scan)
