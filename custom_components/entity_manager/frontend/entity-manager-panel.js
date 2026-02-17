@@ -3705,21 +3705,14 @@ class EntityManagerPanel extends HTMLElement {
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
       // Count templates
       this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
-      // Count HACS custom integrations (count update entities from HACS)
-      this.hacsCount = states.filter(s => s.entity_id.startsWith('update.') && s.attributes?.integration === 'hacs').length;
-      // If no HACS entities found by integration attr, count all update entities as potential HACS
-      if (this.hacsCount === 0) {
-        this.hacsCount = states.filter(s => s.entity_id.startsWith('update.')).length;
-      }
-      // Try to get HACS repository data for custom store count
-      try {
-        const hacsEntity = states.find(s => s.entity_id === 'update.hacs');
-        if (hacsEntity?.attributes?.repositories) {
-          this.hacsRepos = hacsEntity.attributes.repositories || [];
-        }
-      } catch (e) {
-        this.hacsRepos = [];
-      }
+      // Count HACS presence (prefer explicit HACS entities when available)
+      const hacsEntityCandidate = states.find(s =>
+        s.entity_id === 'update.hacs' ||
+        s.entity_id === 'sensor.hacs' ||
+        s.entity_id.includes('hacs') ||
+        s.attributes?.integration === 'hacs'
+      );
+      this.hacsCount = hacsEntityCandidate ? 1 : 0;
       // Count Lovelace dashboard cards
       try {
         const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
@@ -5753,15 +5746,20 @@ class EntityManagerPanel extends HTMLElement {
           title = 'HACS Integration Manager';
           color = '#4caf50';
           allowToggle = false;
-          
-          // Get HACS entity only
-          const hacsEntity = states.find(s => s.entity_id === 'update.hacs');
-          
+
+          // Try to locate a HACS-related entity
+          const hacsEntity = states.find(s => s.entity_id === 'update.hacs') ||
+            states.find(s => s.entity_id === 'sensor.hacs') ||
+            states.find(s => s.entity_id.includes('hacs')) ||
+            states.find(s => s.attributes?.integration === 'hacs');
+
           if (hacsEntity) {
+            const version = hacsEntity.attributes?.installed_version || hacsEntity.attributes?.version || 'unknown';
+            const status = hacsEntity.state === 'on' ? 'Update available' : 'Up to date';
             entities = [{
-              id: 'update.hacs',
+              id: hacsEntity.entity_id,
               name: 'HACS Integration Manager',
-              meta: `${hacsEntity.state === 'on' ? 'Update available' : 'Up to date'} • v${hacsEntity.attributes?.installed_version || 'unknown'}`,
+              meta: `${status} • v${version}`,
               state: hacsEntity.state
             }];
           } else {
