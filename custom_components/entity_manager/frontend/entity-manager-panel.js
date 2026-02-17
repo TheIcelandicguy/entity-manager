@@ -5747,7 +5747,7 @@ class EntityManagerPanel extends HTMLElement {
               state: s.state
             }));
         } else if (type === 'hacs') {
-          title = 'HACS Integration Manager';
+          title = 'HACS Downloads';
           color = '#4caf50';
           allowToggle = false;
 
@@ -5817,8 +5817,8 @@ class EntityManagerPanel extends HTMLElement {
           } catch (e) {
             entities = [{
               id: 'hacs-not-found',
-              name: 'HACS data not available',
-              meta: 'Ensure custom_components and www/community are accessible'
+              name: 'HACS downloads not available',
+              meta: 'Restart Home Assistant to enable folder scan'
             }];
           }
         } else if (type === 'lovelace') {
