@@ -1,5 +1,40 @@
 # Changelog
 
+## Version 2.8.1 - UI Polish & Safety
+
+### ✨ UI Improvements
+- Replaced browser alerts/prompts with in-app dialogs for themes and filter presets
+- Added clickable stat cards to open automation/script/helper lists
+- Added inline entity list action buttons (info + edit)
+
+### 🔐 Security & Validation
+- Escaped theme names in dropdown rendering to prevent HTML injection
+- Centralized entity ID validation and bulk limit constants
+
+### 🔧 Backend & Services
+- Shared enable/disable helpers across services and WebSocket API with clearer errors
+- Removed outdated service descriptions for bulk/rename/export from services.yaml
+
+### 🧪 Tooling
+- Streamlined CI workflow and added npm-based ESLint config
+
+---
+
+## Version 2.8.0 - Docs & QA
+
+### 🧰 Tooling
+- Added CI workflow for linting, type checks, tests, and security scanning
+- Added ESLint configuration for frontend linting
+
+### 📚 Documentation
+- Overhauled README with detailed feature list, usage, troubleshooting, and architecture notes
+- Updated installation docs with correct repository URL and component path
+
+### 🔧 Internal
+- Formatting and consistency cleanups in backend code
+
+---
+
 ## Version 2.6.1 - Bug Fix
 
 ### 🐛 Bug Fixes

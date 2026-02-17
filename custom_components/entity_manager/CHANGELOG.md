@@ -2,6 +2,60 @@
 
 All notable changes to Entity Manager will be documented in this file.
 
+## [2.8.1] - 2026-02-17
+
+### Added
+- **UI Dialog Improvements**: Replaced browser alert/confirm/prompt dialogs with custom in-app dialogs for theme management and filter presets
+- **Clickable Statistics**: Automation, Script, and Helper stats in toolbar now clickable to open filtered lists
+- **Entity Action Buttons**: Added info and edit action buttons in entity list dialogs for quick navigation to HA UI
+- **Input Sanitization**: Added `_escapeHtml()` and `_escapeAttr()` methods for safe theme/preset name rendering
+
+### Fixed
+- **XSS Vulnerability**: Escaped theme names and preset names in DOM rendering to prevent HTML injection
+- **Admin Permission Logic**: Improved voice intent authorization checks to explicitly deny non-admin/no-user contexts
+
+### Changed
+- **Code Quality**: Consolidated enable/disable entity logic into shared helpers in `websocket_api.py`
+- **Voice Assistant**: Refactored permission checks for clarity and consistency between enable/disable intents
+- **Services Configuration**: Removed obsolete service definitions (bulk_enable, bulk_disable, rename_entity, export_states) from services.yaml as they're not exposed via service calls
+
+### Technical
+- Moved `VALID_ENTITY_ID` regex to `const.py` for consistency with voice assistant and websocket API
+- Moved `MAX_BULK_ENTITIES` constant to `const.py` for centralized configuration
+
+---
+
+## [2.8.0] - 2026-02-16
+
+### Added
+- ✅ **CI/CD Automation**: Full GitHub Actions workflow for linting, type checking, testing, and security scanning
+  - JavaScript linting with ESLint
+  - Python linting & formatting with Ruff
+  - Type checking with MyPy
+  - Python tests on 3.11 and 3.12
+  - Security scanning with Bandit
+- 📚 **Comprehensive Documentation Overhaul**
+  - Rewrote README with detailed feature descriptions, architecture, and troubleshooting
+  - Added installation corrections and usage walkthroughs
+  - Documented all WebSocket API endpoints and local storage keys
+  - Added use cases, requirements, and disclaimer sections
+- ⚙️ **ESLint Configuration**: Added `.eslintrc.js` for consistent frontend code standards
+
+### Fixed
+- **Installation Docs**: Corrected repository URL from placeholder to `https://github.com/TheIcelandicguy/entity-manager`
+- **Component Path**: Updated install instructions to reference `custom_components/entity_manager` correctly
+
+### Changed
+- **Code Formatting**: Applied consistent formatting across Python backend (spacing, imports)
+- **README Version**: Updated badge from 2.6.0 to 2.8.0
+
+### Technical Details
+- Service schema formatting for consistency
+- Config flow type hints and formatting improvements
+- WebSocket handler formatting and documentation improvements
+
+---
+
 ## [2.7.0] - 2026-02-09
 
 ### Fixed
