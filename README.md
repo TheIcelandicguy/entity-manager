@@ -56,15 +56,18 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - Case-sensitive and regex pattern matching options
 ### Search & Filtering
 Entity Manager provides multiple ways to find exactly what you need:
+
 | Filter Type | Description |
 |---|---|
-| **Text Search** | Search across entity IDs, names, integrations, and devices in real time |
+| **Fuzzy Search** | Smart search with fuzzy matching -- type "snr" to find "sensor", matches characters in order across entity IDs, names, integrations, and devices |
+| **Text Search** | Instant search across entity IDs, names, integrations, and devices with real-time filtering |
 | **Domain Filter** | Dropdown to filter by entity type (sensor, light, switch, binary_sensor, etc.) |
 | **State Filter** | Toggle between All, Enabled, or Disabled with live entity counts |
 | **Integration Filter** | Click an integration in the sidebar to show only its entities |
 | **Label Filter** | Filter by Home Assistant labels |
 | **Tag Filter** | Filter by custom tags using `#tagname` syntax |
 | **Filter Presets** | Save and load your favorite filter combinations |
+
 All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
 ### Sidebar Navigation
 A collapsible sidebar provides quick access to every feature:
@@ -307,13 +310,18 @@ template:
 
 ### Statistics Dashboard
 The toolbar displays live stats for your Home Assistant instance:
-- Integration count
-- Device count
-- Total entity count
-- Automation count
-- Script count
-- Helper count
-- Update count (amber-highlighted when updates are available)
+- **Integration count** - Total number of integrations
+- **Device count** - Total number of devices
+- **Total entity count** - All entities across your system
+- **Automation count** - Clickable to view automations list
+- **Script count** - Clickable to view scripts list
+- **Helper count** - Clickable to view input helpers and variables
+- **Template count** - Clickable to view template entities (template sensors, binary sensors, etc.)
+- **HACS count** - Custom integrations from HACS
+- **Lovelace Cards count** - Total cards currently deployed on your dashboards
+- **Update count** - Amber-highlighted when updates are available; clickable to view update details
+
+All counts update in real-time as you make changes. Click on any stat card to view details in a dialog.
 ### Mobile & Responsive Design
 - Fully responsive layout for phones, tablets, and desktops
 - Collapsible sidebar with dedicated mobile toggle button

@@ -133,6 +133,9 @@ class EntityManagerPanel extends HTMLElement {
     this.scriptCount = 0;
     this.helperCount = 0;
     this.updateCount = 0;
+    this.hacsCount = 0;
+    this.templateCount = 0;
+    this.lovelaceCardCount = 0;
     
     // Theme customization state
     this.activeTheme = 'default'; // 'default' follows HA, or saved theme name
@@ -221,6 +224,19 @@ class EntityManagerPanel extends HTMLElement {
     if (s.startsWith('data:image/')) return s;
     if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')) return s;
     return '';
+  }
+
+  _fuzzyMatch(text, pattern) {
+    // Fuzzy matching: check if pattern characters appear in order in text
+    if (!text || !pattern) return !pattern;
+    text = String(text).toLowerCase();
+    let patternIdx = 0;
+    for (let i = 0; i < text.length && patternIdx < pattern.length; i++) {
+      if (text[i] === pattern[patternIdx]) {
+        patternIdx++;
+      }
+    }
+    return patternIdx === pattern.length;
   }
 
   _isColorDark(color) {
@@ -3678,16 +3694,28 @@ class EntityManagerPanel extends HTMLElement {
 
   async loadCounts() {
     try {
-      // Get all states to count automations, scripts, and helpers
+      // Get all states to count automations, scripts, helpers, and other entities
       const states = await this._hass.callWS({ type: 'get_states' });
       
       this.automationCount = states.filter(s => s.entity_id.startsWith('automation.')).length;
       this.scriptCount = states.filter(s => s.entity_id.startsWith('script.')).length;
       this.helperCount = states.filter(s => s.entity_id.startsWith('input_')).length +
-                         states.filter(s => s.entity_id.startsWith('template.')).length +
                          states.filter(s => s.entity_id.startsWith('variable.')).length;
       // Only count updates that are actually available (state === 'on')
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
+      // Count templates
+      this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
+      // Count HACS custom integrations
+      this.hacsCount = states.filter(s => s.entity_id.startsWith('update.') && s.attributes && s.attributes.in_progress === false).length;
+      // Count Lovelace dashboard entities and custom cards from storage
+      try {
+        const lovelaceStorage = await this._hass.callWS({ type: 'frontend/get_config' });
+        this.lovelaceCardCount = lovelaceStorage?.views?.reduce((count, view) => {
+          return count + (view.cards?.length || 0);
+        }, 0) || 0;
+      } catch (e) {
+        this.lovelaceCardCount = 0;
+      }
       
       this.updateView();
       
@@ -4585,11 +4613,13 @@ class EntityManagerPanel extends HTMLElement {
             const integrationName = integration.integration.toLowerCase();
             const deviceName = this.getDeviceName(deviceId).toLowerCase();
 
+            // Use fuzzy matching for search
+            const termLower = this.searchTerm.toLowerCase();
             return (
-              entityId.includes(this.searchTerm) ||
-              originalName.includes(this.searchTerm) ||
-              integrationName.includes(this.searchTerm) ||
-              deviceName.includes(this.searchTerm)
+              this._fuzzyMatch(entityId, termLower) ||
+              this._fuzzyMatch(originalName, termLower) ||
+              this._fuzzyMatch(integrationName, termLower) ||
+              this._fuzzyMatch(deviceName, termLower)
             );
           });
 
@@ -4654,6 +4684,18 @@ class EntityManagerPanel extends HTMLElement {
       <div class="stat-card clickable-stat" data-stat-type="helper" title="Click to view helpers">
         <div class="stat-label">Helpers</div>
         <div class="stat-value" style="color: #2196f3 !important;">${this.helperCount}</div>
+      </div>
+      <div class="stat-card clickable-stat" data-stat-type="template" title="Click to view templates">
+        <div class="stat-label">Templates</div>
+        <div class="stat-value" style="color: #ff9800 !important;">${this.templateCount}</div>
+      </div>
+      <div class="stat-card" title="HACS custom integrations">
+        <div class="stat-label">HACS</div>
+        <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
+      </div>
+      <div class="stat-card" title="Lovelace dashboard cards">
+        <div class="stat-label">Lovelace Cards</div>
+        <div class="stat-value" style="color: #9c27b0 !important;">${this.lovelaceCardCount}</div>
       </div>
     `;
 
@@ -5664,8 +5706,18 @@ class EntityManagerPanel extends HTMLElement {
           title = 'Helpers';
           color = '#9c27b0';
           allowToggle = true;
-          const helperPrefixes = ['input_', 'template.', 'variable.'];
+          const helperPrefixes = ['input_', 'variable.'];
           entities = states.filter(s => helperPrefixes.some(prefix => s.entity_id.startsWith(prefix)))
+            .map(s => ({
+              id: s.entity_id,
+              name: s.attributes.friendly_name || s.entity_id,
+              state: s.state
+            }));
+        } else if (type === 'template') {
+          title = 'Templates';
+          color = '#ff9800';
+          allowToggle = false;
+          entities = states.filter(s => s.entity_id.startsWith('template.'))
             .map(s => ({
               id: s.entity_id,
               name: s.attributes.friendly_name || s.entity_id,
