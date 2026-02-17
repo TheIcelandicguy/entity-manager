@@ -2,6 +2,24 @@
 
 All notable changes to Entity Manager will be documented in this file.
 
+## [2.9.0] - 2026-02-17
+
+### Added
+- Complete changelog entries for v2.8.0 and v2.8.1 in root repository
+- Aligned version references across all project files (manifest, README, package.json, docs)
+
+### Changed
+- Updated README version badge to 2.9.0
+- Updated manifest.json version to 2.9.0
+- Updated package.json version to 2.9.0
+- Updated PROJECT_SUMMARY.md version references to 2.9.0
+
+### Documentation
+- Ensured consistency between Git tags, releases, and version references
+- All documentation now reflects accurate release history
+
+---
+
 ## [2.8.1] - 2026-02-17
 
 ### Added

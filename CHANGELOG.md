@@ -1,5 +1,18 @@
 # Changelog
 
+## Version 2.9.0 - Documentation & Consistency
+
+### 🧹 Changelog Completion
+- Added comprehensive v2.8.0 and v2.8.1 release notes
+- Documented UI improvements, security fixes, and backend refactoring
+- Aligned changelog entries with Git history
+
+### 📚 Version Alignment
+- Updated all version references (manifest, README, package.json, docs) to 2.9.0
+- Synchronized version across frontend, backend, and configuration files
+
+---
+
 ## Version 2.8.1 - UI Polish & Safety
 
 ### ✨ UI Improvements
