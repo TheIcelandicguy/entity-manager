@@ -3711,6 +3711,15 @@ class EntityManagerPanel extends HTMLElement {
       if (this.hacsCount === 0) {
         this.hacsCount = states.filter(s => s.entity_id.startsWith('update.')).length;
       }
+      // Try to get HACS repository data for custom store count
+      try {
+        const hacsEntity = states.find(s => s.entity_id === 'update.hacs');
+        if (hacsEntity?.attributes?.repositories) {
+          this.hacsRepos = hacsEntity.attributes.repositories || [];
+        }
+      } catch (e) {
+        this.hacsRepos = [];
+      }
       // Count Lovelace dashboard cards
       try {
         const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
@@ -5741,16 +5750,51 @@ class EntityManagerPanel extends HTMLElement {
               state: s.state
             }));
         } else if (type === 'hacs') {
-          title = 'HACS Updates';
+          title = 'HACS Repositories';
           color = '#4caf50';
           allowToggle = false;
-          entities = states.filter(s => s.entity_id.startsWith('update.') && (s.attributes?.integration === 'hacs' || s.state === 'on'))
-            .map(s => ({
-              id: s.entity_id,
-              name: s.attributes.friendly_name || s.entity_id,
-              state: s.state,
-              meta: s.attributes?.installed_version ? `v${s.attributes.installed_version} → v${s.attributes.latest_version || 'unknown'}` : ''
-            }));
+          try {
+            // Try to fetch HACS data from API
+            const response = await this._hass.callApi('GET', 'hacs-data');
+            if (response) {
+              // Show installed and available repositories
+              const installed = response.repositories?.filter(r => r.installed) || [];
+              const available = response.repositories?.filter(r => !r.installed) || [];
+              
+              entities = [
+                ...installed.map(r => ({
+                  id: r.repository_id || r.full_name,
+                  name: `⬇️ ${r.name || r.full_name}`,
+                  meta: `Installed • ${r.category || 'Unknown'}`
+                })),
+                ...available.slice(0, 20).map(r => ({
+                  id: r.repository_id || r.full_name,
+                  name: `📦 ${r.name || r.full_name}`,
+                  meta: `Available • ${r.category || 'Unknown'}`
+                }))
+              ];
+            } else {
+              // Fallback to update entities
+              entities = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on')
+                .map(s => ({
+                  id: s.entity_id,
+                  name: s.attributes.friendly_name || s.entity_id,
+                  meta: s.attributes?.latest_version ? `Update available` : ''
+                }));
+            }
+          } catch (e) {
+            // Fallback if API not available
+            const hacsEntity = states.find(s => s.entity_id === 'update.hacs');
+            if (hacsEntity?.attributes?.repositories) {
+              entities = hacsEntity.attributes.repositories.map(r => ({
+                id: r.full_name || r.name,
+                name: r.name || r.full_name,
+                meta: r.installed ? '✓ Installed' : 'Available'
+              }));
+            } else {
+              entities = [{ id: 'hacs-error', name: 'HACS data not available', meta: 'Install HACS integration' }];
+            }
+          }
         } else if (type === 'lovelace') {
           title = 'Lovelace Cards';
           color = '#9c27b0';
