@@ -5750,50 +5750,87 @@ class EntityManagerPanel extends HTMLElement {
               state: s.state
             }));
         } else if (type === 'hacs') {
-          title = 'HACS Repositories';
+          title = 'HACS Repository Manager';
           color = '#4caf50';
           allowToggle = false;
           try {
-            // Try to fetch HACS data from API
-            const response = await this._hass.callApi('GET', 'hacs-data');
-            if (response) {
-              // Show installed and available repositories
-              const installed = response.repositories?.filter(r => r.installed) || [];
-              const available = response.repositories?.filter(r => !r.installed) || [];
+            // First, try to get HACS configuration/state
+            const hacsEntity = states.find(s => s.entity_id === 'update.hacs');
+            const hacsConfig = states.find(s => s.entity_id === 'sensor.hacs');
+            
+            // Try multiple HACS API endpoints
+            let repos = [];
+            try {
+              // Try /api/hacs/repositories
+              const response1 = await this._hass.callApi('GET', 'hacs/repositories');
+              if (response1?.repositories) repos = response1.repositories;
+            } catch (e1) {
+              try {
+                // Try /api/hacs/get_repositories
+                const response2 = await this._hass.callApi('GET', 'hacs/get_repositories');
+                if (response2?.repositories) repos = response2.repositories;
+              } catch (e2) {
+                try {
+                  // Try websocket command
+                  const response3 = await this._hass.callWS({ type: 'hacs/repositories' });
+                  if (response3?.repositories) repos = response3.repositories;
+                } catch (e3) {
+                  // All API attempts failed
+                }
+              }
+            }
+            
+            if (repos.length > 0) {
+              // Successfully got HACS repos
+              const installed = repos.filter(r => r.installed) || [];
+              const available = repos.filter(r => !r.installed) || [];
               
               entities = [
                 ...installed.map(r => ({
-                  id: r.repository_id || r.full_name,
-                  name: `⬇️ ${r.name || r.full_name}`,
-                  meta: `Installed • ${r.category || 'Unknown'}`
+                  id: r.repository_id || r.full_name || r.name,
+                  name: `✓ ${r.name || r.full_name}`,
+                  meta: `${r.category || 'Integration'} • Installed`
                 })),
-                ...available.slice(0, 20).map(r => ({
-                  id: r.repository_id || r.full_name,
-                  name: `📦 ${r.name || r.full_name}`,
-                  meta: `Available • ${r.category || 'Unknown'}`
+                ...available.slice(0, 15).map(r => ({
+                  id: r.repository_id || r.full_name || r.name,
+                  name: `◯ ${r.name || r.full_name}`,
+                  meta: `${r.category || 'Integration'} • Available`
                 }))
               ];
-            } else {
-              // Fallback to update entities
-              entities = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on')
-                .map(s => ({
-                  id: s.entity_id,
-                  name: s.attributes.friendly_name || s.entity_id,
-                  meta: s.attributes?.latest_version ? `Update available` : ''
-                }));
-            }
-          } catch (e) {
-            // Fallback if API not available
-            const hacsEntity = states.find(s => s.entity_id === 'update.hacs');
-            if (hacsEntity?.attributes?.repositories) {
-              entities = hacsEntity.attributes.repositories.map(r => ({
+            } else if (hacsEntity?.attributes?.repositories) {
+              // Fall back to update entity attributes
+              const allRepos = hacsEntity.attributes.repositories;
+              entities = allRepos.map(r => ({
                 id: r.full_name || r.name,
-                name: r.name || r.full_name,
-                meta: r.installed ? '✓ Installed' : 'Available'
+                name: (r.installed ? '✓ ' : '◯ ') + (r.name || r.full_name),
+                meta: `${r.category || 'Integration'} • ${r.installed ? 'Installed' : 'Available'}`
               }));
             } else {
-              entities = [{ id: 'hacs-error', name: 'HACS data not available', meta: 'Install HACS integration' }];
+              // Show HACS statistics if available
+              const hacsStats = hacsConfig?.state || hacsEntity?.attributes?.status || 'Unknown';
+              const installedCount = hacsEntity?.attributes?.installed_integrations?.length || 0;
+              entities = [
+                {
+                  id: 'hacs-info',
+                  name: 'HACS Status',
+                  meta: `${hacsStats}${installedCount > 0 ? ' • ' + installedCount + ' installed' : ''}`
+                },
+                {
+                  id: 'hacs-setup',
+                  name: 'Set up HACS',
+                  meta: 'Visit https://hacs.xyz for setup instructions'
+                }
+              ];
             }
+          } catch (e) {
+            console.error('Error loading HACS data:', e);
+            entities = [
+              {
+                id: 'hacs-error',
+                name: 'HACS not configured',
+                meta: 'Visit https://hacs.xyz to install'
+              }
+            ];
           }
         } else if (type === 'lovelace') {
           title = 'Lovelace Cards';
