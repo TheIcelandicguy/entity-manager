@@ -134,6 +134,7 @@ class EntityManagerPanel extends HTMLElement {
     this.helperCount = 0;
     this.updateCount = 0;
     this.hacsCount = 0;
+    this.hacsItems = null;
     this.templateCount = 0;
     this.lovelaceCardCount = 0;
     
@@ -3705,14 +3706,17 @@ class EntityManagerPanel extends HTMLElement {
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
       // Count templates
       this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
-      // Count HACS presence (prefer explicit HACS entities when available)
-      const hacsEntityCandidate = states.find(s =>
-        s.entity_id === 'update.hacs' ||
-        s.entity_id === 'sensor.hacs' ||
-        s.entity_id.includes('hacs') ||
-        s.attributes?.integration === 'hacs'
-      );
-      this.hacsCount = hacsEntityCandidate ? 1 : 0;
+      // Count HACS-installed items via backend scan
+      try {
+        const hacsItems = await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
+        const integrations = hacsItems?.integrations || [];
+        const frontend = hacsItems?.frontend || [];
+        this.hacsItems = hacsItems;
+        this.hacsCount = integrations.length + frontend.length;
+      } catch (e) {
+        this.hacsItems = null;
+        this.hacsCount = 0;
+      }
       // Count Lovelace dashboard cards
       try {
         const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
@@ -5747,26 +5751,74 @@ class EntityManagerPanel extends HTMLElement {
           color = '#4caf50';
           allowToggle = false;
 
-          // Try to locate a HACS-related entity
-          const hacsEntity = states.find(s => s.entity_id === 'update.hacs') ||
-            states.find(s => s.entity_id === 'sensor.hacs') ||
-            states.find(s => s.entity_id.includes('hacs')) ||
-            states.find(s => s.attributes?.integration === 'hacs');
+          try {
+            const hacsItems = this.hacsItems || await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
+            const integrations = hacsItems?.integrations || [];
+            const frontend = hacsItems?.frontend || [];
 
-          if (hacsEntity) {
-            const version = hacsEntity.attributes?.installed_version || hacsEntity.attributes?.version || 'unknown';
-            const status = hacsEntity.state === 'on' ? 'Update available' : 'Up to date';
-            entities = [{
-              id: hacsEntity.entity_id,
-              name: 'HACS Integration Manager',
-              meta: `${status} • v${version}`,
-              state: hacsEntity.state
-            }];
-          } else {
+            const integrationItems = integrations.map(item => ({
+              id: item.path,
+              name: item.name,
+              meta: item.path
+            }));
+            const frontendItems = frontend.map(item => ({
+              id: item.path,
+              name: item.name,
+              meta: item.path
+            }));
+
+            const totalCount = integrationItems.length + frontendItems.length;
+            const summaryHtml = `
+              <div class="entity-list-group" style="margin-bottom: 12px;">
+                <div class="entity-list-group-title">Summary</div>
+                <div class="entity-list-item">
+                  <div class="entity-list-row">
+                    <span class="entity-list-name">Integrations</span>
+                    <span class="entity-list-id-inline">${integrationItems.length}</span>
+                  </div>
+                </div>
+                <div class="entity-list-item">
+                  <div class="entity-list-row">
+                    <span class="entity-list-name">Frontend</span>
+                    <span class="entity-list-id-inline">${frontendItems.length}</span>
+                  </div>
+                </div>
+                <div class="entity-list-item">
+                  <div class="entity-list-row">
+                    <span class="entity-list-name">Total</span>
+                    <span class="entity-list-id-inline">${totalCount}</span>
+                  </div>
+                </div>
+              </div>
+            `;
+
+            entities = [...integrationItems, ...frontendItems];
+            const renderItems = (items) => items.map(item => `
+              <div class="entity-list-item">
+                <div class="entity-list-row">
+                  <span class="entity-list-name">${this._escapeHtml(item.name)}</span>
+                  <span class="entity-list-id-inline">${this._escapeHtml(item.id)}</span>
+                  ${item.meta ? `<span class="entity-list-id-inline">${this._escapeHtml(item.meta)}</span>` : ''}
+                </div>
+              </div>
+            `).join('');
+
+            groupedHtml = `
+              ${summaryHtml}
+              <div class="entity-list-group">
+                <div class="entity-list-group-title">Integrations (${integrationItems.length})</div>
+                ${renderItems(integrationItems) || '<p style="text-align: center; padding: 12px;">No custom integrations found</p>'}
+              </div>
+              <div class="entity-list-group" style="margin-top: 16px;">
+                <div class="entity-list-group-title">Frontend (${frontendItems.length})</div>
+                ${renderItems(frontendItems) || '<p style="text-align: center; padding: 12px;">No frontend repos found</p>'}
+              </div>
+            `;
+          } catch (e) {
             entities = [{
               id: 'hacs-not-found',
-              name: 'HACS Integration not found',
-              meta: 'Install HACS from https://hacs.xyz'
+              name: 'HACS data not available',
+              meta: 'Ensure custom_components and www/community are accessible'
             }];
           }
         } else if (type === 'lovelace') {

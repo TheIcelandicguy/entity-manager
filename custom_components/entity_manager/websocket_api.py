@@ -1,6 +1,7 @@
 """WebSocket API for Entity Manager."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -349,6 +350,48 @@ async def handle_export_states(
         connection.send_error(msg["id"], "export_failed", str(err))
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/list_hacs_items",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_list_hacs_items(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Handle list HACS-installed items request."""
+
+    def _list_dirs(path: Path) -> list[dict[str, str]]:
+        if not path.exists():
+            return []
+        items: list[dict[str, str]] = []
+        for entry in sorted(path.iterdir(), key=lambda p: p.name.lower()):
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            items.append({"name": entry.name, "path": str(entry)})
+        return items
+
+    try:
+        base_path = Path(hass.config.path())
+        custom_components = base_path / "custom_components"
+        community = base_path / "www" / "community"
+
+        def _scan() -> dict[str, Any]:
+            return {
+                "integrations": _list_dirs(custom_components),
+                "frontend": _list_dirs(community),
+            }
+
+        result = await hass.async_add_executor_job(_scan)
+        connection.send_result(msg["id"], result)
+    except Exception as err:
+        _LOGGER.error("Error listing HACS items: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "hacs_list_failed", str(err))
+
+
 @callback
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
@@ -359,4 +402,5 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_bulk_disable)
     websocket_api.async_register_command(hass, handle_rename_entity)
     websocket_api.async_register_command(hass, handle_export_states)
+    websocket_api.async_register_command(hass, handle_list_hacs_items)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")
