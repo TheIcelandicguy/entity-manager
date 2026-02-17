@@ -3705,16 +3705,33 @@ class EntityManagerPanel extends HTMLElement {
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
       // Count templates
       this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
-      // Count HACS custom integrations
-      this.hacsCount = states.filter(s => s.entity_id.startsWith('update.') && s.attributes && s.attributes.in_progress === false).length;
-      // Count Lovelace dashboard entities and custom cards from storage
+      // Count HACS custom integrations (count update entities from HACS)
+      this.hacsCount = states.filter(s => s.entity_id.startsWith('update.') && s.attributes?.integration === 'hacs').length;
+      // If no HACS entities found by integration attr, count all update entities as potential HACS
+      if (this.hacsCount === 0) {
+        this.hacsCount = states.filter(s => s.entity_id.startsWith('update.')).length;
+      }
+      // Count Lovelace dashboard cards
       try {
-        const lovelaceStorage = await this._hass.callWS({ type: 'frontend/get_config' });
-        this.lovelaceCardCount = lovelaceStorage?.views?.reduce((count, view) => {
-          return count + (view.cards?.length || 0);
-        }, 0) || 0;
+        const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
+        let cardCount = 0;
+        for (const dashboard of (dashboards || [])) {
+          try {
+            const config = await this._hass.callWS({ type: 'lovelace/config', dashboard_id: dashboard.id });
+            cardCount += config?.views?.reduce((count, view) => count + (view.cards?.length || 0), 0) || 0;
+          } catch (e) {
+            // Skip error for individual dashboard
+          }
+        }
+        this.lovelaceCardCount = cardCount;
       } catch (e) {
-        this.lovelaceCardCount = 0;
+        // Fallback: try to get default config
+        try {
+          const config = await this._hass.callWS({ type: 'lovelace/config' });
+          this.lovelaceCardCount = config?.views?.reduce((count, view) => count + (view.cards?.length || 0), 0) || 0;
+        } catch (e2) {
+          this.lovelaceCardCount = 0;
+        }
       }
       
       this.updateView();
@@ -4689,11 +4706,11 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-label">Templates</div>
         <div class="stat-value" style="color: #ff9800 !important;">${this.templateCount}</div>
       </div>
-      <div class="stat-card" title="HACS custom integrations">
+      <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS integrations">
         <div class="stat-label">HACS</div>
         <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
       </div>
-      <div class="stat-card" title="Lovelace dashboard cards">
+      <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
         <div class="stat-label">Lovelace Cards</div>
         <div class="stat-value" style="color: #9c27b0 !important;">${this.lovelaceCardCount}</div>
       </div>
@@ -5723,6 +5740,45 @@ class EntityManagerPanel extends HTMLElement {
               name: s.attributes.friendly_name || s.entity_id,
               state: s.state
             }));
+        } else if (type === 'hacs') {
+          title = 'HACS Updates';
+          color = '#4caf50';
+          allowToggle = false;
+          entities = states.filter(s => s.entity_id.startsWith('update.') && (s.attributes?.integration === 'hacs' || s.state === 'on'))
+            .map(s => ({
+              id: s.entity_id,
+              name: s.attributes.friendly_name || s.entity_id,
+              state: s.state,
+              meta: s.attributes?.installed_version ? `v${s.attributes.installed_version} → v${s.attributes.latest_version || 'unknown'}` : ''
+            }));
+        } else if (type === 'lovelace') {
+          title = 'Lovelace Cards';
+          color = '#9c27b0';
+          allowToggle = false;
+          try {
+            const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
+            const cardList = [];
+            for (const dashboard of (dashboards || [])) {
+              try {
+                const config = await this._hass.callWS({ type: 'lovelace/config', dashboard_id: dashboard.id });
+                const dashboardName = dashboard.title || dashboard.id;
+                (config?.views || []).forEach((view, viewIdx) => {
+                  (view.cards || []).forEach((card, cardIdx) => {
+                    cardList.push({
+                      id: `${dashboard.id}-view${viewIdx}-card${cardIdx}`,
+                      name: `${dashboardName} > ${view.title || 'View ' + (viewIdx + 1)} > ${card.type || 'custom card'}`,
+                      meta: card.type || 'unknown'
+                    });
+                  });
+                });
+              } catch (e) {
+                // Skip dashboard on error
+              }
+            }
+            entities = cardList.slice(0, 500); // Limit to 500 cards for display
+          } catch (e) {
+            entities = [{ id: 'error', name: 'Error loading Lovelace config', meta: e.message }];
+          }
         }
       }
       
