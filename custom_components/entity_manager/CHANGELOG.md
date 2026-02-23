@@ -2,6 +2,73 @@
 
 All notable changes to Entity Manager will be documented in this file.
 
+## [2.9.2] - 2026-02-23
+
+### Added
+- **Entity detail dialog**: click any entity card body to open a full info dialog — Overview, State + all attributes, Registry, Device, Integration, Area, Labels, State History (last 30 days). New backend WS command `entity_manager/get_entity_details`
+- **Entity card redesign**: dark header band (device / state chip / time), prominent entity ID, enabled badge, checkbox+star+actions in bottom row
+- **HA auto-backup toggle**: banner in Updates section shows and toggles HA's global `core_backup_before_update` / `add_on_backup_before_update` via hassio API; green/red tinted with descriptive subtitle; hidden on plain HA Core
+- **Per-entity backup checkbox**: shown only when `UpdateEntityFeature.BACKUP` flag is set; "Backup All (N)" header checkbox for bulk selection
+- **Sequential update queue**: bulk updates always run one at a time; rows show Queued → Active (spinner + sweeping progress bar) → Done ✓ / Failed ✕ states
+- **Live update progress ring**: `set hass()` watches entity state; SVG progress ring appears when HA reports `update_percentage`; auto-marks done when entity transitions to `state: off`
+- **Browser mod dialog**: active browser detection, Deregister per-row, Clean up stale, Deregister all but active, browser ID chip with navigate/copy actions
+- **Sidebar Domains section**: domain filter moved from toolbar dropdown into sidebar section below Quick Filters
+- **Sidebar Actions**: Enable Selected, Disable Selected, Deselect All, Refresh moved from toolbar into sidebar Actions section
+- **"Update Selected" pill button**: expands from the right side of the Select All pill via `max-width` CSS animation; zero-width and invisible when nothing is selected
+- **Updates search bar**: repositioned below the action bar for a cleaner layout
+- **Total Entities stat card clickable**: opens grouped entity list (Integration → Device → entities) with status dots and disable badges; hash UUID platform names bucketed under "Other"
+
+### Fixed
+- Toast z-index raised to `99999` (was invisible behind dialogs due to `backdrop-filter` compositing); default duration 10 s
+- Backup label styled with green border/text matching Update button
+- Device names now shown in entity list dialogs — backend fetches `name_by_user`/`name` from device registry (was showing raw device UUIDs)
+- Hash/UUID integration group names no longer shown for raw config entry IDs in entity list dialogs
+- Null guards added for `this.data` accesses in entity list dialog
+- Refresh while on Updates page now reloads updates instead of navigating to entity list
+- All update row state colours use CSS variables for full theme compatibility
+
+### Backend
+- New `entity_manager/get_entity_details` WS command; added `device_registry`, `area_registry`, `label_registry` imports
+- `get_disabled_entities` now includes device `name` field (fetched from device registry)
+
+---
+
+## [2.8.1] - 2026-02-18
+
+### Added
+- **Integration select-all checkbox**: Each integration header has a "Select all" checkbox; supports indeterminate state; works when collapsed
+- **Updates filter counter**: Updates button shows real count of pending HA updates (`update.*` with `state = on`)
+- **Bulk rename — entity list**: Collapsible selected entity list so you can verify before renaming
+- **Bulk rename — regex help**: `?` button toggles inline reference panel with common patterns and capture group examples
+- **Bulk label — entity list**: Collapsible selected entity list in Add Labels dialog
+- **Bulk rename placeholders**: Realistic HA entity name examples in Find/Replace inputs
+
+### Fixed
+- Label chip text contrast: canvas luminance picks dark/light text for any CSS color including HA named colors
+- Label dialog Done button incorrectly targeted Create button; now scoped to `.confirm-dialog-actions`
+- Sidebar active item uses left border accent instead of filled background (fixes white-on-yellow unreadability)
+
+---
+
+## [2.8.0] - 2026-02-18
+
+### Added
+- **Lovelace Dashboard Inspector**: New dialog showing dashboards overview, card type bar chart (built-in/custom/unknown badges), and entity reference map across all dashboards
+- **Template entity editing**: Edit dialog to rename entity_id and display name; renames propagate through HA entity registry (updates UI automations/scripts automatically)
+- **YAML config updater**: `entity_manager/update_yaml_references` backend command — scans all config YAML files and safely replaces renamed entity IDs using word-boundary matching
+- **Template entity removal**: Removes UI-created templates via config entry deletion (prevents restart recreation); YAML templates removed from registry with warning
+- **Collapsible sidebar sections**: All 6 nav sections collapse/expand with animated arrow; default closed; state persisted in localStorage per section
+
+### Changed
+- Lovelace card count is now recursive (includes nested cards in stacks, grids, conditionals, etc.)
+- Lovelace WS API corrected to use `url_path` instead of `dashboard_id`
+- Removed Updates stat card (redundant with HA built-in update notifications)
+
+### Fixed
+- Last entity row cut off at bottom of page — `min-height: 100vh` conflicted with flex layout; resolved with `min-height: 0` override and `padding-bottom: 32px`
+- Null access errors in Lovelace dialog for `card.conditions` and `view.sections` array entries
+- `entities.map()` and `entities.sort()` crash when array contains null entries
+
 ## [2.9.0] - 2026-02-17
 
 ### Added

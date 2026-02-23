@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, compare, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.9.0-blue)
+![Version](https://img.shields.io/badge/version-2.9.2-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -23,6 +23,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Undo / Redo](#undo--redo)
   - [Filter Presets](#filter-presets)
   - [Column Customization](#column-customization)
+  - [Entity Detail Dialog](#entity-detail-dialog)
   - [Firmware Update Manager](#firmware-update-manager)
   - [Export & Import](#export--import)
   - [Theme System](#theme-system)
@@ -148,17 +149,35 @@ Choose which columns to display in the entity table:
 - Tags
 - Alias
 Toggle columns from the sidebar **Columns** button. Preferences are saved between sessions.
+### Entity Detail Dialog
+Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity:
+
+| Section | Contents |
+|---------|----------|
+| **Overview** | Entity ID, friendly name, domain, platform, unique ID, aliases |
+| **Current State** | State value (colour-coded) + all attributes sorted A–Z |
+| **Registry** | Entity category, device class, disabled/hidden state, icon, unit, supported features |
+| **Device** | Manufacturer, model, SW/HW version, serial number, config URL, connections |
+| **Integration** | Config entry title, domain, source, version, state |
+| **Area** | Assigned area name and aliases |
+| **Labels** | All HA labels attached to the entity |
+| **State History** | Last 30 days of state changes, newest first |
+
+Action buttons in the dialog footer let you **Rename** or **Enable/Disable** the entity without leaving the dialog.
+
 ### Firmware Update Manager
 A dedicated **Updates** tab to manage all firmware and software updates:
 - View all available updates in one place
 - **Filter by stability**: All Updates, Stable Only, Beta Only
 - **Filter by category**: All Types, Devices Only, Integrations Only
 - **Hide up-to-date** checkbox to focus on pending updates
-- **Select All** checkbox for quick bulk selection
+- **Select All** pill with expanding **Update Selected** button — animates into view when items are selected
 - View **release notes** before updating
-- **Bulk update** multiple items at once
-- Alphabetical sorting by title
-- Live update count tracking
+- **Sequential bulk updates** — runs one at a time for safety; rows progress through Queued → Active → ✓ Updated / ✕ Failed
+- **Live progress ring** — SVG ring tracks exact `update_percentage` when HA reports it; indeterminate spinner otherwise
+- **HA auto-backup banner** — shows and toggles HA's global "backup before update" setting; green when ON, red when OFF; hidden on plain HA Core
+- **Per-entity Backup checkbox** — shown for entities that support backup; "Backup All" header checkbox for bulk selection
+- Alphabetical sorting by title; live update count on filter button
 ### Export & Import
 - **Export entity configurations** to JSON -- includes enabled/disabled states for all entities
 - **Import configurations** from a previously exported JSON file to restore states
@@ -312,16 +331,16 @@ template:
 The toolbar displays live stats for your Home Assistant instance:
 - **Integration count** - Total number of integrations
 - **Device count** - Total number of devices
-- **Total entity count** - All entities across your system
-- **Automation count** - Clickable to view automations list
+- **Total entity count** - Clickable to open a grouped entity list (Integration → Device) — click any entity row to open its full detail dialog
+- **Automation count** - Clickable to view automations list with last-triggered time and edit navigation
 - **Script count** - Clickable to view scripts list
 - **Helper count** - Clickable to view input helpers and variables
-- **Template count** - Clickable to view template entities (template sensors, binary sensors, etc.)
-- **HACS count** - Custom integrations from HACS
-- **Lovelace Cards count** - Total cards currently deployed on your dashboards
-- **Update count** - Amber-highlighted when updates are available; clickable to view update details
+- **Template count** - Clickable to view template entities with state, last active, and edit/remove actions
+- **HACS count** - Clickable to browse your HACS store and installed integrations
+- **Lovelace Cards count** - Clickable to inspect dashboards, card type distribution, and entity references
+- **Update count** - Amber-highlighted when updates are available; clickable to open the Updates view
 
-All counts update in real-time as you make changes. Click on any stat card to view details in a dialog.
+All counts update in real-time as you make changes. Every stat card opens a detail dialog — click any entity row inside a dialog to open the **Entity Detail dialog** showing the full registry entry, device info, all state attributes, area, labels, and 30-day state history.
 ### Mobile & Responsive Design
 - Fully responsive layout for phones, tablets, and desktops
 - Collapsible sidebar with dedicated mobile toggle button
@@ -368,8 +387,10 @@ All counts update in real-time as you make changes. Click on any stat card to vi
 ### Managing Updates
 1. Click the **Updates** filter button in the toolbar
 2. Use the filter dropdowns to narrow by stability or category
-3. Check the **Select All** box or pick individual updates
-4. Click **Update Selected** to apply
+3. Check the **HA auto-backup banner** to confirm your global backup setting is correct
+4. Optionally check the **🛡 Backup** checkbox on rows you want backed up before updating
+5. Check **Select All** (or pick individual rows) — the **Update Selected** button expands to the right
+6. Click **Update Selected**; each row progresses through Queued → Active (progress ring) → ✓ / ✕
 ---
 ## Technical Details
 ### Requirements

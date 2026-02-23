@@ -7,6 +7,17 @@ const _emBaseUrl = _emScripts.length > 0
   ? _emScripts[_emScripts.length - 1].src.replace(/\/[^/]+$/, '/')
   : '/api/entity_manager/frontend/';
 
+// HA label color palette — name sent to HA, hex used for display only
+const HA_LABEL_COLORS = [
+  ['red', '#f44336'], ['pink', '#e91e63'], ['purple', '#9c27b0'],
+  ['deep-purple', '#673ab7'], ['indigo', '#3f51b5'], ['blue', '#2196f3'],
+  ['light-blue', '#03a9f4'], ['cyan', '#00bcd4'], ['teal', '#009688'],
+  ['green', '#4caf50'], ['light-green', '#8bc34a'], ['lime', '#cddc39'],
+  ['yellow', '#ffeb3b'], ['amber', '#ffc107'], ['orange', '#ff9800'],
+  ['deep-orange', '#ff5722'], ['brown', '#795548'], ['grey', '#9e9e9e'],
+  ['blue-grey', '#607d8b'],
+];
+
 // Predefined themes (inlined for reliable loading)
 const PREDEFINED_THEMES = {
   'Light': {
@@ -122,10 +133,13 @@ class EntityManagerPanel extends HTMLElement {
     this.viewState = 'all';
     this.selectedDomain = 'all';
     this.selectedIntegrationFilter = null; // Filter to show only one integration
+    this.integrationViewFilter = {};       // Per-integration entity state filter: 'enabled' | 'disabled' | undefined
     this.showAllSidebarIntegrations = false; // Show all integrations in sidebar
     this.updateFilter = 'all'; // all, available, stable, beta
     this.selectedUpdateType = 'all'; // all, device, integration
     this.hideUpToDate = false; // Hide up-to-date items
+    this.backupBeforeUpdate = localStorage.getItem('em-backup-before-update') === 'true';
+    this.haAutoBackup = null; // null = unavailable/unknown, {core,addon} = loaded from hassio
     this.domainOptions = [];
     this.isLoading = false;
     this.updateEntities = [];
@@ -151,6 +165,9 @@ class EntityManagerPanel extends HTMLElement {
     
     // Sidebar state
     this.sidebarCollapsed = localStorage.getItem('em-sidebar-collapsed') === 'true';
+    // Which sidebar sections are open — stored as array of IDs; default all closed
+    const _ssSaved = localStorage.getItem('em-sidebar-sections');
+    this.sidebarOpenSections = new Set(_ssSaved ? JSON.parse(_ssSaved) : []);
     
     // Comparison state
     this.comparisonEntities = [];
@@ -174,17 +191,11 @@ class EntityManagerPanel extends HTMLElement {
     
     // Smart groups state
     this.smartGroupsEnabled = localStorage.getItem('em-smart-groups') === 'true';
-    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type
-    
-    // Virtual scrolling state
-    this.virtualScrollEnabled = true;
-    this.visibleEntityRange = { start: 0, end: 50 };
-    this.entityRowHeight = 60; // pixels
-    this.scrollContainer = null;
+    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name
+    this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
+    this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
     
     // Lazy loading state
-    this.loadedIntegrations = new Set();
-    this.lazyLoadEnabled = true;
     this.visibleEntityCounts = {}; // Track visible entities per integration
     this.initialLoadCount = 20; // Initial entities to show
     this.loadMoreCount = 20; // Entities to load on "Load More"
@@ -207,6 +218,21 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
+  _loadFromStorage(key, defaultValue) {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  }
+
+  _saveToStorage(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch { /* quota exceeded or private mode */ }
+  }
+
   _escapeHtml(str) {
     if (str == null) return '';
     const s = String(str);
@@ -225,6 +251,139 @@ class EntityManagerPanel extends HTMLElement {
     if (s.startsWith('data:image/')) return s;
     if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')) return s;
     return '';
+  }
+
+  // Shared dialog helpers ─────────────────────────────────────────────────────
+
+  /** "Nd ago" / "Nh ago" / "Nm ago" string, or fallback when isoStr is falsy */
+  _fmtAgo(isoStr, fallback = 'Never') {
+    if (!isoStr) return fallback;
+    const ms = Date.now() - new Date(isoStr).getTime();
+    if (isNaN(ms)) return fallback;
+    return this._formatTimeDiff(ms) + ' ago';
+  }
+
+  /** Collapsible group section (collapsed by default) used in entity-list dialogs */
+  _collGroup(label, bodyHtml) {
+    return `
+      <div class="entity-list-group">
+        <div class="entity-list-group-title em-collapsible" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">
+          <span class="em-collapse-arrow" style="display:inline-block;transition:transform 0.2s;opacity:0.65;flex-shrink:0;transform:rotate(-90deg)">▼</span>
+          ${label}
+        </div>
+        <div class="em-group-body" style="display:none">${bodyHtml}</div>
+      </div>
+    `;
+  }
+
+  /** Coloured "triggered by" badge used in automation / template dialogs */
+  _triggerBadge(item) {
+    if (item.triggered_by === 'human') {
+      const who = item.triggered_by_name ? ` (${this._escapeHtml(item.triggered_by_name)})` : '';
+      return `<span style="color:#4caf50">Human${who}</span>`;
+    }
+    if (item.triggered_by === 'automation') return `<span style="color:#2196f3">Automation / Script</span>`;
+    return `<span style="opacity:0.6">HA / System</span>`;
+  }
+
+  /** Standard managed-item row with Edit / Rename / Remove buttons */
+  _renderManagedItem(opts) {
+    const eid = this._escapeAttr(opts.entity_id);
+    const displayName = this._escapeHtml(opts.name);
+    return `
+      <div class="entity-list-item" style="padding:10px 12px">
+        <div class="entity-list-row" style="flex-wrap:wrap;align-items:center;gap:6px">
+          <span class="entity-list-name" style="font-weight:600;flex:1;min-width:120px">${displayName}${opts.stateBadgeHtml || ''}</span>
+          <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7;flex:1;min-width:120px">${this._escapeHtml(opts.entity_id)}</span>
+          <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap">
+            <button class="entity-list-toggle ${opts.state === 'on' ? 'on' : 'off'} btn btn-secondary"
+              data-entity-id="${eid}" data-entity-type="${this._escapeAttr(opts.entityType)}"
+              style="padding:2px 10px;font-size:0.8em">${opts.state === 'on' ? 'On' : 'Off'}</button>
+            <button class="entity-list-action-btn edit-btn btn btn-secondary"
+              data-entity-id="${eid}" data-entity-type="${this._escapeAttr(opts.entityType)}"
+              style="padding:2px 10px;font-size:0.8em" title="Open in HA editor">Edit</button>
+            <button class="em-entity-rename btn btn-secondary"
+              data-entity-id="${eid}" data-current-name="${this._escapeAttr(opts.name)}"
+              style="padding:2px 10px;font-size:0.8em">Rename</button>
+            <button class="em-entity-remove btn"
+              data-entity-id="${eid}" data-entity-type="${this._escapeAttr(opts.entityType)}"
+              style="padding:2px 10px;font-size:0.8em;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
+          </div>
+        </div>
+        ${opts.infoHtml ? `
+        <details style="margin-top:6px">
+          <summary style="cursor:pointer;font-size:0.82em;opacity:0.6;user-select:none;list-style:none;display:inline-flex;align-items:center;gap:4px">
+            <span class="em-details-arrow" style="display:inline-block;font-size:0.85em;transition:transform 0.15s">▶</span> Details
+          </summary>
+          <div style="font-size:0.88em;margin-top:5px;padding-left:14px;display:flex;gap:16px;flex-wrap:wrap;opacity:0.9">${opts.infoHtml}</div>
+        </details>` : ''}
+      </div>
+    `;
+  }
+
+  _contrastColor(cssColor) {
+    if (!cssColor) return '#ffffff';
+    try {
+      const ctx = document.createElement('canvas').getContext('2d');
+      ctx.fillStyle = '#000000';
+      ctx.fillStyle = cssColor;
+      const hex = ctx.fillStyle.replace('#', '');
+      if (hex.length !== 6) return '#ffffff';
+      const r = parseInt(hex.substr(0, 2), 16);
+      const g = parseInt(hex.substr(2, 2), 16);
+      const b = parseInt(hex.substr(4, 2), 16);
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#212121' : '#ffffff';
+    } catch {
+      return '#ffffff';
+    }
+  }
+
+  // Map an HA label color name (e.g. "blue-grey") to a hex value for CSS.
+  // Falls through for plain hex values or unknown names.
+  _labelColorCss(color) {
+    if (!color) return 'var(--em-primary)';
+    const entry = HA_LABEL_COLORS.find(([name]) => name === color);
+    return entry ? entry[1] : color;
+  }
+
+  // ── Label target selector helpers ──────────────────────────────
+  _labelTargetSelectorHtml(id = 'em-label-target', defaultTarget = 'both', hasDevice = true) {
+    const opts = [
+      { val: 'entity', label: 'Entity', title: 'Entity registry — shown in Settings → Entities' },
+      ...(hasDevice ? [
+        { val: 'device', label: 'Device', title: 'Device registry — shown in Settings → Devices' },
+        { val: 'both',   label: 'Both',   title: 'Apply to both entity and device registries' },
+      ] : []),
+    ];
+    return `<div style="margin-bottom:12px">
+      <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:5px">Apply label to</label>
+      <div id="${id}" style="display:flex;gap:5px">
+        ${opts.map(o => `<button class="em-target-btn${o.val === defaultTarget ? ' active' : ''}" data-target="${o.val}" title="${o.title}"
+          style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--em-border);cursor:pointer;font-size:12px;
+                 background:${o.val === defaultTarget ? 'var(--em-primary)' : 'var(--em-bg-hover)'};
+                 color:${o.val === defaultTarget ? 'white' : 'var(--em-text-primary)'};
+                 font-weight:${o.val === defaultTarget ? '600' : '400'}">${o.label}</button>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  _attachTargetSelector(overlayEl, id) {
+    overlayEl.querySelector(`#${id}`)?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.em-target-btn');
+      if (!btn) return;
+      const parent = btn.closest(`#${id}`);
+      parent.querySelectorAll('.em-target-btn').forEach(b => {
+        const active = b === btn;
+        b.classList.toggle('active', active);
+        b.style.background = active ? 'var(--em-primary)' : 'var(--em-bg-hover)';
+        b.style.color      = active ? 'white' : 'var(--em-text-primary)';
+        b.style.fontWeight = active ? '600' : '400';
+      });
+    });
+  }
+
+  _getTargetValue(overlayEl, id) {
+    return overlayEl.querySelector(`#${id} .em-target-btn.active`)?.dataset.target || 'both';
   }
 
   _fuzzyMatch(text, pattern) {
@@ -272,9 +431,20 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (this._themeObserver) {
-      this._themeObserver.disconnect();
-    }
+    if (this._themeObserver) this._themeObserver.disconnect();
+    if (this._themeOutsideHandler) document.removeEventListener('click', this._themeOutsideHandler);
+    if (this._domainOutsideHandler) document.removeEventListener('click', this._domainOutsideHandler);
+  }
+
+  // Re-render sidebar in place and re-attach listeners + labels.
+  _reRenderSidebar() {
+    const layout = this.querySelector('.em-layout');
+    if (!layout) return;
+    const oldSidebar = layout.querySelector('.em-sidebar');
+    if (!oldSidebar) return;
+    oldSidebar.outerHTML = this._renderSidebar();
+    this._attachSidebarListeners();
+    this._loadAndDisplayLabels();
   }
 
   updateTheme() {
@@ -435,12 +605,7 @@ class EntityManagerPanel extends HTMLElement {
   }
   
   _loadSavedThemes() {
-    try {
-      const saved = localStorage.getItem('em-custom-themes');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
+    return this._loadFromStorage('em-custom-themes', {});
   }
   
   _saveThemesToStorage() {
@@ -776,19 +941,11 @@ class EntityManagerPanel extends HTMLElement {
       const chip = this.querySelector(`#${id}`);
       if (chip) {
         chip.style.background = color;
-        chip.style.color = this._getContrastColor(color);
+        chip.style.color = this._contrastColor(color);
       }
     });
   }
   
-  _getContrastColor(hex) {
-    // Convert hex to RGB and calculate luminance
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? '#212121' : '#ffffff';
-  }
   
   _darkenColor(hex, percent) {
     const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - Math.round(255 * percent));
@@ -1005,7 +1162,7 @@ class EntityManagerPanel extends HTMLElement {
 
   // ===== TOAST NOTIFICATION SYSTEM =====
   
-  _showToast(message, type = 'info', duration = 3000) {
+  _showToast(message, type = 'info', duration = 10000) {
     // Remove existing toast if any
     const existing = document.querySelector('.em-toast');
     if (existing) existing.remove();
@@ -1053,6 +1210,10 @@ class EntityManagerPanel extends HTMLElement {
       cb.checked = true;
       this.selectedEntities.add(cb.dataset.entityId);
     });
+    this.querySelectorAll('.integration-select-checkbox').forEach(cb => {
+      cb.checked = true;
+      cb.indeterminate = false;
+    });
     this._updateSelectionUI();
     this._showToast(`Selected ${checkboxes.length} entities`, 'success');
   }
@@ -1060,10 +1221,33 @@ class EntityManagerPanel extends HTMLElement {
   _deselectAll() {
     this.selectedEntities.clear();
     this.querySelectorAll('.entity-checkbox:checked').forEach(cb => cb.checked = false);
+    this.querySelectorAll('.integration-select-checkbox').forEach(cb => {
+      cb.checked = false;
+      cb.indeterminate = false;
+    });
     this._updateSelectionUI();
     this._showToast('Selection cleared', 'info');
   }
-  
+
+  _updateIntegrationCheckboxState(integrationId) {
+    if (!integrationId) return;
+    const integrationCb = this.content && this.content.querySelector(`.integration-select-checkbox[data-integration="${integrationId}"]`);
+    if (!integrationCb) return;
+    const entityCbs = Array.from(this.content.querySelectorAll(`.entity-checkbox[data-integration="${integrationId}"]`));
+    if (entityCbs.length === 0) return;
+    const checkedCount = entityCbs.filter(cb => cb.checked).length;
+    if (checkedCount === 0) {
+      integrationCb.checked = false;
+      integrationCb.indeterminate = false;
+    } else if (checkedCount === entityCbs.length) {
+      integrationCb.checked = true;
+      integrationCb.indeterminate = false;
+    } else {
+      integrationCb.checked = false;
+      integrationCb.indeterminate = true;
+    }
+  }
+
   _closeAllDropdowns() {
     this.querySelectorAll('.theme-dropdown-menu.active, .domain-menu.open').forEach(el => {
       el.classList.remove('active', 'open');
@@ -1089,364 +1273,664 @@ class EntityManagerPanel extends HTMLElement {
   
   _openBulkRenameDialog() {
     const selectedCount = this.selectedEntities.size;
-    
-    const { overlay, closeDialog } = this.createDialog({
-      title: 'Bulk Rename Entities',
-      color: 'var(--em-primary)',
-      contentHtml: `
-        <div class="bulk-rename-content">
-          <p style="margin-bottom: 16px; color: var(--em-text-secondary);">
-            ${selectedCount > 0 ? `Rename ${selectedCount} selected entities` : 'Rename all visible entities'} using find/replace patterns.
-          </p>
-          <div class="bulk-rename-row">
-            <label>Find pattern:</label>
-            <input type="text" id="bulk-find" class="rename-input" placeholder="e.g., sensor_old_">
-          </div>
-          <div class="bulk-rename-row">
-            <label>Replace with:</label>
-            <input type="text" id="bulk-replace" class="rename-input" placeholder="e.g., sensor_new_">
-          </div>
-          <div class="bulk-rename-options">
-            <label><input type="checkbox" id="bulk-regex"> Use regex</label>
-            <label><input type="checkbox" id="bulk-case"> Case sensitive</label>
-          </div>
-          <div id="bulk-preview" class="bulk-preview"></div>
-        </div>
-      `,
-      actionsHtml: `
-        <button class="btn btn-secondary" id="bulk-preview-btn">Preview</button>
-        <button class="btn btn-secondary confirm-no">Cancel</button>
-        <button class="btn btn-primary confirm-yes" disabled>Rename</button>
-      `
-    });
-    
-    const findInput = overlay.querySelector('#bulk-find');
-    const replaceInput = overlay.querySelector('#bulk-replace');
-    const previewBtn = overlay.querySelector('#bulk-preview-btn');
-    const renameBtn = overlay.querySelector('.confirm-yes');
-    const previewDiv = overlay.querySelector('#bulk-preview');
-    
-    let renameMap = [];
-    
-    const updatePreview = () => {
-      const find = findInput.value;
-      const replace = replaceInput.value;
-      const useRegex = overlay.querySelector('#bulk-regex').checked;
-      const caseSensitive = overlay.querySelector('#bulk-case').checked;
-      
-      if (!find) {
-        previewDiv.innerHTML = '<p style="color: var(--em-text-secondary);">Enter a find pattern to preview changes.</p>';
-        renameBtn.disabled = true;
+
+    // Shared helper: execute a renameMap array
+    const executeRenames = async (renameMap, closeDialog) => {
+      if (renameMap.length === 0) {
+        this._showToast('No changes to apply.', 'info');
         return;
       }
-      
-      // Get entities to rename
-      let entities = selectedCount > 0 
-        ? Array.from(this.selectedEntities)
-        : Array.from(this.querySelectorAll('.entity-checkbox')).map(cb => cb.dataset.entityId);
-      
-      renameMap = [];
-      
-      try {
-        const pattern = useRegex 
-          ? new RegExp(find, caseSensitive ? 'g' : 'gi')
-          : new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
-        
-        entities.forEach(entityId => {
-          const [domain, name] = entityId.split('.');
-          if (pattern.test(name)) {
-            const newName = name.replace(pattern, replace);
-            if (newName !== name) {
-              renameMap.push({ old: entityId, new: `${domain}.${newName}` });
-            }
-          }
-        });
-        
-        if (renameMap.length === 0) {
-          previewDiv.innerHTML = '<p style="color: var(--em-warning);">No matches found.</p>';
-          renameBtn.disabled = true;
-        } else {
-          previewDiv.innerHTML = `
-            <p style="margin-bottom: 8px;"><strong>${renameMap.length}</strong> entities will be renamed:</p>
-            <div class="preview-list" style="max-height: 200px; overflow-y: auto;">
-              ${renameMap.slice(0, 20).map(item => `
-                <div class="preview-item">
-                  <span class="old-name">${this._escapeHtml(item.old)}</span>
-                  <span class="arrow">→</span>
-                  <span class="new-name">${this._escapeHtml(item.new)}</span>
-                </div>
-              `).join('')}
-              ${renameMap.length > 20 ? `<p>... and ${renameMap.length - 20} more</p>` : ''}
-            </div>
-          `;
-          renameBtn.disabled = false;
-        }
-      } catch (e) {
-        previewDiv.innerHTML = `<p style="color: var(--em-danger);">Invalid regex: ${this._escapeHtml(e.message)}</p>`;
-        renameBtn.disabled = true;
-      }
-    };
-    
-    previewBtn.addEventListener('click', updatePreview);
-    findInput.addEventListener('input', () => { renameBtn.disabled = true; });
-    replaceInput.addEventListener('input', () => { renameBtn.disabled = true; });
-    
-    renameBtn.addEventListener('click', async () => {
       closeDialog();
-      
       this._showToast(`Renaming ${renameMap.length} entities...`, 'info', 0);
-      
-      // Group by domain/integration
       const renameByDomain = {};
       for (const item of renameMap) {
-        const domain = item.old.split('.')[0];
-        if (!renameByDomain[domain]) {
-          renameByDomain[domain] = [];
-        }
-        renameByDomain[domain].push(item);
+        const d = item.old.split('.')[0];
+        if (!renameByDomain[d]) renameByDomain[d] = [];
+        renameByDomain[d].push(item);
       }
-      
-      let successCount = 0;
-      let errorCount = 0;
-      
-      // Process integrations one at a time, but entities within each in parallel
-      for (const [domain, items] of Object.entries(renameByDomain)) {
+      let successCount = 0, errorCount = 0;
+      for (const [, items] of Object.entries(renameByDomain)) {
         const results = await Promise.allSettled(
           items.map(item => this.renameEntity(item.old, item.new))
         );
         successCount += results.filter(r => r.status === 'fulfilled').length;
         errorCount += results.filter(r => r.status === 'rejected').length;
       }
-      
-      // Remove loading toast
       document.querySelector('.em-toast')?.remove();
-      
       if (errorCount === 0) {
         this._showToast(`Successfully renamed ${successCount} entities`, 'success');
       } else {
         this._showToast(`Renamed ${successCount}, failed ${errorCount}`, 'warning');
       }
-      
       await this.loadData();
-    });
-    
-    overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+    };
+
+    if (selectedCount > 0) {
+      // ── Per-entity rename mode ──────────────────────────────────────
+      const selectedArray = Array.from(this.selectedEntities);
+
+      const rowsHtml = selectedArray.map(entityId => {
+        const dotIdx = entityId.indexOf('.');
+        const domain   = entityId.slice(0, dotIdx);
+        const objectId = entityId.slice(dotIdx + 1);
+        return `
+          <div class="bulk-rename-entity-row"
+               data-old-entity="${this._escapeAttr(entityId)}"
+               style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--em-border);">
+            <span style="font-family:monospace;font-size:0.82em;opacity:0.5;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
+            <span style="font-family:monospace;font-size:0.82em;background:var(--em-bg-secondary);padding:2px 6px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;flex-shrink:0;"
+                  title="${this._escapeAttr(entityId)}">${this._escapeHtml(objectId)}</span>
+            <span style="opacity:0.4;flex-shrink:0;">→</span>
+            <span style="font-family:monospace;font-size:0.82em;opacity:0.5;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
+            <input type="text" class="bulk-new-name rename-input"
+                   value="${this._escapeAttr(objectId)}"
+                   placeholder="new_name"
+                   style="flex:1;min-width:80px;font-family:monospace;font-size:0.85em;">
+          </div>
+        `;
+      }).join('');
+
+      const { overlay, closeDialog } = this.createDialog({
+        title: `Bulk Rename — ${selectedCount} Entities`,
+        color: 'var(--em-primary)',
+        contentHtml: `
+          <div class="bulk-rename-content">
+            <details style="margin-bottom:12px;">
+              <summary style="cursor:pointer;font-size:12px;color:var(--em-text-secondary);user-select:none;list-style:none;display:inline-flex;align-items:center;gap:4px;">
+                <span class="em-details-arrow" style="display:inline-block;font-size:0.85em;transition:transform 0.15s;">▶</span> Auto-fill with pattern
+              </summary>
+              <div style="margin-top:10px;padding:10px;background:var(--em-bg-secondary);border-radius:6px;">
+                <div class="bulk-rename-row">
+                  <label>Find:</label>
+                  <input type="text" id="bulk-find" class="rename-input" placeholder="e.g., living_room_">
+                </div>
+                <div class="bulk-rename-row">
+                  <label>Replace:</label>
+                  <input type="text" id="bulk-replace" class="rename-input" placeholder="e.g., lounge_">
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
+                  <label><input type="checkbox" id="bulk-regex"> Use regex</label>
+                  <label><input type="checkbox" id="bulk-case"> Case sensitive</label>
+                  <button class="btn btn-secondary" id="bulk-apply-pattern" style="margin-left:auto;padding:3px 12px;font-size:0.85em;">Apply to all</button>
+                </div>
+              </div>
+            </details>
+
+            <div id="bulk-rename-rows" style="max-height:320px;overflow-y:auto;padding-right:4px;">
+              ${rowsHtml}
+            </div>
+
+            <p id="bulk-rename-summary" style="margin-top:10px;font-size:0.85em;color:var(--em-text-secondary);">
+              Edit the new names directly, or use "Auto-fill with pattern" above.
+            </p>
+          </div>
+        `,
+        actionsHtml: `
+          <button class="btn btn-secondary confirm-no">Cancel</button>
+          <button class="btn btn-primary confirm-yes">Rename</button>
+        `
+      });
+
+      const updateSummary = () => {
+        let changeCount = 0;
+        overlay.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
+          const old = row.dataset.oldEntity;
+          const objectId = old.slice(old.indexOf('.') + 1);
+          const newVal = row.querySelector('.bulk-new-name').value.trim();
+          if (newVal && newVal !== objectId) changeCount++;
+        });
+        const summary = overlay.querySelector('#bulk-rename-summary');
+        if (summary) {
+          summary.textContent = changeCount > 0
+            ? `${changeCount} of ${selectedCount} entities will be renamed.`
+            : 'Edit the new names directly, or use "Auto-fill with pattern" above.';
+        }
+      };
+
+      overlay.querySelector('#bulk-apply-pattern').addEventListener('click', () => {
+        const find = overlay.querySelector('#bulk-find').value;
+        const replace = overlay.querySelector('#bulk-replace').value || '';
+        const useRegex = overlay.querySelector('#bulk-regex').checked;
+        const caseSensitive = overlay.querySelector('#bulk-case').checked;
+        if (!find) { this._showToast('Enter a find pattern first.', 'info'); return; }
+        let pattern;
+        try {
+          pattern = useRegex
+            ? new RegExp(find, caseSensitive ? 'g' : 'gi')
+            : new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
+        } catch (e) {
+          this._showToast(`Invalid regex: ${e.message}`, 'danger');
+          return;
+        }
+        overlay.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
+          const old = row.dataset.oldEntity;
+          const objectId = old.slice(old.indexOf('.') + 1);
+          row.querySelector('.bulk-new-name').value = objectId.replace(pattern, replace);
+        });
+        updateSummary();
+      });
+
+      overlay.querySelectorAll('.bulk-new-name').forEach(input => {
+        input.addEventListener('input', updateSummary);
+      });
+
+      overlay.querySelector('.confirm-yes').addEventListener('click', async () => {
+        const renameMap = [];
+        overlay.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
+          const old = row.dataset.oldEntity;
+          const domain   = old.slice(0, old.indexOf('.'));
+          const objectId = old.slice(old.indexOf('.') + 1);
+          const newVal = row.querySelector('.bulk-new-name').value.trim();
+          if (newVal && newVal !== objectId) {
+            renameMap.push({ old, new: `${domain}.${newVal}` });
+          }
+        });
+        await executeRenames(renameMap, closeDialog);
+      });
+
+      overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+
+    } else {
+      // ── Pattern / find-replace mode (no selection) ──────────────────
+      const { overlay, closeDialog } = this.createDialog({
+        title: 'Bulk Rename Entities',
+        color: 'var(--em-primary)',
+        contentHtml: `
+          <div class="bulk-rename-content">
+            <p style="margin-bottom: 8px; color: var(--em-text-secondary);">
+              Rename all visible entities using find/replace patterns.
+            </p>
+            <div class="bulk-rename-row">
+              <label>Find pattern:</label>
+              <input type="text" id="bulk-find" class="rename-input" placeholder="e.g., living_room_temperature">
+            </div>
+            <div class="bulk-rename-row">
+              <label>Replace with:</label>
+              <input type="text" id="bulk-replace" class="rename-input" placeholder="e.g., lounge_temperature">
+            </div>
+            <div class="bulk-rename-options">
+              <label><input type="checkbox" id="bulk-regex"> Use regex</label>
+              <span class="regex-help-btn" id="regex-help-btn" title="Regex help" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--em-text-secondary);color:var(--em-bg-primary);font-size:11px;font-weight:bold;cursor:pointer;margin-left:4px;flex-shrink:0;">?</span>
+              <label style="margin-left:12px;"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+            </div>
+            <div id="regex-help-box" style="display:none;margin-top:8px;padding:10px 12px;background:var(--em-bg-secondary);border:1px solid var(--em-border);border-radius:6px;font-size:12px;line-height:1.6;">
+              <strong>Regex find/replace</strong> — matches the <em>object_id</em> part only (after the dot).<br><br>
+              <strong>Common patterns:</strong><br>
+              <code>^shelly_</code> — starts with "shelly_"<br>
+              <code>_\d+$</code> — ends with numbers<br>
+              <code>(old|legacy)</code> — matches either word<br>
+              <code>_v\d+</code> — "_v" followed by digits<br><br>
+              <strong>Capture groups in Replace:</strong><br>
+              Find: <code>^(sensor)_old_(.+)</code> → Replace: <code>$1_new_$2</code><br>
+              <code>sensor_old_power</code> → <code>sensor_new_power</code>
+            </div>
+            <div id="bulk-preview" class="bulk-preview"></div>
+          </div>
+        `,
+        actionsHtml: `
+          <button class="btn btn-secondary" id="bulk-preview-btn">Preview</button>
+          <button class="btn btn-secondary confirm-no">Cancel</button>
+          <button class="btn btn-primary confirm-yes" disabled>Rename</button>
+        `
+      });
+
+      const findInput = overlay.querySelector('#bulk-find');
+      const replaceInput = overlay.querySelector('#bulk-replace');
+      const previewBtn = overlay.querySelector('#bulk-preview-btn');
+      const renameBtn = overlay.querySelector('.confirm-yes');
+      const previewDiv = overlay.querySelector('#bulk-preview');
+
+      overlay.querySelector('#regex-help-btn').addEventListener('click', () => {
+        const box = overlay.querySelector('#regex-help-box');
+        box.style.display = box.style.display === 'none' ? 'block' : 'none';
+      });
+
+      let renameMap = [];
+
+      const updatePreview = () => {
+        const find = findInput.value;
+        const replace = replaceInput.value;
+        const useRegex = overlay.querySelector('#bulk-regex').checked;
+        const caseSensitive = overlay.querySelector('#bulk-case').checked;
+
+        if (!find) {
+          previewDiv.innerHTML = '<p style="color: var(--em-text-secondary);">Enter a find pattern to preview changes.</p>';
+          renameBtn.disabled = true;
+          return;
+        }
+
+        const entities = Array.from(this.querySelectorAll('.entity-checkbox')).map(cb => cb.dataset.entityId);
+        renameMap = [];
+
+        try {
+          const pattern = useRegex
+            ? new RegExp(find, caseSensitive ? 'g' : 'gi')
+            : new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
+
+          entities.forEach(entityId => {
+            const [domain, name] = entityId.split('.');
+            if (pattern.test(name)) {
+              const newName = name.replace(pattern, replace);
+              if (newName !== name) renameMap.push({ old: entityId, new: `${domain}.${newName}` });
+            }
+          });
+
+          if (renameMap.length === 0) {
+            previewDiv.innerHTML = '<p style="color: var(--em-warning);">No matches found.</p>';
+            renameBtn.disabled = true;
+          } else {
+            previewDiv.innerHTML = `
+              <p style="margin-bottom: 8px;"><strong>${renameMap.length}</strong> entities will be renamed:</p>
+              <div class="preview-list" style="max-height: 200px; overflow-y: auto;">
+                ${renameMap.slice(0, 20).map(item => `
+                  <div class="preview-item">
+                    <span class="old-name">${this._escapeHtml(item.old)}</span>
+                    <span class="arrow">→</span>
+                    <span class="new-name">${this._escapeHtml(item.new)}</span>
+                  </div>
+                `).join('')}
+                ${renameMap.length > 20 ? `<p>... and ${renameMap.length - 20} more</p>` : ''}
+              </div>
+            `;
+            renameBtn.disabled = false;
+          }
+        } catch (e) {
+          previewDiv.innerHTML = `<p style="color: var(--em-danger);">Invalid regex: ${this._escapeHtml(e.message)}</p>`;
+          renameBtn.disabled = true;
+        }
+      };
+
+      previewBtn.addEventListener('click', updatePreview);
+      findInput.addEventListener('input', () => { renameBtn.disabled = true; });
+      replaceInput.addEventListener('input', () => { renameBtn.disabled = true; });
+
+      renameBtn.addEventListener('click', async () => {
+        await executeRenames(renameMap, closeDialog);
+      });
+
+      overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+    }
   }
   
   // ===== CONTEXT MENU =====
   
+  _buildContextMenuHTML(hasMultipleSelected, isDisabled, isFavorite) {
+    if (hasMultipleSelected) {
+      return `
+        <div class="em-context-header" style="padding:8px 12px;color:var(--em-text-secondary);font-size:11px;border-bottom:1px solid var(--em-border);">
+          ${this.selectedEntities.size} entities selected
+        </div>
+        <div class="em-context-item" data-action="bulk-rename"><span class="icon">✎</span> Bulk Rename Selected</div>
+        <div class="em-context-item" data-action="bulk-enable"><span class="icon">✓</span> Enable All Selected</div>
+        <div class="em-context-item" data-action="bulk-disable"><span class="icon">✕</span> Disable All Selected</div>
+        <div class="em-context-divider"></div>
+        <div class="em-context-item" data-action="bulk-labels"><span class="icon">🔖</span> Add Labels to Selected</div>
+        <div class="em-context-item" data-action="bulk-favorite"><span class="icon">★</span> Add All to Favorites</div>
+        <div class="em-context-item" data-action="bulk-compare"><span class="icon">⇔</span> Compare Selected</div>
+        <div class="em-context-divider"></div>
+        <div class="em-context-item" data-action="clear-selection"><span class="icon">✗</span> Clear Selection</div>
+      `;
+    }
+    return `
+      <div class="em-context-item" data-action="rename"><span class="icon">✎</span> Rename</div>
+      <div class="em-context-item" data-action="${isDisabled ? 'enable' : 'disable'}">
+        <span class="icon">${isDisabled ? '✓' : '✕'}</span> ${isDisabled ? 'Enable' : 'Disable'}
+      </div>
+      <div class="em-context-divider"></div>
+      <div class="em-context-item" data-action="favorite">
+        <span class="icon">${isFavorite ? '★' : '☆'}</span> ${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+      </div>
+      <div class="em-context-item" data-action="tags"><span class="icon">🏷️</span> Manage Tags</div>
+      <div class="em-context-item" data-action="labels"><span class="icon">🔖</span> Manage Labels</div>
+      <div class="em-context-item" data-action="alias"><span class="icon">📝</span> Set Alias</div>
+      <div class="em-context-item" data-action="compare"><span class="icon">⇔</span> Add to Comparison</div>
+      <div class="em-context-divider"></div>
+      <div class="em-context-item" data-action="stats"><span class="icon">📊</span> Statistics</div>
+      <div class="em-context-item" data-action="history"><span class="icon">📈</span> State History</div>
+      <div class="em-context-item" data-action="dependencies"><span class="icon">🔗</span> Dependencies</div>
+      <div class="em-context-item" data-action="impact"><span class="icon">⚠️</span> Automation Impact</div>
+      <div class="em-context-divider"></div>
+      <div class="em-context-item" data-action="copy-id"><span class="icon">📋</span> Copy Entity ID</div>
+      <div class="em-context-item" data-action="open-ha"><span class="icon">↗</span> Open in HA</div>
+    `;
+  }
+
+  async _handleContextMenuAction(action, entityId) {
+    switch (action) {
+      case 'rename':        this.showRenameDialog(entityId); break;
+      case 'enable':        await this.enableEntity(entityId); break;
+      case 'disable':       await this.disableEntity(entityId); break;
+      case 'favorite':      this._toggleFavorite(entityId); break;
+      case 'tags':          this._showTagEditor(entityId); break;
+      case 'labels':        this._showLabelEditor(entityId); break;
+      case 'alias':         this._showAliasEditor(entityId); break;
+      case 'compare':       this._addToComparison(entityId); break;
+      case 'stats':         this._showEntityStatistics(entityId); break;
+      case 'history':       this._showStateHistory(entityId); break;
+      case 'dependencies':  this._showEntityDependencies(entityId); break;
+      case 'impact':        this._analyzeAutomationImpact(entityId); break;
+      case 'copy-id':
+        navigator.clipboard.writeText(entityId);
+        this._showToast('Entity ID copied to clipboard', 'success');
+        break;
+      case 'open-ha':
+        history.pushState(null, '', `/config/entities/entity/${entityId}`);
+        window.dispatchEvent(new CustomEvent('location-changed'));
+        break;
+      case 'bulk-rename':   this._openBulkRenameDialog(); break;
+      case 'bulk-enable':   await this._bulkEnableSelected(); break;
+      case 'bulk-disable':  await this._disableSelectedEntities(); break;
+      case 'bulk-labels':   this._showBulkLabelEditor(); break;
+      case 'bulk-favorite':
+        for (const id of this.selectedEntities) {
+          if (!this.favorites.has(id)) this._toggleFavorite(id);
+        }
+        this._showToast(`Added ${this.selectedEntities.size} entities to favorites`, 'success');
+        break;
+      case 'bulk-compare':
+        for (const id of this.selectedEntities) this._addToComparison(id);
+        break;
+      case 'clear-selection':
+        this.selectedEntities.clear();
+        this.updateSelectedCount();
+        this.updateView();
+        this._showToast('Selection cleared', 'info');
+        break;
+    }
+  }
+
+  async _showEntityDetailsDialog(entityId) {
+    // Show a loading dialog immediately
+    const { overlay, closeDialog } = this.createDialog({
+      title: entityId,
+      color: 'var(--em-primary)',
+      contentHtml: `<div id="em-edd-body" style="padding:40px;text-align:center;color:var(--em-text-secondary)">Loading entity details…</div>`,
+      actionsHtml: `<button id="em-edd-close" style="padding:8px 20px;border:2px solid var(--em-border);background:transparent;color:var(--em-text-primary);border-radius:8px;cursor:pointer">Close</button>`,
+      extraClass: 'em-entity-detail',
+    });
+    overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
+
+    // Fetch registry details + history in parallel
+    let details, history;
+    try {
+      [details, history] = await Promise.all([
+        this._hass.callWS({ type: 'entity_manager/get_entity_details', entity_id: entityId }),
+        this._hass.callWS({
+          type: 'history/history_during_period',
+          entity_ids: [entityId],
+          start_time: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
+          end_time: new Date().toISOString(),
+          minimal_response: true,
+          no_attributes: true,
+          significant_changes_only: false,
+        }).catch(() => null),
+      ]);
+    } catch (err) {
+      overlay.querySelector('#em-edd-body').innerHTML =
+        `<div style="padding:20px;color:var(--em-danger)">Failed to load details: ${this._escapeHtml(String(err))}</div>`;
+      return;
+    }
+
+    const e = details.entity;
+    const d = details.device;
+    const area = details.area;
+    const ce = details.config_entry;
+    const entityLabels = details.labels || [];
+    const deviceLabels = details.device_labels || [];
+    const state = this._hass?.states[entityId];
+    const isDisabled = !!e.disabled_by;
+
+    // ── Helpers ────────────────────────────────────────────────────
+    const row = (label, value, extra = '') => value != null && value !== ''
+      ? `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--em-border-light);align-items:flex-start">
+           <span style="min-width:160px;color:var(--em-text-secondary);font-size:12px;flex-shrink:0">${label}</span>
+           <span style="font-size:13px;word-break:break-all;color:var(--em-text-primary)">${value}${extra}</span>
+         </div>`
+      : '';
+
+    const stateColor = (s) => {
+      if (!s) return 'var(--em-text-secondary)';
+      if (s === 'on' || s === 'home' || s === 'open') return '#4caf50';
+      if (s === 'off' || s === 'not_home' || s === 'closed') return 'var(--em-text-secondary)';
+      if (s === 'unavailable' || s === 'unknown') return '#ff9800';
+      return 'var(--em-text-primary)';
+    };
+
+    // ── Section: Overview ──────────────────────────────────────────
+    const domain = entityId.split('.')[0];
+    const overviewHtml = `<div style="padding:8px 0">
+      ${row('Entity ID', `<code style="font-family:monospace;background:var(--em-bg-hover);padding:2px 6px;border-radius:4px">${this._escapeHtml(e.entity_id)}</code>`)}
+      ${row('Friendly name', this._escapeHtml(state?.attributes?.friendly_name || e.original_name || e.name || '—'))}
+      ${row('Domain', `<span style="text-transform:uppercase;font-size:11px;background:var(--em-bg-hover);padding:2px 8px;border-radius:4px">${this._escapeHtml(domain)}</span>`)}
+      ${row('Platform', this._escapeHtml(e.platform || '—'))}
+      ${row('Unique ID', `<code style="font-family:monospace;font-size:11px;opacity:0.7">${this._escapeHtml(e.unique_id || '—')}</code>`)}
+      ${e.aliases?.length ? row('Aliases', e.aliases.map(a => `<span style="background:var(--em-bg-hover);padding:2px 8px;border-radius:12px;margin-right:4px;font-size:12px">${this._escapeHtml(a)}</span>`).join('')) : ''}
+    </div>`;
+
+    // ── Section: Current State ─────────────────────────────────────
+    const attrs = state?.attributes || {};
+    const attrRows = Object.entries(attrs)
+      .filter(([k]) => k !== 'friendly_name')
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => {
+        const displayVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return row(k, this._escapeHtml(displayVal));
+      }).join('');
+
+    const stateHtml = state ? `<div style="padding:8px 0">
+      <div style="margin-bottom:12px">
+        <span style="font-size:28px;font-weight:700;color:${stateColor(state.state)}">${this._escapeHtml(state.state)}</span>
+        ${attrs.unit_of_measurement ? `<span style="font-size:16px;color:var(--em-text-secondary);margin-left:4px">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
+      </div>
+      ${row('Last changed', this._fmtAgo(state.last_changed))}
+      ${row('Last updated', this._fmtAgo(state.last_updated))}
+      ${attrRows || '<div style="color:var(--em-text-secondary);font-size:12px;padding:8px 0">No attributes</div>'}
+    </div>` : `<div style="padding:16px 0;color:var(--em-text-secondary)">No state available (entity may be disabled)</div>`;
+
+    // ── Section: Registry ──────────────────────────────────────────
+    const registryHtml = `<div style="padding:8px 0">
+      ${row('Status', isDisabled
+        ? `<span style="color:#f44336;font-weight:600">Disabled</span> <span style="color:var(--em-text-secondary);font-size:12px">(by ${this._escapeHtml(e.disabled_by)})</span>`
+        : `<span style="color:#4caf50;font-weight:600">Enabled</span>`)}
+      ${e.hidden_by ? row('Hidden by', this._escapeHtml(e.hidden_by)) : ''}
+      ${row('Entity category', this._escapeHtml(e.entity_category || '—'))}
+      ${row('Device class', this._escapeHtml(e.device_class || e.original_device_class || '—'))}
+      ${row('Unit of measurement', this._escapeHtml(e.unit_of_measurement || '—'))}
+      ${row('Icon', this._escapeHtml(e.icon || e.original_icon || '—'))}
+      ${e.supported_features ? row('Supported features', `<code style="font-size:11px">${e.supported_features}</code>`) : ''}
+      ${Object.keys(e.capabilities || {}).length ? row('Capabilities', Object.entries(e.capabilities).map(([k, v]) =>
+        `<span style="font-size:11px"><strong>${this._escapeHtml(k)}</strong>: ${this._escapeHtml(v)}</span>`).join('<br>')) : ''}
+    </div>`;
+
+    // ── Section: Device ────────────────────────────────────────────
+    const deviceHtml = d ? `<div style="padding:8px 0">
+      ${row('Name', this._escapeHtml(d.name_by_user || d.name || '—'))}
+      ${row('Manufacturer', this._escapeHtml(d.manufacturer || '—'))}
+      ${row('Model', this._escapeHtml(d.model || '—'))}
+      ${d.model_id ? row('Model ID', this._escapeHtml(d.model_id)) : ''}
+      ${d.sw_version ? row('SW version', this._escapeHtml(d.sw_version)) : ''}
+      ${d.hw_version ? row('HW version', this._escapeHtml(d.hw_version)) : ''}
+      ${d.serial_number ? row('Serial number', `<code style="font-size:11px">${this._escapeHtml(d.serial_number)}</code>`) : ''}
+      ${d.configuration_url ? row('Config URL', `<a href="${this._escapeAttr(d.configuration_url)}" target="_blank" style="color:var(--em-primary)">${this._escapeHtml(d.configuration_url)}</a>`) : ''}
+      ${d.connections?.length ? row('Connections', d.connections.map(([t, v]) =>
+        `<span style="font-size:11px"><strong>${this._escapeHtml(t)}</strong>: <code>${this._escapeHtml(v)}</code></span>`).join('<br>')) : ''}
+      ${d.identifiers?.length ? row('Identifiers', d.identifiers.map(([t, v]) =>
+        `<span style="font-size:11px"><strong>${this._escapeHtml(t)}</strong>: <code>${this._escapeHtml(v)}</code></span>`).join('<br>')) : ''}
+    </div>` : '';
+
+    // ── Section: Integration ───────────────────────────────────────
+    const integrationHtml = ce ? `<div style="padding:8px 0">
+      ${row('Title', this._escapeHtml(ce.title || '—'))}
+      ${row('Domain', this._escapeHtml(ce.domain || '—'))}
+      ${row('Source', this._escapeHtml(ce.source || '—'))}
+      ${row('Version', ce.version != null ? String(ce.version) : '—')}
+      ${row('State', this._escapeHtml(ce.state || '—'))}
+      ${ce.disabled_by ? row('Disabled by', this._escapeHtml(ce.disabled_by)) : ''}
+    </div>` : '';
+
+    // ── Section: Area ──────────────────────────────────────────────
+    const areaHtml = area ? `<div style="padding:8px 0">
+      ${row('Name', this._escapeHtml(area.name))}
+      ${area.aliases?.length ? row('Aliases', area.aliases.map(a =>
+        `<span style="background:var(--em-bg-hover);padding:2px 8px;border-radius:12px;margin-right:4px;font-size:12px">${this._escapeHtml(a)}</span>`).join('')) : ''}
+    </div>` : '';
+
+    // ── Section: Labels ────────────────────────────────────────────
+    const labelChipHtml = (labelObjs) => labelObjs.length
+      ? labelObjs.map(l => `<span style="background:${this._escapeAttr(this._labelColorCss(l.color))};color:white;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600">${this._escapeHtml(l.name)}</span>`).join('')
+      : `<span style="color:var(--em-text-secondary);font-size:13px">None</span>`;
+    const manageBtnStyle = 'padding:5px 12px;border-radius:6px;border:1px solid var(--em-border);background:var(--em-bg-hover);color:var(--em-text-primary);cursor:pointer;font-size:12px';
+    const labelSubHead = (text) => `<div style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">${text}</div>`;
+
+    const labelsHtml = `<div style="padding:8px 0;display:flex;flex-direction:column;gap:12px">
+      <div>
+        ${labelSubHead('Entity Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Entities</span>')}
+        <div id="em-edd-entity-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(entityLabels)}</div>
+        <button id="em-edd-manage-entity-labels" style="${manageBtnStyle}">🔖 ${entityLabels.length ? 'Edit' : 'Add'}</button>
+      </div>
+      ${d ? `<div>
+        ${labelSubHead('Device Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Devices</span>')}
+        <div id="em-edd-device-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(deviceLabels)}</div>
+        <button id="em-edd-manage-device-labels" style="${manageBtnStyle}">🔖 ${deviceLabels.length ? 'Edit' : 'Add'}</button>
+      </div>` : ''}
+    </div>`;
+
+    // ── Section: History ───────────────────────────────────────────
+    const histItems = history ? Object.values(history)[0] : null;
+    const histHtml = histItems?.length ? (() => {
+      const sorted = [...histItems].reverse().slice(0, 30);
+      return `<div style="padding:8px 0">
+        ${sorted.map(h => `
+          <div style="display:flex;gap:12px;padding:4px 0;border-bottom:1px solid var(--em-border-light);align-items:center">
+            <span style="font-size:11px;color:var(--em-text-secondary);min-width:90px;flex-shrink:0">${this._escapeHtml(this._fmtAgo(h.last_changed || h.lu || ''))}</span>
+            <span style="font-size:13px;font-weight:600;color:${stateColor(h.s || h.state)}">${this._escapeHtml(h.s || h.state || '—')}</span>
+          </div>`).join('')}
+      </div>`;
+    })() : `<div style="padding:16px 0;color:var(--em-text-secondary)">No history available</div>`;
+
+    // ── Assemble sections ──────────────────────────────────────────
+    // Open overview + state by default; rest collapsed
+    const openGroup = (label, bodyHtml) => `
+      <div class="entity-list-group">
+        <div class="entity-list-group-title em-collapsible" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">
+          <span class="em-collapse-arrow" style="display:inline-block;transition:transform 0.2s;opacity:0.65;flex-shrink:0">▼</span>
+          ${label}
+        </div>
+        <div class="em-group-body">${bodyHtml}</div>
+      </div>`;
+
+    let sectionsHtml = openGroup('Overview', overviewHtml);
+    sectionsHtml += openGroup('Current State', stateHtml);
+    sectionsHtml += this._collGroup('Registry', registryHtml);
+    if (d)   sectionsHtml += this._collGroup('Device', deviceHtml);
+    if (ce)  sectionsHtml += this._collGroup('Integration', integrationHtml);
+    if (area) sectionsHtml += this._collGroup(`Area: ${this._escapeHtml(area.name)}`, areaHtml);
+    const totalLabelCount = entityLabels.length + deviceLabels.length;
+    sectionsHtml += this._collGroup(`Labels${totalLabelCount ? ` (${totalLabelCount})` : ''}`, labelsHtml);
+    sectionsHtml += this._collGroup('State History (last 30 days)', histHtml);
+
+    const friendlyTitle = state?.attributes?.friendly_name || e.original_name || entityId;
+
+    // Update dialog content
+    overlay.querySelector('#em-edd-body').innerHTML = `
+      <div style="padding:4px 8px 0">
+        <div style="font-size:11px;color:var(--em-text-secondary);margin-bottom:12px;font-family:monospace">${this._escapeHtml(entityId)}</div>
+        ${sectionsHtml}
+      </div>`;
+    overlay.querySelector('.confirm-dialog-header h2').textContent = friendlyTitle;
+
+    // Actions row
+    const btnBase = 'padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;border:2px solid';
+    overlay.querySelector('.confirm-dialog-actions').innerHTML = `
+      <button id="em-edd-rename" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">✎ Rename</button>
+      <button id="em-edd-toggle" style="${btnBase} ${isDisabled ? '#4caf50;background:#4caf50;color:white' : '#f44336;background:#f44336;color:white'}">
+        ${isDisabled ? '✓ Enable' : '✕ Disable'}
+      </button>
+      <button id="em-edd-close" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">Close</button>`;
+
+    // Attach listeners
+    overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
+    overlay.querySelector('#em-edd-rename')?.addEventListener('click', () => {
+      closeDialog();
+      this.showRenameDialog(entityId);
+    });
+    overlay.querySelector('#em-edd-toggle')?.addEventListener('click', async () => {
+      if (isDisabled) await this.enableEntity(entityId);
+      else await this.disableEntity(entityId);
+      closeDialog();
+    });
+
+    // Manage entity labels
+    overlay.querySelector('#em-edd-manage-entity-labels')?.addEventListener('click', () => {
+      this._showLabelEditor(entityId, 'entity').then(async () => {
+        const updatedIds = await this._getEntityLabels(entityId);
+        const allLabels = await this._loadHALabels();
+        const chipsEl = overlay.querySelector('#em-edd-entity-label-chips');
+        const btn = overlay.querySelector('#em-edd-manage-entity-labels');
+        if (chipsEl) chipsEl.innerHTML = labelChipHtml(updatedIds.map(id => allLabels.find(l => l.label_id === id)).filter(Boolean));
+        if (btn) btn.textContent = `🔖 ${updatedIds.length ? 'Edit' : 'Add'}`;
+      });
+    });
+
+    // Manage device labels
+    overlay.querySelector('#em-edd-manage-device-labels')?.addEventListener('click', () => {
+      this._showLabelEditor(entityId, 'device').then(async () => {
+        const deviceId = e.device_id;
+        if (!deviceId) return;
+        const updatedIds = await this._getDeviceLabels(deviceId);
+        const allLabels = await this._loadHALabels();
+        const chipsEl = overlay.querySelector('#em-edd-device-label-chips');
+        const btn = overlay.querySelector('#em-edd-manage-device-labels');
+        if (chipsEl) chipsEl.innerHTML = labelChipHtml(updatedIds.map(id => allLabels.find(l => l.label_id === id)).filter(Boolean));
+        if (btn) btn.textContent = `🔖 ${updatedIds.length ? 'Edit' : 'Add'}`;
+      });
+    });
+
+    // Collapsible toggle listeners
+    overlay.querySelectorAll('.em-collapsible').forEach(header => {
+      header.addEventListener('click', () => {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.em-collapse-arrow');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+  }
+
   _showContextMenu(e, entityId) {
     e.preventDefault();
-    
-    // Remove existing context menu
     document.querySelector('.em-context-menu')?.remove();
-    
+
     const entity = this._findEntityById(entityId);
     const isFavorite = this.favorites.has(entityId);
     const isDisabled = entity?.is_disabled;
     const hasMultipleSelected = this.selectedEntities.size > 1;
-    
-    // If right-clicked entity is not in selection, add it
+
     if (hasMultipleSelected && !this.selectedEntities.has(entityId)) {
       this.selectedEntities.add(entityId);
     }
-    
+
     const menu = document.createElement('div');
     menu.className = 'em-context-menu';
-    
-    // Build menu based on selection
-    let menuHtml = '';
-    
-    if (hasMultipleSelected) {
-      // Multi-select menu
-      menuHtml = `
-        <div class="em-context-header" style="padding: 8px 12px; color: var(--em-text-secondary); font-size: 11px; border-bottom: 1px solid var(--em-border);">
-          ${this.selectedEntities.size} entities selected
-        </div>
-        <div class="em-context-item" data-action="bulk-rename">
-          <span class="icon">✎</span> Bulk Rename Selected
-        </div>
-        <div class="em-context-item" data-action="bulk-enable">
-          <span class="icon">✓</span> Enable All Selected
-        </div>
-        <div class="em-context-item" data-action="bulk-disable">
-          <span class="icon">✕</span> Disable All Selected
-        </div>
-        <div class="em-context-divider"></div>
-        <div class="em-context-item" data-action="bulk-labels">
-          <span class="icon">🔖</span> Add Labels to Selected
-        </div>
-        <div class="em-context-item" data-action="bulk-favorite">
-          <span class="icon">★</span> Add All to Favorites
-        </div>
-        <div class="em-context-item" data-action="bulk-compare">
-          <span class="icon">⇔</span> Compare Selected
-        </div>
-        <div class="em-context-divider"></div>
-        <div class="em-context-item" data-action="clear-selection">
-          <span class="icon">✗</span> Clear Selection
-        </div>
-      `;
-    } else {
-      // Single entity menu
-      menuHtml = `
-        <div class="em-context-item" data-action="rename">
-          <span class="icon">✎</span> Rename
-        </div>
-        <div class="em-context-item" data-action="${isDisabled ? 'enable' : 'disable'}">
-          <span class="icon">${isDisabled ? '✓' : '✕'}</span> ${isDisabled ? 'Enable' : 'Disable'}
-        </div>
-        <div class="em-context-divider"></div>
-        <div class="em-context-item" data-action="favorite">
-          <span class="icon">${isFavorite ? '★' : '☆'}</span> ${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
-        </div>
-        <div class="em-context-item" data-action="tags">
-          <span class="icon">🏷️</span> Manage Tags
-        </div>
-        <div class="em-context-item" data-action="labels">
-          <span class="icon">🔖</span> Manage Labels
-        </div>
-        <div class="em-context-item" data-action="alias">
-          <span class="icon">📝</span> Set Alias
-        </div>
-        <div class="em-context-item" data-action="compare">
-          <span class="icon">⇔</span> Add to Comparison
-        </div>
-        <div class="em-context-divider"></div>
-        <div class="em-context-item" data-action="stats">
-          <span class="icon">📊</span> Statistics
-        </div>
-        <div class="em-context-item" data-action="history">
-          <span class="icon">📈</span> State History
-        </div>
-        <div class="em-context-item" data-action="dependencies">
-          <span class="icon">🔗</span> Dependencies
-        </div>
-        <div class="em-context-item" data-action="impact">
-          <span class="icon">⚠️</span> Automation Impact
-        </div>
-        <div class="em-context-divider"></div>
-        <div class="em-context-item" data-action="copy-id">
-          <span class="icon">📋</span> Copy Entity ID
-        </div>
-        <div class="em-context-item" data-action="open-ha">
-          <span class="icon">↗</span> Open in HA
-        </div>
-      `;
-    }
-    
-    menu.innerHTML = menuHtml;
-    
-    // Position menu
+    menu.innerHTML = this._buildContextMenuHTML(hasMultipleSelected, isDisabled, isFavorite);
+
+    // Position and clamp to viewport
     menu.style.left = `${e.clientX}px`;
     menu.style.top = `${e.clientY}px`;
-    
     document.body.appendChild(menu);
-    
-    // Adjust if menu goes off screen
     const rect = menu.getBoundingClientRect();
-    
-    // Adjust horizontal position
-    if (rect.right > window.innerWidth) {
-      menu.style.left = `${e.clientX - rect.width}px`;
-    }
-    if (rect.left < 0) {
-      menu.style.left = '0px';
-    }
-    
-    // Adjust vertical position
-    if (rect.bottom > window.innerHeight) {
-      menu.style.top = `${e.clientY - rect.height}px`;
-    }
-    if (rect.top < 0) {
-      menu.style.top = '0px';
-    }
-    
-    // Handle actions
+    if (rect.right > window.innerWidth)  menu.style.left = `${e.clientX - rect.width}px`;
+    if (rect.left < 0)                   menu.style.left = '0px';
+    if (rect.bottom > window.innerHeight) menu.style.top = `${e.clientY - rect.height}px`;
+    if (rect.top < 0)                    menu.style.top = '0px';
+
     menu.addEventListener('click', async (evt) => {
       const action = evt.target.closest('.em-context-item')?.dataset.action;
       menu.remove();
-      
-      switch (action) {
-        case 'rename':
-          this.showRenameDialog(entityId);
-          break;
-        case 'enable':
-          await this.enableEntity(entityId);
-          break;
-        case 'disable':
-          await this.disableEntity(entityId);
-          break;
-        case 'favorite':
-          this._toggleFavorite(entityId);
-          break;
-        case 'tags':
-          this._showTagEditor(entityId);
-          break;
-        case 'labels':
-          this._showLabelEditor(entityId);
-          break;
-        case 'alias':
-          this._showAliasEditor(entityId);
-          break;
-        case 'compare':
-          this._addToComparison(entityId);
-          break;
-        case 'stats':
-          this._showEntityStatistics(entityId);
-          break;
-        case 'history':
-          this._showStateHistory(entityId);
-          break;
-        case 'dependencies':
-          this._showEntityDependencies(entityId);
-          break;
-        case 'impact':
-          this._analyzeAutomationImpact(entityId);
-          break;
-        case 'copy-id':
-          navigator.clipboard.writeText(entityId);
-          this._showToast('Entity ID copied to clipboard', 'success');
-          break;
-        case 'open-ha':
-          // Navigate within Home Assistant (same window)
-          history.pushState(null, '', `/config/entities/entity/${entityId}`);
-          window.dispatchEvent(new CustomEvent('location-changed'));
-          break;
-        // Bulk actions for multiple selected entities
-        case 'bulk-rename':
-          this._openBulkRenameDialog();
-          break;
-        case 'bulk-enable':
-          await this._bulkEnableSelected();
-          break;
-        case 'bulk-disable':
-          await this._disableSelectedEntities();
-          break;
-        case 'bulk-labels':
-          this._showBulkLabelEditor();
-          break;
-        case 'bulk-favorite':
-          for (const id of this.selectedEntities) {
-            if (!this.favorites.has(id)) this._toggleFavorite(id);
-          }
-          this._showToast(`Added ${this.selectedEntities.size} entities to favorites`, 'success');
-          break;
-        case 'bulk-compare':
-          for (const id of this.selectedEntities) {
-            this._addToComparison(id);
-          }
-          break;
-        case 'clear-selection':
-          this.selectedEntities.clear();
-          this.updateSelectedCount();
-          this.updateView();
-          this._showToast('Selection cleared', 'info');
-          break;
-      }
+      if (action) await this._handleContextMenuAction(action, entityId);
     });
-    
-    // Close on click outside
+
     const closeMenu = (evt) => {
       if (!menu.contains(evt.target)) {
         menu.remove();
@@ -1470,16 +1954,11 @@ class EntityManagerPanel extends HTMLElement {
   // ===== FAVORITES =====
   
   _loadFavorites() {
-    try {
-      const saved = localStorage.getItem('em-favorites');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
+    return new Set(this._loadFromStorage('em-favorites', []));
   }
   
   _saveFavorites() {
-    localStorage.setItem('em-favorites', JSON.stringify([...this.favorites]));
+    this._saveToStorage('em-favorites', [...this.favorites]);
   }
   
   _toggleFavorite(entityId) {
@@ -1698,12 +2177,7 @@ class EntityManagerPanel extends HTMLElement {
   // ===== ACTIVITY LOG =====
   
   _loadActivityLog() {
-    try {
-      const saved = localStorage.getItem('em-activity-log');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    return this._loadFromStorage('em-activity-log', []);
   }
   
   _saveActivityLog() {
@@ -1711,7 +2185,7 @@ class EntityManagerPanel extends HTMLElement {
     if (this.activityLog.length > 100) {
       this.activityLog = this.activityLog.slice(-100);
     }
-    localStorage.setItem('em-activity-log', JSON.stringify(this.activityLog));
+    this._saveToStorage('em-activity-log', this.activityLog);
   }
   
   _logActivity(action, details) {
@@ -1789,84 +2263,46 @@ class EntityManagerPanel extends HTMLElement {
     this._updateUndoRedoUI();
   }
   
-  async _undo() {
-    if (this.undoStack.length === 0) {
-      this._showToast('Nothing to undo', 'info');
-      return;
-    }
-    
-    const action = this.undoStack.pop();
-    this.redoStack.push(action);
-    
-    // Reverse the action
+  async _executeAction(action, isUndo) {
+    const verb = isUndo ? 'Undid' : 'Redid';
     switch (action.type) {
       case 'enable':
-        await this.disableEntity(action.entityId, true);
-        this._showToast(`Undid enable: ${action.entityId}`, 'info');
+        await (isUndo ? this.disableEntity : this.enableEntity).call(this, action.entityId, true);
+        this._showToast(`${verb} enable: ${action.entityId}`, 'info');
         break;
       case 'disable':
-        await this.enableEntity(action.entityId, true);
-        this._showToast(`Undid disable: ${action.entityId}`, 'info');
+        await (isUndo ? this.enableEntity : this.disableEntity).call(this, action.entityId, true);
+        this._showToast(`${verb} disable: ${action.entityId}`, 'info');
         break;
       case 'rename':
-        await this.renameEntity(action.newId, action.oldId, true);
-        this._showToast(`Undid rename`, 'info');
+        await this.renameEntity(isUndo ? action.newId : action.oldId, isUndo ? action.oldId : action.newId, true);
+        this._showToast(`${verb} rename`, 'info');
         break;
       case 'bulk-enable':
-        for (const id of action.entityIds) {
-          await this.disableEntity(id, true);
-        }
-        this._showToast(`Undid bulk enable (${action.entityIds.length})`, 'info');
+        for (const id of action.entityIds) await (isUndo ? this.disableEntity : this.enableEntity).call(this, id, true);
+        this._showToast(`${verb} bulk enable (${action.entityIds.length})`, 'info');
         break;
       case 'bulk-disable':
-        for (const id of action.entityIds) {
-          await this.enableEntity(id, true);
-        }
-        this._showToast(`Undid bulk disable (${action.entityIds.length})`, 'info');
+        for (const id of action.entityIds) await (isUndo ? this.enableEntity : this.disableEntity).call(this, id, true);
+        this._showToast(`${verb} bulk disable (${action.entityIds.length})`, 'info');
         break;
     }
-    
+  }
+
+  async _undo() {
+    if (this.undoStack.length === 0) { this._showToast('Nothing to undo', 'info'); return; }
+    const action = this.undoStack.pop();
+    this.redoStack.push(action);
+    await this._executeAction(action, true);
     this._updateUndoRedoUI();
     await this.loadData();
   }
-  
+
   async _redo() {
-    if (this.redoStack.length === 0) {
-      this._showToast('Nothing to redo', 'info');
-      return;
-    }
-    
+    if (this.redoStack.length === 0) { this._showToast('Nothing to redo', 'info'); return; }
     const action = this.redoStack.pop();
     this.undoStack.push(action);
-    
-    // Redo the action
-    switch (action.type) {
-      case 'enable':
-        await this.enableEntity(action.entityId, true);
-        this._showToast(`Redid enable: ${action.entityId}`, 'info');
-        break;
-      case 'disable':
-        await this.disableEntity(action.entityId, true);
-        this._showToast(`Redid disable: ${action.entityId}`, 'info');
-        break;
-      case 'rename':
-        await this.renameEntity(action.oldId, action.newId, true);
-        this._showToast(`Redid rename`, 'info');
-        break;
-      case 'bulk-enable':
-        for (const id of action.entityIds) {
-          await this.enableEntity(id, true);
-        }
-        this._showToast(`Redid bulk enable (${action.entityIds.length})`, 'info');
-        break;
-      case 'bulk-disable':
-        for (const id of action.entityIds) {
-          await this.disableEntity(id, true);
-        }
-        this._showToast(`Redid bulk disable (${action.entityIds.length})`, 'info');
-        break;
-    }
-    
+    await this._executeAction(action, false);
     this._updateUndoRedoUI();
     await this.loadData();
   }
@@ -1887,13 +2323,11 @@ class EntityManagerPanel extends HTMLElement {
   // ===== FILTER PRESETS =====
   
   _loadFilterPresets() {
-    try {
-      return JSON.parse(localStorage.getItem('em-filter-presets')) || [];
-    } catch { return []; }
+    return this._loadFromStorage('em-filter-presets', []);
   }
-  
+
   _saveFilterPresets() {
-    localStorage.setItem('em-filter-presets', JSON.stringify(this.filterPresets));
+    this._saveToStorage('em-filter-presets', this.filterPresets);
   }
   
   _saveCurrentFilterPreset(presetName) {
@@ -1967,16 +2401,12 @@ class EntityManagerPanel extends HTMLElement {
   // ===== CUSTOM COLUMNS =====
   
   _loadVisibleColumns() {
-    try {
-      return JSON.parse(localStorage.getItem('em-visible-columns')) || 
-        ['checkbox', 'favorite', 'name', 'id', 'device', 'state', 'status', 'actions'];
-    } catch {
-      return ['checkbox', 'favorite', 'name', 'id', 'device', 'state', 'status', 'actions'];
-    }
+    return this._loadFromStorage('em-visible-columns',
+      ['checkbox', 'favorite', 'name', 'id', 'device', 'state', 'status', 'actions']);
   }
   
   _saveVisibleColumns() {
-    localStorage.setItem('em-visible-columns', JSON.stringify(this.visibleColumns));
+    this._saveToStorage('em-visible-columns', this.visibleColumns);
   }
   
   _showColumnSettings() {
@@ -2032,13 +2462,11 @@ class EntityManagerPanel extends HTMLElement {
   // ===== CUSTOM TAGS =====
   
   _loadEntityTags() {
-    try {
-      return JSON.parse(localStorage.getItem('em-entity-tags')) || {};
-    } catch { return {}; }
+    return this._loadFromStorage('em-entity-tags', {});
   }
-  
+
   _saveEntityTags() {
-    localStorage.setItem('em-entity-tags', JSON.stringify(this.entityTags));
+    this._saveToStorage('em-entity-tags', this.entityTags);
   }
   
   _addTagToEntity(entityId, tag) {
@@ -2141,14 +2569,17 @@ class EntityManagerPanel extends HTMLElement {
       const labeledEntities = {};
       
       for (const entity of entityRegistry) {
-        if (entity.labels && entity.labels.length > 0) {
-          for (const labelId of entity.labels) {
+        const entityLabels = entity.labels
+          ? (Array.isArray(entity.labels) ? entity.labels : Array.from(entity.labels))
+          : [];
+        if (entityLabels.length > 0) {
+          for (const labelId of entityLabels) {
             if (!labeledEntities[labelId]) {
               const labelInfo = labels.find(l => l.label_id === labelId);
               labeledEntities[labelId] = {
                 label_id: labelId,
                 name: labelInfo?.name || labelId,
-                color: labelInfo?.color || '#4CAF50',
+                color: labelInfo?.color || 'blue',
                 entities: [],
                 byIntegration: {}
               };
@@ -2177,44 +2608,58 @@ class EntityManagerPanel extends HTMLElement {
   async _loadAndDisplayLabels() {
     const labelsList = this.querySelector('#labels-list');
     if (!labelsList) return;
-    
+
+    // If cache is already populated, render immediately — no loading flash
+    if (this.labeledEntitiesCache) {
+      this._renderLabelsList(labelsList, this.labeledEntitiesCache);
+      return;
+    }
+
+    // First load — show spinner while fetching
     labelsList.innerHTML = '<div class="sidebar-item" style="opacity: 0.5;"><span class="icon">⏳</span><span class="label">Loading...</span></div>';
-    
+
     try {
       const labeledEntities = await this._loadLabeledEntities();
-      const labels = Object.values(labeledEntities).sort((a, b) => b.entities.length - a.entities.length);
-      
-      if (labels.length === 0) {
-        labelsList.innerHTML = '<div class="sidebar-item" style="opacity: 0.7;"><span class="icon">📝</span><span class="label">No labeled entities</span></div>';
-        return;
-      }
-      
-      const displayLabels = this.showAllSidebarLabels ? labels : labels.slice(0, 8);
-      
-      let html = displayLabels.map(label => `
-        <div class="sidebar-item ${this.selectedLabelFilter === label.label_id ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
-          <span class="icon" style="color: ${this._escapeAttr(label.color)};">●</span>
-          <span class="label">${this._escapeHtml(label.name)}</span>
-          <span class="count">${label.entities.length}</span>
-        </div>
-      `).join('');
-      
-      if (!this.showAllSidebarLabels && labels.length > 8) {
-        html += `<div class="sidebar-item more" data-action="show-all-labels">+${labels.length - 8} more...</div>`;
-      }
-      
-      if (this.showAllSidebarLabels && labels.length > 8) {
-        html += `<div class="sidebar-item" data-action="collapse-labels"><span class="icon">▲</span><span class="label">Show less</span></div>`;
-      }
-      
-      // Add refresh option
-      html += `<div class="sidebar-item" data-action="load-labels" style="opacity: 0.7;"><span class="icon">🔄</span><span class="label">Refresh</span></div>`;
-      
-      labelsList.innerHTML = html;
+      this._renderLabelsList(labelsList, labeledEntities);
     } catch (e) {
       console.error('Error displaying labels:', e);
       labelsList.innerHTML = '<div class="sidebar-item" style="color: var(--em-error);"><span class="icon">⚠️</span><span class="label">Error loading labels</span></div>';
     }
+  }
+
+  _renderLabelsList(labelsList, labeledEntities) {
+    const labels = Object.values(labeledEntities).sort((a, b) => b.entities.length - a.entities.length);
+
+    if (labels.length === 0) {
+      labelsList.innerHTML = '<div class="sidebar-item" style="opacity: 0.7;"><span class="icon">📝</span><span class="label">No labeled entities</span></div>';
+      return;
+    }
+
+    const displayLabels = this.showAllSidebarLabels ? labels : labels.slice(0, 8);
+
+    let html = displayLabels.map(label => `
+      <div class="sidebar-item ${this.selectedLabelFilter === label.label_id ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
+        <span class="icon" style="color: ${this._escapeAttr(this._labelColorCss(label.color))};">●</span>
+        <span class="label">${this._escapeHtml(label.name)}</span>
+        <span class="count">${label.entities.length}</span>
+        <button data-edit-label="${this._escapeAttr(label.label_id)}"
+          style="background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:0 2px;font-size:13px;line-height:1;opacity:0.7;flex-shrink:0"
+          title="Edit label">✎</button>
+      </div>
+    `).join('');
+
+    if (!this.showAllSidebarLabels && labels.length > 8) {
+      html += `<div class="sidebar-item more" data-action="show-all-labels">+${labels.length - 8} more...</div>`;
+    }
+
+    if (this.showAllSidebarLabels && labels.length > 8) {
+      html += `<div class="sidebar-item" data-action="collapse-labels"><span class="icon">▲</span><span class="label">Show less</span></div>`;
+    }
+
+    // Add refresh option
+    html += `<div class="sidebar-item" data-action="load-labels" style="opacity: 0.7;"><span class="icon">🔄</span><span class="label">Refresh</span></div>`;
+
+    labelsList.innerHTML = html;
   }
   
   async _filterByLabel(labelId) {
@@ -2237,53 +2682,105 @@ class EntityManagerPanel extends HTMLElement {
     this.updateView();
     
     // Re-render sidebar to update active states
-    const layout = this.querySelector('.em-layout');
-    if (layout) {
-      const oldSidebar = layout.querySelector('.em-sidebar');
-      if (oldSidebar) {
-        oldSidebar.outerHTML = this._renderSidebar();
-        this._attachSidebarListeners();
-        // Reload labels list in sidebar
-        await this._loadAndDisplayLabels();
-      }
-    }
+    this._reRenderSidebar();
   }
-  
+
   async _getEntityLabels(entityId) {
     try {
-      const entityRegistry = await this._hass.callWS({ type: 'config/entity_registry/list' });
-      const entity = entityRegistry.find(e => e.entity_id === entityId);
-      return entity?.labels || [];
+      // Use /get (not /list) — list omits labels in some HA versions
+      const entry = await this._hass.callWS({
+        type: 'config/entity_registry/get',
+        entity_id: entityId,
+      });
+      // Normalise: HA may return a Set-like or plain array
+      const raw = entry?.labels;
+      if (!raw) return [];
+      return Array.isArray(raw) ? raw : Array.from(raw);
     } catch (e) {
       console.error('Error getting entity labels:', e);
       return [];
     }
   }
   
-  async _addLabelToEntity(entityId, labelId) {
+  async _getDeviceLabels(deviceId) {
     try {
-      const currentLabels = await this._getEntityLabels(entityId);
-      if (!currentLabels.includes(labelId)) {
-        await this._hass.callWS({
-          type: 'config/entity_registry/update',
-          entity_id: entityId,
-          labels: [...currentLabels, labelId]
-        });
+      const entry = await this._hass.callWS({
+        type: 'config/device_registry/get',
+        device_id: deviceId,
+      });
+      const raw = entry?.labels;
+      if (!raw) return [];
+      return Array.isArray(raw) ? raw : Array.from(raw);
+    } catch (e) {
+      console.error('Error getting device labels:', e);
+      return [];
+    }
+  }
+
+  async _getEntityDeviceId(entityId) {
+    try {
+      const entry = await this._hass.callWS({
+        type: 'config/entity_registry/get',
+        entity_id: entityId,
+      });
+      return entry?.device_id || null;
+    } catch { return null; }
+  }
+
+  async _addLabelToEntity(entityId, labelId, target = 'both') {
+    try {
+      if (target === 'entity' || target === 'both') {
+        const currentLabels = await this._getEntityLabels(entityId);
+        if (!currentLabels.includes(labelId)) {
+          await this._hass.callWS({
+            type: 'config/entity_registry/update',
+            entity_id: entityId,
+            labels: [...currentLabels, labelId],
+          });
+        }
+      }
+      if (target === 'device' || target === 'both') {
+        const deviceId = await this._getEntityDeviceId(entityId);
+        if (deviceId) {
+          const devLabels = await this._getDeviceLabels(deviceId);
+          if (!devLabels.includes(labelId)) {
+            await this._hass.callWS({
+              type: 'config/device_registry/update',
+              device_id: deviceId,
+              labels: [...devLabels, labelId],
+            });
+          }
+        }
       }
     } catch (e) {
       console.error('Error adding label:', e);
       throw e;
     }
   }
-  
-  async _removeLabelFromEntity(entityId, labelId) {
+
+  async _removeLabelFromEntity(entityId, labelId, target = 'both') {
     try {
-      const currentLabels = await this._getEntityLabels(entityId);
-      await this._hass.callWS({
-        type: 'config/entity_registry/update',
-        entity_id: entityId,
-        labels: currentLabels.filter(l => l !== labelId)
-      });
+      if (target === 'entity' || target === 'both') {
+        const currentLabels = await this._getEntityLabels(entityId);
+        await this._hass.callWS({
+          type: 'config/entity_registry/update',
+          entity_id: entityId,
+          labels: currentLabels.filter(l => l !== labelId),
+        });
+      }
+      if (target === 'device' || target === 'both') {
+        const deviceId = await this._getEntityDeviceId(entityId);
+        if (deviceId) {
+          const devLabels = await this._getDeviceLabels(deviceId);
+          if (devLabels.includes(labelId)) {
+            await this._hass.callWS({
+              type: 'config/device_registry/update',
+              device_id: deviceId,
+              labels: devLabels.filter(l => l !== labelId),
+            });
+          }
+        }
+      }
     } catch (e) {
       console.error('Error removing label:', e);
       throw e;
@@ -2306,146 +2803,286 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
   
-  async _showLabelEditor(entityId) {
-    const allLabels = await this._loadHALabels();
-    const entityLabels = await this._getEntityLabels(entityId);
-    
+  async _showLabelEditDialog(label, selectedEntityIds = []) {
+    const currentColor = label.color || 'blue';
+    const swatchHtml = HA_LABEL_COLORS.map(([name, hex]) =>
+      `<button class="em-label-swatch${name === currentColor ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`
+    ).join('');
+
+    const haSelection = selectedEntityIds.length > 0;
+    const selectionHtml = haSelection ? `
+      <div style="padding:10px 12px;background:var(--em-bg-secondary);border-radius:8px;border:1px solid var(--em-border)">
+        <div style="font-size:12px;color:var(--em-text-secondary);margin-bottom:8px">
+          ${selectedEntityIds.length} ${selectedEntityIds.length === 1 ? 'entity' : 'entities'} selected
+        </div>
+        ${this._labelTargetSelectorHtml('em-edit-label-target', 'both', true)}
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="em-label-add-selected" style="flex:1">+ Add to selected</button>
+          <button class="btn btn-secondary" id="em-label-remove-selected" style="flex:1">− Remove from selected</button>
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--em-border);margin:4px 0">
+    ` : '';
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: `Edit Label: ${label.name}`,
+      color: 'var(--em-primary)',
+      contentHtml: `
+        <div style="display:flex;flex-direction:column;gap:12px;padding:4px 0">
+          ${selectionHtml}
+          <div>
+            <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:4px">Label name</label>
+            <input id="em-label-edit-name" type="text" value="${this._escapeAttr(label.name)}"
+              style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:14px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:6px">Color</label>
+            <div class="em-label-color-picker" id="em-label-edit-color" data-value="${this._escapeAttr(currentColor)}">
+              ${swatchHtml}
+            </div>
+          </div>
+        </div>
+      `,
+      actionsHtml: `
+        <button class="btn btn-danger" id="em-label-delete-btn" style="margin-right:auto">Delete</button>
+        <button class="btn btn-secondary confirm-no">Cancel</button>
+        <button class="btn btn-primary" id="em-label-save-btn">Save</button>
+      `
+    });
+
+    // Bulk add/remove for selected entities
+    if (haSelection) {
+      this._attachTargetSelector(overlay, 'em-edit-label-target');
+
+      overlay.querySelector('#em-label-add-selected').addEventListener('click', async () => {
+        const target = this._getTargetValue(overlay, 'em-edit-label-target');
+        this._showToast(`Adding "${label.name}" to ${selectedEntityIds.length} entities…`, 'info', 0);
+        let ok = 0, fail = 0;
+        for (const entityId of selectedEntityIds) {
+          try { await this._addLabelToEntity(entityId, label.label_id, target); ok++; }
+          catch { fail++; }
+        }
+        this.labeledEntitiesCache = null;
+        closeDialog();
+        this._loadAndDisplayLabels();
+        this._showToast(fail ? `Added to ${ok}, failed ${fail}` : `Added "${label.name}" to ${ok} entities`, fail ? 'warning' : 'success');
+      });
+
+      overlay.querySelector('#em-label-remove-selected').addEventListener('click', async () => {
+        const target = this._getTargetValue(overlay, 'em-edit-label-target');
+        this._showToast(`Removing "${label.name}" from ${selectedEntityIds.length} entities…`, 'info', 0);
+        let ok = 0, fail = 0;
+        for (const entityId of selectedEntityIds) {
+          try { await this._removeLabelFromEntity(entityId, label.label_id, target); ok++; }
+          catch { fail++; }
+        }
+        this.labeledEntitiesCache = null;
+        closeDialog();
+        this._loadAndDisplayLabels();
+        this._showToast(fail ? `Removed from ${ok}, failed ${fail}` : `Removed "${label.name}" from ${ok} entities`, fail ? 'warning' : 'success');
+      });
+    }
+
+    // Swatch picker
+    overlay.querySelector('#em-label-edit-color').addEventListener('click', (e) => {
+      const swatch = e.target.closest('.em-label-swatch');
+      if (!swatch) return;
+      const picker = swatch.closest('.em-label-color-picker');
+      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+      picker.dataset.value = swatch.dataset.color;
+    });
+
+    // Save
+    overlay.querySelector('#em-label-save-btn').addEventListener('click', async () => {
+      const name = overlay.querySelector('#em-label-edit-name').value.trim();
+      const color = overlay.querySelector('#em-label-edit-color').dataset.value || 'blue';
+      if (!name) { this._showToast('Label name cannot be empty', 'warning'); return; }
+      try {
+        await this._hass.callWS({ type: 'config/label_registry/update', label_id: label.label_id, name, color });
+        this._showToast(`Label "${name}" updated`, 'success');
+        this.labelsCache = null;
+        this.labeledEntitiesCache = null;
+        closeDialog();
+        this._loadAndDisplayLabels();
+      } catch (e) {
+        this._showToast('Error updating label', 'error');
+      }
+    });
+
+    // Delete
+    overlay.querySelector('#em-label-delete-btn').addEventListener('click', async () => {
+      if (!confirm(`Delete label "${label.name}"? This will remove it from all entities.`)) return;
+      try {
+        await this._hass.callWS({ type: 'config/label_registry/delete', label_id: label.label_id });
+        this._showToast(`Label "${label.name}" deleted`, 'success');
+        this.labelsCache = null;
+        this.labeledEntitiesCache = null;
+        closeDialog();
+        this._loadAndDisplayLabels();
+      } catch (e) {
+        this._showToast('Error deleting label', 'error');
+      }
+    });
+
+    overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+  }
+
+  async _showLabelEditor(entityId, defaultTarget = 'both') {
+    const [allLabels, deviceId] = await Promise.all([
+      this._loadHALabels(),
+      this._getEntityDeviceId(entityId),
+    ]);
+
+    // If entity has no device, clamp target to 'entity'
+    if (!deviceId && defaultTarget !== 'entity') defaultTarget = 'entity';
+
+    // Fetch initial labels for the chosen target
+    const getLabelsForTarget = async (target) => {
+      if (target === 'device' && deviceId) return await this._getDeviceLabels(deviceId);
+      if (target === 'both' && deviceId) {
+        const [el, dl] = await Promise.all([this._getEntityLabels(entityId), this._getDeviceLabels(deviceId)]);
+        return [...new Set([...el, ...dl])];
+      }
+      return await this._getEntityLabels(entityId);
+    };
+
+    const initialLabels = await getLabelsForTarget(defaultTarget);
+
+    const sectionTitleFor = (t) =>
+      t === 'device' ? 'Device Labels' : t === 'entity' ? 'Entity Labels' : 'Current Labels';
+
+    const renderChips = (labelIds) => labelIds.length === 0
+      ? '<span style="color:var(--em-text-secondary);font-size:13px">No labels assigned</span>'
+      : labelIds.map(labelId => {
+          const label = allLabels.find(l => l.label_id === labelId);
+          const chipColor = this._labelColorCss(label?.color);
+          const textColor = this._contrastColor(chipColor);
+          return `<span class="label-chip" style="background:${this._escapeAttr(chipColor)};color:${textColor};padding:4px 8px;border-radius:12px;margin:2px;display:inline-block;font-size:12px">
+            ${this._escapeHtml(label?.name || labelId)}
+            <button data-remove="${this._escapeAttr(labelId)}" style="background:none;border:none;color:${textColor};cursor:pointer;margin-left:4px">&times;</button>
+          </span>`;
+        }).join('');
+
+    const renderAvailable = (currentIds) => allLabels.length === 0
+      ? '<p style="color:var(--em-text-secondary)">No labels defined yet.</p>'
+      : allLabels.map(label => `
+          <div class="label-option" data-label-id="${this._escapeAttr(label.label_id)}"
+            style="padding:8px;cursor:pointer;border-radius:4px;margin:4px 0;display:flex;align-items:center;gap:8px;${currentIds.includes(label.label_id) ? 'opacity:0.5' : ''}">
+            <span style="width:16px;height:16px;border-radius:50%;background:${this._escapeAttr(this._labelColorCss(label.color))};display:inline-block;flex-shrink:0"></span>
+            <span>${this._escapeHtml(label.name)}</span>
+            ${currentIds.includes(label.label_id)
+              ? '<span style="margin-left:auto;color:var(--em-success)">✓</span>'
+              : '<span style="margin-left:auto;color:var(--em-text-secondary)">+ Add</span>'}
+          </div>`).join('');
+
     const { overlay, closeDialog } = this.createDialog({
       title: 'Manage Labels',
       color: 'var(--em-primary)',
       contentHtml: `
         <div class="label-editor">
-          <p style="color: var(--em-text-secondary); margin-bottom: 12px;">Entity: ${entityId}</p>
-          <div class="current-labels" style="margin-bottom: 16px;">
-            <strong>Current Labels:</strong>
-            <div id="entity-labels" style="margin-top: 8px;">
-              ${entityLabels.length === 0 ? '<span style="color: var(--em-text-secondary);">No labels assigned</span>' : 
-                entityLabels.map(labelId => {
-                  const label = allLabels.find(l => l.label_id === labelId);
-                  return `<span class="label-chip" style="background: ${label?.color || 'var(--em-primary)'}; color: white; padding: 4px 8px; border-radius: 12px; margin: 2px; display: inline-block;">
-                    ${label?.name || labelId} 
-                    <button data-remove="${labelId}" style="background: none; border: none; color: white; cursor: pointer; margin-left: 4px;">&times;</button>
-                  </span>`;
-                }).join('')}
+          <p style="color:var(--em-text-secondary);margin-bottom:10px;font-size:12px;font-family:monospace">${this._escapeHtml(entityId)}</p>
+          ${this._labelTargetSelectorHtml('em-label-target', defaultTarget, !!deviceId)}
+          <div class="current-labels" style="margin-bottom:14px">
+            <div id="em-label-section-title" style="font-size:12px;color:var(--em-text-secondary);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">
+              ${sectionTitleFor(defaultTarget)}
             </div>
+            <div id="entity-labels" style="min-height:28px">${renderChips(initialLabels)}</div>
           </div>
           <div class="available-labels">
-            <strong>Available Labels:</strong>
-            <div id="available-labels" style="margin-top: 8px; max-height: 150px; overflow-y: auto;">
-              ${allLabels.length === 0 ? '<p style="color: var(--em-text-secondary);">No labels defined yet.</p>' :
-                allLabels.map(label => `
-                  <div class="label-option" data-label-id="${label.label_id}" style="padding: 8px; cursor: pointer; border-radius: 4px; margin: 4px 0; display: flex; align-items: center; gap: 8px; ${entityLabels.includes(label.label_id) ? 'opacity: 0.5;' : ''}">
-                    <span style="width: 16px; height: 16px; border-radius: 50%; background: ${label.color || 'var(--em-primary)'}; display: inline-block;"></span>
-                    <span>${label.name}</span>
-                    ${entityLabels.includes(label.label_id) ? '<span style="margin-left: auto; color: var(--em-success);">✓</span>' : '<span style="margin-left: auto; color: var(--em-text-secondary);">+ Add</span>'}
-                  </div>
-                `).join('')}
-            </div>
+            <div style="font-size:12px;color:var(--em-text-secondary);margin-bottom:5px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Available Labels</div>
+            <div id="available-labels" style="max-height:150px;overflow-y:auto">${renderAvailable(initialLabels)}</div>
           </div>
-          <div class="create-label" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--em-border);">
+          <div class="create-label" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--em-border)">
             <strong>Create New Label:</strong>
-            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
-              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-surface); color: var(--em-text);">
-              <input type="color" id="new-label-color" value="#4CAF50" style="width: 40px; height: 36px; border: none; cursor: pointer; border-radius: 4px;">
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <input type="text" id="new-label-name" placeholder="Label name"
+                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:4px;background:var(--em-surface);color:var(--em-text)">
+            </div>
+            <div class="em-label-color-picker" id="new-label-color" data-value="blue" style="margin-top:8px">
+              ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px">
               <button class="btn btn-primary" id="create-label-btn">Create</button>
             </div>
           </div>
-        </div>
-      `,
+        </div>`,
       actionsHtml: `<button class="btn btn-primary">Done</button>`
     });
-    
-    const refreshLabels = async () => {
-      const updatedLabels = await this._getEntityLabels(entityId);
-      const labelsContainer = overlay.querySelector('#entity-labels');
-      labelsContainer.innerHTML = updatedLabels.length === 0 ?
-        '<span style="color: var(--em-text-secondary);">No labels assigned</span>' :
-        updatedLabels.map(labelId => {
-          const label = allLabels.find(l => l.label_id === labelId);
-          return `<span class="label-chip" style="background: ${this._escapeAttr(label?.color || 'var(--em-primary)')}; color: white; padding: 4px 8px; border-radius: 12px; margin: 2px; display: inline-block;">
-            ${this._escapeHtml(label?.name || labelId)}
-            <button data-remove="${this._escapeAttr(labelId)}" style="background: none; border: none; color: white; cursor: pointer; margin-left: 4px;">&times;</button>
-          </span>`;
-        }).join('');
 
-      // Update available labels list
-      const availableContainer = overlay.querySelector('#available-labels');
-      availableContainer.innerHTML = allLabels.map(label => `
-        <div class="label-option" data-label-id="${this._escapeAttr(label.label_id)}" style="padding: 8px; cursor: pointer; border-radius: 4px; margin: 4px 0; display: flex; align-items: center; gap: 8px; ${updatedLabels.includes(label.label_id) ? 'opacity: 0.5;' : ''}">
-          <span style="width: 16px; height: 16px; border-radius: 50%; background: ${this._escapeAttr(label.color || 'var(--em-primary)')}; display: inline-block;"></span>
-          <span>${this._escapeHtml(label.name)}</span>
-          ${updatedLabels.includes(label.label_id) ? '<span style="margin-left: auto; color: var(--em-success);">✓</span>' : '<span style="margin-left: auto; color: var(--em-text-secondary);">+ Add</span>'}
-        </div>
-      `).join('');
+    const refreshLabels = async () => {
+      this.labeledEntitiesCache = null;
+      const target = this._getTargetValue(overlay, 'em-label-target');
+      const updated = await getLabelsForTarget(target);
+      overlay.querySelector('#em-label-section-title').textContent = sectionTitleFor(target);
+      overlay.querySelector('#entity-labels').innerHTML = renderChips(updated);
+      overlay.querySelector('#available-labels').innerHTML = renderAvailable(updated);
     };
-    
-    // Handle adding labels
+
+    // Target selector — re-render when changed
+    this._attachTargetSelector(overlay, 'em-label-target');
+    overlay.querySelector('#em-label-target')?.addEventListener('click', () => requestAnimationFrame(refreshLabels));
+
+    // Add label
     overlay.querySelector('#available-labels').addEventListener('click', async (e) => {
       const option = e.target.closest('.label-option');
-      if (option) {
-        const labelId = option.dataset.labelId;
-        const currentLabels = await this._getEntityLabels(entityId);
-        if (!currentLabels.includes(labelId)) {
-          try {
-            await this._addLabelToEntity(entityId, labelId);
-            this._showToast('Label added', 'success');
-            await refreshLabels();
-          } catch {
-            this._showToast('Error adding label', 'error');
-          }
-        }
+      if (!option) return;
+      const labelId = option.dataset.labelId;
+      const target = this._getTargetValue(overlay, 'em-label-target');
+      const current = await getLabelsForTarget(target);
+      if (!current.includes(labelId)) {
+        try {
+          await this._addLabelToEntity(entityId, labelId, target);
+          this._showToast('Label added', 'success');
+          await refreshLabels();
+        } catch { this._showToast('Error adding label', 'error'); }
       }
     });
-    
-    // Handle removing labels
+
+    // Remove label chip
     overlay.querySelector('#entity-labels').addEventListener('click', async (e) => {
       const removeBtn = e.target.closest('[data-remove]');
-      if (removeBtn) {
-        try {
-          await this._removeLabelFromEntity(entityId, removeBtn.dataset.remove);
-          this._showToast('Label removed', 'success');
-          await refreshLabels();
-        } catch {
-          this._showToast('Error removing label', 'error');
-        }
-      }
+      if (!removeBtn) return;
+      const target = this._getTargetValue(overlay, 'em-label-target');
+      try {
+        await this._removeLabelFromEntity(entityId, removeBtn.dataset.remove, target);
+        this._showToast('Label removed', 'success');
+        await refreshLabels();
+      } catch { this._showToast('Error removing label', 'error'); }
     });
-    
-    // Handle creating new label
+
+    // Swatch picker
+    overlay.querySelector('#new-label-color').addEventListener('click', (e) => {
+      const swatch = e.target.closest('.em-label-swatch');
+      if (!swatch) return;
+      const picker = swatch.closest('.em-label-color-picker');
+      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+      picker.dataset.value = swatch.dataset.color;
+    });
+
+    // Create label
     overlay.querySelector('#create-label-btn').addEventListener('click', async () => {
       const nameInput = overlay.querySelector('#new-label-name');
-      const colorInput = overlay.querySelector('#new-label-color');
+      const colorPicker = overlay.querySelector('#new-label-color');
       const name = nameInput.value.trim();
-      
-      if (!name) {
-        this._showToast('Please enter a label name', 'warning');
-        return;
-      }
-      
+      const color = colorPicker.dataset.value || 'blue';
+      if (!name) { this._showToast('Please enter a label name', 'warning'); return; }
       try {
-        const newLabel = await this._createLabel(name, colorInput.value);
+        const newLabel = await this._createLabel(name, color);
         allLabels.push(newLabel);
         nameInput.value = '';
         this._showToast(`Label "${name}" created`, 'success');
-        
-        // Refresh available labels list
-        const availableContainer = overlay.querySelector('#available-labels');
-        const currentLabels = await this._getEntityLabels(entityId);
-        availableContainer.innerHTML = allLabels.map(label => `
-          <div class="label-option" data-label-id="${this._escapeAttr(label.label_id)}" style="padding: 8px; cursor: pointer; border-radius: 4px; margin: 4px 0; display: flex; align-items: center; gap: 8px; ${currentLabels.includes(label.label_id) ? 'opacity: 0.5;' : ''}">
-            <span style="width: 16px; height: 16px; border-radius: 50%; background: ${this._escapeAttr(label.color || 'var(--em-primary)')}; display: inline-block;"></span>
-            <span>${this._escapeHtml(label.name)}</span>
-            ${currentLabels.includes(label.label_id) ? '<span style="margin-left: auto; color: var(--em-success);">✓</span>' : '<span style="margin-left: auto; color: var(--em-text-secondary);">+ Add</span>'}
-          </div>
-        `).join('');
-      } catch (e) {
-        this._showToast('Error creating label', 'error');
-      }
+        await refreshLabels();
+      } catch { this._showToast('Error creating label', 'error'); }
     });
 
-    overlay.querySelector('.btn-primary').addEventListener('click', closeDialog);
+    overlay.querySelector('.confirm-dialog-actions .btn-primary').addEventListener('click', () => {
+      closeDialog();
+      this._loadAndDisplayLabels();
+    });
   }
-  
+
   async _showBulkLabelEditor() {
     const allLabels = await this._loadHALabels();
     const entityCount = this.selectedEntities.size;
@@ -2455,13 +3092,22 @@ class EntityManagerPanel extends HTMLElement {
       color: 'var(--em-primary)',
       contentHtml: `
         <div class="bulk-label-editor">
-          <p style="color: var(--em-text-secondary); margin-bottom: 16px;">Add labels to ${entityCount} selected entities</p>
+          <p style="color: var(--em-text-secondary); margin-bottom: 8px;">Add labels to ${entityCount} selected ${entityCount === 1 ? 'entity' : 'entities'}</p>
+          ${this._labelTargetSelectorHtml('em-bulk-label-target', 'both', true)}
+          <details style="margin-bottom: 16px;">
+            <summary style="cursor: pointer; font-size: 12px; color: var(--em-text-secondary); user-select: none;">Show selected entities</summary>
+            <div style="margin-top: 8px; max-height: 120px; overflow-y: auto; background: var(--em-bg-secondary); border-radius: 6px; padding: 8px;">
+              ${Array.from(this.selectedEntities).map(id => `
+                <div style="font-size: 12px; padding: 2px 4px; font-family: monospace; color: var(--em-text-primary);">${this._escapeHtml(id)}</div>
+              `).join('')}
+            </div>
+          </details>
           <div class="label-selection" id="label-selection" style="max-height: 200px; overflow-y: auto;">
             ${allLabels.length === 0 ? '<p style="color: var(--em-text-secondary);">No labels defined yet.</p>' :
               allLabels.map(label => `
                 <label class="label-checkbox" style="display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-radius: 4px; margin: 4px 0;">
                   <input type="checkbox" data-label-id="${label.label_id}">
-                  <span style="width: 16px; height: 16px; border-radius: 50%; background: ${label.color || 'var(--em-primary)'}; display: inline-block;"></span>
+                  <span style="width: 16px; height: 16px; border-radius: 50%; background: ${this._labelColorCss(label.color)}; display: inline-block;"></span>
                   <span>${label.name}</span>
                 </label>
               `).join('')}
@@ -2470,7 +3116,11 @@ class EntityManagerPanel extends HTMLElement {
             <strong>Create New Label:</strong>
             <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
               <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-surface); color: var(--em-text);">
-              <input type="color" id="new-label-color" value="#4CAF50" style="width: 40px; height: 36px; border: none; cursor: pointer; border-radius: 4px;">
+            </div>
+            <div class="em-label-color-picker" id="new-label-color" data-value="blue" style="margin-top:8px">
+              ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px">
               <button class="btn btn-secondary" id="create-label-btn">Create</button>
             </div>
           </div>
@@ -2482,19 +3132,33 @@ class EntityManagerPanel extends HTMLElement {
       `
     });
     
+    // Target selector
+    this._attachTargetSelector(overlay, 'em-bulk-label-target');
+
+    // Swatch picker click handler (bulk dialog)
+    overlay.querySelector('#new-label-color').addEventListener('click', (e) => {
+      const swatch = e.target.closest('.em-label-swatch');
+      if (!swatch) return;
+      const picker = swatch.closest('.em-label-color-picker');
+      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+      picker.dataset.value = swatch.dataset.color;
+    });
+
     // Handle creating new label in bulk editor
     overlay.querySelector('#create-label-btn').addEventListener('click', async () => {
       const nameInput = overlay.querySelector('#new-label-name');
-      const colorInput = overlay.querySelector('#new-label-color');
+      const colorPicker = overlay.querySelector('#new-label-color');
       const name = nameInput.value.trim();
-      
+      const color = colorPicker.dataset.value || 'blue';
+
       if (!name) {
         this._showToast('Please enter a label name', 'warning');
         return;
       }
-      
+
       try {
-        const newLabel = await this._createLabel(name, colorInput.value);
+        const newLabel = await this._createLabel(name, color);
         allLabels.push(newLabel);
         nameInput.value = '';
         this._showToast(`Label "${name}" created`, 'success');
@@ -2504,7 +3168,7 @@ class EntityManagerPanel extends HTMLElement {
         selectionContainer.innerHTML = allLabels.map(label => `
           <label class="label-checkbox" style="display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-radius: 4px; margin: 4px 0;">
             <input type="checkbox" data-label-id="${this._escapeAttr(label.label_id)}">
-            <span style="width: 16px; height: 16px; border-radius: 50%; background: ${this._escapeAttr(label.color || 'var(--em-primary)')}; display: inline-block;"></span>
+            <span style="width: 16px; height: 16px; border-radius: 50%; background: ${this._escapeAttr(this._labelColorCss(label.color))}; display: inline-block;"></span>
             <span>${this._escapeHtml(label.name)}</span>
           </label>
         `).join('');
@@ -2516,31 +3180,38 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#apply-labels-btn').addEventListener('click', async () => {
       const selectedLabels = Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked'))
         .map(cb => cb.dataset.labelId);
-      
+      const target = this._getTargetValue(overlay, 'em-bulk-label-target');
+
       if (selectedLabels.length === 0) {
         this._showToast('Select at least one label', 'warning');
         return;
       }
-      
+
       closeDialog();
       this._showToast(`Adding labels to ${entityCount} entities...`, 'info', 0);
-      
+
       let successCount = 0;
       for (const entityId of this.selectedEntities) {
         try {
-          const currentLabels = await this._getEntityLabels(entityId);
-          const newLabels = [...new Set([...currentLabels, ...selectedLabels])];
-          await this._hass.callWS({
-            type: 'config/entity_registry/update',
-            entity_id: entityId,
-            labels: newLabels
-          });
+          if (target === 'entity' || target === 'both') {
+            const currentLabels = await this._getEntityLabels(entityId);
+            const newLabels = [...new Set([...currentLabels, ...selectedLabels])];
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, labels: newLabels });
+          }
+          if (target === 'device' || target === 'both') {
+            const deviceId = await this._getEntityDeviceId(entityId);
+            if (deviceId) {
+              const devLabels = await this._getDeviceLabels(deviceId);
+              const newDevLabels = [...new Set([...devLabels, ...selectedLabels])];
+              await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, labels: newDevLabels });
+            }
+          }
           successCount++;
         } catch (e) {
           console.error('Error adding labels to', entityId, e);
         }
       }
-      
+
       document.querySelector('.em-toast')?.remove();
       this._showToast(`Added labels to ${successCount} entities`, 'success');
     });
@@ -2551,13 +3222,11 @@ class EntityManagerPanel extends HTMLElement {
   // ===== ENTITY ALIASES =====
   
   _loadEntityAliases() {
-    try {
-      return JSON.parse(localStorage.getItem('em-entity-aliases')) || {};
-    } catch { return {}; }
+    return this._loadFromStorage('em-entity-aliases', {});
   }
-  
+
   _saveEntityAliases() {
-    localStorage.setItem('em-entity-aliases', JSON.stringify(this.entityAliases));
+    this._saveToStorage('em-entity-aliases', this.entityAliases);
   }
   
   _setEntityAlias(entityId, alias) {
@@ -2604,13 +3273,11 @@ class EntityManagerPanel extends HTMLElement {
   // ===== DRAG AND DROP =====
   
   _loadEntityOrder() {
-    try {
-      return JSON.parse(localStorage.getItem('em-entity-order')) || {};
-    } catch { return {}; }
+    return this._loadFromStorage('em-entity-order', {});
   }
-  
+
   _saveEntityOrder() {
-    localStorage.setItem('em-entity-order', JSON.stringify(this.entityOrder));
+    this._saveToStorage('em-entity-order', this.entityOrder);
   }
   
   _initDragDrop(entityItem) {
@@ -2884,6 +3551,14 @@ class EntityManagerPanel extends HTMLElement {
               // Group by entity domain
               groupKey = entity.entity_id.split('.')[0];
               break;
+            case 'device-name': {
+              // Filter by device name keyword, then group by device name
+              const devName = (this.getDeviceName(deviceId) || '').toLowerCase();
+              const keyword = (this.deviceNameFilter || '').toLowerCase().trim();
+              if (keyword && !this._fuzzyMatch(devName, keyword)) return; // skip non-matching
+              groupKey = this.getDeviceName(deviceId) || 'Unknown Device';
+              break;
+            }
             default: // integration
               groupKey = integration.integration;
           }
@@ -3190,6 +3865,7 @@ class EntityManagerPanel extends HTMLElement {
   }
   
   _formatTimeDiff(ms) {
+    if (ms == null || isNaN(ms)) return '?';
     const seconds = Math.floor(ms / 1000);
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
@@ -3322,8 +3998,8 @@ class EntityManagerPanel extends HTMLElement {
           <button class="sidebar-toggle" id="sidebar-toggle-btn">◀</button>
         </div>
         
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">Actions</div>
+        <div class="sidebar-section ${this.sidebarOpenSections.has('actions') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="actions">Actions</div>
           <div class="sidebar-item" data-action="undo" id="undo-btn" ${this.undoStack.length === 0 ? 'style="opacity:0.5"' : ''}>
             <span class="icon">↩</span>
             <span class="label">Undo</span>
@@ -3342,10 +4018,27 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">📥</span>
             <span class="label">Import Config</span>
           </div>
+          <div class="sidebar-item" data-action="enable-selected" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
+            <span class="icon">✓</span>
+            <span class="label">Enable Selected</span>
+            <span class="count" id="sidebar-selected-count">${this.selectedEntities.size || ''}</span>
+          </div>
+          <div class="sidebar-item" data-action="disable-selected" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
+            <span class="icon">✕</span>
+            <span class="label">Disable Selected</span>
+          </div>
+          <div class="sidebar-item" data-action="deselect-all" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
+            <span class="icon">☐</span>
+            <span class="label">Deselect All</span>
+          </div>
+          <div class="sidebar-item" data-action="refresh">
+            <span class="icon">↺</span>
+            <span class="label">Refresh</span>
+          </div>
         </div>
         
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">Quick Filters</div>
+        <div class="sidebar-section ${this.sidebarOpenSections.has('filters') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="filters">Quick Filters</div>
           <div class="sidebar-item" data-filter="favorites">
             <span class="icon">★</span>
             <span class="label">Favorites</span>
@@ -3366,8 +4059,17 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
         
-        <div class="sidebar-section" id="labels-section">
-          <div class="sidebar-section-title">Labels</div>
+        <div class="sidebar-section ${this.sidebarOpenSections.has('domains') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="domains">Domains</div>
+          <div class="sidebar-item ${this.selectedDomain === 'all' ? 'active' : ''}" data-domain="all">
+            <span class="icon">🌐</span>
+            <span class="label">All domains</span>
+          </div>
+          <div id="sidebar-domain-list"></div>
+        </div>
+
+        <div class="sidebar-section ${this.sidebarOpenSections.has('labels') ? '' : 'section-collapsed'}" id="labels-section">
+          <div class="sidebar-section-title" data-section-id="labels">Labels</div>
           ${this.selectedLabelFilter ? `
             <div class="sidebar-item active" data-action="clear-label-filter">
               <span class="icon">✕</span>
@@ -3382,8 +4084,8 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
         
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">Smart Groups</div>
+        <div class="sidebar-section ${this.sidebarOpenSections.has('smart-groups') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="smart-groups">Smart Groups</div>
           <div class="sidebar-item ${!this.smartGroupsEnabled ? '' : 'active'}" data-action="toggle-smart-groups">
             <span class="icon">${this.smartGroupsEnabled ? '✓' : '○'}</span>
             <span class="label">${this.smartGroupsEnabled ? 'Enabled' : 'Disabled'}</span>
@@ -3401,11 +4103,41 @@ class EntityManagerPanel extends HTMLElement {
               <span class="icon">📂</span>
               <span class="label">By Type</span>
             </div>
+            <div class="sidebar-item ${this.smartGroupMode === 'device-name' ? 'active' : ''}" data-group-mode="device-name">
+              <span class="icon">🔍</span>
+              <span class="label">By Device Name</span>
+            </div>
+            ${this.smartGroupMode === 'device-name' ? `
+              <div style="padding:6px 8px 4px">
+                <div style="display:flex;gap:4px">
+                  <input id="em-device-name-filter-input" type="text" placeholder="e.g. Shelly"
+                    value="${this._escapeAttr(this.deviceNameFilter)}"
+                    style="flex:1;min-width:0;padding:6px 8px;border-radius:6px;border:1px solid var(--em-border);
+                           background:var(--em-bg-primary);color:var(--em-text-primary);font-size:12px">
+                  <button id="em-device-filter-save" title="Save as quick filter"
+                    style="padding:6px 8px;border-radius:6px;border:1px solid var(--em-border);
+                           background:var(--em-bg-hover);color:var(--em-text-primary);cursor:pointer;font-size:13px">＋</button>
+                </div>
+                ${this.savedDeviceFilters.length > 0 ? `
+                  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+                    ${this.savedDeviceFilters.map((f, i) => `
+                      <span class="em-device-filter-chip ${this.deviceNameFilter === f.pattern ? 'active' : ''}"
+                        data-filter-pattern="${this._escapeAttr(f.pattern)}"
+                        style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:12px;
+                               font-size:11px;cursor:pointer;border:1px solid var(--em-border);
+                               background:${this.deviceNameFilter === f.pattern ? 'var(--em-primary)' : 'var(--em-bg-hover)'};
+                               color:${this.deviceNameFilter === f.pattern ? 'white' : 'var(--em-text-primary)'}">
+                        ${this._escapeHtml(f.label)}
+                        <button data-filter-remove="${i}"
+                          style="background:none;border:none;cursor:pointer;color:inherit;padding:0;font-size:11px;line-height:1;opacity:0.7">✕</button>
+                      </span>`).join('')}
+                  </div>` : ''}
+              </div>` : ''}
           ` : ''}
         </div>
         
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">Integrations</div>
+        <div class="sidebar-section ${this.sidebarOpenSections.has('integrations') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="integrations">Integrations</div>
           ${this.selectedIntegrationFilter ? `
             <div class="sidebar-item active" data-action="clear-integration-filter">
               <span class="icon">✕</span>
@@ -3430,8 +4162,8 @@ class EntityManagerPanel extends HTMLElement {
           ${this.showAllSidebarIntegrations && integrationList.length > 10 ? `<div class="sidebar-item" data-action="collapse-integrations"><span class="icon">▲</span><span class="label">Show less</span></div>` : ''}
         </div>
         
-        <div class="sidebar-section">
-          <div class="sidebar-section-title">Help</div>
+        <div class="sidebar-section ${this.sidebarOpenSections.has('help') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="help">Help</div>
           <div class="sidebar-item" data-action="help-guide">
             <span class="icon">❓</span>
             <span class="label">Help Guide</span>
@@ -3617,6 +4349,26 @@ class EntityManagerPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+
+    // ── Watch pending update installs: detect completion / percentage ──
+    if (this._pendingUpdateWatches?.size > 0) {
+      for (const entityId of [...this._pendingUpdateWatches]) {
+        const st = hass.states?.[entityId];
+        if (!st) continue;
+        if (st.state === 'off') {
+          // Entity reports no update available → installation complete
+          this._pendingUpdateWatches.delete(entityId);
+          this._setUpdateRowState(entityId, 'done');
+          setTimeout(() => this.loadUpdates(), 2000);
+        } else if (st.attributes.in_progress === true) {
+          const pct = st.attributes.update_percentage;
+          if (pct != null && typeof pct === 'number') {
+            this._updateRowProgress(entityId, Math.round(pct));
+          }
+        }
+      }
+    }
+
     if (!this.content && hass) {
       try {
         this.render();
@@ -3643,9 +4395,12 @@ class EntityManagerPanel extends HTMLElement {
   async loadData() {
     this.setLoading(true);
     try {
+      // 'updates' is a frontend-only view — map it to 'all' for the backend
+      const backendState = ['all', 'disabled', 'enabled'].includes(this.viewState)
+        ? this.viewState : 'all';
       const result = await this._hass.callWS({
         type: 'entity_manager/get_disabled_entities',
-        state: this.viewState, // Pass the current filter state (all, enabled, disabled)
+        state: backendState,
       });
       
       this.data = Array.isArray(result) ? result.map(integration => {
@@ -3702,38 +4457,75 @@ class EntityManagerPanel extends HTMLElement {
       this.scriptCount = states.filter(s => s.entity_id.startsWith('script.')).length;
       this.helperCount = states.filter(s => s.entity_id.startsWith('input_')).length +
                          states.filter(s => s.entity_id.startsWith('variable.')).length;
-      // Only count updates that are actually available (state === 'on')
+      // Count pending updates (update.* entities with state 'on' = update available)
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
-      // Count templates
-      this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
-      // Count HACS-installed items via backend scan
+      // Count entities stuck in unavailable
+      this.unavailableCount = states.filter(s => s.state === 'unavailable').length;
+      // Count entities not updated in 30+ days (excluding meta-states)
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      this.healthCount = states.filter(s => {
+        if (s.state === 'unavailable' || s.state === 'unknown') return false;
+        if (!s.last_updated) return false;
+        return new Date(s.last_updated).getTime() < thirtyDaysAgo;
+      }).length;
+      // Count orphaned entities (no device) from entity registry data
+      this.orphanedCount = 0;
+      if (this.data) {
+        this.data.forEach(integration => {
+          const noDevice = integration.devices['no_device'];
+          if (noDevice) this.orphanedCount += noDevice.entities.length;
+        });
+      }
+      // Count templates via backend (covers YAML platform=template + template.* domain)
+      try {
+        const templateSensors = await this._hass.callWS({ type: 'entity_manager/get_template_sensors' });
+        this.templateSensors = templateSensors;
+        this.templateCount = templateSensors.length;
+      } catch (e) {
+        this.templateSensors = null;
+        this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
+      }
+      // Count HACS store items via backend scan
       try {
         const hacsItems = await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
-        const installed = hacsItems?.installed || [];
         this.hacsItems = hacsItems;
-        this.hacsCount = installed.length;
+        this.hacsCount = (hacsItems?.store || []).length;
       } catch (e) {
         this.hacsItems = null;
         this.hacsCount = 0;
       }
-      // Count Lovelace dashboard cards
+      // Count Lovelace dashboard cards (recursive, cache configs for dialog reuse)
+      const _llCountCards = (cards) => {
+        let n = 0;
+        for (const c of (cards || [])) {
+          if (!c || typeof c !== 'object') continue;
+          n++;
+          if (c.cards) n += _llCountCards(c.cards);
+          if (c.card) n += _llCountCards([c.card]);
+          if (c.elements) n += _llCountCards(c.elements);
+        }
+        return n;
+      };
       try {
         const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
+        this.lovelaceDashboardList = dashboards || [];
         let cardCount = 0;
-        for (const dashboard of (dashboards || [])) {
+        for (const dashboard of this.lovelaceDashboardList) {
           try {
-            const config = await this._hass.callWS({ type: 'lovelace/config', dashboard_id: dashboard.id });
-            cardCount += config?.views?.reduce((count, view) => count + (view.cards?.length || 0), 0) || 0;
-          } catch (e) {
-            // Skip error for individual dashboard
-          }
+            const config = await this._hass.callWS({ type: 'lovelace/config', url_path: dashboard.url_path || null });
+            dashboard._config = config;
+            (config?.views || []).forEach(view => {
+              cardCount += _llCountCards(view.cards || []);
+              (view.sections || []).forEach(s => { if (s) cardCount += _llCountCards(s.cards || []); });
+            });
+          } catch (e) { /* skip */ }
         }
         this.lovelaceCardCount = cardCount;
       } catch (e) {
-        // Fallback: try to get default config
+        this.lovelaceDashboardList = [];
         try {
           const config = await this._hass.callWS({ type: 'lovelace/config' });
-          this.lovelaceCardCount = config?.views?.reduce((count, view) => count + (view.cards?.length || 0), 0) || 0;
+          this.lovelaceCardCount = _llCountCards(config?.views?.flatMap(v => v.cards || []) || []);
         } catch (e2) {
           this.lovelaceCardCount = 0;
         }
@@ -3742,17 +4534,7 @@ class EntityManagerPanel extends HTMLElement {
       this.updateView();
       
       // Refresh sidebar to show integrations
-      const layout = this.querySelector('.em-layout');
-      if (layout) {
-        const oldSidebar = layout.querySelector('.em-sidebar');
-        if (oldSidebar) {
-          oldSidebar.outerHTML = this._renderSidebar();
-          this._attachSidebarListeners();
-        }
-      }
-      
-      // Auto-load labels for sidebar
-      this._loadAndDisplayLabels();
+      this._reRenderSidebar();
     } catch (error) {
       console.error('Entity Manager - Error loading counts:', error);
       this.updateView();
@@ -3778,33 +4560,26 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   updateDomainOptions() {
-    if (!this.content) return;
-    const menu = this.content.querySelector('#domain-menu');
-    const label = this.content.querySelector('#domain-button-label');
-    if (!menu || !label) return;
+    const list = this.querySelector('#sidebar-domain-list');
+    if (!list) return;
 
     const current = this.domainOptions.includes(this.selectedDomain) ? this.selectedDomain : 'all';
     this.selectedDomain = current;
 
-    label.textContent = current === 'all' ? 'All domains' : current;
+    // Update "All domains" active state
+    const allItem = this.querySelector('.em-sidebar [data-domain="all"]');
+    if (allItem) allItem.classList.toggle('active', current === 'all');
 
-    const options = ['all', ...this.domainOptions];
-    menu.innerHTML = options.map(domain => {
-      const text = domain === 'all' ? 'All domains' : domain;
-      const activeClass = domain === current ? 'active' : '';
-      return `<div class="domain-option ${activeClass}" data-domain="${domain}">${text}</div>`;
-    }).join('');
+    list.innerHTML = this.domainOptions.map(domain => `
+      <div class="sidebar-item ${domain === current ? 'active' : ''}" data-domain="${domain}">
+        <span class="label">${domain}</span>
+      </div>`).join('');
   }
 
   setLoading(isLoading) {
     this.isLoading = isLoading;
-    const enableBtn = this.content?.querySelector('#enable-selected');
-    const disableBtn = this.content?.querySelector('#disable-selected');
-    const refreshBtn = this.content?.querySelector('#refresh');
-    
-    if (enableBtn) enableBtn.disabled = isLoading;
-    if (disableBtn) disableBtn.disabled = isLoading;
-    if (refreshBtn) refreshBtn.disabled = isLoading;
+    const refreshItem = this.querySelector('.em-sidebar [data-action="refresh"]');
+    if (refreshItem) refreshItem.style.opacity = isLoading ? '0.4' : '';
   }
 
   render() {
@@ -4034,13 +4809,6 @@ class EntityManagerPanel extends HTMLElement {
           <button class="filter-toggle" data-filter="disabled">Disabled</button>
           <button class="filter-toggle" data-filter="updates">Updates</button>
         </div>
-        <div class="domain-dropdown" id="domain-dropdown">
-          <button class="domain-button" id="domain-button" aria-label="Filter by domain" type="button">
-            <span id="domain-button-label">All domains</span>
-            <span aria-hidden="true">▾</span>
-          </button>
-          <div class="domain-menu" id="domain-menu" role="listbox" aria-label="Domain options"></div>
-        </div>
         <div class="domain-dropdown" id="update-filter-dropdown" style="display: none;">
           <button class="domain-button" id="update-filter-button" aria-label="Filter updates" type="button">
             <span id="update-filter-label">All Updates</span>
@@ -4067,27 +4835,17 @@ class EntityManagerPanel extends HTMLElement {
           <input type="checkbox" id="hide-uptodate-checkbox" />
           <span>Hide Up-to-Date</span>
         </label>
-        <input 
-          type="text" 
-          class="search-box" 
+      </div>
+
+      <div class="toolbar-search">
+        <input
+          type="text"
+          class="search-box"
           placeholder="Search entities, devices, or integrations..."
           id="search-input"
         />
-        <button class="btn btn-primary" id="enable-selected">
-          Enable Selected (<span id="selected-count">0</span>)
-        </button>
-        <button class="btn btn-secondary" id="disable-selected">
-          Disable Selected (<span id="selected-count-2">0</span>)
-        </button>
-        <button class="btn btn-secondary" id="deselect-all">
-          Deselect (<span id="deselect-count">0</span>)
-        </button>
-        <button class="btn btn-success" id="update-selected" style="display: none;">
-          Update Selected (<span id="update-count">0</span>)
-        </button>
-        <button class="btn btn-secondary" id="refresh">Refresh</button>
       </div>
-      
+
       <div id="content"></div>
     `;
 
@@ -4218,32 +4976,17 @@ class EntityManagerPanel extends HTMLElement {
         this.setActiveFilter();
         
         // Update sidebar to clear active integration
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            this._attachSidebarListeners();
-          }
-        }
-        
+        this._reRenderSidebar();
+
         // Show/hide update filter dropdown and buttons
         const updateFilterDropdown = this.content.querySelector('#update-filter-dropdown');
-        const domainDropdown = this.content.querySelector('#domain-dropdown');
-        const enableBtn = this.content.querySelector('#enable-selected');
-        const disableBtn = this.content.querySelector('#disable-selected');
-        const updateBtn = this.content.querySelector('#update-selected');
-        
+
         if (this.viewState === 'updates') {
           updateFilterDropdown.style.display = 'block';
           const updateTypeDropdown = this.content.querySelector('#update-type-dropdown');
           if (updateTypeDropdown) updateTypeDropdown.style.display = 'block';
           const hideLabel = this.content.querySelector('#hide-uptodate-label');
           if (hideLabel) hideLabel.style.display = 'flex';
-          domainDropdown.style.display = 'none';
-          enableBtn.style.display = 'none';
-          disableBtn.style.display = 'none';
-          updateBtn.style.display = 'inline-block';
           this.loadUpdates();
         } else {
           updateFilterDropdown.style.display = 'none';
@@ -4251,44 +4994,11 @@ class EntityManagerPanel extends HTMLElement {
           if (updateTypeDropdown) updateTypeDropdown.style.display = 'none';
           const hideLabel = this.content.querySelector('#hide-uptodate-label');
           if (hideLabel) hideLabel.style.display = 'none';
-          domainDropdown.style.display = 'block';
-          enableBtn.style.display = 'inline-block';
-          disableBtn.style.display = 'inline-block';
-          updateBtn.style.display = 'none';
           this.loadData();
         }
       });
     });
 
-    // Handle domain filter
-    const domainButton = this.content.querySelector('#domain-button');
-    const domainMenu = this.content.querySelector('#domain-menu');
-    if (domainButton && domainMenu) {
-      domainButton.addEventListener('click', (e) => {
-        e.stopPropagation();
-        domainMenu.classList.toggle('open');
-      });
-
-      domainMenu.addEventListener('click', (e) => {
-        const option = e.target.closest('.domain-option');
-        if (!option) return;
-        this.selectedDomain = option.dataset.domain;
-        domainMenu.classList.remove('open');
-        this.updateView();
-      });
-      
-      if (!this._domainOutsideHandler) {
-        this._domainOutsideHandler = (event) => {
-          if (!domainMenu.classList.contains('open')) return;
-          if (!this.contains(event.target)) return;
-          if (!domainMenu.contains(event.target) && !domainButton.contains(event.target)) {
-            domainMenu.classList.remove('open');
-          }
-        };
-        document.addEventListener('click', this._domainOutsideHandler);
-      }
-    }
-    
     // Handle update filter
     const updateFilterButton = this.content.querySelector('#update-filter-button');
     const updateFilterMenu = this.content.querySelector('#update-filter-menu');
@@ -4355,41 +5065,6 @@ class EntityManagerPanel extends HTMLElement {
       });
     }
     
-    // Handle update selected button
-    const updateSelectedBtn = this.content.querySelector('#update-selected');
-    if (updateSelectedBtn) {
-      updateSelectedBtn.addEventListener('click', () => {
-        if (this.selectedUpdates.size === 0) return;
-        this.confirmBulkUpdate();
-      });
-    }
-
-    // Handle bulk actions
-    const enableBtn = this.content.querySelector('#enable-selected');
-    if (enableBtn) {
-      enableBtn.addEventListener('click', () => this.bulkEnable());
-    }
-
-    const disableBtn = this.content.querySelector('#disable-selected');
-    if (disableBtn) {
-      disableBtn.addEventListener('click', () => this.bulkDisable());
-    }
-
-    const deselectBtn = this.content.querySelector('#deselect-all');
-    if (deselectBtn) {
-      deselectBtn.addEventListener('click', () => {
-        this.selectedEntities.clear();
-        this.updateSelectedCount();
-        this.updateView();
-        this._showToast('Selection cleared', 'info');
-      });
-    }
-
-    const refreshBtn = this.content.querySelector('#refresh');
-    if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => this.loadData());
-    }
-
     // Handle sidebar toggle
     const sidebarToggle = this.querySelector('#sidebar-toggle-btn');
     if (sidebarToggle) {
@@ -4408,6 +5083,22 @@ class EntityManagerPanel extends HTMLElement {
     if (sidebarToggle) {
       sidebarToggle.addEventListener('click', () => this._toggleSidebar());
     }
+
+    // Handle collapsible section titles
+    this.querySelector('.em-sidebar')?.querySelectorAll('.sidebar-section-title[data-section-id]').forEach(title => {
+      title.addEventListener('click', () => {
+        const id = title.dataset.sectionId;
+        const section = title.closest('.sidebar-section');
+        const isCollapsed = section.classList.contains('section-collapsed');
+        section.classList.toggle('section-collapsed', !isCollapsed);
+        if (isCollapsed) {
+          this.sidebarOpenSections.add(id);
+        } else {
+          this.sidebarOpenSections.delete(id);
+        }
+        localStorage.setItem('em-sidebar-sections', JSON.stringify([...this.sidebarOpenSections]));
+      });
+    });
     
     // Handle click outside sidebar on mobile to close it
     const mainContent = this.querySelector('#main-content');
@@ -4423,162 +5114,197 @@ class EntityManagerPanel extends HTMLElement {
     
     // Handle sidebar items
     this.querySelector('.em-sidebar')?.addEventListener('click', (e) => {
-      // Handle preset delete button
       const deleteBtn = e.target.closest('.preset-delete');
       if (deleteBtn) {
         e.stopPropagation();
         this._deleteFilterPreset(parseInt(deleteBtn.dataset.delete));
         return;
       }
-      
-      const item = e.target.closest('.sidebar-item');
-      if (!item) return;
-      
-      const action = item.dataset.action;
-      const integration = item.dataset.integration;
-      const filter = item.dataset.filter;
-      const presetId = item.dataset.presetId;
-      const groupMode = item.dataset.groupMode;
-      
-      if (action === 'activity-log') {
-        this._showActivityLog();
-      } else if (action === 'comparison') {
-        this._showEntityComparison();
-      } else if (action === 'columns') {
-        this._showColumnSettings();
-      } else if (action === 'clear-integration-filter') {
-        this.selectedIntegrationFilter = null;
-        this.updateView();
-        // Re-render sidebar to update active states
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            this._attachSidebarListeners();
-          }
-        }
-        this._showToast('Showing all integrations', 'info');
-      } else if (action === 'show-all-integrations') {
-        this.showAllSidebarIntegrations = true;
-        // Re-render sidebar to show all integrations
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            this._attachSidebarListeners();
-          }
-        }
-      } else if (action === 'collapse-integrations') {
-        this.showAllSidebarIntegrations = false;
-        // Re-render sidebar to collapse integrations
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            this._attachSidebarListeners();
-          }
-        }
-      } else if (action === 'undo') {
-        this._undo();
-      } else if (action === 'redo') {
-        this._redo();
-      } else if (action === 'export') {
-        this._exportEntityConfig();
-      } else if (action === 'import') {
-        this._importEntityConfig();
-      } else if (action === 'toggle-smart-groups') {
-        this._toggleSmartGroups();
-        // Re-render sidebar to show/hide group options
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            // Re-attach sidebar listeners after replacing HTML
-            this._attachSidebarListeners();
-          }
-        }
-      } else if (action === 'save-preset') {
-        this._saveCurrentFilterPreset();
-      } else if (groupMode) {
-        this._setSmartGroupMode(groupMode);
-        // Update sidebar to show active state
-        this.querySelector('.em-sidebar').querySelectorAll('[data-group-mode]').forEach(el => {
-          el.classList.toggle('active', el.dataset.groupMode === groupMode);
-        });
-      } else if (presetId) {
-        this._applyFilterPreset(parseInt(presetId));
-      } else if (filter === 'favorites') {
-        // Filter to show only favorites
-        this.searchTerm = '';
-        const searchInput = this.content.querySelector('#search-input');
-        if (searchInput) searchInput.value = '';
-        this._showOnlyFavorites = true;
-        this.updateView();
-        this._showToast('Showing favorites only', 'info');
-      } else if (action === 'load-labels') {
-        // Load labels from Home Assistant
-        this._loadAndDisplayLabels();
-      } else if (action === 'clear-label-filter') {
-        this.selectedLabelFilter = null;
-        this.updateView();
-        // Re-render sidebar
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            this._attachSidebarListeners();
-            // Reload labels list in sidebar
-            this._loadAndDisplayLabels();
-          }
-        }
-        this._showToast('Showing all entities', 'info');
-      } else if (action === 'show-all-labels') {
-        this.showAllSidebarLabels = true;
-        this._loadAndDisplayLabels();
-      } else if (action === 'collapse-labels') {
-        this.showAllSidebarLabels = false;
-        this._loadAndDisplayLabels();
-      } else if (action === 'help-guide') {
-        this._showHelpGuide();
-      } else if (item.dataset.labelId) {
-        // Filter by label
-        this._filterByLabel(item.dataset.labelId);
-      } else if (integration) {
-        // Filter to show only this integration's entities
-        this._showOnlyFavorites = false;
-        this.viewState = 'all';
-        this.selectedDomain = 'all';
-        this.searchTerm = '';
-        this.selectedIntegrationFilter = integration;
-        
-        // Reset search input
-        const searchInput = this.content.querySelector('#search-input');
-        if (searchInput) searchInput.value = '';
-        
-        // Make sure integration is expanded
-        this.expandedIntegrations.add(integration);
-        
-        // Update view to show only this integration
-        this.updateView();
-        
-        // Re-render sidebar to update active states
-        const layout = this.querySelector('.em-layout');
-        if (layout) {
-          const oldSidebar = layout.querySelector('.em-sidebar');
-          if (oldSidebar) {
-            oldSidebar.outerHTML = this._renderSidebar();
-            this._attachSidebarListeners();
-          }
-        }
-        
-        this._showToast(`Showing ${integration} entities`, 'info');
+      // Label edit button
+      const editLabelBtn = e.target.closest('[data-edit-label]');
+      if (editLabelBtn) {
+        e.stopPropagation();
+        const labelId = editLabelBtn.dataset.editLabel;
+        const label = (this.labeledEntitiesCache || {})[labelId] || (this.labelsCache || []).find(l => l.label_id === labelId);
+        if (label) this._showLabelEditDialog(label, Array.from(this.selectedEntities));
+        return;
       }
+      // Device name filter chip remove button
+      const filterRemoveBtn = e.target.closest('[data-filter-remove]');
+      if (filterRemoveBtn) {
+        e.stopPropagation();
+        const idx = parseInt(filterRemoveBtn.dataset.filterRemove);
+        const removedPattern = (this.savedDeviceFilters[idx] || {}).pattern;
+        this.savedDeviceFilters.splice(idx, 1);
+        localStorage.setItem('em-saved-device-filters', JSON.stringify(this.savedDeviceFilters));
+        // If the removed filter was active, clear it
+        if (this.deviceNameFilter === removedPattern) {
+          this.deviceNameFilter = '';
+          localStorage.setItem('em-device-name-filter', '');
+        }
+        this._reRenderSidebar();
+        this.updateView();
+        return;
+      }
+      // Device name filter chip click (activate saved filter)
+      const filterChip = e.target.closest('.em-device-filter-chip');
+      if (filterChip) {
+        e.stopPropagation();
+        const pattern = filterChip.dataset.filterPattern;
+        // Toggle: clicking active chip clears filter
+        if (this.deviceNameFilter === pattern) {
+          this.deviceNameFilter = '';
+        } else {
+          this.deviceNameFilter = pattern;
+        }
+        localStorage.setItem('em-device-name-filter', this.deviceNameFilter);
+        this._reRenderSidebar();
+        this.updateView();
+        return;
+      }
+      const item = e.target.closest('.sidebar-item');
+      if (item) this._handleSidebarItemAction(item);
     });
+
+    // Device name filter: live input filtering
+    const deviceFilterInput = this.querySelector('#em-device-name-filter-input');
+    if (deviceFilterInput) {
+      deviceFilterInput.addEventListener('input', (e) => {
+        this.deviceNameFilter = e.target.value;
+        localStorage.setItem('em-device-name-filter', this.deviceNameFilter);
+        this.updateView();
+        // Update chip active states without full re-render
+        this.querySelector('.em-sidebar')?.querySelectorAll('.em-device-filter-chip').forEach(chip => {
+          const isActive = chip.dataset.filterPattern === this.deviceNameFilter;
+          chip.classList.toggle('active', isActive);
+          chip.style.background = isActive ? 'var(--em-primary)' : 'var(--em-bg-hover)';
+          chip.style.color = isActive ? 'white' : 'var(--em-text-primary)';
+        });
+      });
+    }
+
+    // Device name filter: save button (＋)
+    const deviceFilterSave = this.querySelector('#em-device-filter-save');
+    if (deviceFilterSave) {
+      deviceFilterSave.addEventListener('click', () => {
+        const keyword = this.deviceNameFilter.trim();
+        if (!keyword) return;
+        // Don't save duplicates
+        if (this.savedDeviceFilters.some(f => f.pattern === keyword)) {
+          this._showToast(`"${keyword}" is already saved`, 'info');
+          return;
+        }
+        this.savedDeviceFilters.push({ label: keyword, pattern: keyword });
+        localStorage.setItem('em-saved-device-filters', JSON.stringify(this.savedDeviceFilters));
+        this._reRenderSidebar();
+        this._showToast(`Saved filter: "${keyword}"`, 'success');
+      });
+    }
+  }
+
+  _handleSidebarItemAction(item) {
+    const action = item.dataset.action;
+    const integration = item.dataset.integration;
+    const filter = item.dataset.filter;
+    const presetId = item.dataset.presetId;
+    const groupMode = item.dataset.groupMode;
+
+    if (action === 'activity-log') {
+      this._showActivityLog();
+    } else if (action === 'comparison') {
+      this._showEntityComparison();
+    } else if (action === 'columns') {
+      this._showColumnSettings();
+    } else if (action === 'clear-integration-filter') {
+      this.selectedIntegrationFilter = null;
+      this.updateView();
+      this._reRenderSidebar();
+      this._showToast('Showing all integrations', 'info');
+    } else if (action === 'show-all-integrations') {
+      this.showAllSidebarIntegrations = true;
+      this._reRenderSidebar();
+    } else if (action === 'collapse-integrations') {
+      this.showAllSidebarIntegrations = false;
+      this._reRenderSidebar();
+    } else if (action === 'undo') {
+      this._undo();
+    } else if (action === 'redo') {
+      this._redo();
+    } else if (action === 'export') {
+      this._exportEntityConfig();
+    } else if (action === 'import') {
+      this._importEntityConfig();
+    } else if (action === 'toggle-smart-groups') {
+      this._toggleSmartGroups();
+      this._reRenderSidebar();
+    } else if (action === 'save-preset') {
+      this._saveCurrentFilterPreset();
+    } else if (groupMode) {
+      this._setSmartGroupMode(groupMode);
+      this.querySelector('.em-sidebar').querySelectorAll('[data-group-mode]').forEach(el => {
+        el.classList.toggle('active', el.dataset.groupMode === groupMode);
+      });
+    } else if (presetId) {
+      this._applyFilterPreset(parseInt(presetId));
+    } else if (filter === 'favorites') {
+      this.searchTerm = '';
+      const searchInput = this.content.querySelector('#search-input');
+      if (searchInput) searchInput.value = '';
+      this._showOnlyFavorites = true;
+      this.updateView();
+      this._showToast('Showing favorites only', 'info');
+    } else if (action === 'load-labels') {
+      this.labeledEntitiesCache = null;
+      this.labelsCache = null;
+      this._loadAndDisplayLabels();
+    } else if (action === 'clear-label-filter') {
+      this.selectedLabelFilter = null;
+      this.updateView();
+      this._reRenderSidebar();
+      this._showToast('Showing all entities', 'info');
+    } else if (action === 'show-all-labels') {
+      this.showAllSidebarLabels = true;
+      this._loadAndDisplayLabels();
+    } else if (action === 'collapse-labels') {
+      this.showAllSidebarLabels = false;
+      this._loadAndDisplayLabels();
+    } else if (action === 'help-guide') {
+      this._showHelpGuide();
+    } else if (action === 'enable-selected') {
+      this.bulkEnable();
+    } else if (action === 'disable-selected') {
+      this.bulkDisable();
+    } else if (action === 'deselect-all') {
+      this.selectedEntities.clear();
+      this.updateSelectedCount();
+      this.updateView();
+      this._showToast('Selection cleared', 'info');
+    } else if (action === 'refresh') {
+      if (this.viewState === 'updates') {
+        this.loadUpdates();
+      } else {
+        this.loadData();
+      }
+    } else if (item.dataset.domain !== undefined) {
+      this.selectedDomain = item.dataset.domain;
+      this._showOnlyFavorites = false;
+      this.updateView();
+      this.updateDomainOptions();
+    } else if (item.dataset.labelId) {
+      this._filterByLabel(item.dataset.labelId);
+    } else if (integration) {
+      this._showOnlyFavorites = false;
+      this.viewState = 'all';
+      this.selectedDomain = 'all';
+      this.searchTerm = '';
+      this.selectedIntegrationFilter = integration;
+      const searchInput = this.content.querySelector('#search-input');
+      if (searchInput) searchInput.value = '';
+      this.expandedIntegrations.add(integration);
+      this.updateView();
+      this._reRenderSidebar();
+      this._showToast(`Showing ${integration} entities`, 'info');
+    }
   }
 
   setActiveFilter() {
@@ -4683,15 +5409,15 @@ class EntityManagerPanel extends HTMLElement {
 
     // Render stats
     statsEl.innerHTML = `
-      <div class="stat-card">
+      <div class="stat-card clickable-stat" data-stat-type="integration" title="Click to view integrations">
         <div class="stat-label">Integrations</div>
         <div class="stat-value">${totalIntegrations}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable-stat" data-stat-type="device" title="Click to view devices">
         <div class="stat-label">Devices</div>
         <div class="stat-value">${totalDevices}</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card clickable-stat" data-stat-type="entities" title="Click to view all entities">
         <div class="stat-label">Total Entities</div>
         <div class="stat-value">${totalEntities}</div>
       </div>
@@ -4711,20 +5437,63 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-label">Templates</div>
         <div class="stat-value" style="color: #ff9800 !important;">${this.templateCount}</div>
       </div>
-      <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS integrations">
-        <div class="stat-label">HACS</div>
+      <div class="stat-card clickable-stat" data-stat-type="unavailable" title="Click to view unavailable entities">
+        <div class="stat-label">Unavailable</div>
+        <div class="stat-value" style="color: ${this.unavailableCount > 0 ? '#f44336' : '#4caf50'} !important;">${this.unavailableCount || 0}</div>
+      </div>
+      <div class="stat-card clickable-stat" data-stat-type="orphaned" title="Click to view entities with no device">
+        <div class="stat-label">Orphaned</div>
+        <div class="stat-value" style="color: ${this.orphanedCount > 0 ? '#ff9800' : '#4caf50'} !important;">${this.orphanedCount || 0}</div>
+      </div>
+      <div class="stat-card clickable-stat" data-stat-type="health" title="Click to view entities not updated in 30+ days">
+        <div class="stat-label">Stale (30d)</div>
+        <div class="stat-value" style="color: ${this.healthCount > 0 ? '#ff9800' : '#4caf50'} !important;">${this.healthCount || 0}</div>
+      </div>
+      <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
+        <div class="stat-label">HACS Store</div>
         <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
         <div class="stat-label">Lovelace Cards</div>
         <div class="stat-value" style="color: #9c27b0 !important;">${this.lovelaceCardCount}</div>
       </div>
+      ${(() => {
+        const bm = (this.data || []).find(i => i.integration === 'browser_mod');
+        if (!bm) return '';
+        const browserEntries = Object.entries(bm.devices).filter(([k]) => k !== 'no_device');
+        const browserCount = browserEntries.length;
+        const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        let hasStale = false;
+        let activeCount = 0;
+        browserEntries.forEach(([, device]) => {
+          const lastActive = device.entities.reduce((max, e) => {
+            const t = this._hass?.states[e.entity_id]?.last_changed;
+            return t ? Math.max(max, new Date(t).getTime()) : max;
+          }, 0);
+          if (lastActive && lastActive < staleThreshold) hasStale = true;
+          const activeEnt = device.entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
+          if (activeEnt && this._hass?.states[activeEnt.entity_id]?.state === 'on') activeCount++;
+        });
+        const activeLabel = activeCount > 0 ? `<div style="font-size:0.72em;color:#4caf50;margin-top:2px">● ${activeCount} active</div>` : '';
+        return `
+          <div class="stat-card clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
+            <div class="stat-label">Browsers${hasStale ? ' ⚠' : ''}</div>
+            <div class="stat-value" style="color: #2196f3 !important;">${browserCount}</div>
+            ${activeLabel}
+          </div>`;
+      })()}
     `;
 
     // Attach click listeners to clickable stat cards
     statsEl.querySelectorAll('.clickable-stat[data-stat-type]').forEach(card => {
       card.addEventListener('click', () => {
-        this.showEntityListDialog(card.dataset.statType);
+        if (card.dataset.statType === 'browsers') {
+          this._showBrowserModDialog();
+        } else if (card.dataset.statType === 'entities') {
+          this._showAllEntitiesDialog();
+        } else {
+          this.showEntityListDialog(card.dataset.statType);
+        }
       });
     });
 
@@ -4899,9 +5668,18 @@ class EntityManagerPanel extends HTMLElement {
     const intDisplay = this._escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1));
     const intInitial = this._escapeHtml(integration.integration.charAt(0).toUpperCase());
 
+    const _ivf = this.integrationViewFilter[integration.integration];
+    const _filterClass = _ivf === 'enabled' ? 'em-filter-enabled' : _ivf === 'disabled' ? 'em-filter-disabled' : '';
+
     return `
-      <div class="integration-group integration-card" data-integration="${intName}">
+      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}">
         <div class="integration-header" data-integration="${intName}">
+          <div class="integration-select-wrapper" title="Select all in this integration">
+            <label class="integration-select-label">
+              <input type="checkbox" class="integration-select-checkbox" data-integration="${intName}">
+              <span class="integration-select-text">Select all</span>
+            </label>
+          </div>
           <div class="integration-logo-container">
             <img class="integration-logo" src="https://brands.home-assistant.io/${encodeURIComponent(integration.integration)}/icon.png" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
           </div>
@@ -4911,6 +5689,8 @@ class EntityManagerPanel extends HTMLElement {
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount} enabled</span> / <span style="color: #f44336">${disabledCount} disabled</span>)</div>
           </div>
           <div class="integration-actions">
+            <button class="btn view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities" style="${_ivf === 'enabled' ? '' : 'color:#4caf50;border-color:#4caf50'}">View Enabled</button>
+            <button class="btn view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities" style="${_ivf === 'disabled' ? '' : 'color:#f44336;border-color:#f44336'}">View Disabled</button>
             <button class="btn btn-secondary enable-integration" data-integration="${intName}">Enable All</button>
             <button class="btn btn-secondary disable-integration" data-integration="${intName}">Disable All</button>
           </div>
@@ -4952,32 +5732,44 @@ class EntityManagerPanel extends HTMLElement {
     const tags = this.entityTags[entity.entity_id] || [];
     const eid = this._escapeAttr(entity.entity_id);
     const iid = this._escapeAttr(integrationId);
+    const col = (id) => this.visibleColumns.includes(id);
+    const state = this._hass?.states[entity.entity_id];
+
+    // Header band: device name, state chip, time chip
+    const deviceChip = col('device') && entity.deviceName
+      ? `<span class="entity-header-device">📱 ${this._escapeHtml(entity.deviceName)}</span>` : '';
+    const stateChip = col('state') && state
+      ? `<span class="entity-header-state">⚡ ${this._escapeHtml(state.state)}${state.attributes?.unit_of_measurement ? ' ' + this._escapeHtml(state.attributes.unit_of_measurement) : ''}</span>` : '';
+    const timeChip = col('lastChanged') && state?.last_changed
+      ? `<span class="entity-header-time">🕐 ${this._escapeHtml(this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime()))} ago</span>` : '';
+    const hasHeader = deviceChip || stateChip || timeChip;
+
+    const hasBottom = col('checkbox') || col('favorite') || col('actions');
 
     return `
-      <div class="entity-item" data-entity-id="${eid}">
-        <div class="entity-item-top">
-          <div class="checkbox-group">
-            <input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}">
-          </div>
-          <button class="favorite-btn ${this.favorites.has(entity.entity_id) ? 'is-favorite' : ''}" data-entity-id="${eid}" title="Toggle favorite">
-            ${this.favorites.has(entity.entity_id) ? '★' : '☆'}
-          </button>
-          <div class="entity-info">
-            ${alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
-            ${entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
-            <div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>
-            ${entity.deviceName ? `<div class="entity-device" style="font-size: 12px; color: var(--em-text-secondary); margin-top: 4px;">📱 ${this._escapeHtml(entity.deviceName)}</div>` : ''}
-            ${tags.length > 0 ? `<div class="entity-tags-inline">${tags.map(t => `<span class="entity-tag-small">${this._escapeHtml(t)}</span>`).join('')}</div>` : ''}
-          </div>
-          <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
+      <div class="entity-item" data-entity-id="${eid}" data-disabled="${entity.is_disabled ? 'true' : 'false'}">
+        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${stateChip}${timeChip}</div>` : ''}
+        <div class="entity-card-body">
+          ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
+          ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
+          ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
+          ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
+          ${col('tags') && tags.length > 0 ? `<div class="entity-tags-inline" style="margin-top: 6px;">${tags.map(t => `<span class="entity-tag-small">${this._escapeHtml(t)}</span>`).join('')}</div>` : ''}
         </div>
-        <div class="entity-item-bottom">
-          <div class="entity-actions">
+        ${col('status') ? `<span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
+        ${hasBottom ? `<div class="entity-item-bottom">
+          <div class="entity-bottom-left">
+            ${col('checkbox') ? `<input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}"${this.selectedEntities.has(entity.entity_id) ? ' checked' : ''}>` : ''}
+            ${col('favorite') ? `<button class="favorite-btn ${this.favorites.has(entity.entity_id) ? 'is-favorite' : ''}" data-entity-id="${eid}" title="Toggle favorite">
+              ${this.favorites.has(entity.entity_id) ? '★' : '☆'}
+            </button>` : ''}
+          </div>
+          ${col('actions') ? `<div class="entity-actions">
             <button class="icon-btn rename-entity" data-entity-id="${eid}" title="Rename">✎</button>
             <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable">✓</button>
             <button class="icon-btn disable-entity" data-entity-id="${eid}" title="Disable">✕</button>
-          </div>
-        </div>
+          </div>` : ''}
+        </div>` : ''}
       </div>
     `;
   }
@@ -5021,7 +5813,7 @@ class EntityManagerPanel extends HTMLElement {
               <div class="entity-item" data-entity-id="${eid}">
                 <div class="entity-item-top">
                   <div class="checkbox-group">
-                    <input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}">
+                    <input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}"${this.selectedEntities.has(entity.entity_id) ? ' checked' : ''}>
                   </div>
                   <button class="favorite-btn ${this.favorites.has(entity.entity_id) ? 'is-favorite' : ''}" data-entity-id="${eid}" title="Toggle favorite">
                     ${this.favorites.has(entity.entity_id) ? '★' : '☆'}
@@ -5064,7 +5856,8 @@ class EntityManagerPanel extends HTMLElement {
 
     // Integration headers
     this.content.querySelectorAll('.integration-header').forEach(header => {
-      header.addEventListener('click', () => {
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.integration-select-wrapper')) return;
         const integration = header.dataset.integration;
         if (this.expandedIntegrations.has(integration)) {
           this.expandedIntegrations.delete(integration);
@@ -5088,6 +5881,48 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    // Integration select-all checkboxes
+    this.content.querySelectorAll('.integration-select-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const integrationId = checkbox.dataset.integration;
+        const entityCheckboxes = this.content.querySelectorAll(`.entity-checkbox[data-integration="${integrationId}"]`);
+        if (entityCheckboxes.length > 0) {
+          // Entities visible in DOM — sync them
+          entityCheckboxes.forEach(cb => {
+            cb.checked = checkbox.checked;
+            if (checkbox.checked) {
+              this.selectedEntities.add(cb.dataset.entityId);
+            } else {
+              this.selectedEntities.delete(cb.dataset.entityId);
+            }
+          });
+        } else {
+          // Integration is collapsed — operate on this.data directly, respecting active filters
+          const intData = (this.data || []).find(i => i.integration === integrationId);
+          if (intData) {
+            Object.values(intData.devices).forEach(device => {
+              device.entities.forEach(entity => {
+                // Respect the active viewState filter
+                if (this.viewState === 'disabled' && !entity.is_disabled) return;
+                if (this.viewState === 'enabled' && entity.is_disabled) return;
+                // Respect the active domain filter
+                if (this.selectedDomain && this.selectedDomain !== 'all' &&
+                    !entity.entity_id.startsWith(`${this.selectedDomain}.`)) return;
+                if (checkbox.checked) {
+                  this.selectedEntities.add(entity.entity_id);
+                } else {
+                  this.selectedEntities.delete(entity.entity_id);
+                }
+              });
+            });
+          }
+        }
+        checkbox.indeterminate = false;
+        this.updateSelectedCount();
+      });
+    });
+
     // Entity checkboxes
     this.content.querySelectorAll('.entity-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', () => {
@@ -5097,6 +5932,7 @@ class EntityManagerPanel extends HTMLElement {
           this.selectedEntities.delete(checkbox.dataset.entityId);
         }
         this.updateSelectedCount();
+        this._updateIntegrationCheckboxState(checkbox.dataset.integration);
       });
     });
 
@@ -5143,7 +5979,39 @@ class EntityManagerPanel extends HTMLElement {
         );
       });
     });
-    
+
+    this.content.querySelectorAll('.view-integration-enabled, .view-integration-disabled').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const integration = btn.dataset.integration;
+        const filterType = btn.classList.contains('view-integration-enabled') ? 'enabled' : 'disabled';
+        const current = this.integrationViewFilter[integration];
+
+        // Toggle: clicking the active filter clears it
+        this.integrationViewFilter[integration] = current === filterType ? undefined : filterType;
+
+        // Expand the integration so the entity list is visible
+        this.expandedIntegrations.add(integration);
+
+        // Apply immediately via CSS class on the existing container (no full re-render needed)
+        const container = this.content.querySelector(`.integration-group[data-integration="${CSS.escape(integration)}"]`);
+        if (container) {
+          container.classList.remove('em-filter-enabled', 'em-filter-disabled');
+          if (this.integrationViewFilter[integration]) {
+            container.classList.add(`em-filter-${this.integrationViewFilter[integration]}`);
+          }
+          // Update button active states within this header
+          container.querySelector('.view-integration-enabled')?.classList.toggle('btn-primary', this.integrationViewFilter[integration] === 'enabled');
+          container.querySelector('.view-integration-enabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'enabled');
+          container.querySelector('.view-integration-disabled')?.classList.toggle('btn-primary', this.integrationViewFilter[integration] === 'disabled');
+          container.querySelector('.view-integration-disabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'disabled');
+        } else {
+          // Integration was collapsed — re-render to expand it with the filter applied
+          this.updateView();
+        }
+      });
+    });
+
     // Favorite buttons
     this.content.querySelectorAll('.favorite-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -5152,6 +6020,16 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
     
+    // Click entity card → full detail dialog
+    this.content.querySelectorAll('.entity-item').forEach(item => {
+      item.style.cursor = 'pointer';
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('button, input, label')) return;
+        const entityId = item.dataset.entityId;
+        if (entityId) this._showEntityDetailsDialog(entityId);
+      });
+    });
+
     // Context menu on right-click
     this.content.querySelectorAll('.entity-item').forEach(item => {
       item.addEventListener('contextmenu', (e) => {
@@ -5187,14 +6065,20 @@ class EntityManagerPanel extends HTMLElement {
 
   updateSelectedCount() {
     if (!this.content) return;
-    
     const selectedCount = this.selectedEntities.size;
-    const enableBtn = this.content.querySelector('#selected-count');
-    const disableBtn = this.content.querySelector('#selected-count-2');
-    const deselectCount = this.content.querySelector('#deselect-count');
-    if (enableBtn) enableBtn.textContent = selectedCount;
-    if (disableBtn) disableBtn.textContent = selectedCount;
-    if (deselectCount) deselectCount.textContent = selectedCount;
+
+    // Update sidebar count badge
+    const sidebarCount = this.querySelector('#sidebar-selected-count');
+    if (sidebarCount) sidebarCount.textContent = selectedCount || '';
+
+    // Dim/enable selection-dependent sidebar actions
+    ['enable-selected', 'disable-selected', 'deselect-all'].forEach(a => {
+      const el = this.querySelector(`.em-sidebar [data-action="${a}"]`);
+      if (el) {
+        el.style.opacity = selectedCount === 0 ? '0.4' : '';
+        el.style.pointerEvents = selectedCount === 0 ? 'none' : '';
+      }
+    });
   }
 
   async enableEntity(entityId, skipUndo = false) {
@@ -5347,11 +6231,63 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  async _loadHaAutoBackup() {
+    try {
+      const result = await this._hass.callWS({ type: 'hassio/update/config/info' });
+      // Response shape: { core_backup_before_update: bool, add_on_backup_before_update: bool }
+      if (result && typeof result.core_backup_before_update === 'boolean') {
+        this.haAutoBackup = {
+          core: result.core_backup_before_update,
+          addon: result.add_on_backup_before_update ?? result.core_backup_before_update,
+        };
+      } else {
+        this.haAutoBackup = null;
+      }
+    } catch {
+      this.haAutoBackup = null; // Hassio not available (plain HA Core)
+    }
+  }
+
+  async _toggleHaAutoBackup() {
+    if (this.haAutoBackup === null) return;
+    const newVal = !this.haAutoBackup.core;
+    try {
+      await this._hass.callWS({
+        type: 'hassio/update/config/update',
+        core_backup_before_update: newVal,
+        add_on_backup_before_update: newVal,
+      });
+      this.haAutoBackup = { core: newVal, addon: newVal };
+      // Re-render the whole backup row in place
+      const row = this.content?.querySelector('#ha-auto-backup-toggle')?.closest('div[style]');
+      if (row) {
+        row.style.borderColor = newVal ? '#4caf50' : '#f44336';
+        row.style.background = newVal ? 'rgba(76,175,80,0.1)' : 'rgba(244,67,54,0.08)';
+        const btn = row.querySelector('#ha-auto-backup-toggle');
+        if (btn) {
+          btn.textContent = newVal ? 'ON' : 'OFF';
+          btn.style.background = newVal ? '#4caf50' : '#f44336';
+          btn.style.borderColor = newVal ? '#4caf50' : '#f44336';
+        }
+        const desc = row.querySelector('span:last-child');
+        if (desc) desc.textContent = newVal
+          ? 'HA will automatically create a backup before every update'
+          : 'No automatic backup will be created before updates';
+      }
+      this._showToast(`HA auto-backup before updates: ${newVal ? 'enabled' : 'disabled'}`, 'success');
+    } catch (err) {
+      this._showToast(`Failed to update setting: ${err.message}`, 'error');
+    }
+  }
+
   async loadUpdates() {
     this.setLoading(true);
     try {
       // Get all update entities from Home Assistant
-      const states = await this._hass.callWS({ type: 'get_states' });
+      const [states] = await Promise.all([
+        this._hass.callWS({ type: 'get_states' }),
+        this._loadHaAutoBackup(),
+      ]);
       this.updateEntities = states.filter(state => state.entity_id.startsWith('update.'));
       this.renderUpdates();
     } catch (error) {
@@ -5387,21 +6323,13 @@ class EntityManagerPanel extends HTMLElement {
       });
     }
 
-    // Apply device/integration type filter
+    // Apply device/integration type filter.
+    // HA sets device_class (e.g. 'firmware') on hardware updates; software/integration
+    // updates leave device_class unset — use this as the sole discriminator.
     if (this.selectedUpdateType === 'device') {
-      filteredUpdates = filteredUpdates.filter(update => {
-        const deviceClass = update.attributes.device_class;
-        const entityId = update.entity_id;
-        // Device updates typically have device_class or are for specific hardware
-        return deviceClass || entityId.includes('device') || update.attributes.title?.toLowerCase().includes('device');
-      });
+      filteredUpdates = filteredUpdates.filter(update => !!update.attributes.device_class);
     } else if (this.selectedUpdateType === 'integration') {
-      filteredUpdates = filteredUpdates.filter(update => {
-        const deviceClass = update.attributes.device_class;
-        const entityId = update.entity_id;
-        // Integration updates are typically add-ons, HACS, or software updates
-        return !deviceClass && (!entityId.includes('device') || update.attributes.title?.toLowerCase().includes('add-on') || update.attributes.title?.toLowerCase().includes('integration'));
-      });
+      filteredUpdates = filteredUpdates.filter(update => !update.attributes.device_class);
     }
     
     // Apply search filter
@@ -5435,14 +6363,51 @@ class EntityManagerPanel extends HTMLElement {
     }
 
     const availableUpdates = filteredUpdates.filter(u => u.state === 'on');
+    const backupSupportedCount = availableUpdates.filter(u => !!(u.attributes.supported_features & 8)).length;
+
+    const haBackupRow = this.haAutoBackup !== null ? (() => {
+      const on = this.haAutoBackup.core;
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    padding:10px 14px;border-radius:10px;margin-top:10px;
+                    border:2px solid ${on ? '#4caf50' : '#f44336'};
+                    background:${on ? 'rgba(76,175,80,0.1)' : 'rgba(244,67,54,0.08)'}">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:13px;font-weight:600;color:var(--em-text-primary)">🛡 HA Auto-backup before updates</span>
+            <span style="font-size:11px;color:var(--em-text-secondary)">
+              ${on ? 'HA will automatically create a backup before every update' : 'No automatic backup will be created before updates'}
+            </span>
+          </div>
+          <button id="ha-auto-backup-toggle"
+            title="Toggle HA's global backup before update setting"
+            style="padding:7px 20px;border-radius:20px;border:2px solid ${on ? '#4caf50' : '#f44336'};
+                   background:${on ? '#4caf50' : '#f44336'};color:white;
+                   cursor:pointer;font-size:13px;font-weight:700;min-width:64px;flex-shrink:0">
+            ${on ? 'ON' : 'OFF'}
+          </button>
+        </div>`;
+    })() : '';
 
     content.innerHTML = `
       <div class="update-select-all">
-        <label class="select-all-label">
-          <input type="checkbox" id="select-all-updates" ${availableUpdates.length === 0 ? 'disabled' : ''}>
-          <span>Select All (${availableUpdates.length})</span>
-        </label>
+        <div class="select-all-pill">
+          <label class="select-all-label" for="select-all-updates">
+            <input type="checkbox" id="select-all-updates" ${availableUpdates.length === 0 ? 'disabled' : ''}>
+            <span>Select All (${availableUpdates.length})</span>
+          </label>
+          <div class="em-update-expand-wrap">
+            <button class="em-update-expand-btn" id="update-selected">
+              Update (<span id="update-count">0</span>)
+            </button>
+          </div>
+        </div>
+        ${backupSupportedCount > 0 ? `
+        <label class="select-all-label" title="Check backup for all entities that support it">
+          <input type="checkbox" id="select-all-backups">
+          <span>🛡 Backup All (${backupSupportedCount})</span>
+        </label>` : ''}
       </div>
+      ${haBackupRow}
       <div class="update-list">
         ${filteredUpdates.map(update => this.renderUpdateItem(update)).join('')}
       </div>
@@ -5462,6 +6427,8 @@ class EntityManagerPanel extends HTMLElement {
                    latestVersion.toLowerCase().includes('dev');
     const releaseUrl = update.attributes.release_url || null;
     
+    const supportsBackup = hasUpdate && !!(update.attributes.supported_features & 8);
+
     const updateClasses = ['update-item'];
     if (hasUpdate) updateClasses.push('has-update');
     if (isBeta) updateClasses.push('beta');
@@ -5487,7 +6454,14 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         ${hasUpdate ? `
           <div class="update-actions">
-            ${releaseUrl ? `<button class="update-btn skip-btn" data-action="release-notes" data-url="${this._escapeAttr(releaseUrl)}">Release Notes</button>` : ''}
+            ${supportsBackup ? `
+              <label class="update-btn skip-btn update-backup-label" title="Create a backup before installing this update"
+                style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;border-color:var(--em-success);color:var(--em-success)">
+                <input type="checkbox" class="update-backup-checkbox" data-entity-id="${this._escapeAttr(entityId)}"
+                  style="accent-color:var(--em-success);width:14px;height:14px;cursor:pointer;margin:0">
+                <span>🛡 Backup</span>
+              </label>` : ''}
+            ${releaseUrl ? `<button class="update-btn skip-btn" data-action="release-notes" data-url="${this._escapeAttr(releaseUrl)}" style="border-color:#2196f3;color:#2196f3">Release Notes</button>` : ''}
             <button class="update-btn" data-action="update" data-entity-id="${this._escapeAttr(entityId)}">Update</button>
           </div>
         ` : ''}
@@ -5496,6 +6470,11 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   attachUpdateListeners() {
+    // HA global auto-backup toggle
+    this.content.querySelector('#ha-auto-backup-toggle')?.addEventListener('click', () => {
+      this._toggleHaAutoBackup();
+    });
+
     // Handle select all checkbox
     const selectAllCheckbox = this.content.querySelector('#select-all-updates');
     if (selectAllCheckbox) {
@@ -5511,6 +6490,16 @@ class EntityManagerPanel extends HTMLElement {
           }
         });
         this.updateSelectedUpdateCount();
+      });
+    }
+
+    // Handle select-all-backups checkbox
+    const selectAllBackups = this.content.querySelector('#select-all-backups');
+    if (selectAllBackups) {
+      selectAllBackups.addEventListener('change', (e) => {
+        this.content.querySelectorAll('.update-backup-checkbox').forEach(cb => {
+          cb.checked = e.target.checked;
+        });
       });
     }
 
@@ -5539,10 +6528,13 @@ class EntityManagerPanel extends HTMLElement {
         const currentVersion = updateEntity?.attributes.installed_version || 'Unknown';
         const latestVersion = updateEntity?.attributes.latest_version || 'Unknown';
         
+        const backupCb = btn.closest('.update-item')?.querySelector('.update-backup-checkbox');
+        const doBackup = backupCb?.checked ?? false;
+        const backupNote = doBackup ? '\n\n🛡 A backup will be created before installing.' : '';
         this.showConfirmDialog(
           'Confirm Update',
-          `Are you sure you want to update ${title} from version ${currentVersion} to ${latestVersion}?`,
-          () => this.performUpdate(entityId)
+          `Are you sure you want to update ${title} from version ${currentVersion} to ${latestVersion}?${backupNote}`,
+          () => this.performUpdate(entityId, doBackup)
         );
       });
     });
@@ -5554,29 +6546,109 @@ class EntityManagerPanel extends HTMLElement {
         window.open(btn.dataset.url, '_blank');
       });
     });
+
+    // Handle update-selected button (lives inside #content, re-bound each render)
+    const updateSelectedBtn = this.content.querySelector('#update-selected');
+    if (updateSelectedBtn) {
+      updateSelectedBtn.addEventListener('click', () => {
+        if (this.selectedUpdates.size === 0) return;
+        this.confirmBulkUpdate();
+      });
+    }
   }
 
   updateSelectedUpdateCount() {
     const countSpan = this.content?.querySelector('#update-count');
-    if (countSpan) {
-      countSpan.textContent = this.selectedUpdates.size;
+    if (countSpan) countSpan.textContent = this.selectedUpdates.size;
+    const wrap = this.content?.querySelector('.em-update-expand-wrap');
+    if (wrap) wrap.classList.toggle('is-visible', this.selectedUpdates.size > 0);
+  }
+
+  // Switch the update row from indeterminate spinner to a filled SVG progress ring.
+  // Called when HA reports update_percentage on the entity during installation.
+  _updateRowProgress(entityId, pct) {
+    const row = this.content?.querySelector(`.update-item[data-entity-id="${CSS.escape(entityId)}"]`);
+    if (!row || !row.classList.contains('is-active')) return;
+    const actionsEl = row.querySelector('.update-actions');
+    if (!actionsEl) return;
+
+    const circumference = 62.83; // 2π × radius 10
+    const offset = (circumference * (1 - pct / 100)).toFixed(2);
+
+    if (actionsEl.querySelector('.em-progress-ring')) {
+      // Ring already shown — update dashoffset and percentage text
+      const fill = actionsEl.querySelector('.em-ring-fill');
+      if (fill) fill.setAttribute('stroke-dashoffset', offset);
+      const pctEl = actionsEl.querySelector('.em-update-pct');
+      if (pctEl) pctEl.textContent = `${pct}%`;
+    } else {
+      // Replace indeterminate spinner with determinate SVG ring
+      actionsEl.innerHTML = `
+        <svg class="em-progress-ring" width="28" height="28" viewBox="0 0 28 28" style="flex-shrink:0">
+          <circle cx="14" cy="14" r="10" fill="none" stroke="color-mix(in srgb, var(--em-primary) 25%, transparent)" stroke-width="3"/>
+          <circle cx="14" cy="14" r="10" fill="none" stroke="var(--em-primary)" stroke-width="3"
+            stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${offset}"
+            transform="rotate(-90 14 14)" stroke-linecap="round" class="em-ring-fill"/>
+        </svg>
+        <span style="font-size:13px;color:var(--em-primary);font-weight:500">
+          Updating… <span class="em-update-pct">${pct}%</span>
+        </span>`;
     }
   }
 
-  async performUpdate(entityId) {
+  _setUpdateRowState(entityId, state, { backup = false } = {}) {
+    const row = this.content?.querySelector(`.update-item[data-entity-id="${CSS.escape(entityId)}"]`);
+    if (!row) return;
+
+    row.classList.remove('is-queued', 'is-active', 'is-done', 'is-failed');
+    if (!state) return;
+    row.classList.add(`is-${state}`);
+
+    const actionsEl = row.querySelector('.update-actions');
+    if (!actionsEl) return;
+
+    if (state === 'queued') {
+      actionsEl.innerHTML = `<span style="font-size:12px;color:var(--em-text-secondary);padding:8px 12px">⏳ Queued</span>`;
+    } else if (state === 'active') {
+      actionsEl.innerHTML = `
+        <div class="em-update-spinner"></div>
+        <span style="font-size:13px;color:var(--em-primary);font-weight:500">
+          ${backup ? '🛡 Backing up…' : 'Updating…'}
+        </span>`;
+    } else if (state === 'done') {
+      actionsEl.innerHTML = `<span style="font-size:14px;color:var(--em-success);font-weight:700">✓ Updated</span>`;
+    } else if (state === 'failed') {
+      actionsEl.innerHTML = `<span style="font-size:14px;color:var(--em-danger);font-weight:700">✕ Failed</span>`;
+    }
+  }
+
+  async performUpdate(entityId, backup = false) {
+    this._setUpdateRowState(entityId, 'active', { backup });
+    if (!this._pendingUpdateWatches) this._pendingUpdateWatches = new Set();
+    this._pendingUpdateWatches.add(entityId);
+
+    // Fallback: if the entity state never transitions to 'off' within 5 minutes
+    // (e.g. HA doesn't push a state update), mark as done anyway.
+    const fallbackTimer = setTimeout(() => {
+      if (this._pendingUpdateWatches?.has(entityId)) {
+        this._pendingUpdateWatches.delete(entityId);
+        this._setUpdateRowState(entityId, 'done');
+        setTimeout(() => this.loadUpdates(), 2000);
+      }
+    }, 300000);
+
     try {
       await this._hass.callService('update', 'install', {
-        entity_id: entityId
+        entity_id: entityId,
+        ...(backup && { backup: true }),
       });
-      
-      this._fireEvent('hass-notification', {
-        message: `Update started for ${entityId}`,
-      });
-      
-      // Refresh the list after a short delay
-      setTimeout(() => this.loadUpdates(), 2000);
+      // Service accepted — state watcher in set hass() will detect completion
+      // and call _setUpdateRowState(entityId, 'done') + loadUpdates().
     } catch (error) {
+      clearTimeout(fallbackTimer);
+      this._pendingUpdateWatches?.delete(entityId);
       console.error('Error performing update:', error);
+      this._setUpdateRowState(entityId, 'failed');
       this.showErrorDialog(`Error updating ${entityId}: ${error.message}`);
     }
   }
@@ -5584,42 +6656,512 @@ class EntityManagerPanel extends HTMLElement {
   confirmBulkUpdate() {
     const count = this.selectedUpdates.size;
     const selectedEntityIds = Array.from(this.selectedUpdates);
+
+    // Capture per-entity backup state before dialog opens
+    const backupMap = {};
+    selectedEntityIds.forEach(entityId => {
+      const cb = this.content.querySelector(`.update-backup-checkbox[data-entity-id="${CSS.escape(entityId)}"]`);
+      backupMap[entityId] = cb?.checked ?? false;
+    });
+
     const updateList = selectedEntityIds.map(entityId => {
       const update = this.updateEntities.find(u => u.entity_id === entityId);
       const title = update?.attributes.title || update?.attributes.friendly_name || entityId;
-      return `• ${title}`;
+      return `• ${title}${backupMap[entityId] ? ' 🛡' : ''}`;
     }).join('\n');
-    
+
+    const backupCount = Object.values(backupMap).filter(Boolean).length;
+    const backupNote = backupCount > 0 ? `\n\n🛡 ${backupCount} item${backupCount !== 1 ? 's' : ''} will be backed up before updating.` : '';
     this.showConfirmDialog(
       'Confirm Bulk Update',
-      `Are you sure you want to update the following ${count} item${count !== 1 ? 's' : ''}?\n\n${updateList}\n\nThis action cannot be undone.`,
-      () => this.performBulkUpdate()
+      `Are you sure you want to update the following ${count} item${count !== 1 ? 's' : ''}?\n\n${updateList}${backupNote}\n\nThis action cannot be undone.`,
+      () => this.performBulkUpdate(backupMap)
     );
   }
 
-  async performBulkUpdate() {
+  async performBulkUpdate(backupMap = {}) {
+    const entityIds = Array.from(this.selectedUpdates);
+
     this.setLoading(true);
-    try {
-      const updatePromises = Array.from(this.selectedUpdates).map(entityId =>
-        this._hass.callService('update', 'install', { entity_id: entityId })
+
+    // Mark all selected rows as queued upfront
+    entityIds.forEach(id => this._setUpdateRowState(id, 'queued'));
+
+    // Always sequential — HA backup (whether from our checkbox or HA's global
+    // "backup before update" setting) is single-threaded and cannot run in parallel.
+    const succeeded = [];
+    const failed = [];
+
+    for (let i = 0; i < entityIds.length; i++) {
+      const entityId = entityIds[i];
+      const backup = !!backupMap[entityId];
+      const update = this.updateEntities?.find(u => u.entity_id === entityId);
+      const title = update?.attributes?.title || update?.attributes?.friendly_name || entityId;
+      const step = `${i + 1}/${entityIds.length}`;
+
+      // Activate this row + show toast
+      this._setUpdateRowState(entityId, 'active', { backup });
+      this._showToast(
+        backup ? `🛡 Backing up & updating ${title} (${step})…` : `⬆ Updating ${title} (${step})…`,
+        'info', 0
       );
-      
-      await Promise.all(updatePromises);
-      
-      this._fireEvent('hass-notification', {
-        message: `Started ${this.selectedUpdates.size} update(s)`,
+
+      try {
+        await this._hass.callService('update', 'install', {
+          entity_id: entityId,
+          ...(backup && { backup: true }),
+        });
+        this._setUpdateRowState(entityId, 'done');
+        succeeded.push(title);
+      } catch (err) {
+        console.error(`Error updating ${entityId}:`, err);
+        this._setUpdateRowState(entityId, 'failed');
+        failed.push(title);
+      }
+    }
+
+    // Final summary toast
+    const parts = [];
+    if (succeeded.length) parts.push(`✓ ${succeeded.length} updated`);
+    if (failed.length) parts.push(`✕ ${failed.length} failed`);
+    this._showToast(parts.join(' · '), failed.length ? 'warning' : 'success');
+
+    this.selectedUpdates.clear();
+    this.updateSelectedUpdateCount();
+    this.setLoading(false);
+    setTimeout(() => this.loadUpdates(), 3000);
+  }
+
+  _showAllEntitiesDialog() {
+    const integrations = this.data || [];
+
+    // Detect raw config entry IDs used as platform names (32-char hex, no underscores/spaces).
+    // Real integration names always contain letters outside a-f (e.g. "shelly", "mqtt", "zwave_js")
+    // or use underscores. Config entry IDs are purely hexadecimal.
+    const isHashId = s => s.length >= 20 && /^[0-9a-f]+$/i.test(s);
+
+    const renderEntityRow = entity => {
+      const name = this._escapeHtml(entity.original_name || entity.entity_id);
+      const disabled = entity.is_disabled;
+      const dot = `<span style="font-size:9px;color:${disabled ? 'var(--em-text-muted, #9e9e9e)' : 'var(--em-success)'}">●</span>`;
+      const catBadge = entity.entity_category
+        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--em-bg-secondary);color:var(--em-text-secondary);flex-shrink:0">${this._escapeHtml(entity.entity_category)}</span>`
+        : '';
+      const disabledBadge = disabled
+        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(244,67,54,0.1);color:#f44336;flex-shrink:0">disabled</span>`
+        : '';
+      return `<div class="entity-list-item em-entity-row" style="padding:7px 14px;cursor:pointer"
+                   data-entity-id="${this._escapeAttr(entity.entity_id)}">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  ${dot}
+                  <span style="font-weight:600;font-size:13px">${name}</span>
+                  <span style="font-size:11px;opacity:0.6;font-family:monospace">${this._escapeHtml(entity.entity_id)}</span>
+                  ${catBadge}${disabledBadge}
+                </div>
+              </div>`;
+    };
+
+    const renderIntegration = integ => {
+      const integLabel = integ.integration.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const allEntities = Object.values(integ.devices).flatMap(d => d.entities || []);
+
+      const deviceGroupsHtml = Object.entries(integ.devices)
+        .filter(([, dev]) => (dev.entities || []).length > 0)
+        .sort(([idA, devA], [idB, devB]) => {
+          if (idA === 'no_device') return 1;
+          if (idB === 'no_device') return -1;
+          return (devA.name || '').localeCompare(devB.name || '');
+        })
+        .map(([devId, dev]) => {
+          const devLabel = devId === 'no_device'
+            ? 'No Device (Orphaned)'
+            : this._escapeHtml(dev.name || 'Unknown Device');
+
+          const entitiesHtml = (dev.entities || [])
+            .slice().sort((a, b) => (a.original_name || a.entity_id).localeCompare(b.original_name || b.entity_id))
+            .map(renderEntityRow).join('');
+
+          const cnt = dev.entities.length;
+          return this._collGroup(
+            `<span style="display:flex;align-items:center;gap:8px;flex:1">
+              <span>${devLabel}</span>
+              <span style="font-size:11px;opacity:0.55">${cnt} ${cnt === 1 ? 'entity' : 'entities'}</span>
+            </span>`,
+            entitiesHtml
+          );
+        }).join('');
+
+      return { label: integLabel, count: allEntities.length, html: deviceGroupsHtml };
+    };
+
+    let totalCount = 0;
+    const namedGroups = [];
+    const otherEntities = [];   // collect all entities from hash-named integrations
+
+    for (const integ of integrations) {
+      const allEntities = Object.values(integ.devices).flatMap(d => d.entities || []);
+      if (!allEntities.length) continue;
+      totalCount += allEntities.length;
+
+      if (isHashId(integ.integration)) {
+        otherEntities.push(...allEntities);
+      } else {
+        namedGroups.push(renderIntegration(integ));
+      }
+    }
+
+    namedGroups.sort((a, b) => a.label.localeCompare(b.label));
+
+    const namedHtml = namedGroups.map(g =>
+      this._collGroup(
+        `<span style="display:flex;align-items:center;gap:8px;flex:1">
+          <span style="font-weight:700">${this._escapeHtml(g.label)}</span>
+          <span style="font-size:11px;opacity:0.55">${g.count} ${g.count === 1 ? 'entity' : 'entities'}</span>
+        </span>`,
+        g.html
+      )
+    ).join('');
+
+    const otherHtml = otherEntities.length
+      ? this._collGroup(
+          `<span style="display:flex;align-items:center;gap:8px;flex:1">
+            <span style="font-weight:700">Other</span>
+            <span style="font-size:11px;opacity:0.55">${otherEntities.length} ${otherEntities.length === 1 ? 'entity' : 'entities'}</span>
+          </span>`,
+          otherEntities
+            .slice().sort((a, b) => (a.original_name || a.entity_id).localeCompare(b.original_name || b.entity_id))
+            .map(renderEntityRow).join('')
+        )
+      : '';
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: `All Entities (${totalCount})`,
+      color: 'var(--em-primary)',
+      extraClass: 'entity-list-dialog',
+      contentHtml: `
+        <div class="entity-list-content">
+          ${namedHtml + otherHtml || '<p style="text-align:center;padding:20px;opacity:0.6">No entities found</p>'}
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="close-all-entities">Close</button>`
+    });
+
+    overlay.querySelector('#close-all-entities').addEventListener('click', closeDialog);
+
+    overlay.querySelectorAll('.em-collapsible').forEach(header => {
+      header.addEventListener('click', () => {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.em-collapse-arrow');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
       });
-      
-      this.selectedUpdates.clear();
-      this.updateSelectedUpdateCount();
-      
-      // Refresh the list after a short delay
-      setTimeout(() => this.loadUpdates(), 2000);
-    } catch (error) {
-      console.error('Error performing bulk update:', error);
-      this.showErrorDialog(`Error performing bulk update: ${error.message}`);
-    } finally {
-      this.setLoading(false);
+    });
+
+    overlay.querySelectorAll('.em-entity-row[data-entity-id]').forEach(row => {
+      row.addEventListener('click', () => this._showEntityDetailsDialog(row.dataset.entityId));
+    });
+  }
+
+  async _showBrowserModDialog() {
+    const bmIntegration = (this.data || []).find(i => i.integration === 'browser_mod');
+    if (!bmIntegration) {
+      this._showToast('browser_mod integration not found', 'error');
+      return;
+    }
+
+    const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    // Fetch entity registry once to find config_entry_ids
+    let registry = [];
+    try {
+      registry = await this._hass.callWS({ type: 'config/entity_registry/list' });
+    } catch (_) {}
+
+    // Build per-browser info
+    const browsers = Object.entries(bmIntegration.devices)
+      .filter(([deviceId]) => deviceId !== 'no_device')
+      .map(([deviceId, device]) => {
+        const entities = device.entities;
+
+        // Last active = most-recent last_changed across all entities
+        let lastActive = 0;
+        entities.forEach(e => {
+          const t = this._hass?.states[e.entity_id]?.last_changed;
+          if (t) lastActive = Math.max(lastActive, new Date(t).getTime());
+        });
+
+        // Live activity from browser_mod entity states
+        const activeEnt = entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
+        const visibilityEnt = entities.find(e => e.entity_id.startsWith('sensor.') && e.entity_id.endsWith('_visibility'));
+        const pathEnt = entities.find(e => e.entity_id.startsWith('sensor.') && e.entity_id.endsWith('_path'));
+        const isActive = activeEnt ? this._hass?.states[activeEnt.entity_id]?.state === 'on' : false;
+        const isVisible = visibilityEnt ? this._hass?.states[visibilityEnt.entity_id]?.state === 'visible' : false;
+        const currentPath = pathEnt ? this._hass?.states[pathEnt.entity_id]?.state : null;
+
+        // browser_mod browser_id: unique_id of the active binary_sensor is "{browser_id}_active"
+        const activeRegEntry = registry.find(r => r.entity_id === activeEnt?.entity_id);
+        const browserId = activeRegEntry?.unique_id?.replace(/_active$/, '') ?? null;
+
+        return {
+          deviceId,
+          name: this.getDeviceName(deviceId) || deviceId,
+          entities,
+          lastActive,
+          isStale: lastActive > 0 && lastActive < staleThreshold,
+          neverSeen: lastActive === 0,
+          isActive,
+          isVisible,
+          currentPath,
+          browserId,
+        };
+      })
+      .sort((a, b) => {
+        // Active first, then visible, then by last activity
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        if (a.isVisible !== b.isVisible) return a.isVisible ? -1 : 1;
+        return b.lastActive - a.lastActive;
+      });
+
+    const staleIds = browsers.filter(b => (b.isStale || b.neverSeen) && b.browserId).map(b => b.browserId);
+
+    const renderBrowser = (b) => {
+      const eid = this._escapeAttr(b.deviceId);
+      const lastActiveStr = b.neverSeen ? 'Never seen'
+        : b.isStale ? `${this._fmtAgo(new Date(b.lastActive).toISOString())} ⚠ stale`
+        : this._fmtAgo(new Date(b.lastActive).toISOString());
+
+      // Status badge: active > visible > stale/never
+      let statusBadge = '';
+      if (b.isActive) {
+        statusBadge = `<span style="background:#4caf50;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">● Active</span>`;
+      } else if (b.isVisible) {
+        statusBadge = `<span style="background:#2196f3;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">● Visible</span>`;
+      } else if (b.neverSeen) {
+        statusBadge = `<span style="background:#ff9800;color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">never active</span>`;
+      } else if (b.isStale) {
+        statusBadge = `<span style="background:#ff9800;color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">stale</span>`;
+      }
+
+      const pathHtml = (b.isActive || b.isVisible) && b.currentPath
+        ? `<span style="font-size:0.8em;opacity:0.6;flex-basis:100%;margin-top:2px;padding-left:2px">📍 ${this._escapeHtml(b.currentPath)}</span>`
+        : '';
+
+      const deregisterBtn = b.browserId
+        ? `<button class="btn em-bm-deregister" data-browser-id="${this._escapeAttr(b.browserId)}" data-device-id="${eid}"
+              style="background:#f44336;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.8em;cursor:pointer">Deregister</button>`
+        : `<a href="/config/integrations/integration/browser_mod" target="_blank"
+              style="font-size:0.8em;color:#2196f3;padding:3px 6px;text-decoration:none">Manage ↗</a>`;
+
+      const browserIdChip = b.browserId
+        ? `<span class="em-bm-browser-id-chip" data-browser-id="${this._escapeAttr(b.browserId)}"
+              title="Click to view in browser_mod settings"
+              style="display:inline-flex;align-items:center;gap:4px;font-family:monospace;font-size:0.75em;
+                     background:rgba(128,128,128,0.12);border:1px solid rgba(128,128,128,0.25);
+                     border-radius:4px;padding:1px 4px 1px 7px;cursor:pointer;user-select:none;
+                     flex-basis:100%;margin-top:4px;max-width:fit-content;opacity:0.8;
+                     transition:background 0.2s,border-color 0.2s">
+              <span style="opacity:0.6;font-size:0.9em">ID</span>
+              <span class="em-bm-id-text">${this._escapeHtml(b.browserId)}</span>
+              <span style="opacity:0.4;font-size:0.85em;margin-left:2px">↗</span>
+              <button class="em-bm-copy-btn" data-browser-id="${this._escapeAttr(b.browserId)}"
+                title="Copy to clipboard"
+                style="background:none;border:none;cursor:pointer;padding:1px 5px;font-size:1em;
+                       opacity:0.45;line-height:1;border-left:1px solid rgba(128,128,128,0.25);
+                       margin-left:4px">⎘</button>
+           </span>`
+        : '';
+
+      return `
+        <div class="entity-list-item" style="padding:10px 12px" data-device-id="${eid}">
+          <div class="entity-list-row" style="flex-wrap:wrap;align-items:center;gap:6px">
+            <span class="entity-list-name" style="font-weight:600;flex:1;min-width:140px">
+              ${this._escapeHtml(b.name)}${statusBadge}
+            </span>
+            <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.65;flex:1;min-width:100px">
+              ${b.entities.length} entit${b.entities.length !== 1 ? 'ies' : 'y'}
+            </span>
+            <span style="font-size:0.82em;opacity:0.75;flex:1;min-width:120px">
+              Last active: <strong>${lastActiveStr}</strong>
+            </span>
+            ${browserIdChip}
+            ${pathHtml}
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="btn btn-secondary em-bm-disable-all" data-device-id="${eid}"
+                style="padding:3px 10px;font-size:0.8em">Disable all</button>
+              ${deregisterBtn}
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const staleCount = browsers.filter(b => b.isStale || b.neverSeen).length;
+    const infoBar = staleCount > 0 ? `
+      <div style="margin-bottom:12px;padding:8px 12px;background:rgba(255,152,0,0.1);border-radius:6px;border:1px solid rgba(255,152,0,0.3);font-size:0.9em">
+        ⚠ ${staleCount} browser${staleCount !== 1 ? 's' : ''} with no activity in 7+ days — use "Clean up stale" to deregister them
+      </div>` : '';
+
+    const activeCount = browsers.filter(b => b.isActive).length;
+    const visibleCount = browsers.filter(b => !b.isActive && b.isVisible).length;
+    const activitySuffix = activeCount > 0
+      ? ` — ${activeCount} active${visibleCount > 0 ? `, ${visibleCount} visible` : ''}`
+      : visibleCount > 0 ? ` — ${visibleCount} visible` : '';
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: `browser_mod Browsers (${browsers.length}${activitySuffix})`,
+      color: '#2196f3',
+      extraClass: 'entity-list-dialog',
+      contentHtml: `
+        <div class="entity-list-content">
+          ${infoBar}
+          ${browsers.length === 0
+            ? '<p style="text-align:center;padding:24px;opacity:0.6">No registered browsers found.</p>'
+            : browsers.map(renderBrowser).join('')}
+        </div>`,
+      actionsHtml: `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%;align-items:center">
+          <div style="display:flex;gap:8px;margin-right:auto;flex-wrap:wrap">
+            ${staleIds.length > 0
+              ? `<button class="btn" id="em-bm-cleanup-stale" style="background:#ff9800;color:#fff;border:none;border-radius:4px;padding:6px 16px;cursor:pointer">
+                   Clean up stale (${staleIds.length})
+                 </button>`
+              : ''}
+            ${(() => {
+              const activeBrowser = browsers.find(b => b.isActive && b.browserId);
+              const othersWithId = browsers.filter(b => !b.isActive && b.browserId);
+              return activeBrowser && othersWithId.length > 0
+                ? `<button class="btn" id="em-bm-deregister-others" style="background:#e53935;color:#fff;border:none;border-radius:4px;padding:6px 16px;cursor:pointer">
+                     Deregister all but active (${othersWithId.length})
+                   </button>`
+                : '';
+            })()}
+          </div>
+          <button class="btn btn-secondary" id="close-bm-dialog">Close</button>
+        </div>`,
+    });
+
+    overlay.querySelector('#close-bm-dialog').addEventListener('click', closeDialog);
+
+    // Chip click → flash + navigate to browser_mod settings
+    overlay.querySelectorAll('.em-bm-browser-id-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        chip.style.background = 'rgba(33,150,243,0.18)';
+        chip.style.borderColor = 'rgba(33,150,243,0.7)';
+        setTimeout(() => {
+          closeDialog();
+          window.history.pushState(null, '', '/config/integrations/integration/browser_mod');
+          window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+        }, 220);
+      });
+    });
+
+    // Copy icon inside chip → copy to clipboard (no navigation)
+    overlay.querySelectorAll('.em-bm-copy-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.browserId;
+        try {
+          await navigator.clipboard.writeText(id);
+          const prev = btn.textContent;
+          btn.textContent = '✓';
+          btn.style.color = '#4caf50';
+          btn.style.opacity = '1';
+          setTimeout(() => { btn.textContent = prev; btn.style.color = ''; btn.style.opacity = ''; }, 1500);
+        } catch (_) {
+          this._showToast(`Browser ID: ${id}`, 'info');
+        }
+      });
+    });
+
+    // Disable all entities for a browser
+    overlay.querySelectorAll('.em-bm-disable-all').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const deviceId = btn.dataset.deviceId;
+        const browser = browsers.find(b => b.deviceId === deviceId);
+        if (!browser) return;
+        btn.disabled = true;
+        btn.textContent = 'Disabling…';
+        try {
+          for (const entity of browser.entities) {
+            await this._hass.callWS({
+              type: 'entity_manager/disable_entity',
+              entity_id: entity.entity_id,
+            });
+          }
+          this._showToast(`Disabled ${browser.entities.length} entities for ${browser.name}`, 'success');
+          btn.textContent = 'Disabled';
+        } catch (err) {
+          this._showToast(`Failed: ${err.message}`, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Disable all';
+        }
+      });
+    });
+
+    // Deregister individual browser via browser_mod.deregister_browser service
+    overlay.querySelectorAll('.em-bm-deregister').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const browserId = btn.dataset.browserId;
+        const deviceId = btn.dataset.deviceId;
+        const browser = browsers.find(b => b.deviceId === deviceId);
+        if (!confirm(`Deregister browser "${browser?.name}"?\n\nThis removes it from browser_mod. All its entities will be deleted.`)) return;
+        btn.disabled = true;
+        btn.textContent = 'Deregistering…';
+        try {
+          await this._hass.callService('browser_mod', 'deregister_browser', { browser_id: browserId });
+          btn.closest('.entity-list-item')?.remove();
+          this._showToast(`Deregistered ${browser?.name}`, 'success');
+          this.loadData();
+        } catch (err) {
+          this._showToast(`Deregister failed: ${err.message}`, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Deregister';
+        }
+      });
+    });
+
+    // Clean up all stale browsers at once
+    const cleanupBtn = overlay.querySelector('#em-bm-cleanup-stale');
+    if (cleanupBtn) {
+      cleanupBtn.addEventListener('click', async () => {
+        if (!confirm(`Deregister ${staleIds.length} stale browser${staleIds.length !== 1 ? 's' : ''}?\n\nAll browsers with no activity in 7+ days will be removed.`)) return;
+        cleanupBtn.disabled = true;
+        cleanupBtn.textContent = 'Cleaning up…';
+        try {
+          await this._hass.callService('browser_mod', 'deregister_browser', { browser_id: staleIds });
+          this._showToast(`Deregistered ${staleIds.length} stale browser${staleIds.length !== 1 ? 's' : ''}`, 'success');
+          closeDialog();
+          this.loadData();
+        } catch (err) {
+          this._showToast(`Cleanup failed: ${err.message}`, 'error');
+          cleanupBtn.disabled = false;
+          cleanupBtn.textContent = `Clean up stale (${staleIds.length})`;
+        }
+      });
+    }
+
+    // Deregister all but the currently active browser
+    const deregOthersBtn = overlay.querySelector('#em-bm-deregister-others');
+    if (deregOthersBtn) {
+      const activeBrowser = browsers.find(b => b.isActive && b.browserId);
+      const otherIds = browsers.filter(b => !b.isActive && b.browserId).map(b => b.browserId);
+      deregOthersBtn.addEventListener('click', async () => {
+        if (!confirm(`Deregister ${otherIds.length} browser${otherIds.length !== 1 ? 's' : ''}?\n\nKeeps "${activeBrowser?.name}" and removes everything else.`)) return;
+        deregOthersBtn.disabled = true;
+        deregOthersBtn.textContent = 'Deregistering…';
+        try {
+          await this._hass.callService('browser_mod', 'deregister_browser', { browser_id: otherIds });
+          this._showToast(`Deregistered ${otherIds.length} browser${otherIds.length !== 1 ? 's' : ''}`, 'success');
+          closeDialog();
+          this.loadData();
+        } catch (err) {
+          this._showToast(`Deregister failed: ${err.message}`, 'error');
+          deregOthersBtn.disabled = false;
+          deregOthersBtn.textContent = `Deregister all but active (${otherIds.length})`;
+        }
+      });
     }
   }
 
@@ -5629,12 +7171,12 @@ class EntityManagerPanel extends HTMLElement {
     let color = '';
     let allowToggle = false;
     let groupedHtml = '';
-    
+
     try {
       if (type === 'integration') {
         title = 'Integrations';
         color = '#2196f3';
-        const integrationItems = this.data.map(integration => {
+        const integrationItems = (this.data || []).map(integration => {
           let entityCount = 0;
           Object.values(integration.devices).forEach(device => {
             entityCount += device.entities.length;
@@ -5649,16 +7191,13 @@ class EntityManagerPanel extends HTMLElement {
       } else if (type === 'device') {
         title = 'Devices';
         color = '#4caf50';
-        const deviceGroups = this.data.map(integration => {
+        const deviceGroups = (this.data || []).map(integration => {
           const devices = Object.entries(integration.devices).map(([deviceId, device]) => ({
             id: deviceId,
             name: this.getDeviceName(deviceId),
             meta: `${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'}`
           }));
-          return {
-            integration: integration.integration,
-            devices
-          };
+          return { integration: integration.integration, devices };
         }).filter(group => group.devices.length > 0);
 
         entities = deviceGroups.flatMap(group => group.devices.map(device => ({
@@ -5666,30 +7205,51 @@ class EntityManagerPanel extends HTMLElement {
           name: device.name
         })));
 
-        groupedHtml = deviceGroups.map(group => {
-          const groupTitle = group.integration.charAt(0).toUpperCase() + group.integration.slice(1);
-          const items = group.devices.map(d => `
-            <div class="entity-list-item">
-              <div class="entity-list-row">
-                <span class="entity-list-name">${d.name}</span>
-                <span class="entity-list-id-inline">${d.id}</span>
-                ${d.meta ? `<span class="entity-list-id-inline">${d.meta}</span>` : ''}
-              </div>
-            </div>
-          `).join('');
+        // Mark duplicates — same deviceId appearing under multiple integrations
+        const seenDeviceIds = new Set();
+        let dupCount = 0;
 
+        const deviceListHtml = deviceGroups.map(group => {
+          const groupTitle = group.integration.charAt(0).toUpperCase() + group.integration.slice(1);
+          const items = group.devices.map(d => {
+            const isDup = seenDeviceIds.has(d.id);
+            if (!isDup) seenDeviceIds.add(d.id); else dupCount++;
+            return `
+              <div class="entity-list-item${isDup ? ' em-device-dup' : ''}" data-device-id="${this._escapeAttr(d.id)}">
+                <div class="entity-list-row">
+                  <span class="entity-list-name">${this._escapeHtml(d.name)}</span>
+                  <span class="entity-list-id-inline">${this._escapeHtml(d.id)}</span>
+                  ${d.meta ? `<span class="entity-list-id-inline">${this._escapeHtml(d.meta)}</span>` : ''}
+                  ${isDup ? '<span style="background:#ff9800;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">duplicate</span>' : ''}
+                </div>
+              </div>
+            `;
+          }).join('');
           return `
             <div class="entity-list-group">
-              <div class="entity-list-group-title">${groupTitle}</div>
+              <div class="entity-list-group-title">${this._escapeHtml(groupTitle)}</div>
               ${items}
             </div>
           `;
         }).join('');
+
+        const dupFilterBar = dupCount > 0 ? `
+          <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,152,0,0.1);border-radius:6px;border:1px solid rgba(255,152,0,0.3)">
+            <span style="font-size:0.9em;flex:1;opacity:0.85">
+              ${dupCount} duplicate ${dupCount === 1 ? 'entry' : 'entries'} — same device shared across multiple integrations
+            </span>
+            <button class="btn btn-secondary" id="em-device-dup-toggle" style="font-size:0.82em;padding:3px 12px">
+              Show duplicates
+            </button>
+          </div>
+        ` : '';
+
+        groupedHtml = dupFilterBar + deviceListHtml;
       } else if (type === 'entity') {
         title = 'Entities';
         color = '#ff9800';
         const entityItems = [];
-        this.data.forEach(integration => {
+        (this.data || []).forEach(integration => {
           Object.entries(integration.devices).forEach(([deviceId, device]) => {
             device.entities.forEach(entity => {
               entityItems.push({
@@ -5704,191 +7264,702 @@ class EntityManagerPanel extends HTMLElement {
       } else {
         const states = await this._hass.callWS({ type: 'get_states' });
         
+
         if (type === 'automation') {
           title = 'Automations';
           color = '#2196f3';
-          allowToggle = true;
-          entities = states.filter(s => s.entity_id.startsWith('automation.'))
-            .map(s => ({
-              id: s.entity_id,
-              name: s.attributes.friendly_name || s.entity_id,
-              state: s.state
-            }));
+          allowToggle = false; // handled inline
+
+          try {
+            const automations = await this._hass.callWS({ type: 'entity_manager/get_automations' });
+            const autoBody = automations.map(a => {
+              const st = this._hass?.states[a.entity_id];
+              const attrs = st?.attributes || {};
+              const rows = [
+                ['State',         a.state === 'on' ? 'Enabled' : 'Disabled'],
+                ['Last triggered', a.last_triggered ? this._fmtAgo(a.last_triggered) : 'Never'],
+                ['Triggered by',  null, this._triggerBadge(a)],
+                ['Last changed',  st?.last_changed ? this._fmtAgo(st.last_changed) : null],
+                ['Mode',          attrs.mode || null],
+                ['Current runs',  attrs.current != null ? String(attrs.current) : null],
+                ['Max runs',      attrs.max != null ? String(attrs.max) : null],
+              ].filter(r => r[1] != null || r[2] != null);
+              const infoHtml = rows.map(([label, val, raw]) =>
+                `<span style="white-space:nowrap">${label}: <strong>${raw || this._escapeHtml(val)}</strong></span>`
+              ).join('');
+              return this._renderManagedItem({
+                entity_id: a.entity_id,
+                name: a.name,
+                state: a.state,
+                entityType: 'automation',
+                stateBadgeHtml: `<span style="background:${a.state === 'on' ? '#4caf50' : '#9e9e9e'};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.8em;margin-left:6px;vertical-align:middle">${a.state === 'on' ? 'On' : 'Off'}</span>`,
+                infoHtml,
+              });
+            }).join('');
+            groupedHtml = this._collGroup(`Automations (${automations.length})`, autoBody);
+            entities = automations.map(a => ({ id: a.entity_id, name: a.name, state: a.state }));
+          } catch (e) {
+            entities = states.filter(s => s.entity_id.startsWith('automation.'))
+              .map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id, state: s.state }));
+          }
         } else if (type === 'script') {
           title = 'Scripts';
           color = '#ff9800';
-          allowToggle = true;
-          entities = states.filter(s => s.entity_id.startsWith('script.'))
-            .map(s => ({
-              id: s.entity_id,
-              name: s.attributes.friendly_name || s.entity_id,
-              state: s.state
-            }));
+          allowToggle = false; // handled inline
+
+          const scriptStates = states.filter(s => s.entity_id.startsWith('script.'));
+          const scriptBody = scriptStates.map(s => {
+            const isRunning = s.state === 'on';
+            const attrs = s.attributes;
+            const lastTriggered = attrs.last_triggered;
+            const mode = attrs.mode || 'single';
+            const rows = [
+              ['State',        isRunning ? 'Running' : 'Idle'],
+              ['Last run',     lastTriggered ? this._fmtAgo(lastTriggered) : 'Never'],
+              ['Mode',         mode],
+              ['Current runs', attrs.current != null ? String(attrs.current) : null],
+              ['Max runs',     attrs.max != null ? String(attrs.max) : null],
+              ['Last changed', s.last_changed ? this._fmtAgo(s.last_changed) : null],
+            ].filter(r => r[1] != null);
+            const infoHtml = rows.map(([label, val]) =>
+              `<span style="white-space:nowrap">${label}: <strong>${this._escapeHtml(val)}</strong></span>`
+            ).join('');
+            return this._renderManagedItem({
+              entity_id: s.entity_id,
+              name: attrs.friendly_name || s.entity_id,
+              state: s.state,
+              entityType: 'script',
+              stateBadgeHtml: `<span style="background:${isRunning ? '#ff9800' : '#9e9e9e'};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.8em;margin-left:6px;vertical-align:middle">${isRunning ? 'Running' : 'Idle'}</span>`,
+              infoHtml,
+            });
+          }).join('');
+          groupedHtml = scriptStates.length
+            ? this._collGroup(`Scripts (${scriptStates.length})`, scriptBody)
+            : '<p style="text-align:center;padding:24px;opacity:0.6">No scripts found.</p>';
+          entities = scriptStates.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id, state: s.state }));
+
         } else if (type === 'helper') {
           title = 'Helpers';
           color = '#9c27b0';
-          allowToggle = true;
-          const helperPrefixes = ['input_', 'variable.'];
-          entities = states.filter(s => helperPrefixes.some(prefix => s.entity_id.startsWith(prefix)))
-            .map(s => ({
-              id: s.entity_id,
-              name: s.attributes.friendly_name || s.entity_id,
-              state: s.state
-            }));
+          allowToggle = false; // handled inline
+
+          const helperDomains = ['input_boolean', 'input_number', 'input_text', 'input_select',
+            'input_datetime', 'input_button', 'counter', 'timer', 'variable'];
+          const helperStates = states.filter(s => helperDomains.some(d => s.entity_id.startsWith(d + '.')));
+
+          const byDomain = {};
+          helperStates.forEach(s => {
+            const domain = s.entity_id.split('.')[0];
+            if (!byDomain[domain]) byDomain[domain] = [];
+            byDomain[domain].push(s);
+          });
+
+          const renderHelperItem = (s) => {
+            const domain = s.entity_id.split('.')[0];
+            const attrs = s.attributes;
+            const isBoolean = domain === 'input_boolean';
+            const unit = attrs.unit_of_measurement ? ` ${this._escapeHtml(attrs.unit_of_measurement)}` : '';
+            const stateColor = isBoolean ? (s.state === 'on' ? '#4caf50' : '#9e9e9e') : '#9c27b0';
+            const stateText = isBoolean ? (s.state === 'on' ? 'On' : 'Off') : this._escapeHtml(s.state) + unit;
+
+            // Build domain-specific info rows
+            const rows = [['Value', this._escapeHtml(s.state) + unit]];
+            if (domain === 'input_number') {
+              if (attrs.min != null) rows.push(['Min', String(attrs.min)]);
+              if (attrs.max != null) rows.push(['Max', String(attrs.max)]);
+              if (attrs.step != null) rows.push(['Step', String(attrs.step)]);
+              if (attrs.mode) rows.push(['Mode', attrs.mode]);
+            } else if (domain === 'input_text') {
+              if (attrs.min != null) rows.push(['Min length', String(attrs.min)]);
+              if (attrs.max != null) rows.push(['Max length', String(attrs.max)]);
+              if (attrs.pattern) rows.push(['Pattern', attrs.pattern]);
+              if (attrs.mode) rows.push(['Mode', attrs.mode]);
+            } else if (domain === 'input_select') {
+              if (attrs.options?.length) rows.push(['Options', attrs.options.join(', ')]);
+            } else if (domain === 'input_datetime') {
+              if (attrs.has_date != null) rows.push(['Has date', attrs.has_date ? 'Yes' : 'No']);
+              if (attrs.has_time != null) rows.push(['Has time', attrs.has_time ? 'Yes' : 'No']);
+            } else if (domain === 'counter') {
+              if (attrs.initial != null) rows.push(['Initial', String(attrs.initial)]);
+              if (attrs.step != null) rows.push(['Step', String(attrs.step)]);
+              if (attrs.min != null) rows.push(['Min', String(attrs.min)]);
+              if (attrs.max != null) rows.push(['Max', String(attrs.max)]);
+            } else if (domain === 'timer') {
+              if (attrs.duration) rows.push(['Duration', attrs.duration]);
+              if (attrs.remaining) rows.push(['Remaining', attrs.remaining]);
+              if (attrs.finishes_at) rows.push(['Finishes at', attrs.finishes_at]);
+            }
+            rows.push(['Last changed', this._fmtAgo(s.last_changed)]);
+
+            const infoHtml = rows.map(([label, val]) =>
+              `<span style="white-space:nowrap">${label}: <strong>${this._escapeHtml(String(val))}</strong></span>`
+            ).join('');
+
+            return this._renderManagedItem({
+              entity_id: s.entity_id,
+              name: attrs.friendly_name || s.entity_id,
+              state: isBoolean ? s.state : 'off',
+              entityType: 'helper',
+              stateBadgeHtml: `<span style="background:${stateColor};color:#fff;padding:1px 8px;border-radius:10px;font-size:0.8em;margin-left:6px;vertical-align:middle">${stateText}</span>`,
+              infoHtml,
+            });
+          };
+
+          if (helperStates.length === 0) {
+            groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">No helpers found.</p>';
+          } else {
+            groupedHtml = Object.entries(byDomain).sort().map(([domain, items]) => {
+              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              return this._collGroup(`${domainLabel} (${items.length})`, items.map(renderHelperItem).join(''));
+            }).join('');
+          }
+          entities = helperStates.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id, state: s.state }));
         } else if (type === 'template') {
           title = 'Templates';
           color = '#ff9800';
           allowToggle = false;
-          entities = states.filter(s => s.entity_id.startsWith('template.'))
-            .map(s => ({
-              id: s.entity_id,
-              name: s.attributes.friendly_name || s.entity_id,
-              state: s.state
-            }));
+
+          try {
+            const templateList = this.templateSensors || await this._hass.callWS({ type: 'entity_manager/get_template_sensors' });
+            this.templateSensors = templateList;
+
+            // Enrich each template with last_real_changed from recorder history.
+            // This survives restarts: templates briefly go unknown on restart, which
+            // resets last_changed. We scan history (oldest→newest) ignoring
+            // unknown/unavailable to find when the real value last actually changed.
+            try {
+              const start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+              const historyResult = await this._hass.callWS({
+                type: 'history/history_during_period',
+                start_time: start,
+                entity_ids: templateList.map(t => t.entity_id),
+                minimal_response: true,
+                no_attributes: true,
+              });
+              for (const t of templateList) {
+                const history = historyResult?.[t.entity_id] || [];
+                let lastRealValue = null;
+                let lastRealChangeTime = null;
+                for (const entry of history) {
+                  const s = entry.s !== undefined ? entry.s : entry.state;
+                  const lc = entry.lc !== undefined ? entry.lc : entry.last_changed;
+                  if (!s || s === 'unknown' || s === 'unavailable') continue;
+                  if (s !== lastRealValue) {
+                    lastRealValue = s;
+                    // lc can be a unix timestamp (number) or ISO string
+                    lastRealChangeTime = typeof lc === 'number'
+                      ? new Date(lc * 1000).toISOString()
+                      : lc;
+                  }
+                }
+                if (lastRealChangeTime) t.last_real_changed = lastRealChangeTime;
+              }
+            } catch (_histErr) {
+              // Recorder not available — fall back to last_changed
+            }
+
+            const _stateDisplay = (t) => {
+              const s = t.state;
+              if (s === null || s === undefined || s === '')
+                return t.disabled
+                  ? `<span style="color:#f44336">No state (disabled)</span>`
+                  : `<span style="opacity:0.5">—</span>`;
+              if (s === 'unknown')
+                return `<span style="color:#ff9800" title="Template has not been evaluated yet">Not evaluated</span>`;
+              if (s === 'unavailable')
+                return `<span style="color:#f44336" title="A dependency is offline or the template has an error">Unavailable</span>`;
+              const uom = t.unit_of_measurement ? ` ${this._escapeHtml(t.unit_of_measurement)}` : '';
+              return `<span>${this._escapeHtml(String(s))}${uom}</span>`;
+            };
+
+            const renderTemplateItem = (t) => {
+              const disabledBadge = t.disabled
+                ? `<span style="background:#f44336;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">disabled</span>`
+                : '';
+              const connectedHtml = t.connected_entities && t.connected_entities.length > 0
+                ? `<div style="margin-top:5px;font-size:0.82em;opacity:0.75">Connected to: ${t.connected_entities.map(e => `<span style="color:#2196f3">${this._escapeHtml(e)}</span>`).join(', ')}</div>`
+                : '';
+              const entityIdAttr = this._escapeHtml(t.entity_id);
+              const currentName = this._escapeHtml(t.name || '');
+              return `
+                <div class="entity-list-item" style="padding:10px 12px">
+                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center;gap:6px">
+                    <span class="entity-list-name" style="font-weight:600;flex:1;min-width:0">${this._escapeHtml(t.name || t.entity_id)}${disabledBadge}</span>
+                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7;flex:1;min-width:0">${entityIdAttr}</span>
+                    <div style="display:flex;gap:6px;flex-shrink:0">
+                      <button class="em-tpl-edit btn btn-secondary" data-entity-id="${entityIdAttr}" data-current-name="${currentName}" style="padding:2px 10px;font-size:0.8em">Rename</button>
+                      <button class="em-tpl-remove btn" data-entity-id="${entityIdAttr}" style="padding:2px 10px;font-size:0.8em;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
+                    </div>
+                  </div>
+                  <div style="font-size:0.88em;margin-top:5px;display:flex;gap:16px;flex-wrap:wrap;opacity:0.9">
+                    <span>State: <strong>${_stateDisplay(t)}</strong></span>
+                    <span>Last active: <strong>${this._fmtAgo(t.last_real_changed || t.last_changed, 'Unknown')}</strong></span>
+                    <span>Triggered by: <strong>${this._triggerBadge(t)}</strong></span>
+                  </div>
+                  ${connectedHtml}
+                </div>
+              `;
+            };
+
+            // Group by domain (sensor, binary_sensor, template, etc.)
+            const byDomain = {};
+            templateList.forEach(t => {
+              const domain = t.entity_id.split('.')[0];
+              if (!byDomain[domain]) byDomain[domain] = [];
+              byDomain[domain].push(t);
+            });
+
+            if (Object.keys(byDomain).length === 0) {
+              groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">No template sensors found.</p>';
+            } else {
+              groupedHtml = Object.entries(byDomain).sort().map(([domain, items]) => {
+                const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                return this._collGroup(`${domainLabel} (${items.length})`, items.map(renderTemplateItem).join(''));
+              }).join('');
+            }
+
+            entities = templateList.map(t => ({ id: t.entity_id, name: t.name || t.entity_id }));
+          } catch (e) {
+            // Fallback to simple state-based list
+            entities = states.filter(s => s.entity_id.startsWith('template.'))
+              .map(s => ({
+                id: s.entity_id,
+                name: s.attributes.friendly_name || s.entity_id,
+                state: s.state
+              }));
+          }
+        } else if (type === 'updates') {
+          title = 'Pending Updates';
+          color = '#ff9800';
+          allowToggle = false;
+
+          const updateEntities = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on');
+          if (updateEntities.length === 0) {
+            groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">Everything is up to date!</p>';
+          } else {
+            groupedHtml = `
+              <div class="entity-list-group">
+                <div class="entity-list-group-title">Pending Updates (${updateEntities.length})</div>
+                ${updateEntities.map(s => {
+                  const inst = s.attributes.installed_version || '?';
+                  const latest = s.attributes.latest_version || '?';
+                  const label = s.attributes.friendly_name || s.entity_id;
+                  const releaseUrl = s.attributes.release_url || '';
+                  return `
+                    <div class="entity-list-item" style="padding:10px 12px">
+                      <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                        <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(label)}</span>
+                        <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+                      </div>
+                      <div style="font-size:0.88em;margin-top:5px;display:flex;gap:16px;flex-wrap:wrap;opacity:0.9">
+                        <span>Installed: <strong>${this._escapeHtml(inst)}</strong></span>
+                        <span>Latest: <strong style="color:#4caf50">${this._escapeHtml(latest)}</strong></span>
+                        ${releaseUrl ? `<a href="${this._escapeAttr(releaseUrl)}" target="_blank" rel="noopener" style="color:#2196f3">Release notes</a>` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `;
+          }
+          entities = updateEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
+
+        } else if (type === 'unavailable') {
+          title = 'Unavailable Entities';
+          color = '#f44336';
+          allowToggle = false;
+
+          const unavailEntities = states.filter(s => s.state === 'unavailable');
+          const unavailByDomain = {};
+          unavailEntities.forEach(s => {
+            const d = s.entity_id.split('.')[0];
+            if (!unavailByDomain[d]) unavailByDomain[d] = [];
+            unavailByDomain[d].push(s);
+          });
+
+          if (unavailEntities.length === 0) {
+            groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reachable!</p>';
+          } else {
+            groupedHtml = Object.entries(unavailByDomain).sort().map(([domain, items]) => {
+              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              const body = items.map(s => `
+                <div class="entity-list-item" style="padding:10px 12px">
+                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+                  </div>
+                  <div style="font-size:0.88em;margin-top:4px;opacity:0.8">
+                    Unavailable since: <strong style="color:#f44336">${this._fmtAgo(s.last_changed, 'Unknown')}</strong>
+                  </div>
+                </div>
+              `).join('');
+              return this._collGroup(`${domainLabel} (${items.length})`, body);
+            }).join('');
+          }
+          entities = unavailEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
+
+        } else if (type === 'orphaned') {
+          title = 'Orphaned Entities (No Device)';
+          color = '#ff9800';
+          allowToggle = false;
+
+          const orphanedByIntegration = {};
+          (this.data || []).forEach(integration => {
+            const noDevice = integration.devices['no_device'];
+            if (noDevice && noDevice.entities.length > 0) {
+              orphanedByIntegration[integration.integration] = noDevice.entities;
+            }
+          });
+
+          if (Object.keys(orphanedByIntegration).length === 0) {
+            groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">No orphaned entities found.</p>';
+          } else {
+            groupedHtml = Object.entries(orphanedByIntegration).sort().map(([integ, items]) => {
+              const integLabel = integ.charAt(0).toUpperCase() + integ.slice(1);
+              const body = items.map(e => `
+                <div class="entity-list-item" style="padding:10px 12px">
+                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(e.original_name || e.entity_id)}</span>
+                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(e.entity_id)}</span>
+                    ${e.is_disabled ? '<span style="background:#f44336;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px">disabled</span>' : ''}
+                  </div>
+                </div>
+              `).join('');
+              return this._collGroup(`${integLabel} (${items.length})`, body);
+            }).join('');
+          }
+          entities = Object.values(orphanedByIntegration).flat().map(e => ({ id: e.entity_id, name: e.original_name || e.entity_id }));
+
+        } else if (type === 'health') {
+          title = 'Stale Entities (No update in 30+ days)';
+          color = '#ff9800';
+          allowToggle = false;
+
+          const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          const staleEntities = states.filter(s => {
+            if (s.state === 'unavailable' || s.state === 'unknown') return false;
+            if (!s.last_updated) return false;
+            return new Date(s.last_updated).getTime() < thirtyDaysAgo;
+          });
+
+          const staleByDomain = {};
+          staleEntities.forEach(s => {
+            const d = s.entity_id.split('.')[0];
+            if (!staleByDomain[d]) staleByDomain[d] = [];
+            staleByDomain[d].push(s);
+          });
+
+          if (staleEntities.length === 0) {
+            groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reporting regularly.</p>';
+          } else {
+            groupedHtml = Object.entries(staleByDomain).sort().map(([domain, items]) => {
+              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              const body = items.map(s => `
+                <div class="entity-list-item" style="padding:10px 12px">
+                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+                  </div>
+                  <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px">
+                    <span>State: <strong>${this._escapeHtml(String(s.state))}</strong></span>
+                    <span>Last updated: <strong style="color:#ff9800">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
+                  </div>
+                </div>
+              `).join('');
+              return this._collGroup(`${domainLabel} (${items.length})`, body);
+            }).join('');
+          }
+          entities = staleEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
+
         } else if (type === 'hacs') {
-          title = 'HACS Downloads';
+          title = 'HACS Store';
           color = '#4caf50';
           allowToggle = false;
 
           try {
             const hacsItems = this.hacsItems || await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
-            const installed = hacsItems?.installed || [];
-            const newDownloads = hacsItems?.new_downloads || [];
+            this.hacsItems = hacsItems;
             const store = hacsItems?.store || [];
+            const installedNames = new Set((hacsItems?.installed_names || []).map(n => n.toLowerCase()));
             const cutoffDays = hacsItems?.cutoff_days || 7;
 
-            const toListItem = (item, fallbackCategory) => ({
-              id: item.path || item.full_name || item.name,
-              name: item.name,
-              meta: item.path || item.full_name || '',
-              category: (item.category || fallbackCategory || 'unknown').toLowerCase(),
-              mtime: item.mtime || 0
-            });
-
-            const installedItems = installed.map(item => toListItem(item, 'integration'));
-            const newItems = newDownloads.map(item => toListItem(item, 'integration'));
-            const storeItems = store.map(item => toListItem(item, item.category || 'unknown'));
-
-            const totalCount = installedItems.length;
-            const newCount = newItems.length;
-            const storeCount = storeItems.length;
-
+            // Category metadata: id matches what hacs.data uses
             const filters = [
-              { id: 'all', label: 'All' },
+              { id: 'all',         label: 'All' },
               { id: 'integration', label: 'Integrations' },
-              { id: 'frontend', label: 'Frontend' },
-              { id: 'theme', label: 'Themes' },
-              { id: 'plugin', label: 'Plugins' },
-              { id: 'addon', label: 'Add-ons' },
+              { id: 'plugin',      label: 'Plugins' },
+              { id: 'theme',       label: 'Themes' },
+              { id: 'appdaemon',   label: 'AppDaemon' },
+              { id: 'template',    label: 'Templates' },
             ];
 
-            const filtersHtml = filters.map(filter => `
-              <button class="btn btn-secondary hacs-filter-btn" data-hacs-filter="${filter.id}">${filter.label}</button>
-            `).join('');
+            // Count per category
+            const catCounts = {};
+            store.forEach(item => {
+              const cat = item.category || 'unknown';
+              catCounts[cat] = (catCounts[cat] || 0) + 1;
+            });
+            const totalCount = store.length;
+            const newCount = store.filter(i => i.new).length;
+            const installedCount = store.filter(i => installedNames.has((i.name || '').toLowerCase())).length;
+
+            const filtersHtml = filters.map(f => {
+              const count = f.id === 'all' ? totalCount : (catCounts[f.id] || 0);
+              return `<button class="btn btn-secondary hacs-filter-btn" data-hacs-filter="${f.id}">${this._escapeHtml(f.label)} <span style="opacity:0.7;font-size:0.85em">(${count})</span></button>`;
+            }).join('');
 
             const summaryHtml = `
               <div class="entity-list-group" style="margin-bottom: 12px;">
                 <div class="entity-list-group-title">Summary</div>
-                <div class="entity-list-item">
-                  <div class="entity-list-row">
-                    <span class="entity-list-name">Total Downloads</span>
-                    <span class="entity-list-id-inline">${totalCount}</span>
-                  </div>
-                </div>
-                <div class="entity-list-item">
-                  <div class="entity-list-row">
-                    <span class="entity-list-name">New Downloads (last ${cutoffDays} days)</span>
-                    <span class="entity-list-id-inline">${newCount}</span>
-                  </div>
-                </div>
-                <div class="entity-list-item">
-                  <div class="entity-list-row">
-                    <span class="entity-list-name">All Downloads (Store)</span>
-                    <span class="entity-list-id-inline">${storeCount}</span>
-                  </div>
-                </div>
+                <div class="entity-list-item"><div class="entity-list-row">
+                  <span class="entity-list-name">Total in Store</span>
+                  <span class="entity-list-id-inline">${totalCount}</span>
+                </div></div>
+                <div class="entity-list-item"><div class="entity-list-row">
+                  <span class="entity-list-name">Installed on this system</span>
+                  <span class="entity-list-id-inline">${installedCount}</span>
+                </div></div>
+                <div class="entity-list-item"><div class="entity-list-row">
+                  <span class="entity-list-name">New (last ${cutoffDays} days)</span>
+                  <span class="entity-list-id-inline">${newCount}</span>
+                </div></div>
               </div>
               <div class="entity-list-group" style="margin-bottom: 12px;">
-                <div class="entity-list-group-title">Filter by type</div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+                  <input id="hacs-search" type="search" placeholder="Search store…" autocomplete="off"
+                    style="flex:1;padding:6px 10px;border-radius:6px;border:2px solid #2196f3;background:var(--em-bg-secondary,#121212);color:var(--em-text-primary,#e0e0e0);font-size:0.9em;outline:none">
+                  <button class="btn btn-secondary hacs-my-downloads-btn" title="Show only installed items">
+                    My Downloads (${installedCount})
+                  </button>
+                </div>
+                <div class="entity-list-group-title" style="margin-bottom:6px">Filter by category</div>
                 <div class="entity-list-row" style="gap: 8px; flex-wrap: wrap;">${filtersHtml}</div>
               </div>
             `;
 
-            const renderItems = (items) => items.map(item => {
-              const dateLabel = item.mtime ? new Date(item.mtime * 1000).toLocaleDateString() : '';
-              const meta = item.meta ? this._escapeHtml(item.meta) : '';
-              const metaText = [meta, dateLabel].filter(Boolean).join(' • ');
+            const renderStoreItem = (item) => {
+              const isInstalled = installedNames.has((item.name || '').toLowerCase());
+              const badges = [
+                isInstalled ? `<span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:10px;font-size:0.82em;margin-left:6px;vertical-align:middle">installed</span>` : '',
+                item.new ? `<span style="background:#ff9800;color:#fff;padding:2px 8px;border-radius:10px;font-size:0.82em;margin-left:6px;vertical-align:middle">new</span>` : '',
+              ].join('');
+              const meta = [
+                item.full_name ? this._escapeHtml(item.full_name) : '',
+                item.downloads ? `⬇ ${item.downloads.toLocaleString()}` : '',
+                item.stars ? `★ ${item.stars}` : '',
+                item.last_updated ? new Date(item.last_updated).toLocaleDateString() : '',
+              ].filter(Boolean).join(' · ');
+              const desc = item.description ? `<div style="font-size:0.9em;opacity:0.85;margin-top:3px;white-space:normal;line-height:1.4">${this._escapeHtml(item.description)}</div>` : '';
               return `
-                <div class="entity-list-item" data-hacs-category="${this._escapeAttr(item.category)}">
-                  <div class="entity-list-row">
-                    <span class="entity-list-name">${this._escapeHtml(item.name)}</span>
-                    <span class="entity-list-id-inline">${this._escapeHtml(item.id)}</span>
-                    ${metaText ? `<span class="entity-list-id-inline">${metaText}</span>` : ''}
+                <div class="entity-list-item hacs-store-item" style="cursor:pointer;padding:10px 12px"
+                  data-hacs-category="${this._escapeAttr(item.category || 'unknown')}"
+                  data-repo-name="${this._escapeAttr((item.name || '').toLowerCase())}"
+                  data-repo-fullname="${this._escapeAttr(item.full_name || '')}"
+                  data-repo-desc="${this._escapeAttr(item.description || '')}"
+                  data-installed="${isInstalled ? '1' : '0'}"
+                  title="Open on GitHub">
+                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                    <span class="entity-list-name" style="font-size:1em;font-weight:600">${this._escapeHtml(item.name)}${badges}</span>
+                    <span style="font-size:0.85em;opacity:0.75;margin-top:2px;width:100%">${meta}</span>
                   </div>
+                  ${desc}
                 </div>
               `;
-            }).join('');
+            };
 
             groupedHtml = `
               ${summaryHtml}
               <div class="entity-list-group">
-                <div class="entity-list-group-title">Installed Downloads (${installedItems.length})</div>
-                ${renderItems(installedItems) || '<p style="text-align: center; padding: 12px;">No downloads found</p>'}
-              </div>
-              <div class="entity-list-group" style="margin-top: 16px;">
-                <div class="entity-list-group-title">New Downloads (${newItems.length})</div>
-                ${renderItems(newItems) || `<p style="text-align: center; padding: 12px;">No new downloads in last ${cutoffDays} days</p>`}
-              </div>
-              <div class="entity-list-group" style="margin-top: 16px;">
-                <div class="entity-list-group-title">All Downloads (Store) (${storeItems.length})</div>
-                ${renderItems(storeItems.slice(0, 200)) || '<p style="text-align: center; padding: 12px;">Store data not available</p>'}
-                ${storeItems.length > 200 ? '<p style="text-align: center; padding: 12px;">Showing first 200 items</p>' : ''}
+                <div class="entity-list-group-title">All Store Items (${totalCount})</div>
+                <p id="hacs-no-results" style="display:none;text-align:center;padding:12px;opacity:0.7;font-style:italic"></p>
+                ${store.length ? store.map(renderStoreItem).join('') : '<p style="text-align:center;padding:12px">No store data available — check HACS is installed</p>'}
               </div>
             `;
 
-            entities = [...installedItems, ...newItems, ...storeItems];
+            entities = store.map(item => ({
+              id: item.full_name || item.name,
+              name: item.name,
+              category: item.category || 'unknown',
+            }));
           } catch (e) {
-            entities = [{
-              id: 'hacs-not-found',
-              name: 'HACS downloads not available',
-              meta: 'Restart Home Assistant to enable folder scan'
-            }];
+            groupedHtml = `<p style="text-align:center;padding:24px;opacity:0.6">HACS store data not available.<br>Ensure HACS is installed and Home Assistant has been restarted.</p>`;
+            entities = [];
           }
         } else if (type === 'lovelace') {
-          title = 'Lovelace Cards';
+          title = 'Lovelace';
           color = '#9c27b0';
           allowToggle = false;
           try {
-            const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
-            const cardList = [];
-            for (const dashboard of (dashboards || [])) {
-              try {
-                const config = await this._hass.callWS({ type: 'lovelace/config', dashboard_id: dashboard.id });
-                const dashboardName = dashboard.title || dashboard.id;
-                (config?.views || []).forEach((view, viewIdx) => {
-                  (view.cards || []).forEach((card, cardIdx) => {
-                    cardList.push({
-                      id: `${dashboard.id}-view${viewIdx}-card${cardIdx}`,
-                      name: `${dashboardName} > ${view.title || 'View ' + (viewIdx + 1)} > ${card.type || 'custom card'}`,
-                      meta: card.type || 'unknown'
-                    });
-                  });
-                });
-              } catch (e) {
-                // Skip dashboard on error
+            // Use cached data from loadCounts or re-fetch
+            let dashboardList = this.lovelaceDashboardList;
+            if (!dashboardList) {
+              dashboardList = await this._hass.callWS({ type: 'lovelace/dashboards/list' }) || [];
+            }
+            // Ensure configs are loaded
+            for (const dash of dashboardList) {
+              if (!dash._config) {
+                try {
+                  dash._config = await this._hass.callWS({ type: 'lovelace/config', url_path: dash.url_path || null });
+                } catch (e) { /* skip */ }
               }
             }
-            entities = cardList.slice(0, 500); // Limit to 500 cards for display
+
+            // Recursively extract all card objects with their location path
+            const extractAllCards = (cards, path) => {
+              const out = [];
+              for (const card of (cards || [])) {
+                if (!card || typeof card !== 'object') continue;
+                out.push({ card, path });
+                if (card.cards) out.push(...extractAllCards(card.cards, path));
+                if (card.card) out.push(...extractAllCards([card.card], path));
+                if (card.elements) out.push(...extractAllCards(card.elements, path));
+              }
+              return out;
+            };
+
+            // Extract entity_ids referenced in a card config
+            const extractEntities = (card) => {
+              const ids = new Set();
+              const add = (v) => { if (typeof v === 'string' && v.includes('.')) ids.add(v); };
+              add(card.entity);
+              add(card.entity_id);
+              add(card.camera_image);
+              (Array.isArray(card.entities) ? card.entities : []).forEach(e => {
+                if (typeof e === 'string') add(e);
+                else if (e?.entity) add(e.entity);
+              });
+              (card.conditions || []).forEach(c => { if (c) add(c.entity); });
+              return [...ids];
+            };
+
+            // Build stats
+            const cardTypeCount = {};
+            const entityRefs = {}; // entity_id → Set of paths
+            const dashboardStats = [];
+            let totalCards = 0;
+
+            for (const dash of dashboardList) {
+              if (!dash._config) continue;
+              const dashName = dash.title || dash.url_path || 'Overview';
+              const dashUrl = dash.url_path ? `/lovelace/${dash.url_path}` : '/lovelace';
+              let dashCards = 0;
+              let dashViews = 0;
+
+              for (const [vi, view] of (dash._config.views || []).entries()) {
+                dashViews++;
+                const viewName = view.title || view.path || `View ${vi + 1}`;
+                const viewCards = [...(view.cards || [])];
+                (view.sections || []).forEach(s => { if (s) viewCards.push(...(s.cards || [])); });
+                const allCards = extractAllCards(viewCards, `${dashName} › ${viewName}`);
+                dashCards += allCards.length;
+
+                for (const { card, path } of allCards) {
+                  const t = card.type || 'entities';
+                  cardTypeCount[t] = (cardTypeCount[t] || 0) + 1;
+                  extractEntities(card).forEach(eid => {
+                    if (!entityRefs[eid]) entityRefs[eid] = new Set();
+                    entityRefs[eid].add(path);
+                  });
+                }
+              }
+              totalCards += dashCards;
+              dashboardStats.push({ name: dashName, url: dashUrl, views: dashViews, cards: dashCards });
+            }
+
+            // ── Group 1: Dashboards ──────────────────────────────────────────
+            const dashHtml = dashboardStats.length ? dashboardStats.map(d => `
+              <div class="entity-list-item" style="padding:9px 12px">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span style="font-weight:600;flex:1;min-width:120px">${this._escapeHtml(d.name)}</span>
+                  <span style="font-size:0.8em;opacity:0.55">${this._escapeHtml(d.url)}</span>
+                  <span style="font-size:0.82em;opacity:0.75">${d.views} view${d.views !== 1 ? 's' : ''}</span>
+                  <span style="font-size:0.82em;font-weight:600;color:#9c27b0">${d.cards} card${d.cards !== 1 ? 's' : ''}</span>
+                  <a href="${this._escapeHtml(d.url)}" target="_blank"
+                     style="font-size:0.8em;color:#2196f3;text-decoration:none;flex-shrink:0">Open ↗</a>
+                </div>
+              </div>
+            `).join('') : '<p style="padding:12px;opacity:0.6">No dashboards found.</p>';
+
+            // ── Group 2: Card types ──────────────────────────────────────────
+            const HA_BUILTIN_CARDS = new Set([
+              'alarm-panel','badge','button','calendar','camera','conditional',
+              'entities','entity','entity-filter','gauge','glance','grid',
+              'history-graph','horizontal-stack','humidifier','iframe','light',
+              'logbook','map','markdown','media-control','picture','picture-elements',
+              'picture-entity','picture-glance','plant-status','sensor',
+              'shopping-list','statistics-graph','thermostat','tile','todo-list',
+              'vertical-stack','weather-forecast','webpage',
+              // Energy dashboard cards
+              'energy-date-selection','energy-distribution','energy-gas-graph',
+              'energy-grid-neutrality-gauge','energy-solar-consumed-gauge',
+              'energy-solar-graph','energy-sources-table','energy-usage-graph',
+              'energy-water-graph',
+            ]);
+
+            const sortedTypes = Object.entries(cardTypeCount).sort((a, b) => b[1] - a[1]);
+            const maxTypeCount = sortedTypes[0]?.[1] || 1;
+            const cardTypeHtml = sortedTypes.length ? sortedTypes.map(([t, count]) => {
+              const isCustom = t.startsWith('custom:');
+              const isBuiltin = HA_BUILTIN_CARDS.has(t);
+              const barColor = isCustom ? '#ff9800' : '#9c27b0';
+              const pct = Math.round((count / maxTypeCount) * 100);
+              const badge = isBuiltin
+                ? `<span style="font-size:0.7em;padding:1px 6px;border-radius:10px;background:#e3f2fd;color:#1565c0;font-weight:600;flex-shrink:0">built-in</span>`
+                : isCustom
+                  ? `<span style="font-size:0.7em;padding:1px 6px;border-radius:10px;background:#fff3e0;color:#e65100;font-weight:600;flex-shrink:0">custom</span>`
+                  : `<span style="font-size:0.7em;padding:1px 6px;border-radius:10px;background:rgba(128,128,128,0.15);color:inherit;opacity:0.6;flex-shrink:0">unknown</span>`;
+              return `
+                <div class="entity-list-item" style="padding:7px 12px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <code style="flex:0 0 190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.83em;${isCustom ? 'color:#ff9800' : ''}">${this._escapeHtml(t)}</code>
+                    ${badge}
+                    <div style="flex:1;background:rgba(128,128,128,0.15);border-radius:3px;height:7px">
+                      <div style="background:${barColor};width:${pct}%;height:7px;border-radius:3px;min-width:3px"></div>
+                    </div>
+                    <span style="font-size:0.85em;font-weight:600;flex:0 0 28px;text-align:right;color:${barColor}">${count}</span>
+                  </div>
+                </div>`;
+            }).join('') : '<p style="padding:12px;opacity:0.6">No cards found.</p>';
+
+            // ── Group 3: Entity references ───────────────────────────────────
+            const sortedRefs = Object.entries(entityRefs)
+              .map(([eid, paths]) => [eid, [...paths]])
+              .sort((a, b) => b[1].length - a[1].length);
+            const entityRefHtml = sortedRefs.length ? sortedRefs.map(([eid, locs]) => {
+              const state = this._hass.states?.[eid];
+              const fname = state?.attributes?.friendly_name || '';
+              const preview = locs.slice(0, 2).join(' · ');
+              const more = locs.length > 2 ? ` +${locs.length - 2} more` : '';
+              return `
+                <div class="entity-list-item" style="padding:7px 12px">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    ${fname ? `<span style="font-weight:600">${this._escapeHtml(fname)}</span>` : ''}
+                    <span style="font-size:0.82em;opacity:0.65">${this._escapeHtml(eid)}</span>
+                    <span style="margin-left:auto;font-size:0.82em;font-weight:700;color:#9c27b0">${locs.length}×</span>
+                  </div>
+                  <div style="font-size:0.78em;opacity:0.5;margin-top:2px">${this._escapeHtml(preview)}${more}</div>
+                </div>`;
+            }).join('') : '<p style="padding:12px;opacity:0.6">No entity references found.</p>';
+
+            groupedHtml = [
+              this._collGroup(`Dashboards (${dashboardStats.length})`, dashHtml),
+              this._collGroup(`Card Types (${sortedTypes.length} types · ${totalCards} total)`, cardTypeHtml),
+              this._collGroup(`Entities in Lovelace (${sortedRefs.length})`, entityRefHtml),
+            ].join('');
+
+            entities = new Array(totalCards).fill(null); // drives the dialog title count
           } catch (e) {
-            entities = [{ id: 'error', name: 'Error loading Lovelace config', meta: e.message }];
+            console.error('Lovelace dialog error:', e);
+            groupedHtml = `<p style="padding:20px;text-align:center;opacity:0.6">Error loading Lovelace config: ${this._escapeHtml(e.message)}</p>`;
+            entities = [];
           }
         }
       }
       
       // Sort by name
-      entities.sort((a, b) => a.name.localeCompare(b.name));
+      entities.sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
       
-      const entityList = entities.map(e => `
+      const entityList = entities.filter(Boolean).map(e => `
         <div class="entity-list-item">
           <div class="entity-list-row">
             <span class="entity-list-name">${e.name}</span>
@@ -5926,7 +7997,210 @@ class EntityManagerPanel extends HTMLElement {
       });
 
       overlay.querySelector('#close-entity-list').addEventListener('click', closeDialog);
-      
+
+      // Device duplicate filter toggle — hide duplicates by default
+      const dupToggle = overlay.querySelector('#em-device-dup-toggle');
+      if (dupToggle) {
+        overlay.querySelectorAll('.em-device-dup').forEach(el => { el.style.display = 'none'; });
+        let showingDups = false;
+        dupToggle.addEventListener('click', () => {
+          showingDups = !showingDups;
+          overlay.querySelectorAll('.em-device-dup').forEach(el => { el.style.display = showingDups ? '' : 'none'; });
+          dupToggle.textContent = showingDups ? 'Hide duplicates' : 'Show duplicates';
+          dupToggle.classList.toggle('btn-primary', showingDups);
+          dupToggle.classList.toggle('btn-secondary', !showingDups);
+        });
+      }
+
+      // Collapsible group headers
+      overlay.querySelectorAll('.em-collapsible').forEach(header => {
+        header.addEventListener('click', () => {
+          const body = header.nextElementSibling;
+          const arrow = header.querySelector('.em-collapse-arrow');
+          const collapsed = body.style.display === 'none';
+          body.style.display = collapsed ? '' : 'none';
+          if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
+      });
+
+      // Template entity: Rename
+      overlay.querySelectorAll('.em-tpl-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const entityId = btn.dataset.entityId;
+          const [domain, ...rest] = entityId.split('.');
+          const currentObjectId = rest.join('.');
+          const currentDisplayName = btn.dataset.currentName || '';
+
+          const escapedDomain = this._escapeHtml(domain);
+          const escapedObjectId = this._escapeHtml(currentObjectId);
+          const escapedDisplayName = this._escapeHtml(currentDisplayName);
+
+          const { overlay: editOverlay, closeDialog: closeEdit } = this.createDialog({
+            title: `Edit Template Entity`,
+            color: '#2196f3',
+            contentHtml: `
+              <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">
+                <div>
+                  <label style="font-size:0.85em;opacity:0.7;display:block;margin-bottom:6px">
+                    Entity ID <span style="opacity:0.55">(domain: ${escapedDomain})</span>
+                  </label>
+                  <div style="display:flex;align-items:center;gap:4px">
+                    <span style="opacity:0.55;font-size:0.9em;flex-shrink:0">${escapedDomain}.</span>
+                    <input id="tpl-edit-id" type="text" value="${escapedObjectId}"
+                      style="flex:1;padding:7px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.9em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)"
+                      placeholder="object_id">
+                  </div>
+                  <div style="font-size:0.78em;opacity:0.5;margin-top:4px">Lowercase letters, numbers and underscores only. Changing this updates references in UI automations &amp; scripts.</div>
+                </div>
+                <div>
+                  <label style="font-size:0.85em;opacity:0.7;display:block;margin-bottom:6px">
+                    Display name <span style="opacity:0.55">(optional override)</span>
+                  </label>
+                  <input id="tpl-edit-name" type="text" value="${escapedDisplayName}"
+                    style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.9em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)"
+                    placeholder="Leave blank to use default">
+                </div>
+              </div>
+            `,
+            actionsHtml: `
+              <button class="btn btn-secondary" id="tpl-edit-cancel">Cancel</button>
+              <button class="btn btn-primary" id="tpl-edit-save">Save</button>
+            `,
+          });
+
+          editOverlay.querySelector('#tpl-edit-cancel').addEventListener('click', closeEdit);
+          setTimeout(() => editOverlay.querySelector('#tpl-edit-id')?.focus(), 50);
+
+          editOverlay.querySelector('#tpl-edit-save').addEventListener('click', async () => {
+            const newObjectId = editOverlay.querySelector('#tpl-edit-id').value.trim();
+            const newDisplayName = editOverlay.querySelector('#tpl-edit-name').value.trim();
+
+            if (!newObjectId) {
+              this._showToast('Entity ID cannot be empty', 'error');
+              return;
+            }
+            if (!/^[a-z0-9_]+$/.test(newObjectId)) {
+              this._showToast('Entity ID: only lowercase letters, numbers, underscores', 'error');
+              return;
+            }
+
+            const newEntityId = `${domain}.${newObjectId}`;
+            const saveBtn = editOverlay.querySelector('#tpl-edit-save');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving…';
+
+            let idChanged = false;
+            try {
+              if (newEntityId !== entityId) {
+                await this._hass.callWS({
+                  type: 'entity_manager/rename_entity',
+                  old_entity_id: entityId,
+                  new_entity_id: newEntityId,
+                });
+                idChanged = true;
+              }
+
+              const targetId = idChanged ? newEntityId : entityId;
+              if (newDisplayName !== currentDisplayName) {
+                await this._hass.callWS({
+                  type: 'entity_manager/update_entity_display_name',
+                  entity_id: targetId,
+                  name: newDisplayName || null,
+                });
+              }
+
+              // Update YAML config files if entity_id changed
+              let yamlResult = null;
+              if (idChanged) {
+                saveBtn.textContent = 'Updating YAML…';
+                try {
+                  yamlResult = await this._hass.callWS({
+                    type: 'entity_manager/update_yaml_references',
+                    old_entity_id: entityId,
+                    new_entity_id: newEntityId,
+                  });
+                } catch (yamlErr) {
+                  console.warn('YAML update failed:', yamlErr);
+                  yamlResult = { total_replacements: 0, files_updated: [], errors: [{ file: '?', error: yamlErr.message }] };
+                }
+              }
+
+              closeEdit();
+
+              // Update the row in the parent dialog
+              const itemEl = btn.closest('.entity-list-item');
+              if (itemEl) {
+                if (idChanged) {
+                  const idEl = itemEl.querySelector('.entity-list-id-inline');
+                  if (idEl) idEl.textContent = newEntityId;
+                  btn.dataset.entityId = newEntityId;
+                  const removeBtn = itemEl.querySelector('.em-tpl-remove');
+                  if (removeBtn) removeBtn.dataset.entityId = newEntityId;
+                }
+                const nameEl = itemEl.querySelector('.entity-list-name');
+                if (nameEl) nameEl.firstChild.textContent = newDisplayName || (idChanged ? newEntityId : entityId);
+                btn.dataset.currentName = newDisplayName;
+              }
+
+              // Build a meaningful toast message
+              if (idChanged && yamlResult) {
+                const fileCount = yamlResult.files_updated.length;
+                const replCount = yamlResult.total_replacements;
+                const errCount = yamlResult.errors.length;
+                let msg = `Renamed to ${newEntityId}.`;
+                if (replCount > 0) {
+                  msg += ` Updated ${replCount} reference${replCount !== 1 ? 's' : ''} in ${fileCount} YAML file${fileCount !== 1 ? 's' : ''}.`;
+                } else {
+                  msg += ' No YAML references found.';
+                }
+                if (errCount > 0) msg += ` ⚠️ ${errCount} file error(s) — check logs.`;
+                this._showToast(msg, replCount > 0 ? 'success' : 'info', 6000);
+              } else {
+                this._showToast(`Saved ${idChanged ? newEntityId : entityId}`, 'success');
+              }
+
+              if (idChanged) this.loadCounts();
+            } catch (err) {
+              console.error('Edit template entity error:', err);
+              saveBtn.disabled = false;
+              saveBtn.textContent = 'Save';
+              this.showErrorDialog(`Failed to update: ${err.message}`);
+            }
+          });
+        });
+      });
+
+      // Template entity: Remove
+      overlay.querySelectorAll('.em-tpl-remove').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const entityId = btn.dataset.entityId;
+          if (!confirm(`Remove template entity "${entityId}"?\n\nThis cannot be undone.`)) return;
+          btn.disabled = true;
+          try {
+            const result = await this._hass.callWS({
+              type: 'entity_manager/remove_entity',
+              entity_id: entityId,
+            });
+            if (result.warning) {
+              this._showToast(result.warning, 'warning', 6000);
+            }
+            // Remove the item row from the dialog
+            const itemEl = btn.closest('.entity-list-item');
+            if (itemEl) itemEl.remove();
+            this._showToast(`Removed ${entityId}`, 'success');
+            // Refresh counts
+            this.loadCounts();
+          } catch (err) {
+            console.error('Remove error:', err);
+            this.showErrorDialog(`Failed to remove ${entityId}: ${err.message}`);
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+
       if (allowToggle) {
         overlay.querySelectorAll('.entity-list-toggle').forEach(btn => {
           btn.addEventListener('click', async (e) => {
@@ -5955,62 +8229,234 @@ class EntityManagerPanel extends HTMLElement {
         });
       }
 
-      // HACS filter buttons
+      // HACS store: search + category filter + My Downloads + item click
       const hacsFilterButtons = overlay.querySelectorAll('.hacs-filter-btn');
-      if (hacsFilterButtons.length > 0) {
-        const applyHacsFilter = (filter) => {
-          overlay.querySelectorAll('[data-hacs-category]').forEach(item => {
+      const hacsSearchInput = overlay.querySelector('#hacs-search');
+      const hacsMyDownloadsBtn = overlay.querySelector('.hacs-my-downloads-btn');
+
+      {
+        let activeCatFilter = 'all';
+        let myDownloadsOnly = false;
+
+        const noResultsEl = overlay.querySelector('#hacs-no-results');
+
+        const applyHacsFilters = () => {
+          const items = overlay.querySelectorAll('.hacs-store-item');
+          const term = (hacsSearchInput?.value || '').toLowerCase().trim();
+          let visibleCount = 0;
+
+          items.forEach(item => {
             const category = item.dataset.hacsCategory || 'unknown';
-            item.style.display = filter === 'all' || category === filter ? '' : 'none';
+            const isInstalled = item.dataset.installed === '1';
+
+            const catOk = activeCatFilter === 'all' || category === activeCatFilter;
+            const installedOk = !myDownloadsOnly || isInstalled;
+            // Search against all visible text in the item — name, full_name, description, meta
+            const searchOk = !term || item.textContent.toLowerCase().includes(term);
+
+            const show = catOk && installedOk && searchOk;
+            item.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
           });
+
+          // Show/hide no-results message
+          if (noResultsEl) {
+            noResultsEl.style.display = items.length > 0 && visibleCount === 0 ? '' : 'none';
+            if (term) noResultsEl.textContent = `No results for "${term}"`;
+          }
+
+          // Update active state on filter buttons
           hacsFilterButtons.forEach(btn => {
-            btn.classList.toggle('btn-primary', btn.dataset.hacsFilter === filter);
-            btn.classList.toggle('btn-secondary', btn.dataset.hacsFilter !== filter);
+            btn.classList.toggle('btn-primary', btn.dataset.hacsFilter === activeCatFilter);
+            btn.classList.toggle('btn-secondary', btn.dataset.hacsFilter !== activeCatFilter);
           });
+          if (hacsMyDownloadsBtn) {
+            hacsMyDownloadsBtn.classList.toggle('btn-primary', myDownloadsOnly);
+            hacsMyDownloadsBtn.classList.toggle('btn-secondary', !myDownloadsOnly);
+          }
         };
 
+        // Category filter buttons
         hacsFilterButtons.forEach(btn => {
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            applyHacsFilter(btn.dataset.hacsFilter || 'all');
+            activeCatFilter = btn.dataset.hacsFilter || 'all';
+            applyHacsFilters();
           });
         });
 
-        applyHacsFilter('all');
+        // My Downloads toggle
+        if (hacsMyDownloadsBtn) {
+          hacsMyDownloadsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            myDownloadsOnly = !myDownloadsOnly;
+            applyHacsFilters();
+          });
+        }
+
+        // Live search — instant, no debounce; also covers the clear-X button on type="search"
+        if (hacsSearchInput) {
+          hacsSearchInput.addEventListener('input', () => applyHacsFilters());
+          hacsSearchInput.addEventListener('search', () => applyHacsFilters());
+          hacsSearchInput.addEventListener('click', e => e.stopPropagation());
+        }
+
+        // Click item → flash highlight, open GitHub repo in new tab
+        overlay.addEventListener('click', (e) => {
+          const item = e.target.closest('.hacs-store-item');
+          if (!item) return;
+          e.stopPropagation();
+          const fullName = item.dataset.repoFullname;
+
+          // Flash highlight for visual feedback
+          item.style.transition = 'background 0.15s ease';
+          item.style.background = 'rgba(33,150,243,0.35)';
+          setTimeout(() => { item.style.background = ''; item.style.transition = ''; }, 400);
+
+          if (fullName) {
+            window.open(`https://github.com/${fullName}`, '_blank', 'noopener');
+          }
+        });
+
+        applyHacsFilters();
       }
 
-      // Info buttons - open HA's more-info dialog
-      overlay.querySelectorAll('.entity-list-action-btn.info-btn').forEach(btn => {
+      // Rename (automation / script / helper)
+      overlay.querySelectorAll('.em-entity-rename').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const entityId = btn.dataset.entityId;
-          const event = new CustomEvent('hass-more-info', {
-            detail: { entityId },
-            bubbles: true,
-            composed: true,
+          const currentName = btn.dataset.currentName || '';
+          const { overlay: rnOverlay, closeDialog: closeRename } = this.createDialog({
+            title: 'Rename',
+            color: 'var(--em-primary)',
+            contentHtml: `
+              <div style="padding:4px 0">
+                <label style="font-size:0.85em;opacity:0.7;display:block;margin-bottom:6px">Display name</label>
+                <input id="em-rename-input" type="text" value="${this._escapeHtml(currentName)}"
+                  style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.95em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)"
+                  placeholder="Enter display name">
+                <p style="font-size:0.82em;opacity:0.6;margin-top:8px">${this._escapeHtml(entityId)}</p>
+              </div>`,
+            actionsHtml: `<button class="btn btn-secondary" id="em-rename-cancel">Cancel</button>
+                          <button class="btn btn-primary" id="em-rename-save">Save</button>`,
           });
-          document.querySelector('home-assistant')?.dispatchEvent(event) ||
-            this.dispatchEvent(event);
+          const input = rnOverlay.querySelector('#em-rename-input');
+          input.focus(); input.select();
+          const doSave = async () => {
+            const newName = input.value.trim();
+            try {
+              await this._hass.callWS({
+                type: 'entity_manager/update_entity_display_name',
+                entity_id: entityId,
+                name: newName || null,
+              });
+              btn.dataset.currentName = newName;
+              const row = btn.closest('.entity-list-item');
+              if (row) {
+                const nameEl = row.querySelector('.entity-list-name');
+                if (nameEl) nameEl.childNodes[0].textContent = newName || entityId;
+              }
+              closeRename();
+              this._showToast(`Renamed to "${newName || entityId}"`, 'success');
+            } catch (err) {
+              this._showToast(`Rename failed: ${err.message}`, 'error');
+            }
+          };
+          rnOverlay.querySelector('#em-rename-cancel').addEventListener('click', closeRename);
+          rnOverlay.querySelector('#em-rename-save').addEventListener('click', doSave);
+          input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') doSave();
+            if (ev.key === 'Escape') closeRename();
+          });
+        });
+      });
+
+      // Remove (automation / script / helper)
+      overlay.querySelectorAll('.em-entity-remove').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const entityId = btn.dataset.entityId;
+          const domain = entityId.split('.')[0];
+          const nameEl = btn.closest('.entity-list-item')?.querySelector('.entity-list-name');
+          const displayName = nameEl?.childNodes[0]?.textContent?.trim() || entityId;
+
+          if (!confirm(`Remove "${displayName}"?\n\n${entityId}\n\nThis cannot be undone.`)) return;
+
+          btn.disabled = true;
+          try {
+            // Get unique_id from entity registry
+            const reg = await this._hass.callWS({ type: 'config/entity_registry/list' });
+            const entry = reg.find(r => r.entity_id === entityId);
+            const uniqueId = entry?.unique_id;
+            if (!uniqueId) {
+              throw new Error('Entity has no unique ID — it may be YAML-defined and must be removed there.');
+            }
+
+            let wsCmd;
+            if (domain === 'automation') {
+              wsCmd = { type: 'config/automation/delete', automation_id: uniqueId };
+            } else if (domain === 'script') {
+              wsCmd = { type: 'config/script/delete', script_id: uniqueId };
+            } else if (['input_boolean','input_number','input_text','input_select',
+                        'input_datetime','input_button'].includes(domain)) {
+              wsCmd = { type: `${domain}/delete`, [`${domain}_id`]: uniqueId };
+            } else if (domain === 'counter') {
+              wsCmd = { type: 'counter/delete', counter_id: uniqueId };
+            } else if (domain === 'timer') {
+              wsCmd = { type: 'timer/delete', timer_id: uniqueId };
+            } else {
+              throw new Error(`Removal of "${domain}" entities is not supported from this panel.`);
+            }
+
+            await this._hass.callWS(wsCmd);
+            btn.closest('.entity-list-item')?.remove();
+            this._showToast(`Removed ${entityId}`, 'success');
+            this.loadCounts();
+          } catch (err) {
+            console.error('Remove error:', err);
+            this._showToast(`Remove failed: ${err.message}`, 'error', 6000);
+          } finally {
+            btn.disabled = false;
+          }
         });
       });
 
       // Edit buttons - navigate to HA's edit page
       overlay.querySelectorAll('.entity-list-action-btn.edit-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
           e.stopPropagation();
           const entityId = btn.dataset.entityId;
           const entityType = btn.dataset.entityType;
           let editPath = '';
 
-          if (entityType === 'automation') {
-            // automation.my_auto -> my_auto
-            const autoId = entityId.replace('automation.', '');
-            editPath = `/config/automation/edit/${autoId}`;
-          } else if (entityType === 'script') {
-            const scriptId = entityId.replace('script.', '');
-            editPath = `/config/script/edit/${scriptId}`;
+          if (entityType === 'automation' || entityType === 'script') {
+            // HA editor URLs use the automation/script unique_id (UUID), not the entity object_id
+            try {
+              const reg = await this._hass.callWS({ type: 'config/entity_registry/list' });
+              const entry = reg.find(r => r.entity_id === entityId);
+              const uniqueId = entry?.unique_id;
+              if (uniqueId) {
+                editPath = entityType === 'automation'
+                  ? `/config/automation/edit/${encodeURIComponent(uniqueId)}`
+                  : `/config/script/edit/${encodeURIComponent(uniqueId)}`;
+              } else {
+                // YAML-defined — no unique_id, fall back to list page
+                editPath = entityType === 'automation'
+                  ? '/config/automation/dashboard'
+                  : '/config/script/dashboard';
+                this._showToast(`This ${entityType} is YAML-defined — opening the list instead.`, 'info', 4000);
+              }
+            } catch {
+              editPath = entityType === 'automation'
+                ? '/config/automation/dashboard'
+                : '/config/script/dashboard';
+            }
           } else if (entityType === 'helper') {
-            editPath = `/config/helpers`;
+            // Helpers don't have individual edit URLs in HA — editing is dialog-based on the helpers page.
+            // Template helpers have their own page; everything else goes to /config/helpers.
+            const domain = entityId.split('.')[0];
+            editPath = domain === 'template' ? '/config/template' : '/config/helpers';
           }
 
           if (editPath) {

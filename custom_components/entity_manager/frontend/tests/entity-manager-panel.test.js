@@ -288,19 +288,23 @@ class EntityManagerTests {
     const panel = this.createTestPanel();
     
     // Test seconds
-    this.assertEqual(panel._formatTimeDiff(1000), '1s ago', 'Should format 1 second');
-    this.assertEqual(panel._formatTimeDiff(45000), '45s ago', 'Should format 45 seconds');
-    
+    this.assertEqual(panel._formatTimeDiff(1000), '1s', 'Should format 1 second');
+    this.assertEqual(panel._formatTimeDiff(45000), '45s', 'Should format 45 seconds');
+
     // Test minutes
-    this.assertEqual(panel._formatTimeDiff(60000), '1m ago', 'Should format 1 minute');
-    this.assertEqual(panel._formatTimeDiff(3600000 - 1000), '59m ago', 'Should format 59 minutes');
-    
+    this.assertEqual(panel._formatTimeDiff(60000), '1m', 'Should format 1 minute');
+    this.assertEqual(panel._formatTimeDiff(3600000 - 1000), '59m', 'Should format 59 minutes');
+
     // Test hours
-    this.assertEqual(panel._formatTimeDiff(3600000), '1h ago', 'Should format 1 hour');
-    this.assertEqual(panel._formatTimeDiff(86400000 - 1000), '23h ago', 'Should format 23 hours');
-    
+    this.assertEqual(panel._formatTimeDiff(3600000), '1h', 'Should format 1 hour');
+    this.assertEqual(panel._formatTimeDiff(86400000 - 1000), '23h', 'Should format 23 hours');
+
     // Test days
-    this.assertEqual(panel._formatTimeDiff(86400000), '1d ago', 'Should format 1 day');
+    this.assertEqual(panel._formatTimeDiff(86400000), '1d', 'Should format 1 day');
+
+    // Test null/NaN guards
+    this.assertEqual(panel._formatTimeDiff(null), '?', 'Should handle null');
+    this.assertEqual(panel._formatTimeDiff(NaN), '?', 'Should handle NaN');
   }
 
   async testLazyLoading() {
