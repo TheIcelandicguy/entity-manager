@@ -30,3 +30,11 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node
+node_modules/
+package-lock.json
+
+# Local dev tools
+sync-to-ha.ps1
+.claude/
