@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, compare, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.7.0-blue)
+![Version](https://img.shields.io/badge/version-2.9.2-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -23,11 +23,14 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Undo / Redo](#undo--redo)
   - [Filter Presets](#filter-presets)
   - [Column Customization](#column-customization)
+  - [Entity Detail Dialog](#entity-detail-dialog)
   - [Firmware Update Manager](#firmware-update-manager)
   - [Export & Import](#export--import)
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
+  - [Lovelace Dashboard Card](#lovelace-dashboard-card)
+  - [Template Sensors](#template-sensors)
   - [Statistics Dashboard](#statistics-dashboard)
   - [Mobile & Responsive Design](#mobile--responsive-design)
 - [Installation](#installation)
@@ -54,15 +57,18 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - Case-sensitive and regex pattern matching options
 ### Search & Filtering
 Entity Manager provides multiple ways to find exactly what you need:
+
 | Filter Type | Description |
 |---|---|
-| **Text Search** | Search across entity IDs, names, integrations, and devices in real time |
+| **Fuzzy Search** | Smart search with fuzzy matching -- type "snr" to find "sensor", matches characters in order across entity IDs, names, integrations, and devices |
+| **Text Search** | Instant search across entity IDs, names, integrations, and devices with real-time filtering |
 | **Domain Filter** | Dropdown to filter by entity type (sensor, light, switch, binary_sensor, etc.) |
 | **State Filter** | Toggle between All, Enabled, or Disabled with live entity counts |
 | **Integration Filter** | Click an integration in the sidebar to show only its entities |
 | **Label Filter** | Filter by Home Assistant labels |
 | **Tag Filter** | Filter by custom tags using `#tagname` syntax |
 | **Filter Presets** | Save and load your favorite filter combinations |
+
 All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
 ### Sidebar Navigation
 A collapsible sidebar provides quick access to every feature:
@@ -143,17 +149,35 @@ Choose which columns to display in the entity table:
 - Tags
 - Alias
 Toggle columns from the sidebar **Columns** button. Preferences are saved between sessions.
+### Entity Detail Dialog
+Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity:
+
+| Section | Contents |
+|---------|----------|
+| **Overview** | Entity ID, friendly name, domain, platform, unique ID, aliases |
+| **Current State** | State value (colour-coded) + all attributes sorted A–Z |
+| **Registry** | Entity category, device class, disabled/hidden state, icon, unit, supported features |
+| **Device** | Manufacturer, model, SW/HW version, serial number, config URL, connections |
+| **Integration** | Config entry title, domain, source, version, state |
+| **Area** | Assigned area name and aliases |
+| **Labels** | All HA labels attached to the entity |
+| **State History** | Last 30 days of state changes, newest first |
+
+Action buttons in the dialog footer let you **Rename** or **Enable/Disable** the entity without leaving the dialog.
+
 ### Firmware Update Manager
 A dedicated **Updates** tab to manage all firmware and software updates:
 - View all available updates in one place
 - **Filter by stability**: All Updates, Stable Only, Beta Only
 - **Filter by category**: All Types, Devices Only, Integrations Only
 - **Hide up-to-date** checkbox to focus on pending updates
-- **Select All** checkbox for quick bulk selection
+- **Select All** pill with expanding **Update Selected** button — animates into view when items are selected
 - View **release notes** before updating
-- **Bulk update** multiple items at once
-- Alphabetical sorting by title
-- Live update count tracking
+- **Sequential bulk updates** — runs one at a time for safety; rows progress through Queued → Active → ✓ Updated / ✕ Failed
+- **Live progress ring** — SVG ring tracks exact `update_percentage` when HA reports it; indeterminate spinner otherwise
+- **HA auto-backup banner** — shows and toggles HA's global "backup before update" setting; green when ON, red when OFF; hidden on plain HA Core
+- **Per-entity Backup checkbox** — shown for entities that support backup; "Backup All" header checkbox for bulk selection
+- Alphabetical sorting by title; live update count on filter button
 ### Export & Import
 - **Export entity configurations** to JSON -- includes enabled/disabled states for all entities
 - **Import configurations** from a previously exported JSON file to restore states
@@ -205,15 +229,118 @@ Control Entity Manager hands-free with voice commands:
 - *"Deactivate entity {name}"*
 - *"Registry enable/disable {name}"*
 Voice commands enforce admin-only access for safety.
+
+### Lovelace Dashboard Card
+Embed Entity Manager directly into your Lovelace dashboard with the custom card:
+
+```yaml
+type: custom:entity-manager-card
+```
+
+**Card Features:**
+- Search and filter entities by ID, device, or integration
+- Multi-select entity management with bulk operations
+- Quick enable/disable toggle for entities
+- Expandable groups by integration and device
+- Live entity counts and status badges
+- Mobile-friendly responsive layout
+
+**Example Dashboard Configuration:**
+```yaml
+views:
+  - title: Entity Management
+    cards:
+      - type: custom:entity-manager-card
+        title: Manage Entities
+```
+
+**Card Options:**
+| Option | Type | Description |
+|--------|------|-------------|
+| `state_filter` | string | Filter: `all`, `enabled`, or `disabled` |
+| `integration_filter` | string | Show only entities from specific integration |
+| `domain_filter` | string | Show only entities of specific domain (e.g., `sensor`, `light`) |
+| `show_disabled_only` | boolean | Show only disabled entities (default: false) |
+| `compact_mode` | boolean | Reduce card height with compact layout (default: false) |
+
+### Template Sensors
+Entity Manager exposes template sensors for entity statistics and automation conditions:
+
+**Available Template Sensors:**
+```yaml
+template:
+  - sensor:
+      - name: Entity Manager Disabled Entities
+        unique_id: entity_manager_disabled_count
+        state: "{{ states.entity_manager.disabled_entity_count | default(0) }}"
+        unit_of_measurement: entities
+        state_class: measurement
+        icon: mdi:checkbox-marked-outline
+
+      - name: Entity Manager Enabled Entities
+        unique_id: entity_manager_enabled_count
+        state: "{{ states.entity_manager.enabled_entity_count | default(0) }}"
+        unit_of_measurement: entities
+        state_class: measurement
+        icon: mdi:checkbox-blank-outline
+
+      - name: Entity Manager Total Entities
+        unique_id: entity_manager_total_count
+        state: "{{ states.entity_manager.total_entity_count | default(0) }}"
+        unit_of_measurement: entities
+        state_class: measurement
+        icon: mdi:layers
+
+      - name: Entity Manager Disabled Entities by Integration
+        unique_id: entity_manager_integration_stats
+        state: "{{ states.entity_manager.integration_disabled_stats | default('{}') }}"
+        icon: mdi:layers-multiple
+```
+
+**Using in Automations:**
+```yaml
+automation:
+  - alias: "Alert on too many disabled entities"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.entity_manager_disabled_entities
+        above: 100
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "Entity Manager Alert"
+          message: >
+            {{ trigger.to_state.state }} entities are currently disabled.
+            Consider reviewing in Entity Manager panel.
+```
+
+**JSON Sensor for Advanced Tracking:**
+```yaml
+template:
+  - sensor:
+      - name: Entity Manager Export
+        unique_id: entity_manager_export
+        state: "{{ now().isoformat() }}"
+        attributes:
+          disabled_entities: "{{ state_attr('sensor.entity_manager_export', 'disabled_entities') }}"
+          by_integration: "{{ state_attr('sensor.entity_manager_export', 'by_integration') }}"
+          by_domain: "{{ state_attr('sensor.entity_manager_export', 'by_domain') }}"
+```
+
 ### Statistics Dashboard
 The toolbar displays live stats for your Home Assistant instance:
-- Integration count
-- Device count
-- Total entity count
-- Automation count
-- Script count
-- Helper count
-- Update count (amber-highlighted when updates are available)
+- **Integration count** - Total number of integrations
+- **Device count** - Total number of devices
+- **Total entity count** - Clickable to open a grouped entity list (Integration → Device) — click any entity row to open its full detail dialog
+- **Automation count** - Clickable to view automations list with last-triggered time and edit navigation
+- **Script count** - Clickable to view scripts list
+- **Helper count** - Clickable to view input helpers and variables
+- **Template count** - Clickable to view template entities with state, last active, and edit/remove actions
+- **HACS count** - Clickable to browse your HACS store and installed integrations
+- **Lovelace Cards count** - Clickable to inspect dashboards, card type distribution, and entity references
+- **Update count** - Amber-highlighted when updates are available; clickable to open the Updates view
+
+All counts update in real-time as you make changes. Every stat card opens a detail dialog — click any entity row inside a dialog to open the **Entity Detail dialog** showing the full registry entry, device info, all state attributes, area, labels, and 30-day state history.
 ### Mobile & Responsive Design
 - Fully responsive layout for phones, tablets, and desktops
 - Collapsible sidebar with dedicated mobile toggle button
@@ -260,8 +387,10 @@ The toolbar displays live stats for your Home Assistant instance:
 ### Managing Updates
 1. Click the **Updates** filter button in the toolbar
 2. Use the filter dropdowns to narrow by stability or category
-3. Check the **Select All** box or pick individual updates
-4. Click **Update Selected** to apply
+3. Check the **HA auto-backup banner** to confirm your global backup setting is correct
+4. Optionally check the **🛡 Backup** checkbox on rows you want backed up before updating
+5. Check **Select All** (or pick individual rows) — the **Update Selected** button expands to the right
+6. Click **Update Selected**; each row progresses through Queued → Active (progress ring) → ✓ / ✕
 ---
 ## Technical Details
 ### Requirements
