@@ -29,7 +29,6 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
-  - [Lovelace Dashboard Card](#lovelace-dashboard-card)
   - [Template Sensors](#template-sensors)
   - [Statistics Dashboard](#statistics-dashboard)
   - [Mobile & Responsive Design](#mobile--responsive-design)
@@ -229,39 +228,6 @@ Control Entity Manager hands-free with voice commands:
 - *"Deactivate entity {name}"*
 - *"Registry enable/disable {name}"*
 Voice commands enforce admin-only access for safety.
-
-### Lovelace Dashboard Card
-Embed Entity Manager directly into your Lovelace dashboard with the custom card:
-
-```yaml
-type: custom:entity-manager-card
-```
-
-**Card Features:**
-- Search and filter entities by ID, device, or integration
-- Multi-select entity management with bulk operations
-- Quick enable/disable toggle for entities
-- Expandable groups by integration and device
-- Live entity counts and status badges
-- Mobile-friendly responsive layout
-
-**Example Dashboard Configuration:**
-```yaml
-views:
-  - title: Entity Management
-    cards:
-      - type: custom:entity-manager-card
-        title: Manage Entities
-```
-
-**Card Options:**
-| Option | Type | Description |
-|--------|------|-------------|
-| `state_filter` | string | Filter: `all`, `enabled`, or `disabled` |
-| `integration_filter` | string | Show only entities from specific integration |
-| `domain_filter` | string | Show only entities of specific domain (e.g., `sensor`, `light`) |
-| `show_disabled_only` | boolean | Show only disabled entities (default: false) |
-| `compact_mode` | boolean | Reduce card height with compact layout (default: false) |
 
 ### Template Sensors
 Entity Manager exposes template sensors for entity statistics and automation conditions:
