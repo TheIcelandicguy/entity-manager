@@ -130,11 +130,6 @@
 - Synchronized version across frontend, backend, and configuration files
 
 ### ✨ New Features
-- **Lovelace Dashboard Card** — added documentation and configuration guide for custom `entity-manager-card`
-  - Search and filter entities directly from dashboard
-  - Bulk operations support
-  - Compact and full-size layout options
-  - Integration and domain filtering
 - **Template Sensors** — added configuration examples for entity statistics
   - Disabled entities count
   - Enabled entities count
