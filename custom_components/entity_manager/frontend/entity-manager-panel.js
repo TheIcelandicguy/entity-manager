@@ -151,7 +151,8 @@ class EntityManagerPanel extends HTMLElement {
     this.hacsItems = null;
     this.templateCount = 0;
     this.lovelaceCardCount = 0;
-    
+    this.configHealthCount = 0;
+
     // Theme customization state
     this.activeTheme = 'default'; // 'default' follows HA, or saved theme name
     this.customThemes = this._loadSavedThemes();
@@ -4506,6 +4507,15 @@ class EntityManagerPanel extends HTMLElement {
           if (noDevice) this.orphanedCount += noDevice.entities.length;
         });
       }
+      // Config entry health count (non-blocking — stat card updates when ready)
+      this._hass.callWS({ type: 'entity_manager/get_config_entry_health' }).then(entries => {
+        this.configHealthCount = entries.length;
+        const healthCard = this.querySelector('[data-stat-type="config-health"] .stat-value');
+        if (healthCard) {
+          healthCard.textContent = String(this.configHealthCount);
+          healthCard.style.color = this.configHealthCount > 0 ? '#f44336' : '#4caf50';
+        }
+      }).catch(() => { this.configHealthCount = 0; });
       // Count templates via backend (covers YAML platform=template + template.* domain)
       try {
         const templateSensors = await this._hass.callWS({ type: 'entity_manager/get_template_sensors' });
@@ -5479,6 +5489,10 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-label">Stale (30d)</div>
         <div class="stat-value" style="color: ${this.healthCount > 0 ? '#ff9800' : '#4caf50'} !important;">${this.healthCount || 0}</div>
       </div>
+      <div class="stat-card clickable-stat" data-stat-type="config-health" title="Click to view integration errors">
+        <div class="stat-label">Config Errors</div>
+        <div class="stat-value" style="color: ${this.configHealthCount > 0 ? '#f44336' : '#4caf50'} !important;">${this.configHealthCount}</div>
+      </div>
       <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
         <div class="stat-label">HACS Store</div>
         <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
@@ -5533,6 +5547,8 @@ class EntityManagerPanel extends HTMLElement {
           this._showAllEntitiesDialog();
         } else if (card.dataset.statType === 'activity') {
           this._showActivityLogDialog();
+        } else if (card.dataset.statType === 'config-health') {
+          this._showConfigEntryHealthDialog();
         } else {
           this.showEntityListDialog(card.dataset.statType);
         }
@@ -7053,6 +7069,94 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     await loadLog(24);
+  }
+
+  async _showConfigEntryHealthDialog() {
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Integration Config Errors',
+      color: '#f44336',
+      contentHtml: `<div style="padding:16px;text-align:center;color:var(--secondary-text-color)">Loading…</div>`,
+      actionsHtml: `<button class="btn btn-secondary em-health-close">Close</button>`,
+    });
+    overlay.querySelector('.em-health-close').addEventListener('click', closeDialog);
+
+    const render = (entries) => {
+      const body = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+      if (!entries.length) {
+        body.innerHTML = `<div style="padding:32px;text-align:center;color:#4caf50;font-size:15px">✓ All integrations are healthy</div>`;
+        return;
+      }
+
+      const stateLabel = { setup_error: 'Setup Error', setup_retry: 'Retrying', failed_unload: 'Failed Unload', migration_error: 'Migration Error', not_loaded: 'Not Loaded' };
+      const stateColor = { setup_error: '#f44336', setup_retry: '#ff9800', failed_unload: '#f44336', migration_error: '#9c27b0', not_loaded: '#607d8b' };
+
+      const byState = {};
+      entries.forEach(e => {
+        const s = e.state;
+        if (!byState[s]) byState[s] = [];
+        byState[s].push(e);
+      });
+
+      let html = '';
+      for (const [state, items] of Object.entries(byState)) {
+        const label = stateLabel[state] || state;
+        const color = stateColor[state] || '#607d8b';
+        const rows = items.map(e => `
+          <div class="entity-list-item" style="padding:10px 12px;display:flex;align-items:center;gap:10px" data-entry-id="${this._escapeHtml(e.entry_id)}">
+            <img src="${this._brandIconUrl(e.domain)}" style="width:24px;height:24px;flex-shrink:0" onerror="this.style.display='none'" alt="">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px">${this._escapeHtml(e.title || e.domain)}</div>
+              <div style="font-size:11px;opacity:0.7">${this._escapeHtml(e.domain)}${e.disabled_by ? ' · disabled' : ''}</div>
+            </div>
+            ${e.disabled_by
+              ? `<span style="background:#607d8b;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">${this._escapeHtml(e.disabled_by)}</span>`
+              : `<button class="btn em-reload-entry" data-entry-id="${this._escapeHtml(e.entry_id)}" style="padding:4px 12px;font-size:12px">Reload</button>`
+            }
+          </div>`).join('');
+        html += this._collGroup(
+          `<span style="color:${color}">${label}</span> <span style="font-size:11px;color:var(--secondary-text-color)">(${items.length})</span>`,
+          rows
+        );
+      }
+      body.innerHTML = `<div style="padding:8px 0">${html}</div>`;
+
+      body.querySelectorAll('.em-collapsible').forEach(h => {
+        h.addEventListener('click', () => {
+          const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
+          const collapsed = b.style.display === 'none';
+          b.style.display = collapsed ? '' : 'none';
+          if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
+      });
+
+      body.querySelectorAll('.em-reload-entry').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const entryId = btn.dataset.entryId;
+          btn.disabled = true;
+          btn.textContent = 'Reloading…';
+          try {
+            await this._hass.callWS({ type: 'config_entries/reload', entry_id: entryId });
+            this._showToast('Integration reloading…', 'success');
+            await new Promise(r => setTimeout(r, 1500));
+            const fresh = await this._hass.callWS({ type: 'entity_manager/get_config_entry_health' });
+            this.configHealthCount = fresh.length;
+            render(fresh);
+          } catch (e) {
+            this._showToast('Reload failed: ' + (e.message || e), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Reload';
+          }
+        });
+      });
+    };
+
+    try {
+      const entries = await this._hass.callWS({ type: 'entity_manager/get_config_entry_health' });
+      render(entries);
+    } catch (e) {
+      const body = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+      body.innerHTML = `<div style="padding:16px;color:var(--error-color)">⚠ ${this._escapeHtml(String(e.message || e))}</div>`;
+    }
   }
 
   async _showBrowserModDialog() {
