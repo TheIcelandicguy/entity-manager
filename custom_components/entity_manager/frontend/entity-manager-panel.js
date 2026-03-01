@@ -2334,6 +2334,19 @@ class EntityManagerPanel extends HTMLElement {
     this._saveToStorage('em-filter-presets', this.filterPresets);
   }
   
+  _saveEntityPreset() {
+    const entityIds = [...(this.selectedEntities || new Set())];
+    if (!entityIds.length) { this._showToast('No entities selected', 'info'); return; }
+    this._showPromptDialog('Save Preset', 'Name for this preset:', `Preset ${Date.now() % 1000}`, name => {
+      if (!name?.trim()) return;
+      const presets = this._loadFromStorage('em-presets', []);
+      presets.push({ id: `ep_${Date.now()}`, name: name.trim(), entityIds });
+      this._saveToStorage('em-presets', presets);
+      this._reRenderSidebar();
+      this._showToast(`Preset "${name.trim()}" saved (${entityIds.length} entities)`, 'success');
+    });
+  }
+
   _saveCurrentFilterPreset(presetName) {
     const savePreset = (name) => {
       const preset = {
@@ -4140,6 +4153,32 @@ class EntityManagerPanel extends HTMLElement {
           ` : ''}
         </div>
         
+        <div class="sidebar-section ${this.sidebarOpenSections.has('presets') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="presets">Presets</div>
+          ${(() => {
+            const presets = this._loadFromStorage('em-presets', []);
+            const hasSel = this.selectedEntities?.size > 0;
+            const saveBtn = `
+              <div class="sidebar-item ${hasSel ? '' : 'disabled'}" data-action="save-entity-preset" title="${hasSel ? 'Save selected entities as a preset' : 'Select entities first'}">
+                <span class="icon">＋</span>
+                <span class="label" style="opacity:${hasSel ? 1 : 0.4}">Save selection as preset</span>
+              </div>`;
+            if (!presets.length) return saveBtn;
+            const rows = presets.map(p => `
+              <div class="sidebar-item em-preset-row" style="flex-wrap:wrap;gap:4px;padding:6px 8px" data-ep-id="${this._escapeAttr(p.id)}">
+                <span class="label" style="flex:1;font-size:12px" title="${p.entityIds.length} entities">${this._escapeHtml(p.name)}</span>
+                <span style="font-size:10px;opacity:0.5;flex-shrink:0">${p.entityIds.length}</span>
+                <div style="display:flex;gap:3px;flex-basis:100%">
+                  <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:#4caf50;color:#fff;border:none;border-radius:3px">Enable</button>
+                  <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:#f44336;color:#fff;border:none;border-radius:3px">Disable</button>
+                  <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">✎</button>
+                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:#f44336" title="Delete">✕</button>
+                </div>
+              </div>`).join('');
+            return saveBtn + rows;
+          })()}
+        </div>
+
         <div class="sidebar-section ${this.sidebarOpenSections.has('integrations') ? '' : 'section-collapsed'}">
           <div class="sidebar-section-title" data-section-id="integrations">Integrations</div>
           ${this.selectedIntegrationFilter ? `
@@ -5285,6 +5324,8 @@ class EntityManagerPanel extends HTMLElement {
       this._reRenderSidebar();
     } else if (action === 'save-preset') {
       this._saveCurrentFilterPreset();
+    } else if (action === 'save-entity-preset') {
+      if (this.selectedEntities?.size > 0) this._saveEntityPreset();
     } else if (groupMode) {
       this._setSmartGroupMode(groupMode);
       this.querySelector('.em-sidebar').querySelectorAll('[data-group-mode]').forEach(el => {
@@ -5351,6 +5392,49 @@ class EntityManagerPanel extends HTMLElement {
       this._reRenderSidebar();
       this._showToast(`Showing ${integration} entities`, 'info');
     }
+
+    // Entity preset buttons (Enable / Disable / Rename / Delete)
+    this.querySelector('.em-sidebar')?.querySelectorAll('.em-preset-enable, .em-preset-disable, .em-preset-rename-btn, .em-preset-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const epId = btn.dataset.epId;
+        const presets = this._loadFromStorage('em-presets', []);
+        const preset = presets.find(p => p.id === epId);
+        if (!preset) return;
+
+        if (btn.classList.contains('em-preset-enable') || btn.classList.contains('em-preset-disable')) {
+          const isEnable = btn.classList.contains('em-preset-enable');
+          if (!preset.entityIds.length) { this._showToast('Preset is empty', 'info'); return; }
+          btn.disabled = true;
+          btn.textContent = '…';
+          try {
+            const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+            const res = await this._hass.callWS({ type: wsType, entity_ids: preset.entityIds });
+            const n = res.success?.length ?? preset.entityIds.length;
+            this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`, 'success');
+            await this.loadData();
+          } catch (err) {
+            this._showToast('Preset action failed: ' + (err.message || err), 'error');
+            btn.disabled = false;
+            btn.textContent = isEnable ? 'Enable' : 'Disable';
+          }
+
+        } else if (btn.classList.contains('em-preset-rename-btn')) {
+          this._showPromptDialog('Rename Preset', `New name for "${preset.name}":`, preset.name, newName => {
+            if (!newName?.trim()) return;
+            preset.name = newName.trim();
+            this._saveToStorage('em-presets', presets);
+            this._reRenderSidebar();
+          });
+
+        } else if (btn.classList.contains('em-preset-delete')) {
+          if (!confirm(`Delete preset "${preset.name}"?`)) return;
+          const updated = presets.filter(p => p.id !== epId);
+          this._saveToStorage('em-presets', updated);
+          this._reRenderSidebar();
+        }
+      });
+    });
   }
 
   setActiveFilter() {
