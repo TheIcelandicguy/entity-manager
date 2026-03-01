@@ -162,6 +162,9 @@ class EntityManagerPanel extends HTMLElement {
     
     // Activity log state
     this.activityLog = this._loadActivityLog();
+
+    // Brands token for integration icon URLs (HA 2026.3+)
+    this._brandsToken = '';
     
     // Sidebar state
     this.sidebarCollapsed = localStorage.getItem('em-sidebar-collapsed') === 'true';
@@ -4152,7 +4155,7 @@ class EntityManagerPanel extends HTMLElement {
           ` : ''}
           ${(this.showAllSidebarIntegrations ? integrationList : integrationList.slice(0, 10)).map(int => `
             <div class="sidebar-item ${this.selectedIntegrationFilter === int.name ? 'active' : ''}" data-integration="${int.name}">
-              <img class="sidebar-icon" src="https://brands.home-assistant.io/${int.name}/icon.png" 
+              <img class="sidebar-icon" src="${this._brandIconUrl(int.name)}"
                    onerror="this.style.display='none'" alt="">
               <span class="label">${int.name}</span>
               <span class="count">${int.count}</span>
@@ -4392,6 +4395,29 @@ class EntityManagerPanel extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
+  // ── Brands proxy API (HA 2026.3+) ────────────────────────────────────────
+
+  async _fetchBrandsToken() {
+    try {
+      const res = await this._hass.callWS({ type: 'brands/access_token' });
+      this._brandsToken = res.access_token || res.token || '';
+    } catch (_) {
+      // Older HA versions don't have this command — fall back to CDN URLs
+      this._brandsToken = null; // null = use CDN fallback
+    }
+  }
+
+  /** Returns the correct brand icon URL for a given integration domain. */
+  _brandIconUrl(domain) {
+    const d = encodeURIComponent(domain);
+    if (this._brandsToken) {
+      return `/api/brands/integration/${d}/icon.png?token=${this._brandsToken}`;
+    }
+    // Fallback: CDN (works on HA < 2026.3 or before token arrives)
+    // /_/ = "best available" path on the brands CDN
+    return `https://brands.home-assistant.io/_/${d}/icon.png`;
+  }
+
   async loadData() {
     this.setLoading(true);
     try {
@@ -4420,7 +4446,11 @@ class EntityManagerPanel extends HTMLElement {
 
       this.domainOptions = this.extractDomains(this.data);
       this.updateDomainOptions();
-      
+
+      // Fetch brands token lazily (non-blocking — icons fall back to CDN until ready)
+      // Only fetch when in initial '' state; null means already tried and failed (old HA)
+      if (this._brandsToken === '') this._fetchBrandsToken();
+
       this.loadDeviceInfo();
     } catch (error) {
       console.error('Entity Manager Error:', error);
@@ -5457,6 +5487,16 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-label">Lovelace Cards</div>
         <div class="stat-value" style="color: #9c27b0 !important;">${this.lovelaceCardCount}</div>
       </div>
+      <div class="stat-card clickable-stat" data-stat-type="activity" title="Click to view entity activity log">
+        <div class="stat-label">Activity Log</div>
+        <div class="stat-value" style="color: #607d8b !important;">${(() => {
+          const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const count = Object.values(this._hass?.states || {})
+            .filter(s => new Date(s.last_changed).getTime() > dayAgo).length;
+          return count;
+        })()}</div>
+        <div style="font-size:0.72em;color:var(--secondary-text-color);margin-top:2px">entities / 24h</div>
+      </div>
       ${(() => {
         const bm = (this.data || []).find(i => i.integration === 'browser_mod');
         if (!bm) return '';
@@ -5491,6 +5531,8 @@ class EntityManagerPanel extends HTMLElement {
           this._showBrowserModDialog();
         } else if (card.dataset.statType === 'entities') {
           this._showAllEntitiesDialog();
+        } else if (card.dataset.statType === 'activity') {
+          this._showActivityLogDialog();
         } else {
           this.showEntityListDialog(card.dataset.statType);
         }
@@ -5681,7 +5723,7 @@ class EntityManagerPanel extends HTMLElement {
             </label>
           </div>
           <div class="integration-logo-container">
-            <img class="integration-logo" src="https://brands.home-assistant.io/${encodeURIComponent(integration.integration)}/icon.png" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
+            <img class="integration-logo" src="${this._brandIconUrl(integration.integration)}" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
@@ -6860,6 +6902,157 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelectorAll('.em-entity-row[data-entity-id]').forEach(row => {
       row.addEventListener('click', () => this._showEntityDetailsDialog(row.dataset.entityId));
     });
+  }
+
+  async _showActivityLogDialog() {
+    // Build entity_id → {integration, device_name} lookup from already-loaded data
+    const entityMap = {};
+    for (const intg of (this.data || [])) {
+      for (const [devId, dev] of Object.entries(intg.devices || {})) {
+        const devName = dev.name || (devId === 'no_device' ? '(No Device)' : 'Unknown Device');
+        for (const ent of (dev.entities || [])) {
+          entityMap[ent.entity_id] = { integration: intg.integration, device_name: devName };
+        }
+      }
+    }
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: '📋 Activity Log',
+      color: '#607d8b',
+      contentHtml: `
+        <div style="padding:0 16px 6px">
+          <div style="display:flex;align-items:center;gap:6px;padding:10px 0 8px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--secondary-text-color)">Show last:</span>
+            <div id="act-range-btns">
+              ${[1,6,24,168].map((h,i) => {
+                const label = ['1h','6h','24h','7d'][i];
+                const active = h === 24;
+                return `<button class="act-range-btn" data-hours="${h}" style="background:${active?'var(--em-primary,#4caf50)':'transparent'};color:${active?'#fff':'var(--primary-text-color)'};border:1px solid ${active?'var(--em-primary,#4caf50)':'var(--divider-color)'};border-radius:12px;padding:2px 10px;font-size:11px;cursor:pointer;margin-right:3px">${label}</button>`;
+              }).join('')}
+            </div>
+          </div>
+          <div id="act-log-body" style="max-height:68vh;overflow-y:auto;min-height:80px;display:flex;align-items:center;justify-content:center">
+            <span style="color:var(--secondary-text-color);font-size:13px">Loading…</span>
+          </div>
+        </div>
+      `,
+      actionsHtml: `<button class="btn btn-secondary act-close-btn">Close</button>`,
+      extraClass: 'act-log-dialog',
+    });
+
+    overlay.querySelector('.act-close-btn').addEventListener('click', closeDialog);
+
+    const loadLog = async (hours) => {
+      const body = overlay.querySelector('#act-log-body');
+      body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px;display:flex;align-items:center;justify-content:center';
+      body.innerHTML = `<span style="color:var(--secondary-text-color);font-size:13px">Loading…</span>`;
+
+      const endTime = new Date().toISOString();
+      const startTime = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      let events = [];
+      try {
+        events = await this._hass.callWS({ type: 'logbook/get_events', start_time: startTime, end_time: endTime });
+      } catch (e) {
+        body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px';
+        body.innerHTML = `<div style="padding:16px;color:var(--error-color);font-size:13px">⚠ Could not load logbook: ${this._escapeHtml(e.message || String(e))}</div>`;
+        return;
+      }
+
+      const entityEvents = (events || []).filter(e => e.entity_id);
+      if (!entityEvents.length) {
+        body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px';
+        body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--secondary-text-color);font-size:13px">No entity activity in this period.</div>`;
+        return;
+      }
+
+      // Group: integration → device_name → entity_id → events[]
+      const grouped = {};
+      for (const evt of entityEvents) {
+        const eid = evt.entity_id;
+        const info = entityMap[eid] || { integration: eid.split('.')[0], device_name: 'Other' };
+        const { integration, device_name } = info;
+        if (!grouped[integration]) grouped[integration] = {};
+        if (!grouped[integration][device_name]) grouped[integration][device_name] = {};
+        if (!grouped[integration][device_name][eid]) grouped[integration][device_name][eid] = { events: [] };
+        grouped[integration][device_name][eid].events.push(evt);
+      }
+
+      // Render integration → device → entity → event rows
+      const today = new Date().toDateString();
+      let html = '';
+      for (const intg of Object.keys(grouped).sort()) {
+        let intgTotal = 0;
+        let devicesHtml = '';
+        for (const [devName, entities] of Object.entries(grouped[intg]).sort(([a],[b]) => a.localeCompare(b))) {
+          let devTotal = 0;
+          let entitiesHtml = '';
+          for (const [eid, entData] of Object.entries(entities)) {
+            const evts = entData.events.slice().reverse(); // newest first
+            devTotal += evts.length;
+            const rows = evts.map(evt => {
+              const d = new Date(evt.when);
+              const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const dayPfx = d.toDateString() !== today
+                ? `<span style="font-size:9px;opacity:0.65">${d.toLocaleDateString([],{month:'short',day:'numeric'})} </span>` : '';
+              const ctxIcon = evt.context_event_type === 'automation' ? '🤖'
+                : evt.context_event_type === 'script' ? '⚙️'
+                : evt.context_user_id ? '👤' : '';
+              const ctxSpan = (ctxIcon || evt.context_name)
+                ? `<span style="font-size:10px;color:var(--secondary-text-color);font-style:italic;white-space:nowrap;flex-shrink:0">${ctxIcon}${evt.context_name ? ' ' + this._escapeHtml(evt.context_name) : ''}</span>` : '';
+              return `<div style="display:flex;align-items:baseline;gap:8px;padding:2px 0;border-bottom:1px solid rgba(128,128,128,.1)">
+                <span style="font-size:10px;color:var(--secondary-text-color);min-width:52px;flex-shrink:0;font-variant-numeric:tabular-nums">${dayPfx}${timeStr}</span>
+                <span style="font-size:12px;flex:1">${this._escapeHtml(evt.message || '—')}</span>
+                ${ctxSpan}
+              </div>`;
+            }).join('');
+            entitiesHtml += `
+              <div style="margin:4px 0 8px;padding:6px 8px;background:rgba(128,128,128,.06);border-radius:6px;border-left:2px solid rgba(128,128,128,.18)">
+                <div style="font-size:10px;font-family:monospace;color:var(--secondary-text-color);margin-bottom:4px">${this._escapeHtml(eid)}</div>
+                ${rows}
+              </div>`;
+          }
+          intgTotal += devTotal;
+          devicesHtml += this._collGroup(
+            `${this._escapeHtml(devName)} <span style="font-size:10px;color:var(--secondary-text-color)">(${devTotal})</span>`,
+            entitiesHtml
+          );
+        }
+        html += this._collGroup(
+          `<strong>${this._escapeHtml(intg)}</strong> <span style="font-size:10px;color:var(--secondary-text-color)">(${intgTotal})</span>`,
+          devicesHtml
+        );
+      }
+
+      body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px';
+      body.innerHTML = `<div style="padding-bottom:8px">${html}</div>`;
+
+      // Attach collapsible listeners (createDialog doesn't do this automatically)
+      body.querySelectorAll('.em-collapsible').forEach(header => {
+        header.addEventListener('click', () => {
+          const bodyEl = header.nextElementSibling;
+          const arrow = header.querySelector('.em-collapse-arrow');
+          const collapsed = bodyEl.style.display === 'none';
+          bodyEl.style.display = collapsed ? '' : 'none';
+          if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
+      });
+    };
+
+    // Range button handler — update active styles, reload data
+    overlay.querySelector('#act-range-btns').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.act-range-btn');
+      if (!btn) return;
+      const hours = parseInt(btn.dataset.hours, 10);
+      overlay.querySelectorAll('.act-range-btn').forEach(b => {
+        const active = parseInt(b.dataset.hours, 10) === hours;
+        b.style.background = active ? 'var(--em-primary,#4caf50)' : 'transparent';
+        b.style.color = active ? '#fff' : 'var(--primary-text-color)';
+        b.style.borderColor = active ? 'var(--em-primary,#4caf50)' : 'var(--divider-color)';
+      });
+      await loadLog(hours);
+    });
+
+    await loadLog(24);
   }
 
   async _showBrowserModDialog() {
