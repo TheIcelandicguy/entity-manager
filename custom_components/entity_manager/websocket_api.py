@@ -712,6 +712,7 @@ async def handle_get_template_sensors(
         vol.Required("type"): "entity_manager/update_yaml_references",
         vol.Required("old_entity_id"): str,
         vol.Required("new_entity_id"): str,
+        vol.Optional("dry_run", default=False): bool,
     }
 )
 @websocket_api.require_admin
@@ -721,9 +722,14 @@ async def handle_update_yaml_references(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Replace all occurrences of old_entity_id with new_entity_id in YAML config files."""
+    """Replace all occurrences of old_entity_id with new_entity_id in YAML config files.
+
+    When dry_run=True the files are scanned but not modified; the response
+    lists what *would* change so the caller can show a preview.
+    """
     old_id = msg["old_entity_id"]
     new_id = msg["new_entity_id"]
+    dry_run: bool = msg.get("dry_run", False)
     config_path = Path(hass.config.config_dir)
 
     # Matches old_entity_id as a whole token — not part of a longer identifier.
@@ -760,26 +766,29 @@ async def handle_update_yaml_references(
                     continue
                 new_content, count = pattern.subn(new_id, content)
                 if count:
-                    filepath.write_text(new_content, encoding="utf-8")
+                    if not dry_run:
+                        filepath.write_text(new_content, encoding="utf-8")
                     results.append({"file": str(rel), "replacements": count})
             except Exception as exc:  # noqa: BLE001
                 errors.append({"file": str(rel), "error": str(exc)})
 
         return {
             "success": True,
+            "dry_run": dry_run,
             "files_updated": results,
             "errors": errors,
             "total_replacements": sum(r["replacements"] for r in results),
         }
 
     result = await hass.async_add_executor_job(_do_replace)
-    _LOGGER.info(
-        "YAML reference update %s → %s: %d replacement(s) in %d file(s)",
-        old_id,
-        new_id,
-        result["total_replacements"],
-        len(result["files_updated"]),
-    )
+    if not dry_run:
+        _LOGGER.info(
+            "YAML reference update %s → %s: %d replacement(s) in %d file(s)",
+            old_id,
+            new_id,
+            result["total_replacements"],
+            len(result["files_updated"]),
+        )
     connection.send_result(msg["id"], result)
 
 
@@ -907,6 +916,94 @@ async def handle_get_entity_details(
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_config_entry_health",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_config_entry_health(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return config entries that are not in a healthy (loaded) state."""
+    try:
+        unhealthy: list[dict[str, Any]] = []
+        for entry in hass.config_entries.async_entries():
+            state_val = str(entry.state.value)
+            if state_val == "loaded":
+                continue
+            unhealthy.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "domain": entry.domain,
+                    "title": entry.title,
+                    "state": state_val,
+                    "disabled_by": str(entry.disabled_by.value)
+                    if entry.disabled_by
+                    else None,
+                }
+            )
+        unhealthy.sort(key=lambda e: (e["state"], e["domain"], e["title"]))
+        connection.send_result(msg["id"], unhealthy)
+    except Exception as err:
+        _LOGGER.error("Error getting config entry health: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "get_failed", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_areas_and_floors",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_areas_and_floors(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return all areas and floors for use in the floor-based smart group view."""
+    try:
+        area_reg = ar.async_get(hass)
+        areas: list[dict[str, Any]] = []
+        for area in area_reg.async_list_areas():
+            areas.append(
+                {
+                    "area_id": area.id,
+                    "name": area.name,
+                    "floor_id": getattr(area, "floor_id", None),
+                }
+            )
+
+        floors: list[dict[str, Any]] = []
+        try:
+            from homeassistant.helpers import floor_registry as fr  # noqa: PLC0415
+
+            floor_reg = fr.async_get(hass)
+            for floor in floor_reg.async_list_floors():
+                floor_area_ids = [a["area_id"] for a in areas if a["floor_id"] == floor.floor_id]
+                floors.append(
+                    {
+                        "floor_id": floor.floor_id,
+                        "name": floor.name,
+                        "level": getattr(floor, "level", 0),
+                        "area_ids": floor_area_ids,
+                    }
+                )
+            floors.sort(key=lambda f: (f.get("level", 0), f["name"]))
+        except (ImportError, AttributeError):
+            # floor_registry not available in this HA version — floors stay empty
+            pass
+
+        connection.send_result(msg["id"], {"floors": floors, "areas": areas})
+    except Exception as err:
+        _LOGGER.error("Error getting areas and floors: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "get_failed", str(err))
+
+
 @callback
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
@@ -924,4 +1021,6 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_remove_entity)
     websocket_api.async_register_command(hass, handle_update_yaml_references)
     websocket_api.async_register_command(hass, handle_get_entity_details)
+    websocket_api.async_register_command(hass, handle_get_config_entry_health)
+    websocket_api.async_register_command(hass, handle_get_areas_and_floors)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")
