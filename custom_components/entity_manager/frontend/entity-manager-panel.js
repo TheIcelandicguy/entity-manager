@@ -198,6 +198,7 @@ class EntityManagerPanel extends HTMLElement {
     this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name
     this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
     this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
+    this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
     
     // Lazy loading state
     this.visibleEntityCounts = {}; // Track visible entities per integration
@@ -3615,7 +3616,18 @@ class EntityManagerPanel extends HTMLElement {
   _setSmartGroupMode(mode) {
     this.smartGroupMode = mode;
     localStorage.setItem('em-smart-group-mode', mode);
-    this.updateView();
+    if (mode === 'floor' && !this.floorsData) {
+      // Fetch floor/area data then re-render
+      this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' }).then(data => {
+        this.floorsData = data;
+        this.updateView();
+      }).catch(() => {
+        this.floorsData = { floors: [], areas: [] };
+        this.updateView();
+      });
+    } else {
+      this.updateView();
+    }
   }
   
   _getSmartGroups() {
@@ -3638,6 +3650,22 @@ class EntityManagerPanel extends HTMLElement {
               // Group by entity domain
               groupKey = entity.entity_id.split('.')[0];
               break;
+            case 'floor': {
+              // Group by floor → area. Use floorsData cache; fall back to area name or "No Area"
+              const fDevInfo = this.deviceInfo[deviceId];
+              const areaId = fDevInfo?.area_id || null;
+              if (!areaId) { groupKey = 'No Floor / No Area'; break; }
+              const areaObj = (this.floorsData?.areas || []).find(a => a.area_id === areaId);
+              const areaName = areaObj?.name || areaId;
+              const floorId = areaObj?.floor_id;
+              if (floorId) {
+                const floorObj = (this.floorsData?.floors || []).find(f => f.floor_id === floorId);
+                groupKey = `${floorObj?.name || floorId} › ${areaName}`;
+              } else {
+                groupKey = `No Floor › ${areaName}`;
+              }
+              break;
+            }
             case 'device-name': {
               // Filter by device name keyword, then group by device name
               const devName = (this.getDeviceName(deviceId) || '').toLowerCase();
@@ -4189,6 +4217,10 @@ class EntityManagerPanel extends HTMLElement {
             <div class="sidebar-item ${this.smartGroupMode === 'type' ? 'active' : ''}" data-group-mode="type">
               <span class="icon">📂</span>
               <span class="label">By Type</span>
+            </div>
+            <div class="sidebar-item ${this.smartGroupMode === 'floor' ? 'active' : ''}" data-group-mode="floor">
+              <span class="icon">🏢</span>
+              <span class="label">By Floor</span>
             </div>
             <div class="sidebar-item ${this.smartGroupMode === 'device-name' ? 'active' : ''}" data-group-mode="device-name">
               <span class="icon">🔍</span>
@@ -5812,26 +5844,31 @@ class EntityManagerPanel extends HTMLElement {
     
     const modeLabels = {
       'room': 'Room',
-      'type': 'Entity Type'
+      'type': 'Entity Type',
+      'floor': 'Floor'
     };
-    
+
     const modeIcons = {
       'room': '🏠',
-      'type': '📂'
+      'type': '📂',
+      'floor': '🏢'
     };
-    
+
     return sortedKeys.map(groupKey => {
       const entities = groups[groupKey];
       const isExpanded = this.expandedIntegrations.has(`smart_${groupKey}`);
       const enabledCount = entities.filter(e => !e.is_disabled).length;
       const disabledCount = entities.filter(e => e.is_disabled).length;
-      
+
       // Format group name
       let displayName = groupKey;
       if (this.smartGroupMode === 'type') {
         displayName = groupKey.charAt(0).toUpperCase() + groupKey.slice(1).replace(/_/g, ' ');
       } else if (this.smartGroupMode === 'room') {
         displayName = groupKey === 'Unassigned' ? '📍 Unassigned' : groupKey;
+      } else if (this.smartGroupMode === 'floor') {
+        // groupKey is already formatted as "Floor › Area" or "No Floor › Area" or "No Floor / No Area"
+        displayName = groupKey;
       }
       
       return `
