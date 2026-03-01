@@ -9083,14 +9083,65 @@ class EntityManagerPanel extends HTMLElement {
 
       const domain = entityId.split('.')[0];
       const newEntityId = `${domain}.${newName}`;
-      
+
       if (newEntityId === entityId) {
         closeDialog();
         return;
       }
-      
-      closeDialog();
-      await this.renameEntity(entityId, newEntityId);
+
+      // Dry-run: scan YAML for references before committing
+      yesBtn.disabled = true;
+      yesBtn.textContent = 'Checking…';
+      try {
+        const preview = await this._hass.callWS({
+          type: 'entity_manager/update_yaml_references',
+          old_entity_id: entityId,
+          new_entity_id: newEntityId,
+          dry_run: true,
+        });
+
+        if (preview.total_replacements === 0) {
+          // No YAML references — rename immediately
+          closeDialog();
+          await this.renameEntity(entityId, newEntityId);
+          return;
+        }
+
+        // Show preview in-place inside the dialog before confirming
+        const content = overlay.querySelector('.confirm-dialog-content');
+        const fileRows = preview.files_updated.map(f =>
+          `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
+             <span style="font-size:12px;font-family:monospace">${this._escapeHtml(f.file)}</span>
+             <span style="font-size:11px;color:var(--secondary-text-color)">${f.replacements} ref${f.replacements !== 1 ? 's' : ''}</span>
+           </div>`).join('');
+        content.innerHTML = `
+          <p style="margin-bottom:8px">Rename <strong>${this._escapeHtml(entityId)}</strong> → <strong>${this._escapeHtml(newEntityId)}</strong></p>
+          <div style="background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#ff9800">
+              ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${preview.files_updated.length} file${preview.files_updated.length !== 1 ? 's' : ''} will be updated:
+            </div>
+            <div style="max-height:180px;overflow-y:auto">${fileRows}</div>
+          </div>
+          <p style="font-size:12px;opacity:0.7">Confirm to rename the entity and update all references.</p>
+        `;
+        yesBtn.disabled = false;
+        yesBtn.textContent = 'Confirm Rename';
+
+        // Replace the click handler to commit on next click
+        const newHandler = async () => {
+          yesBtn.disabled = true;
+          yesBtn.textContent = 'Renaming…';
+          closeDialog();
+          await this.renameEntity(entityId, newEntityId);
+        };
+        yesBtn.replaceWith(yesBtn.cloneNode(true)); // Remove old listeners
+        overlay.querySelector('.confirm-yes').addEventListener('click', newHandler);
+
+      } catch (_) {
+        // dry_run failed (old HA?) — proceed without preview
+        closeDialog();
+        await this.renameEntity(entityId, newEntityId);
+      }
     };
 
     yesBtn.addEventListener('click', performRename);
