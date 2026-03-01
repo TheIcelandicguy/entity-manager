@@ -4492,11 +4492,17 @@ class EntityManagerPanel extends HTMLElement {
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
       // Count entities stuck in unavailable
       this.unavailableCount = states.filter(s => s.state === 'unavailable').length;
-      // Count entities not updated in 30+ days (excluding meta-states)
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      // Count entities not updated in 30+ days (excluding meta-states and dismissed)
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      const thirtyDaysAgo = Date.now() - thirtyDaysMs;
+      const staleDismissed = this._loadFromStorage('em-stale-dismissed', {});
+      const staleDismissedActive = new Set(
+        Object.entries(staleDismissed).filter(([, ts]) => Date.now() - ts < thirtyDaysMs).map(([eid]) => eid)
+      );
       this.healthCount = states.filter(s => {
         if (s.state === 'unavailable' || s.state === 'unknown') return false;
         if (!s.last_updated) return false;
+        if (staleDismissedActive.has(s.entity_id)) return false;
         return new Date(s.last_updated).getTime() < thirtyDaysAgo;
       }).length;
       // Count orphaned entities (no device) from entity registry data
@@ -7874,24 +7880,73 @@ class EntityManagerPanel extends HTMLElement {
             unavailByDomain[d].push(s);
           });
 
+          // Build entity rows; lastSeenMap filled in after async history fetch
+          const _unavailRows = (items, lastSeenMap) => items.map(s => {
+            const lsTs = lastSeenMap[s.entity_id];
+            const lsHtml = lsTs
+              ? `<span>Last seen: <strong style="color:#4caf50">${this._fmtAgo(new Date(lsTs).toISOString())}</strong></span>`
+              : `<span style="opacity:0.5">Last seen: <em>unknown (&gt;90d)</em></span>`;
+            return `
+              <div class="entity-list-item" style="padding:10px 12px">
+                <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                  <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                  <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+                </div>
+                <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px;flex-wrap:wrap">
+                  <span>Down since: <strong style="color:#f44336">${this._fmtAgo(s.last_changed, 'Unknown')}</strong></span>
+                  ${lsHtml}
+                </div>
+              </div>`;
+          }).join('');
+
+          const _buildUnavailHtml = (lastSeenMap) =>
+            Object.entries(unavailByDomain).sort().map(([domain, items]) => {
+              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              return this._collGroup(`${domainLabel} (${items.length})`, _unavailRows(items, lastSeenMap));
+            }).join('');
+
           if (unavailEntities.length === 0) {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reachable!</p>';
           } else {
-            groupedHtml = Object.entries(unavailByDomain).sort().map(([domain, items]) => {
-              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              const body = items.map(s => `
-                <div class="entity-list-item" style="padding:10px 12px">
-                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
-                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
-                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
-                  </div>
-                  <div style="font-size:0.88em;margin-top:4px;opacity:0.8">
-                    Unavailable since: <strong style="color:#f44336">${this._fmtAgo(s.last_changed, 'Unknown')}</strong>
-                  </div>
-                </div>
-              `).join('');
-              return this._collGroup(`${domainLabel} (${items.length})`, body);
-            }).join('');
+            // Render immediately; patch in last-seen after history arrives
+            groupedHtml = _buildUnavailHtml({});
+            setTimeout(async () => {
+              try {
+                const hist = await this._hass.callWS({
+                  type: 'history/history_during_period',
+                  start_time: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+                  end_time: new Date().toISOString(),
+                  entity_ids: unavailEntities.map(s => s.entity_id),
+                  minimal_response: true,
+                  no_attributes: true,
+                });
+                const lastSeenMap = {};
+                for (const [eid, records] of Object.entries(hist || {})) {
+                  for (let i = records.length - 1; i >= 0; i--) {
+                    const r = records[i];
+                    const st = r.state ?? r.s;
+                    if (st && st !== 'unavailable' && st !== 'unknown') {
+                      lastSeenMap[eid] = r.last_changed ?? r.lu;
+                      break;
+                    }
+                  }
+                }
+                if (overlay?.isConnected) {
+                  const contentEl = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+                  if (contentEl) {
+                    contentEl.innerHTML = `<div class="entity-list-body">${_buildUnavailHtml(lastSeenMap)}</div>`;
+                    contentEl.querySelectorAll('.em-collapsible').forEach(h => {
+                      h.addEventListener('click', () => {
+                        const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
+                        const collapsed = b.style.display === 'none';
+                        b.style.display = collapsed ? '' : 'none';
+                        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+                      });
+                    });
+                  }
+                }
+              } catch (_) { /* history unavailable — silent */ }
+            }, 0);
           }
           entities = unavailEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
 
@@ -7932,10 +7987,20 @@ class EntityManagerPanel extends HTMLElement {
           color = '#ff9800';
           allowToggle = false;
 
-          const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          // Load dismissed map — entity_id → timestamp; dismiss hides for 30 days
+          const dismissedRaw = this._loadFromStorage('em-stale-dismissed', {});
+          const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          // Prune expired dismissals
+          const dismissed = Object.fromEntries(
+            Object.entries(dismissedRaw).filter(([, ts]) => now - ts < thirtyDaysMs)
+          );
+
+          const thirtyDaysAgo = now - thirtyDaysMs;
           const staleEntities = states.filter(s => {
             if (s.state === 'unavailable' || s.state === 'unknown') return false;
             if (!s.last_updated) return false;
+            if (dismissed[s.entity_id]) return false;
             return new Date(s.last_updated).getTime() < thirtyDaysAgo;
           });
 
@@ -7946,27 +8011,95 @@ class EntityManagerPanel extends HTMLElement {
             staleByDomain[d].push(s);
           });
 
+          // Build a single entity row with Keep / Disable / Remove actions
+          const _staleRow = (s) => `
+            <div class="entity-list-item em-stale-row" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:10px 12px">
+              <div class="entity-list-row" style="flex-wrap:wrap;align-items:center;gap:6px">
+                <span class="entity-list-name" style="font-weight:600;flex:1">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+              </div>
+              <div style="font-size:0.88em;margin-top:4px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+                <span style="opacity:0.8">State: <strong>${this._escapeHtml(String(s.state))}</strong></span>
+                <span style="opacity:0.8">Last updated: <strong style="color:#ff9800">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
+                <span style="margin-left:auto;display:flex;gap:6px">
+                  <button class="btn em-stale-keep" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:transparent;border:1px solid var(--divider-color);color:var(--primary-text-color)" title="Hide from stale list for 30 days">Keep</button>
+                  <button class="btn em-stale-disable" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:#ff9800;color:#fff;border:none" title="Disable this entity">Disable</button>
+                  <button class="btn em-stale-remove" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:#f44336;color:#fff;border:none" title="Remove from registry">Remove</button>
+                </span>
+              </div>
+            </div>`;
+
           if (staleEntities.length === 0) {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reporting regularly.</p>';
           } else {
             groupedHtml = Object.entries(staleByDomain).sort().map(([domain, items]) => {
               const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              const body = items.map(s => `
-                <div class="entity-list-item" style="padding:10px 12px">
-                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
-                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
-                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
-                  </div>
-                  <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px">
-                    <span>State: <strong>${this._escapeHtml(String(s.state))}</strong></span>
-                    <span>Last updated: <strong style="color:#ff9800">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
-                  </div>
-                </div>
-              `).join('');
-              return this._collGroup(`${domainLabel} (${items.length})`, body);
+              return this._collGroup(`${domainLabel} (${items.length})`, items.map(_staleRow).join(''));
             }).join('');
           }
           entities = staleEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
+
+          // Attach stale action handlers after dialog renders
+          setTimeout(() => {
+            if (!overlay?.isConnected) return;
+            // Helper: remove a row from dialog and decrement domain count badge
+            const _removeStaleRow = (entityId) => {
+              const row = overlay.querySelector(`.em-stale-row[data-entity-id="${CSS.escape(entityId)}"]`);
+              if (!row) return;
+              const groupBody = row.closest('.em-group-body');
+              row.remove();
+              if (groupBody && !groupBody.querySelector('.em-stale-row')) {
+                groupBody.closest('.em-collapsible')?.nextElementSibling?.remove();
+                groupBody.closest('.em-collapsible')?.remove();
+              }
+            };
+
+            overlay.addEventListener('click', async (e) => {
+              const keepBtn = e.target.closest('.em-stale-keep');
+              const disableBtn = e.target.closest('.em-stale-disable');
+              const removeBtn = e.target.closest('.em-stale-remove');
+              if (!keepBtn && !disableBtn && !removeBtn) return;
+
+              const entityId = (keepBtn || disableBtn || removeBtn).dataset.entityId;
+
+              if (keepBtn) {
+                dismissed[entityId] = Date.now();
+                this._saveToStorage('em-stale-dismissed', dismissed);
+                _removeStaleRow(entityId);
+                this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
+                this._showToast(`${entityId} hidden for 30 days`, 'info');
+
+              } else if (disableBtn) {
+                disableBtn.disabled = true;
+                disableBtn.textContent = '…';
+                try {
+                  await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
+                  _removeStaleRow(entityId);
+                  this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
+                  this._showToast(`${entityId} disabled`, 'success');
+                } catch (err) {
+                  disableBtn.disabled = false;
+                  disableBtn.textContent = 'Disable';
+                  this._showToast('Disable failed: ' + (err.message || err), 'error');
+                }
+
+              } else if (removeBtn) {
+                if (!confirm(`Remove ${entityId} from the entity registry?\n\nThis cannot be undone.`)) return;
+                removeBtn.disabled = true;
+                removeBtn.textContent = '…';
+                try {
+                  const res = await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: entityId });
+                  _removeStaleRow(entityId);
+                  this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
+                  this._showToast(`${entityId} removed${res.warning ? ' — ' + res.warning : ''}`, res.warning ? 'warning' : 'success');
+                } catch (err) {
+                  removeBtn.disabled = false;
+                  removeBtn.textContent = 'Remove';
+                  this._showToast('Remove failed: ' + (err.message || err), 'error');
+                }
+              }
+            });
+          }, 0);
 
         } else if (type === 'hacs') {
           title = 'HACS Store';
