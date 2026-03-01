@@ -1569,6 +1569,7 @@ class EntityManagerPanel extends HTMLElement {
         <div class="em-context-item" data-action="bulk-disable"><span class="icon">✕</span> Disable All Selected</div>
         <div class="em-context-divider"></div>
         <div class="em-context-item" data-action="bulk-labels"><span class="icon">🔖</span> Add Labels to Selected</div>
+        <div class="em-context-item" data-action="bulk-remove-labels"><span class="icon">🏷️</span> Remove Labels from Selected</div>
         <div class="em-context-item" data-action="bulk-favorite"><span class="icon">★</span> Add All to Favorites</div>
         <div class="em-context-item" data-action="bulk-compare"><span class="icon">⇔</span> Compare Selected</div>
         <div class="em-context-divider"></div>
@@ -1624,7 +1625,8 @@ class EntityManagerPanel extends HTMLElement {
       case 'bulk-rename':   this._openBulkRenameDialog(); break;
       case 'bulk-enable':   await this._bulkEnableSelected(); break;
       case 'bulk-disable':  await this._disableSelectedEntities(); break;
-      case 'bulk-labels':   this._showBulkLabelEditor(); break;
+      case 'bulk-labels':          this._showBulkLabelEditor(); break;
+      case 'bulk-remove-labels':   this._showBulkLabelRemover(); break;
       case 'bulk-favorite':
         for (const id of this.selectedEntities) {
           if (!this.favorites.has(id)) this._toggleFavorite(id);
@@ -3255,6 +3257,74 @@ class EntityManagerPanel extends HTMLElement {
     this._saveEntityAliases();
   }
   
+  async _showBulkLabelRemover() {
+    if (!this.selectedEntities?.size) return;
+    const entityIds = [...this.selectedEntities];
+
+    // Collect all label IDs present on any selected entity
+    const labelPresence = new Map(); // labelId → Set of entityIds that have it
+    for (const eid of entityIds) {
+      try {
+        const current = await this._getEntityLabels(eid);
+        for (const lid of current) {
+          if (!labelPresence.has(lid)) labelPresence.set(lid, new Set());
+          labelPresence.get(lid).add(eid);
+        }
+      } catch (_) { /* skip */ }
+    }
+
+    const allLabels = await this._loadHALabels();
+    const presentLabels = allLabels.filter(l => labelPresence.has(l.label_id));
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Remove Labels from Selected',
+      color: '#f44336',
+      contentHtml: `
+        <div class="bulk-label-editor">
+          <p style="color:var(--em-text-secondary);margin-bottom:8px">Remove labels from ${entityIds.length} selected ${entityIds.length === 1 ? 'entity' : 'entities'}</p>
+          ${presentLabels.length === 0
+            ? '<p style="color:var(--em-text-secondary);padding:16px 0">No labels found on selected entities.</p>'
+            : `<div style="max-height:220px;overflow-y:auto">
+                ${presentLabels.map(l => `
+                  <label class="label-checkbox" style="display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer;border-radius:4px;margin:4px 0">
+                    <input type="checkbox" data-label-id="${this._escapeAttr(l.label_id)}">
+                    <span style="width:16px;height:16px;border-radius:50%;background:${this._labelColorCss(l.color)};display:inline-block;flex-shrink:0"></span>
+                    <span>${this._escapeHtml(l.name)}</span>
+                    <span style="font-size:10px;opacity:0.5;margin-left:auto">${labelPresence.get(l.label_id).size} entit${labelPresence.get(l.label_id).size !== 1 ? 'ies' : 'y'}</span>
+                  </label>`).join('')}
+              </div>`
+          }
+        </div>`,
+      actionsHtml: `
+        <button class="btn btn-secondary confirm-no">Cancel</button>
+        <button class="btn" style="background:#f44336;color:#fff;border:none" id="apply-remove-labels-btn"${presentLabels.length === 0 ? ' disabled' : ''}>Remove Labels</button>`,
+    });
+
+    overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+    overlay.querySelector('#apply-remove-labels-btn')?.addEventListener('click', async () => {
+      const toRemove = new Set(
+        Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.dataset.labelId)
+      );
+      if (!toRemove.size) { this._showToast('Select at least one label', 'warning'); return; }
+
+      closeDialog();
+      this._showToast(`Removing labels from ${entityIds.length} entities…`, 'info', 0);
+      let ok = 0;
+      for (const eid of entityIds) {
+        try {
+          const current = await this._getEntityLabels(eid);
+          const updated = current.filter(lid => !toRemove.has(lid));
+          if (updated.length !== current.length) {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, labels: updated });
+            ok++;
+          }
+        } catch (_) { /* skip */ }
+      }
+      document.querySelector('.em-toast')?.remove();
+      this._showToast(`Labels removed from ${ok} entit${ok !== 1 ? 'ies' : 'y'}`, 'success');
+    });
+  }
+
   _showAliasEditor(entityId) {
     const currentAlias = this.entityAliases[entityId] || '';
     
