@@ -5862,11 +5862,16 @@ class EntityManagerPanel extends HTMLElement {
     const enabledCount = device.entities.filter(e => !e.is_disabled).length;
     const disabledCount = device.entities.filter(e => e.is_disabled).length;
 
+    const deviceEntityIds = device.entities.map(e => this._escapeAttr(e.entity_id)).join(',');
     return `
       <div class="device-item">
         <div class="device-header" data-device="${this._escapeAttr(deviceId)}">
           <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
+          <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">
+            <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device" style="padding:2px 8px;font-size:11px;background:#4caf50;color:#fff;border:none;border-radius:4px">Enable All</button>
+            <button class="btn btn-sm device-disable-all" data-device="${this._escapeAttr(deviceId)}" title="Disable all entities in this device" style="padding:2px 8px;font-size:11px;background:#f44336;color:#fff;border:none;border-radius:4px">Disable All</button>
+          </div>
         </div>
         ${isExpanded ? `
           <div class="entity-list">
@@ -5934,7 +5939,8 @@ class EntityManagerPanel extends HTMLElement {
 
     // Device headers
     this.content.querySelectorAll('.device-header').forEach(header => {
-      header.addEventListener('click', () => {
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.device-bulk-actions')) return;
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
           this.expandedDevices.delete(deviceId);
@@ -5942,6 +5948,36 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedDevices.add(deviceId);
         }
         this.updateView();
+      });
+    });
+
+    // Device-level bulk enable / disable
+    this.content.querySelectorAll('.device-enable-all, .device-disable-all').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const isEnable = btn.classList.contains('device-enable-all');
+        const deviceId = btn.dataset.device;
+        // Collect entity IDs from this.data for the device
+        let entityIds = [];
+        for (const intg of (this.data || [])) {
+          const dev = intg.devices[deviceId];
+          if (dev) { entityIds = dev.entities.map(en => en.entity_id); break; }
+        }
+        if (!entityIds.length) return;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+          const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+          const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
+          const n = res.success?.length ?? entityIds.length;
+          this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+          this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
+          await this.loadData();
+        } catch (err) {
+          this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ` + (err.message || err), 'error');
+          btn.disabled = false;
+          btn.textContent = isEnable ? 'Enable All' : 'Disable All';
+        }
       });
     });
 
