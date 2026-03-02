@@ -5897,7 +5897,20 @@ class EntityManagerPanel extends HTMLElement {
           </div>
           ${isExpanded ? `
             <div class="smart-group-content">
-              ${entities.map(entity => this._renderEntityItem(entity, entity.integration)).join('')}
+              ${isUnassigned ? (() => {
+                // Sub-group unassigned entities by integration (collapsible)
+                const byIntg = {};
+                for (const entity of entities) {
+                  const intg = entity.integration || 'unknown';
+                  if (!byIntg[intg]) byIntg[intg] = [];
+                  byIntg[intg].push(entity);
+                }
+                return Object.entries(byIntg).sort(([a],[b]) => a.localeCompare(b)).map(([intg, ents]) => {
+                  const label = `${this._escapeHtml(intg.charAt(0).toUpperCase() + intg.slice(1))} <span style="opacity:0.6;font-size:11px">(${ents.length})</span>`;
+                  const body = ents.map(e => this._renderEntityItem(e, e.integration)).join('');
+                  return this._collGroup(label, body);
+                }).join('');
+              })() : entities.map(entity => this._renderEntityItem(entity, entity.integration)).join('')}
             </div>
           ` : ''}
         </div>
@@ -6117,6 +6130,17 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   attachIntegrationListeners() {
+    // Collapsible sub-groups inside smart group content (e.g. Unassigned grouped by integration)
+    this.content.querySelectorAll('.smart-group-content .em-collapsible').forEach(header => {
+      header.addEventListener('click', () => {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.em-collapse-arrow');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+
     // Smart group headers
     this.content.querySelectorAll('.smart-group-header').forEach(header => {
       header.addEventListener('click', (e) => {
