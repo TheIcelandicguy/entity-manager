@@ -4681,38 +4681,38 @@ class EntityManagerPanel extends HTMLElement {
         this.hacsItems = null;
         this.hacsCount = 0;
       }
-      // Count Lovelace dashboard cards (recursive, cache configs for dialog reuse)
-      const _llCountCards = (cards) => {
-        let n = 0;
+      // Collect unique card types across dashboards (recursive, cache configs for dialog reuse)
+      const _llCollectTypes = (cards, types) => {
         for (const c of (cards || [])) {
           if (!c || typeof c !== 'object') continue;
-          n++;
-          if (c.cards) n += _llCountCards(c.cards);
-          if (c.card) n += _llCountCards([c.card]);
-          if (c.elements) n += _llCountCards(c.elements);
+          if (c.type) types.add(c.type);
+          if (c.cards) _llCollectTypes(c.cards, types);
+          if (c.card) _llCollectTypes([c.card], types);
+          if (c.elements) _llCollectTypes(c.elements, types);
         }
-        return n;
       };
       try {
         const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
         this.lovelaceDashboardList = dashboards || [];
-        let cardCount = 0;
+        const types = new Set();
         for (const dashboard of this.lovelaceDashboardList) {
           try {
             const config = await this._hass.callWS({ type: 'lovelace/config', url_path: dashboard.url_path || null });
             dashboard._config = config;
             (config?.views || []).forEach(view => {
-              cardCount += _llCountCards(view.cards || []);
-              (view.sections || []).forEach(s => { if (s) cardCount += _llCountCards(s.cards || []); });
+              _llCollectTypes(view.cards || [], types);
+              (view.sections || []).forEach(s => { if (s) _llCollectTypes(s.cards || [], types); });
             });
           } catch (e) { /* skip */ }
         }
-        this.lovelaceCardCount = cardCount;
+        this.lovelaceCardCount = types.size;
       } catch (e) {
         this.lovelaceDashboardList = [];
         try {
           const config = await this._hass.callWS({ type: 'lovelace/config' });
-          this.lovelaceCardCount = _llCountCards(config?.views?.flatMap(v => v.cards || []) || []);
+          const types = new Set();
+          _llCollectTypes(config?.views?.flatMap(v => v.cards || []) || [], types);
+          this.lovelaceCardCount = types.size;
         } catch (e2) {
           this.lovelaceCardCount = 0;
         }
@@ -5690,7 +5690,7 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
-        <div class="stat-label">Lovelace Cards</div>
+        <div class="stat-label">Card Types</div>
         <div class="stat-value" style="color: #9c27b0 !important;">${this.lovelaceCardCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="activity" title="Click to view entity activity log">
