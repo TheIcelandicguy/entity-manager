@@ -7359,6 +7359,45 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   async _showAreaPickerDialog(title, onSelect) {
+    const buildContent = (floors, areas) => {
+      // Group areas by floor
+      const byFloor = {};
+      const noFloor = [];
+      for (const area of areas) {
+        if (area.floor_id) {
+          if (!byFloor[area.floor_id]) {
+            const f = floors.find(f => f.floor_id === area.floor_id);
+            byFloor[area.floor_id] = { name: f?.name || area.floor_id, areas: [] };
+          }
+          byFloor[area.floor_id].areas.push(area);
+        } else {
+          noFloor.push(area);
+        }
+      }
+
+      const areaRows = (areaList) => areaList.map(a => `
+        <div class="em-area-option" data-area-id="${this._escapeAttr(a.area_id)}">
+          <span class="em-area-dot">●</span>${this._escapeHtml(a.name)}
+        </div>`).join('');
+
+      const floorGroupsHtml = Object.values(byFloor).map(f =>
+        this._collGroup(`🏢 ${this._escapeHtml(f.name)}`, areaRows(f.areas))
+      ).join('');
+
+      const noFloorHtml = noFloor.length
+        ? this._collGroup('📂 No Floor', areaRows(noFloor))
+        : '';
+
+      return `
+        <div class="em-area-picker">
+          <div class="em-area-option em-area-clear" data-area-id="">
+            <span class="em-area-dot" style="opacity:0.4">○</span>— No Area —
+          </div>
+          ${floorGroupsHtml}${noFloorHtml}
+          ${!areas.length ? `<div style="padding:12px;color:var(--secondary-text-color);font-style:italic">No areas defined yet.</div>` : ''}
+        </div>`;
+    };
+
     // Ensure floor/area data is loaded
     if (!this.floorsData) {
       try {
@@ -7367,73 +7406,59 @@ class EntityManagerPanel extends HTMLElement {
         this.floorsData = { floors: [], areas: [] };
       }
     }
-    const floors = this.floorsData?.floors || [];
-    const areas  = this.floorsData?.areas  || [];
-
-    // Group areas by floor
-    const byFloor = {}; // floor_id → { name, areas[] }
-    const noFloor = [];
-    for (const area of areas) {
-      if (area.floor_id) {
-        if (!byFloor[area.floor_id]) {
-          const f = floors.find(f => f.floor_id === area.floor_id);
-          byFloor[area.floor_id] = { name: f?.name || area.floor_id, areas: [] };
-        }
-        byFloor[area.floor_id].areas.push(area);
-      } else {
-        noFloor.push(area);
-      }
-    }
-
-    const areaRows = (areaList) => areaList.map(a => `
-      <div class="em-area-option" data-area-id="${this._escapeAttr(a.area_id)}">
-        <span class="em-area-dot">●</span>${this._escapeHtml(a.name)}
-      </div>`).join('');
-
-    const floorGroupsHtml = Object.values(byFloor).map(f =>
-      this._collGroup(`🏢 ${this._escapeHtml(f.name)}`, areaRows(f.areas))
-    ).join('');
-
-    const noFloorHtml = noFloor.length
-      ? this._collGroup('No Floor', areaRows(noFloor))
-      : '';
-
-    const contentHtml = `
-      <div class="em-area-picker">
-        <div class="em-area-option em-area-clear" data-area-id="">
-          <span class="em-area-dot" style="opacity:0.4">○</span>— No Area —
-        </div>
-        ${floorGroupsHtml}${noFloorHtml}
-      </div>`;
 
     const { overlay, closeDialog } = this.createDialog({
       title,
-      contentHtml,
-      actionsHtml: `<button class="btn btn-secondary em-area-cancel-btn">Cancel</button>`,
+      contentHtml: buildContent(this.floorsData.floors || [], this.floorsData.areas || []),
+      actionsHtml: `
+        <button class="btn btn-secondary em-area-create-btn">＋ New area</button>
+        <button class="btn btn-secondary em-area-cancel-btn">Cancel</button>`,
     });
 
-    // Open all collapsible groups by default
-    overlay.querySelectorAll('.coll-group').forEach(g => {
-      g.classList.add('open');
-      const arrow = g.querySelector('.coll-arrow');
-      if (arrow) arrow.style.transform = 'rotate(180deg)';
-    });
-
-    // Wire collGroup toggles
-    overlay.querySelectorAll('.coll-group-header').forEach(h => {
-      h.addEventListener('click', () => {
-        const g = h.closest('.coll-group');
-        g.classList.toggle('open');
-        const arrow = h.querySelector('.coll-arrow');
-        if (arrow) arrow.style.transform = g.classList.contains('open') ? 'rotate(180deg)' : '';
+    const wireUp = () => {
+      // Open all collapsible groups by default
+      overlay.querySelectorAll('.em-collapsible').forEach(header => {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.em-collapse-arrow');
+        body.style.display = '';
+        if (arrow) arrow.style.transform = '';
+        // Re-attach toggle (remove old listener by cloning)
+        const fresh = header.cloneNode(true);
+        header.replaceWith(fresh);
+        fresh.addEventListener('click', () => {
+          const b = fresh.nextElementSibling;
+          const a = fresh.querySelector('.em-collapse-arrow');
+          const collapsed = b.style.display === 'none';
+          b.style.display = collapsed ? '' : 'none';
+          if (a) a.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
       });
-    });
 
-    // Area selection
-    overlay.querySelectorAll('.em-area-option').forEach(opt => {
-      opt.addEventListener('click', () => {
-        closeDialog();
-        onSelect(opt.dataset.areaId || null);
+      // Area selection
+      overlay.querySelectorAll('.em-area-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+          closeDialog();
+          onSelect(opt.dataset.areaId || null);
+        });
+      });
+    };
+
+    wireUp();
+
+    // Create new area
+    overlay.querySelector('.em-area-create-btn').addEventListener('click', () => {
+      this._showPromptDialog('Create new area', 'Enter area name:', '', async (name) => {
+        if (!name.trim()) return;
+        try {
+          const newArea = await this._hass.callWS({ type: 'config/area_registry/create', name: name.trim() });
+          // Rebuild floorsData with the new area included
+          this.floorsData = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
+          // Auto-select the newly created area
+          closeDialog();
+          onSelect(newArea.area_id);
+        } catch (e) {
+          this._showToast('Failed to create area: ' + (e.message || e), 'error');
+        }
       });
     });
 
