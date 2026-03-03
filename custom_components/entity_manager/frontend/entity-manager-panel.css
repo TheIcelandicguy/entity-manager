@@ -3951,10 +3951,11 @@ body.em-dialog-open {
 
 /* Device selection indicator */
 .device-sel-indicator {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 700;
-  margin-left: 6px;
+  margin-left: 8px;
   flex-shrink: 0;
+  line-height: 1;
 }
 .device-sel-all { color: #4caf50; }
 .device-sel-partial { color: #ff9800; }
