@@ -16,7 +16,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
-from .const import DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
+from .const import MAX_BULK_ENTITIES, VALID_ENTITY_ID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,9 +59,7 @@ def disable_entity(hass: HomeAssistant, entity_id: str) -> None:
     entity_reg = er.async_get(hass)
     if not entity_reg.async_get(entity_id):
         raise ValueError(f"Entity {entity_id} not found")
-    entity_reg.async_update_entity(
-        entity_id, disabled_by=er.RegistryEntryDisabler.USER
-    )
+    entity_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
 
 
 @websocket_api.websocket_command(
@@ -239,7 +237,7 @@ async def handle_bulk_enable(
     """Handle bulk enable request."""
     entity_ids = msg["entity_ids"]
 
-    results = {"success": [], "failed": []}
+    results: dict[str, list] = {"success": [], "failed": []}
 
     for entity_id in entity_ids:
         try:
@@ -270,7 +268,7 @@ async def handle_bulk_disable(
     """Handle bulk disable request."""
     entity_ids = msg["entity_ids"]
 
-    results = {"success": [], "failed": []}
+    results: dict[str, list] = {"success": [], "failed": []}
 
     for entity_id in entity_ids:
         try:
@@ -381,7 +379,7 @@ async def handle_export_states(
                 }
             )
 
-        export_data.sort(key=lambda e: e["entity_id"])
+        export_data.sort(key=lambda e: str(e["entity_id"]))
         connection.send_result(msg["id"], export_data)
     except Exception as err:
         _LOGGER.error("Error exporting entity states: %s", err, exc_info=True)
@@ -485,7 +483,9 @@ async def handle_list_hacs_items(
             integrations = _list_dirs(custom_components, "integration")
             frontend = _list_dirs(community, "frontend")
             installed = integrations + frontend
-            new_downloads = [item for item in installed if item.get("mtime", 0) >= new_cutoff_ts]
+            new_downloads = [
+                item for item in installed if item.get("mtime", 0) >= new_cutoff_ts
+            ]
             store = _load_hacs_storage(base_path)
             # Build a set of installed names for the frontend to cross-reference
             installed_names = {item["name"].lower() for item in installed}
@@ -597,7 +597,9 @@ async def handle_get_automations(
         results: list[dict[str, Any]] = []
         for state in hass.states.async_all("automation"):
             attrs = dict(state.attributes)
-            triggered_by, triggered_by_name = await _resolve_trigger_context(hass, state)
+            triggered_by, triggered_by_name = await _resolve_trigger_context(
+                hass, state
+            )
             results.append(
                 {
                     "entity_id": state.entity_id,
@@ -646,7 +648,9 @@ async def handle_get_template_sensors(
             connected = attrs.get("entity_id", [])
             if isinstance(connected, str):
                 connected = [connected]
-            triggered_by, triggered_by_name = await _resolve_trigger_context(hass, state)
+            triggered_by, triggered_by_name = await _resolve_trigger_context(
+                hass, state
+            )
             results.append(
                 {
                     "entity_id": entity_id,
@@ -678,7 +682,9 @@ async def handle_get_template_sensors(
                 connected = attrs.get("entity_id", [])
                 if isinstance(connected, str):
                     connected = [connected]
-                triggered_by, triggered_by_name = await _resolve_trigger_context(hass, state)
+                triggered_by, triggered_by_name = await _resolve_trigger_context(
+                    hass, state
+                )
                 results.append(
                     {
                         "entity_id": state.entity_id,
@@ -831,7 +837,9 @@ async def handle_get_entity_details(
             "config_entry_id": entry.config_entry_id,
             "device_id": entry.device_id,
             "area_id": entry.area_id,
-            "entity_category": str(entry.entity_category.value) if entry.entity_category else None,
+            "entity_category": str(entry.entity_category.value)
+            if entry.entity_category
+            else None,
             "device_class": entry.device_class,
             "original_device_class": entry.original_device_class,
             "icon": entry.icon,
@@ -902,7 +910,9 @@ async def handle_get_entity_details(
         for label_id in labels:
             label = label_reg.async_get_label(label_id)
             if label:
-                resolved.append({"id": label.label_id, "name": label.name, "color": label.color})
+                resolved.append(
+                    {"id": label.label_id, "name": label.name, "color": label.color}
+                )
         result["labels"] = resolved
 
     dev_label_ids: list[str] = list(dev.labels) if dev and dev.labels else []
@@ -910,7 +920,9 @@ async def handle_get_entity_details(
     for label_id in dev_label_ids:
         label = label_reg.async_get_label(label_id)
         if label:
-            resolved_dev.append({"id": label.label_id, "name": label.name, "color": label.color})
+            resolved_dev.append(
+                {"id": label.label_id, "name": label.name, "color": label.color}
+            )
     result["device_labels"] = resolved_dev
 
     connection.send_result(msg["id"], result)
@@ -984,7 +996,9 @@ async def handle_get_areas_and_floors(
 
             floor_reg = fr.async_get(hass)
             for floor in floor_reg.async_list_floors():
-                floor_area_ids = [a["area_id"] for a in areas if a["floor_id"] == floor.floor_id]
+                floor_area_ids = [
+                    a["area_id"] for a in areas if a["floor_id"] == floor.floor_id
+                ]
                 floors.append(
                     {
                         "floor_id": floor.floor_id,

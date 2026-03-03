@@ -28,7 +28,7 @@ class EnableEntityIntentHandler(intent.IntentHandler):
             response.async_set_speech("Only administrators can enable entities")
             return response
 
-        user_obj = await self.hass.auth.async_get_user(user)
+        user_obj = await self.hass.auth.async_get_user(user)  # type: ignore[attr-defined]
         if not user_obj or not user_obj.is_admin:
             response = intent_obj.create_response()
             response.async_set_speech("Only administrators can enable entities")
@@ -46,7 +46,7 @@ class EnableEntityIntentHandler(intent.IntentHandler):
             response.async_set_speech(f"Invalid entity ID: {entity_id}")
             return response
 
-        entity_reg = er.async_get(self.hass)
+        entity_reg = er.async_get(self.hass)  # type: ignore[attr-defined]
 
         try:
             entity_reg.async_update_entity(entity_id, disabled_by=None)
@@ -74,7 +74,7 @@ class DisableEntityIntentHandler(intent.IntentHandler):
             response.async_set_speech("Only administrators can disable entities")
             return response
 
-        user_obj = await self.hass.auth.async_get_user(user)
+        user_obj = await self.hass.auth.async_get_user(user)  # type: ignore[attr-defined]
         if not user_obj or not user_obj.is_admin:
             response = intent_obj.create_response()
             response.async_set_speech("Only administrators can disable entities")
@@ -92,7 +92,7 @@ class DisableEntityIntentHandler(intent.IntentHandler):
             response.async_set_speech(f"Invalid entity ID: {entity_id}")
             return response
 
-        entity_reg = er.async_get(self.hass)
+        entity_reg = er.async_get(self.hass)  # type: ignore[attr-defined]
 
         try:
             entity_reg.async_update_entity(
