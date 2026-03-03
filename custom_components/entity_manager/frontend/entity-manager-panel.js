@@ -217,6 +217,7 @@ class EntityManagerPanel extends HTMLElement {
     this.labeledEntitiesCache = null; // Cache for entities with labels
     this.showAllSidebarLabels = false;
     this.expandedSidebarLabels = new Set(); // label_ids whose breakdown is expanded in sidebar
+    this.labelViewMode = localStorage.getItem('em-label-view-mode') || 'entity'; // 'entity' | 'device'
     
     // Listen for theme changes
     this._themeObserver = new MutationObserver(() => {
@@ -2673,14 +2674,20 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   _renderLabelsList(labelsList, labeledEntities) {
-    const labels = Object.values(labeledEntities).sort((a, b) => {
-      const aTotal = (a.entities?.length || 0) + (a.devices?.length || 0);
-      const bTotal = (b.entities?.length || 0) + (b.devices?.length || 0);
-      return bTotal - aTotal;
-    });
+    const byDevice = this.labelViewMode === 'device';
+
+    // Sort by count relevant to current mode; skip labels with 0 in current mode
+    const labels = Object.values(labeledEntities)
+      .filter(l => byDevice ? (l.devices?.length || 0) > 0 : (l.entities?.length || 0) > 0)
+      .sort((a, b) => {
+        const aCount = byDevice ? (a.devices?.length || 0) : (a.entities?.length || 0);
+        const bCount = byDevice ? (b.devices?.length || 0) : (b.entities?.length || 0);
+        return bCount - aCount;
+      });
 
     if (labels.length === 0) {
-      labelsList.innerHTML = '<div class="sidebar-item" style="opacity: 0.7;"><span class="icon">📝</span><span class="label">No labeled entities</span></div>';
+      const noun = byDevice ? 'devices' : 'entities';
+      labelsList.innerHTML = `<div class="sidebar-item" style="opacity: 0.7;"><span class="icon">📝</span><span class="label">No labeled ${noun}</span></div>`;
       return;
     }
 
@@ -2689,30 +2696,28 @@ class EntityManagerPanel extends HTMLElement {
     let html = displayLabels.map(label => {
       const isExpanded = this.expandedSidebarLabels.has(label.label_id);
       const isActive = this.selectedLabelFilter === label.label_id;
-      const deviceCount = label.devices?.length || 0;
-      const entityCount = label.entities?.length || 0;
+      const items = byDevice ? (label.devices || []) : (label.entities || []);
+      const count = items.length;
 
-      // Breakdown sub-panel (shown when expanded)
+      const countBadge = `<span class="count">${count}</span>`;
+
+      // Expandable sub-list
       const breakdownHtml = isExpanded ? `
         <div class="sidebar-label-breakdown">
-          ${deviceCount > 0 ? `
-            <div class="sidebar-label-sub-header">🔌 Devices (${deviceCount})</div>
-            ${label.devices.map(d => `
-              <div class="sidebar-item sidebar-label-device-item" data-device-id="${this._escapeAttr(d.device_id)}" title="${this._escapeAttr(d.name)}">
-                <span class="icon" style="font-size:10px;width:14px">▸</span>
-                <span class="label">${this._escapeHtml(d.name)}</span>
-              </div>
-            `).join('')}
-          ` : ''}
-          ${entityCount > 0 ? `
-            <div class="sidebar-label-sub-header">📋 Entities (${entityCount})</div>
-            ${label.entities.map(eid => `
-              <div class="sidebar-item sidebar-label-entity-item" data-entity-id="${this._escapeAttr(eid)}" title="${this._escapeAttr(eid)}">
-                <span class="icon" style="font-size:10px;width:14px">▸</span>
-                <span class="label" style="font-size:11px">${this._escapeHtml(eid)}</span>
-              </div>
-            `).join('')}
-          ` : ''}
+          ${byDevice
+            ? label.devices.map(d => `
+                <div class="sidebar-item sidebar-label-device-item" data-device-id="${this._escapeAttr(d.device_id)}" title="${this._escapeAttr(d.name)}">
+                  <span class="icon" style="font-size:10px;width:14px">▸</span>
+                  <span class="label">${this._escapeHtml(d.name)}</span>
+                </div>
+              `).join('')
+            : label.entities.map(eid => `
+                <div class="sidebar-item sidebar-label-entity-item" data-entity-id="${this._escapeAttr(eid)}" title="${this._escapeAttr(eid)}">
+                  <span class="icon" style="font-size:10px;width:14px">▸</span>
+                  <span class="label" style="font-size:11px">${this._escapeHtml(eid)}</span>
+                </div>
+              `).join('')
+          }
         </div>
       ` : '';
 
@@ -2721,11 +2726,8 @@ class EntityManagerPanel extends HTMLElement {
           <div class="sidebar-item ${isActive ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
             <span class="icon" style="color: ${this._escapeAttr(this._labelColorCss(label.color))};">●</span>
             <span class="label">${this._escapeHtml(label.name)}</span>
-            <span class="sidebar-label-counts">
-              ${deviceCount > 0 ? `<span class="sidebar-label-count-badge" title="${deviceCount} device${deviceCount !== 1 ? 's' : ''}">🔌 ${deviceCount}</span>` : ''}
-              ${entityCount > 0 ? `<span class="sidebar-label-count-badge" title="${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'}">📋 ${entityCount}</span>` : ''}
-            </span>
-            <button class="sidebar-label-expand-btn${isExpanded ? ' expanded' : ''}" data-expand-label="${this._escapeAttr(label.label_id)}" title="${isExpanded ? 'Collapse' : 'Show devices & entities'}">▶</button>
+            ${countBadge}
+            <button class="sidebar-label-expand-btn${isExpanded ? ' expanded' : ''}" data-expand-label="${this._escapeAttr(label.label_id)}" title="${isExpanded ? 'Collapse' : 'Show list'}">▶</button>
             <button data-edit-label="${this._escapeAttr(label.label_id)}"
               style="background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:0 2px;font-size:13px;line-height:1;opacity:0.7;flex-shrink:0"
               title="Edit label">✎</button>
@@ -2738,16 +2740,14 @@ class EntityManagerPanel extends HTMLElement {
     if (!this.showAllSidebarLabels && labels.length > 8) {
       html += `<div class="sidebar-item more" data-action="show-all-labels">+${labels.length - 8} more...</div>`;
     }
-
     if (this.showAllSidebarLabels && labels.length > 8) {
       html += `<div class="sidebar-item" data-action="collapse-labels"><span class="icon">▲</span><span class="label">Show less</span></div>`;
     }
-
     html += `<div class="sidebar-item" data-action="load-labels" style="opacity: 0.7;"><span class="icon">🔄</span><span class="label">Refresh</span></div>`;
 
     labelsList.innerHTML = html;
 
-    // Wire expand buttons
+    // Expand toggle
     labelsList.querySelectorAll('.sidebar-label-expand-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
@@ -2761,7 +2761,7 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Wire device sub-items — expand integration + scroll to device
+    // Device sub-items — expand + scroll to device in main view
     labelsList.querySelectorAll('.sidebar-label-device-item').forEach(item => {
       item.addEventListener('click', e => {
         e.stopPropagation();
@@ -2784,7 +2784,7 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Wire entity sub-items — search for that entity
+    // Entity sub-items — filter entity view
     labelsList.querySelectorAll('.sidebar-label-entity-item').forEach(item => {
       item.addEventListener('click', e => {
         e.stopPropagation();
@@ -4183,6 +4183,14 @@ class EntityManagerPanel extends HTMLElement {
 
         <div class="sidebar-section ${this.sidebarOpenSections.has('labels') ? '' : 'section-collapsed'}" id="labels-section">
           <div class="sidebar-section-title" data-section-id="labels">Labels</div>
+          <div class="sidebar-item ${this.labelViewMode === 'device' ? 'active' : ''}" data-label-mode="device">
+            <span class="icon">🔌</span>
+            <span class="label">By Device</span>
+          </div>
+          <div class="sidebar-item ${this.labelViewMode === 'entity' ? 'active' : ''}" data-label-mode="entity">
+            <span class="icon">📋</span>
+            <span class="label">By Entity</span>
+          </div>
           ${this.selectedLabelFilter ? `
             <div class="sidebar-item active" data-action="clear-label-filter">
               <span class="icon">✕</span>
@@ -5503,6 +5511,12 @@ class EntityManagerPanel extends HTMLElement {
       this._showOnlyFavorites = false;
       this.updateView();
       this.updateDomainOptions();
+    } else if (item.dataset.labelMode) {
+      this.labelViewMode = item.dataset.labelMode;
+      localStorage.setItem('em-label-view-mode', this.labelViewMode);
+      this.expandedSidebarLabels.clear();
+      this._reRenderSidebar();
+      this._loadAndDisplayLabels();
     } else if (item.dataset.labelId) {
       this._filterByLabel(item.dataset.labelId);
     } else if (integration) {
