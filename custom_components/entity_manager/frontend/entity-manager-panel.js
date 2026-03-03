@@ -5504,6 +5504,7 @@ class EntityManagerPanel extends HTMLElement {
       });
       this.updateSelectedCount();
       this._reRenderSidebar();
+      this._updateDeviceSelectionIndicators();
       this._showToast(added ? `Selected ${added} entit${added !== 1 ? 'ies' : 'y'}` : 'All entities already selected', 'success');
     } else if (action === 'refresh') {
       if (this.viewState === 'updates') {
@@ -6153,6 +6154,26 @@ class EntityManagerPanel extends HTMLElement {
     `;
   }
 
+  _updateDeviceSelectionIndicators() {
+    this.content.querySelectorAll('.device-header').forEach(header => {
+      const deviceId = header.dataset.device;
+      let entities = [];
+      for (const intg of (this.data || [])) {
+        if (intg.devices[deviceId]) { entities = intg.devices[deviceId].entities; break; }
+      }
+      if (!entities.length) return;
+      const selectedCount = entities.filter(e => this.selectedEntities.has(e.entity_id)).length;
+      const totalCount = entities.length;
+      header.querySelector('.device-sel-indicator')?.remove();
+      if (selectedCount === 0) return;
+      const span = document.createElement('span');
+      span.className = `device-sel-indicator ${selectedCount === totalCount ? 'device-sel-all' : 'device-sel-partial'}`;
+      span.title = selectedCount === totalCount ? 'All entities selected' : `${selectedCount}/${totalCount} selected`;
+      span.textContent = selectedCount === totalCount ? '✓' : '–';
+      header.querySelector('.device-name').insertAdjacentElement('afterend', span);
+    });
+  }
+
   attachIntegrationListeners() {
     // Collapsible sub-groups inside smart group content (e.g. Unassigned grouped by integration)
     this.content.querySelectorAll('.smart-group-content .em-collapsible').forEach(header => {
@@ -6313,6 +6334,7 @@ class EntityManagerPanel extends HTMLElement {
         }
         checkbox.indeterminate = false;
         this.updateSelectedCount();
+        this._updateDeviceSelectionIndicators();
       });
     });
 
@@ -6326,6 +6348,7 @@ class EntityManagerPanel extends HTMLElement {
         }
         this.updateSelectedCount();
         this._updateIntegrationCheckboxState(checkbox.dataset.integration);
+        this._updateDeviceSelectionIndicators();
       });
     });
 
