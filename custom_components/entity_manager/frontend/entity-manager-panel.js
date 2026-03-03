@@ -4154,19 +4154,10 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">☐</span>
             <span class="label">Deselect All</span>
           </div>
-          ${(() => {
-            const openIntgs = [...this.expandedIntegrations].filter(k => !k.startsWith('smart_'));
-            const openCount = openIntgs.reduce((sum, intg) => {
-              const d = (this.data || []).find(i => i.integration === intg);
-              return sum + (d ? Object.values(d.devices).reduce((s, dev) => s + dev.entities.length, 0) : 0);
-            }, 0);
-            const disabled = openCount === 0;
-            return `<div class="sidebar-item" data-action="select-open-integration" style="${disabled ? 'opacity:0.4;pointer-events:none' : ''}">
-              <span class="icon">☑</span>
-              <span class="label">Select Open Integration</span>
-              ${openCount ? `<span class="count">${openCount}</span>` : ''}
-            </div>`;
-          })()}
+          <div class="sidebar-item" data-action="select-open-integration">
+            <span class="icon">☑</span>
+            <span class="label">Select Open Integration</span>
+          </div>
           <div class="sidebar-item" data-action="refresh">
             <span class="icon">↺</span>
             <span class="label">Refresh</span>
@@ -5491,6 +5482,10 @@ class EntityManagerPanel extends HTMLElement {
       this._showToast('Selection cleared', 'info');
     } else if (action === 'select-open-integration') {
       const openIntgs = [...this.expandedIntegrations].filter(k => !k.startsWith('smart_'));
+      if (!openIntgs.length) {
+        this._showToast('Expand an integration first', 'info');
+        return;
+      }
       let added = 0;
       for (const intg of openIntgs) {
         const intgData = (this.data || []).find(i => i.integration === intg);
@@ -5510,7 +5505,7 @@ class EntityManagerPanel extends HTMLElement {
       });
       this.updateSelectedCount();
       this._reRenderSidebar();
-      if (added) this._showToast(`Selected ${added} entit${added !== 1 ? 'ies' : 'y'}`, 'success');
+      this._showToast(added ? `Selected ${added} entit${added !== 1 ? 'ies' : 'y'}` : 'All entities already selected', 'success');
     } else if (action === 'refresh') {
       if (this.viewState === 'updates') {
         this.loadUpdates();
