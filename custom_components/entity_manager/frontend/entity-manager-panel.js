@@ -6128,7 +6128,7 @@ class EntityManagerPanel extends HTMLElement {
     const selectionIndicator = selectedCount === 0 ? '' :
       selectedCount === totalCount
         ? '<span class="device-sel-indicator device-sel-all" title="All entities selected">✓</span>'
-        : `<span class="device-sel-indicator device-sel-partial" title="${selectedCount}/${totalCount} selected">–</span>`;
+        : `<span class="device-sel-indicator device-sel-partial" title="${selectedCount}/${totalCount} selected">✓</span>`;
 
     return `
       <div class="device-item ${isExpanded ? 'device-expanded' : ''}">
@@ -6171,7 +6171,7 @@ class EntityManagerPanel extends HTMLElement {
       const span = document.createElement('span');
       span.className = `device-sel-indicator ${selectedCount === totalCount ? 'device-sel-all' : 'device-sel-partial'}`;
       span.title = selectedCount === totalCount ? 'All entities selected' : `${selectedCount}/${totalCount} selected`;
-      span.textContent = selectedCount === totalCount ? '✓' : '–';
+      span.textContent = '✓';
       header.querySelector('.device-name').insertAdjacentElement('afterend', span);
     });
   }
