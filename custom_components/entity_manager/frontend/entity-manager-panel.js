@@ -6015,9 +6015,13 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         ${isExpanded ? `
           <div class="integration-devices" data-integration="${intName}">
-            ${Object.entries(integration.devices).map(([deviceId, device]) =>
-              this.renderDevice(deviceId, device, integration.integration)
-            ).join('')}
+            ${Object.entries(integration.devices)
+              .sort(([idA], [idB]) =>
+                this.getDeviceName(idA).localeCompare(this.getDeviceName(idB), undefined, { sensitivity: 'base' })
+              )
+              .map(([deviceId, device]) =>
+                this.renderDevice(deviceId, device, integration.integration)
+              ).join('')}
           </div>
         ` : ''}
       </div>
@@ -6146,10 +6150,12 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         ${isExpanded ? `
           <div class="device-entity-list">
-            ${device.entities.map(entity => this._renderEntityItem(
-              { ...entity, deviceName: this.getDeviceName(deviceId) },
-              integration
-            )).join('')}
+            ${[...device.entities]
+              .sort((a, b) => (a.original_name || a.entity_id).localeCompare(b.original_name || b.entity_id, undefined, { sensitivity: 'base' }))
+              .map(entity => this._renderEntityItem(
+                { ...entity, deviceName: this.getDeviceName(deviceId) },
+                integration
+              )).join('')}
           </div>
         ` : ''}
       </div>
