@@ -107,7 +107,8 @@ const PREDEFINED_THEMES = {
       '--em-border': '#1f1f1f',
       '--em-border-light': '#121212'
     }
-  }
+  },
+  'Follow HA Theme': { haTheme: true }
 };
 
 // Load external CSS
@@ -455,12 +456,18 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   updateTheme() {
+    // Follow the active HA theme
+    if (this.activeTheme === 'Follow HA Theme') {
+      this._applyHATheme();
+      return;
+    }
+
     // If a predefined theme is active, apply it
     if (this.activeTheme !== 'default' && PREDEFINED_THEMES[this.activeTheme]) {
       this._applyCustomTheme(PREDEFINED_THEMES[this.activeTheme]);
       return;
     }
-    
+
     // If a custom theme is active, apply it instead of following HA
     if (this.activeTheme !== 'default' && this.customThemes[this.activeTheme]) {
       this._applyCustomTheme(this.customThemes[this.activeTheme]);
@@ -517,6 +524,52 @@ class EntityManagerPanel extends HTMLElement {
       '--em-bg-image', '--em-bg-overlay'
     ];
     customVars.forEach(v => this.style.removeProperty(v));
+    this.classList.remove('has-bg-image');
+  }
+
+  _applyHATheme() {
+    const s = getComputedStyle(document.documentElement);
+    const get = (v) => s.getPropertyValue(v).trim();
+
+    // Core HA theme variables
+    const primary   = get('--primary-color') || '#2196f3';
+    const bgCard    = get('--card-background-color') || get('--primary-background-color') || '';
+    const bgSecond  = get('--secondary-background-color') || '';
+    const textMain  = get('--primary-text-color') || '';
+    const textSec   = get('--secondary-text-color') || '';
+    const divider   = get('--divider-color') || '';
+    const success   = get('--success-color') || '#4caf50';
+    const error     = get('--error-color') || '#f44336';
+    const warning   = get('--warning-color') || '#ff9800';
+
+    const isDark = bgCard ? this._isColorDark(bgCard) : false;
+    this.setAttribute('data-theme', isDark ? 'dark' : 'light');
+
+    const hoverBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)';
+
+    const vars = {
+      '--em-primary':        primary,
+      '--em-primary-dark':   this._darkenColor(primary, 0.15),
+      '--em-primary-light':  this._lightenColor(primary, 0.2),
+      '--em-success':        success,
+      '--em-success-dark':   this._darkenColor(success, 0.15),
+      '--em-danger':         error,
+      '--em-danger-dark':    this._darkenColor(error, 0.15),
+      '--em-warning':        warning,
+      '--em-warning-dark':   this._darkenColor(warning, 0.15),
+      '--em-text-primary':   textMain  || (isDark ? '#e0e0e0' : '#212121'),
+      '--em-text-secondary': textSec   || (isDark ? '#9e9e9e' : '#757575'),
+      '--em-text-disabled':  isDark ? '#616161' : '#9e9e9e',
+      '--em-bg-primary':     bgCard    || (isDark ? '#1e1e1e' : '#ffffff'),
+      '--em-bg-secondary':   bgSecond  || (isDark ? '#121212' : '#f5f5f5'),
+      '--em-bg-hover':       hoverBg,
+      '--em-border':         divider   || (isDark ? '#333333' : '#e0e0e0'),
+      '--em-border-light':   divider   || (isDark ? '#2c2c2c' : '#eeeeee'),
+    };
+
+    Object.entries(vars).forEach(([k, v]) => { if (v) this.style.setProperty(k, v); });
+    this.style.removeProperty('--em-bg-image');
+    this.style.removeProperty('--em-bg-overlay');
     this.classList.remove('has-bg-image');
   }
   
