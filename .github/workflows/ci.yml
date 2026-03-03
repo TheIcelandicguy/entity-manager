@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm ci
+      - run: npm install --no-audit
       - run: npx eslint custom_components/entity_manager/frontend/
 
   python-lint-type-check:
