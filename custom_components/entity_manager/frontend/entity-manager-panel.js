@@ -6014,8 +6014,10 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
         ${isExpanded ? `
-          <div class="entity-list" data-integration="${intName}">
-            ${this._renderEntityListWithLazyLoad(allEntities, integration.integration)}
+          <div class="integration-devices" data-integration="${intName}">
+            ${Object.entries(integration.devices).map(([deviceId, device]) =>
+              this.renderDevice(deviceId, device, integration.integration)
+            ).join('')}
           </div>
         ` : ''}
       </div>
@@ -6111,56 +6113,34 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   renderDevice(deviceId, device, integration) {
-    const isExpanded = this.expandedDevices.has(deviceId);
+    // Default expanded — only collapsed if user explicitly closed it
+    const isExpanded = !this.expandedDevices.has(`collapsed_${deviceId}`);
 
     const enabledCount = device.entities.filter(e => !e.is_disabled).length;
     const disabledCount = device.entities.filter(e => e.is_disabled).length;
 
     const deviceEntityIds = device.entities.map(e => this._escapeAttr(e.entity_id)).join(',');
+    const areaId = this.deviceInfo[deviceId]?.area_id;
+    const areaName = areaId ? (this.floorsData?.areas?.find(a => a.area_id === areaId)?.name || areaId) : null;
+
     return `
-      <div class="device-item">
+      <div class="device-item ${isExpanded ? 'device-expanded' : ''}">
         <div class="device-header" data-device="${this._escapeAttr(deviceId)}">
+          <span class="device-expand-arrow" style="font-size:13px;opacity:0.6;transition:transform 0.2s;transform:${isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'}">›</span>
           <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">
             <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device" style="padding:2px 8px;font-size:11px;background:#4caf50;color:#fff;border:none;border-radius:4px">Enable All</button>
             <button class="btn btn-sm device-disable-all" data-device="${this._escapeAttr(deviceId)}" title="Disable all entities in this device" style="padding:2px 8px;font-size:11px;background:#f44336;color:#fff;border:none;border-radius:4px">Disable All</button>
           </div>
-          ${(() => {
-            const areaId = this.deviceInfo[deviceId]?.area_id;
-            const areaName = areaId ? (this.floorsData?.areas?.find(a => a.area_id === areaId)?.name || areaId) : null;
-            return `<button class="btn btn-sm device-assign-area-btn${areaName ? '' : ' no-area'}" data-device-id="${this._escapeAttr(deviceId)}" title="Assign device to area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>`;
-          })()}
+          <button class="btn btn-sm device-assign-area-btn${areaName ? '' : ' no-area'}" data-device-id="${this._escapeAttr(deviceId)}" title="Assign device to area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>
         </div>
         ${isExpanded ? `
-          <div class="entity-list">
-            ${device.entities.map(entity => {
-              const eid = this._escapeAttr(entity.entity_id);
-              const iid = this._escapeAttr(integration);
-              return `
-              <div class="entity-item" data-entity-id="${eid}">
-                <div class="entity-item-top">
-                  <div class="checkbox-group">
-                    <input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}"${this.selectedEntities.has(entity.entity_id) ? ' checked' : ''}>
-                  </div>
-                  <button class="favorite-btn ${this.favorites.has(entity.entity_id) ? 'is-favorite' : ''}" data-entity-id="${eid}" title="Toggle favorite">
-                    ${this.favorites.has(entity.entity_id) ? '★' : '☆'}
-                  </button>
-                  <div class="entity-info">
-                    ${entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
-                    <div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>
-                  </div>
-                  <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
-                </div>
-                <div class="entity-item-bottom">
-                  <div class="entity-actions">
-                    <button class="icon-btn rename-entity" data-entity-id="${eid}" title="Rename">✎</button>
-                    <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable">✓</button>
-                    <button class="icon-btn disable-entity" data-entity-id="${eid}" title="Disable">✕</button>
-                  </div>
-                </div>
-              </div>`;
-            }).join('')}
+          <div class="device-entity-list">
+            ${device.entities.map(entity => this._renderEntityItem(
+              { ...entity, deviceName: this.getDeviceName(deviceId) },
+              integration
+            )).join('')}
           </div>
         ` : ''}
       </div>
@@ -6236,10 +6216,10 @@ class EntityManagerPanel extends HTMLElement {
         if (e.target.closest('.device-bulk-actions')) return;
         if (e.target.closest('.device-assign-area-btn')) return;
         const deviceId = header.dataset.device;
-        if (this.expandedDevices.has(deviceId)) {
-          this.expandedDevices.delete(deviceId);
+        if (this.expandedDevices.has(`collapsed_${deviceId}`)) {
+          this.expandedDevices.delete(`collapsed_${deviceId}`);
         } else {
-          this.expandedDevices.add(deviceId);
+          this.expandedDevices.add(`collapsed_${deviceId}`);
         }
         this.updateView();
       });
