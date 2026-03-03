@@ -4154,6 +4154,19 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">☐</span>
             <span class="label">Deselect All</span>
           </div>
+          ${(() => {
+            const openIntgs = [...this.expandedIntegrations].filter(k => !k.startsWith('smart_'));
+            const openCount = openIntgs.reduce((sum, intg) => {
+              const d = (this.data || []).find(i => i.integration === intg);
+              return sum + (d ? Object.values(d.devices).reduce((s, dev) => s + dev.entities.length, 0) : 0);
+            }, 0);
+            const disabled = openCount === 0;
+            return `<div class="sidebar-item" data-action="select-open-integration" style="${disabled ? 'opacity:0.4;pointer-events:none' : ''}">
+              <span class="icon">☑</span>
+              <span class="label">Select Open Integration</span>
+              ${openCount ? `<span class="count">${openCount}</span>` : ''}
+            </div>`;
+          })()}
           <div class="sidebar-item" data-action="refresh">
             <span class="icon">↺</span>
             <span class="label">Refresh</span>
@@ -5476,6 +5489,28 @@ class EntityManagerPanel extends HTMLElement {
       this.updateSelectedCount();
       this.updateView();
       this._showToast('Selection cleared', 'info');
+    } else if (action === 'select-open-integration') {
+      const openIntgs = [...this.expandedIntegrations].filter(k => !k.startsWith('smart_'));
+      let added = 0;
+      for (const intg of openIntgs) {
+        const intgData = (this.data || []).find(i => i.integration === intg);
+        if (!intgData) continue;
+        Object.values(intgData.devices).forEach(dev => {
+          dev.entities.forEach(e => {
+            if (!this.selectedEntities.has(e.entity_id)) {
+              this.selectedEntities.add(e.entity_id);
+              added++;
+            }
+          });
+        });
+      }
+      // Sync visible checkboxes
+      this.content.querySelectorAll('.entity-checkbox').forEach(cb => {
+        if (this.selectedEntities.has(cb.dataset.entityId)) cb.checked = true;
+      });
+      this.updateSelectedCount();
+      this._reRenderSidebar();
+      if (added) this._showToast(`Selected ${added} entit${added !== 1 ? 'ies' : 'y'}`, 'success');
     } else if (action === 'refresh') {
       if (this.viewState === 'updates') {
         this.loadUpdates();
