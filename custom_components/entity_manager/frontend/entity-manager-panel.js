@@ -216,6 +216,7 @@ class EntityManagerPanel extends HTMLElement {
     this.labelsCache = null; // Cache for HA labels
     this.labeledEntitiesCache = null; // Cache for entities with labels
     this.showAllSidebarLabels = false;
+    this.expandedSidebarLabels = new Set(); // label_ids whose breakdown is expanded in sidebar
     
     // Listen for theme changes
     this._themeObserver = new MutationObserver(() => {
@@ -2590,41 +2591,57 @@ class EntityManagerPanel extends HTMLElement {
   
   async _loadLabeledEntities() {
     try {
-      const entityRegistry = await this._hass.callWS({ type: 'config/entity_registry/list' });
+      const [entityRegistry, deviceRegistry] = await Promise.all([
+        this._hass.callWS({ type: 'config/entity_registry/list' }),
+        this._hass.callWS({ type: 'config/device_registry/list' }),
+      ]);
       const labels = this.labelsCache || await this._loadHALabels();
-      
-      // Group entities by label
+
       const labeledEntities = {};
-      
+
+      // Helper — ensure label bucket exists
+      const ensureLabel = (labelId) => {
+        if (!labeledEntities[labelId]) {
+          const labelInfo = labels.find(l => l.label_id === labelId);
+          labeledEntities[labelId] = {
+            label_id: labelId,
+            name: labelInfo?.name || labelId,
+            color: labelInfo?.color || 'blue',
+            entities: [],
+            devices: [],
+            byIntegration: {},
+          };
+        }
+      };
+
+      // Entities
       for (const entity of entityRegistry) {
         const entityLabels = entity.labels
           ? (Array.isArray(entity.labels) ? entity.labels : Array.from(entity.labels))
           : [];
-        if (entityLabels.length > 0) {
-          for (const labelId of entityLabels) {
-            if (!labeledEntities[labelId]) {
-              const labelInfo = labels.find(l => l.label_id === labelId);
-              labeledEntities[labelId] = {
-                label_id: labelId,
-                name: labelInfo?.name || labelId,
-                color: labelInfo?.color || 'blue',
-                entities: [],
-                byIntegration: {}
-              };
-            }
-            
-            // Get integration (domain prefix)
-            const domain = entity.entity_id.split('.')[0];
-            labeledEntities[labelId].entities.push(entity.entity_id);
-            
-            if (!labeledEntities[labelId].byIntegration[domain]) {
-              labeledEntities[labelId].byIntegration[domain] = [];
-            }
-            labeledEntities[labelId].byIntegration[domain].push(entity.entity_id);
+        for (const labelId of entityLabels) {
+          ensureLabel(labelId);
+          const domain = entity.entity_id.split('.')[0];
+          labeledEntities[labelId].entities.push(entity.entity_id);
+          if (!labeledEntities[labelId].byIntegration[domain]) {
+            labeledEntities[labelId].byIntegration[domain] = [];
           }
+          labeledEntities[labelId].byIntegration[domain].push(entity.entity_id);
         }
       }
-      
+
+      // Devices
+      for (const device of (deviceRegistry || [])) {
+        const deviceLabels = device.labels
+          ? (Array.isArray(device.labels) ? device.labels : Array.from(device.labels))
+          : [];
+        for (const labelId of deviceLabels) {
+          ensureLabel(labelId);
+          const name = device.name_by_user || device.name || device.id;
+          labeledEntities[labelId].devices.push({ device_id: device.id, name });
+        }
+      }
+
       this.labeledEntitiesCache = labeledEntities;
       return labeledEntities;
     } catch (e) {
@@ -2656,7 +2673,11 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   _renderLabelsList(labelsList, labeledEntities) {
-    const labels = Object.values(labeledEntities).sort((a, b) => b.entities.length - a.entities.length);
+    const labels = Object.values(labeledEntities).sort((a, b) => {
+      const aTotal = (a.entities?.length || 0) + (a.devices?.length || 0);
+      const bTotal = (b.entities?.length || 0) + (b.devices?.length || 0);
+      return bTotal - aTotal;
+    });
 
     if (labels.length === 0) {
       labelsList.innerHTML = '<div class="sidebar-item" style="opacity: 0.7;"><span class="icon">📝</span><span class="label">No labeled entities</span></div>';
@@ -2665,16 +2686,54 @@ class EntityManagerPanel extends HTMLElement {
 
     const displayLabels = this.showAllSidebarLabels ? labels : labels.slice(0, 8);
 
-    let html = displayLabels.map(label => `
-      <div class="sidebar-item ${this.selectedLabelFilter === label.label_id ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
-        <span class="icon" style="color: ${this._escapeAttr(this._labelColorCss(label.color))};">●</span>
-        <span class="label">${this._escapeHtml(label.name)}</span>
-        <span class="count">${label.entities.length}</span>
-        <button data-edit-label="${this._escapeAttr(label.label_id)}"
-          style="background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:0 2px;font-size:13px;line-height:1;opacity:0.7;flex-shrink:0"
-          title="Edit label">✎</button>
-      </div>
-    `).join('');
+    let html = displayLabels.map(label => {
+      const isExpanded = this.expandedSidebarLabels.has(label.label_id);
+      const isActive = this.selectedLabelFilter === label.label_id;
+      const deviceCount = label.devices?.length || 0;
+      const entityCount = label.entities?.length || 0;
+
+      // Breakdown sub-panel (shown when expanded)
+      const breakdownHtml = isExpanded ? `
+        <div class="sidebar-label-breakdown">
+          ${deviceCount > 0 ? `
+            <div class="sidebar-label-sub-header">🔌 Devices (${deviceCount})</div>
+            ${label.devices.map(d => `
+              <div class="sidebar-item sidebar-label-device-item" data-device-id="${this._escapeAttr(d.device_id)}" title="${this._escapeAttr(d.name)}">
+                <span class="icon" style="font-size:10px;width:14px">▸</span>
+                <span class="label">${this._escapeHtml(d.name)}</span>
+              </div>
+            `).join('')}
+          ` : ''}
+          ${entityCount > 0 ? `
+            <div class="sidebar-label-sub-header">📋 Entities (${entityCount})</div>
+            ${label.entities.map(eid => `
+              <div class="sidebar-item sidebar-label-entity-item" data-entity-id="${this._escapeAttr(eid)}" title="${this._escapeAttr(eid)}">
+                <span class="icon" style="font-size:10px;width:14px">▸</span>
+                <span class="label" style="font-size:11px">${this._escapeHtml(eid)}</span>
+              </div>
+            `).join('')}
+          ` : ''}
+        </div>
+      ` : '';
+
+      return `
+        <div class="sidebar-label-group">
+          <div class="sidebar-item ${isActive ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
+            <span class="icon" style="color: ${this._escapeAttr(this._labelColorCss(label.color))};">●</span>
+            <span class="label">${this._escapeHtml(label.name)}</span>
+            <span class="sidebar-label-counts">
+              ${deviceCount > 0 ? `<span class="sidebar-label-count-badge" title="${deviceCount} device${deviceCount !== 1 ? 's' : ''}">🔌 ${deviceCount}</span>` : ''}
+              ${entityCount > 0 ? `<span class="sidebar-label-count-badge" title="${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'}">📋 ${entityCount}</span>` : ''}
+            </span>
+            <button class="sidebar-label-expand-btn${isExpanded ? ' expanded' : ''}" data-expand-label="${this._escapeAttr(label.label_id)}" title="${isExpanded ? 'Collapse' : 'Show devices & entities'}">▶</button>
+            <button data-edit-label="${this._escapeAttr(label.label_id)}"
+              style="background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:0 2px;font-size:13px;line-height:1;opacity:0.7;flex-shrink:0"
+              title="Edit label">✎</button>
+          </div>
+          ${breakdownHtml}
+        </div>
+      `;
+    }).join('');
 
     if (!this.showAllSidebarLabels && labels.length > 8) {
       html += `<div class="sidebar-item more" data-action="show-all-labels">+${labels.length - 8} more...</div>`;
@@ -2684,10 +2743,60 @@ class EntityManagerPanel extends HTMLElement {
       html += `<div class="sidebar-item" data-action="collapse-labels"><span class="icon">▲</span><span class="label">Show less</span></div>`;
     }
 
-    // Add refresh option
     html += `<div class="sidebar-item" data-action="load-labels" style="opacity: 0.7;"><span class="icon">🔄</span><span class="label">Refresh</span></div>`;
 
     labelsList.innerHTML = html;
+
+    // Wire expand buttons
+    labelsList.querySelectorAll('.sidebar-label-expand-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const labelId = btn.dataset.expandLabel;
+        if (this.expandedSidebarLabels.has(labelId)) {
+          this.expandedSidebarLabels.delete(labelId);
+        } else {
+          this.expandedSidebarLabels.add(labelId);
+        }
+        this._renderLabelsList(labelsList, this.labeledEntitiesCache || {});
+      });
+    });
+
+    // Wire device sub-items — expand integration + scroll to device
+    labelsList.querySelectorAll('.sidebar-label-device-item').forEach(item => {
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        const deviceId = item.dataset.deviceId;
+        for (const intg of (this.data || [])) {
+          if (intg.devices[deviceId]) {
+            this.selectedLabelFilter = null;
+            this.expandedIntegrations.add(intg.integration);
+            this.expandedDevices.add(deviceId);
+            this.updateView();
+            this._reRenderSidebar();
+            setTimeout(() => {
+              const el = this.content.querySelector(`.device-header[data-device="${deviceId}"]`);
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 150);
+            return;
+          }
+        }
+        this._showToast('Device not found in current view', 'info');
+      });
+    });
+
+    // Wire entity sub-items — search for that entity
+    labelsList.querySelectorAll('.sidebar-label-entity-item').forEach(item => {
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        const entityId = item.dataset.entityId;
+        this.selectedLabelFilter = null;
+        this.searchTerm = entityId;
+        const searchInput = this.content.querySelector('#search-input');
+        if (searchInput) searchInput.value = entityId;
+        this.updateView();
+        this._reRenderSidebar();
+      });
+    });
   }
   
   async _filterByLabel(labelId) {
