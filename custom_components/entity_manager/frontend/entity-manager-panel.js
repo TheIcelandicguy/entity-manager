@@ -2213,6 +2213,177 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
+  async _showSuggestionsDialog() {
+    const { overlay, closeDialog } = this.createDialog({
+      title: '💡 Entity Suggestions',
+      contentHtml: `<div style="padding:28px;text-align:center;color:var(--em-text-secondary)">
+        <div style="font-size:32px;margin-bottom:10px">🔍</div>
+        Analyzing entities…
+      </div>`,
+      actionsHtml: `<button class="btn btn-secondary em-sug-close">Close</button>`,
+    });
+    overlay.querySelector('.em-sug-close').addEventListener('click', closeDialog);
+
+    // Fetch entity + device registries for area data
+    const [entityRegistry, deviceRegistry] = await Promise.all([
+      this._hass.callWS({ type: 'config/entity_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config/device_registry/list' }).catch(() => []),
+    ]);
+    const entityAreaMap = new Map();
+    const deviceAreaMap = new Map();
+    for (const e of entityRegistry) { if (e.area_id) entityAreaMap.set(e.entity_id, e.area_id); }
+    for (const d of deviceRegistry) { if (d.area_id) deviceAreaMap.set(d.id, d.area_id); }
+
+    const states  = this._hass?.states || {};
+    const now     = Date.now();
+    const day7ms  = 7  * 86400000;
+    const day30ms = 30 * 86400000;
+    const helperDomains = new Set(['input_boolean','input_number','input_select','input_text',
+      'input_datetime','timer','counter','schedule','template','group','scene','automation','script']);
+    const genericNames  = new Set(['sensor','switch','light','binary_sensor','button','number',
+      'select','text','event','device_automation']);
+
+    // Collect all entities
+    const allEntities = [];
+    for (const intg of (this.data || [])) {
+      for (const dev of Object.values(intg.devices || {})) {
+        for (const entity of (dev.entities || [])) {
+          allEntities.push({ ...entity, integration: intg.integration });
+        }
+      }
+    }
+
+    const health = [], disable = [], naming = [], area = [];
+    const seenDevicesForArea = new Set();
+
+    for (const entity of allEntities) {
+      const state  = states[entity.entity_id];
+      const name   = state?.attributes?.friendly_name || entity.original_name || entity.entity_id;
+      const updMs  = state?.last_updated  ? Date.parse(state.last_updated)  : null;
+      const chgMs  = state?.last_changed  ? Date.parse(state.last_changed)  : null;
+      const domain = entity.entity_id.split('.')[0];
+
+      // ── Health: unavailable > 7 days ──────────────────────────────
+      if (!entity.is_disabled && state?.state === 'unavailable' && updMs && (now - updMs) > day7ms) {
+        health.push({ entity, name,
+          reason: `Unavailable for ${this._fmtAgo(state.last_updated)}`,
+          action: 'disable', actionLabel: 'Disable' });
+      }
+
+      // ── Disable candidates ────────────────────────────────────────
+      // Diagnostic entity with no state change in 30+ days
+      if (!entity.is_disabled && entity.entity_category === 'diagnostic' && chgMs && (now - chgMs) > day30ms) {
+        disable.push({ entity, name,
+          reason: `Diagnostic, unchanged for ${this._fmtAgo(state?.last_changed)}`,
+          action: 'disable', actionLabel: 'Disable' });
+      }
+      // Still unavailable after 30 days (not already in health list)
+      if (!entity.is_disabled && state?.state === 'unavailable' && updMs && (now - updMs) > day30ms
+          && !health.find(h => h.entity.entity_id === entity.entity_id)) {
+        disable.push({ entity, name,
+          reason: `Unavailable for ${this._fmtAgo(state.last_updated)}`,
+          action: 'disable', actionLabel: 'Disable' });
+      }
+
+      // ── Naming improvements ───────────────────────────────────────
+      const localId     = entity.entity_id.split('.')[1] || '';
+      const hasHash     = /[0-9a-f]{8,}/i.test(localId);
+      const nameGeneric = genericNames.has((entity.original_name || '').toLowerCase().trim());
+      if (!entity.is_disabled && (hasHash || nameGeneric)) {
+        naming.push({ entity, name,
+          reason: hasHash ? 'Entity ID contains auto-generated hash' : 'Generic entity name — consider something descriptive',
+          action: 'rename', actionLabel: 'Rename' });
+      }
+
+      // ── Area assignment (deduplicated per device) ─────────────────
+      if (!entity.is_disabled && entity.device_id && !helperDomains.has(domain)) {
+        const entityArea = entityAreaMap.get(entity.entity_id) || entity.area_id;
+        const deviceArea = deviceAreaMap.get(entity.device_id);
+        if (!entityArea && !deviceArea && !seenDevicesForArea.has(entity.device_id)) {
+          seenDevicesForArea.add(entity.device_id);
+          area.push({ entity, name: entity.name || entity.entity_id,
+            reason: 'Device has no area assigned',
+            action: 'assign-area', actionLabel: 'Assign Area', deviceId: entity.device_id });
+        }
+      }
+    }
+
+    const total = health.length + disable.length + naming.length + area.length;
+
+    const renderSection = (emoji, title, items, maxShow = 30) => {
+      const shown = items.slice(0, maxShow);
+      const extra = items.length - shown.length;
+      const rows  = shown.map(item => `
+        <div class="em-sug-row" style="display:flex;gap:10px;padding:7px 4px;border-bottom:1px solid var(--em-border-light);align-items:center">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+            <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
+            <div style="font-size:11px;color:var(--em-text-secondary);margin-top:2px">${this._escapeHtml(item.reason)}</div>
+          </div>
+          <button class="em-sug-action btn btn-sm"
+              data-action="${this._escapeAttr(item.action)}"
+              data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+              ${item.deviceId ? `data-device-id="${this._escapeAttr(item.deviceId)}"` : ''}
+              style="flex-shrink:0;white-space:nowrap">
+            ${item.actionLabel}
+          </button>
+        </div>`).join('');
+      const body = `<div style="padding:2px 0">
+        ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
+        ${extra ? `<div style="padding:8px 4px;color:var(--em-text-secondary);font-size:12px">…and ${extra} more</div>` : ''}
+      </div>`;
+      return this._collGroup(
+        `${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+    };
+
+    const dialogBody = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+    dialogBody.innerHTML = `<div style="padding:8px 8px 4px">
+      ${total === 0
+        ? `<div style="padding:32px;text-align:center;color:#4caf50;font-size:15px">✓ No suggestions — everything looks great!</div>`
+        : `<div style="font-size:12px;color:var(--em-text-secondary);margin-bottom:10px">
+             Found <strong style="color:var(--em-text-primary)">${total}</strong> suggestion${total !== 1 ? 's' : ''} across <strong style="color:var(--em-text-primary)">${allEntities.length}</strong> entities.
+           </div>
+           ${renderSection('🏥', 'Health Issues', health)}
+           ${renderSection('🚫', 'Disable Candidates', disable)}
+           ${renderSection('✏️', 'Naming Improvements', naming)}
+           ${renderSection('📍', 'Area Assignment', area)}`
+      }
+    </div>`;
+
+    // Collapsible toggles
+    dialogBody.querySelectorAll('.em-collapsible').forEach(h => {
+      h.addEventListener('click', () => {
+        const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
+        const collapsed = b.style.display === 'none';
+        b.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+
+    // Action buttons
+    dialogBody.querySelectorAll('.em-sug-action').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { action, entityId, deviceId } = btn.dataset;
+        const row = btn.closest('.em-sug-row');
+        if (action === 'disable') {
+          btn.disabled = true;
+          btn.textContent = '…';
+          await this.disableEntity(entityId);
+          row?.remove();
+        } else if (action === 'rename') {
+          closeDialog();
+          this.showRenameDialog(entityId);
+        } else if (action === 'assign-area') {
+          this._showAreaPickerDialog('Assign device to area', async areaId => {
+            await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
+            this.floorsData = null;
+            row?.remove();
+          });
+        }
+      });
+    });
+  }
+
   _scrollToAndHighlight(entityId) {
     const doHighlight = (el) => {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -6022,6 +6193,10 @@ class EntityManagerPanel extends HTMLElement {
             ${activeLabel}
           </div>`;
       })()}
+      <div class="stat-card clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
+        <div class="stat-label">Suggestions</div>
+        <div class="stat-value">💡</div>
+      </div>
     `;
 
     // Attach click listeners to clickable stat cards
@@ -6035,6 +6210,8 @@ class EntityManagerPanel extends HTMLElement {
           this._showActivityLogDialog();
         } else if (card.dataset.statType === 'config-health') {
           this._showConfigEntryHealthDialog();
+        } else if (card.dataset.statType === 'suggestions') {
+          this._showSuggestionsDialog();
         } else {
           this.showEntityListDialog(card.dataset.statType);
         }
