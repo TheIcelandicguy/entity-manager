@@ -5898,17 +5898,25 @@ class EntityManagerPanel extends HTMLElement {
           ${isExpanded ? `
             <div class="smart-group-content">
               ${isUnassigned ? (() => {
-                // Sub-group unassigned entities by integration (collapsible)
+                // Sub-group unassigned entities: Integration → Device → Entities
                 const byIntg = {};
                 for (const entity of entities) {
                   const intg = entity.integration || 'unknown';
-                  if (!byIntg[intg]) byIntg[intg] = [];
-                  byIntg[intg].push(entity);
+                  if (!byIntg[intg]) byIntg[intg] = {};
+                  const devId = entity.device_id || '__no_device__';
+                  if (!byIntg[intg][devId]) byIntg[intg][devId] = [];
+                  byIntg[intg][devId].push(entity);
                 }
-                return Object.entries(byIntg).sort(([a],[b]) => a.localeCompare(b)).map(([intg, ents]) => {
-                  const label = `${this._escapeHtml(intg.charAt(0).toUpperCase() + intg.slice(1))} <span style="opacity:0.6;font-size:11px">(${ents.length})</span>`;
-                  const body = ents.map(e => this._renderEntityItem(e, e.integration)).join('');
-                  return this._collGroup(label, body);
+                return Object.entries(byIntg).sort(([a],[b]) => a.localeCompare(b)).map(([intg, byDev]) => {
+                  const intgTotal = Object.values(byDev).flat().length;
+                  const intgLabel = `${this._escapeHtml(intg.charAt(0).toUpperCase() + intg.slice(1))} <span style="opacity:0.6;font-size:11px">(${intgTotal})</span>`;
+                  const devGroups = Object.entries(byDev).map(([devId, devEnts]) => {
+                    const devName = devId === '__no_device__' ? 'No device' : this.getDeviceName(devId);
+                    const devLabel = `${this._escapeHtml(devName)} <span style="opacity:0.6;font-size:11px">(${devEnts.length})</span>`;
+                    const devBody = devEnts.map(e => this._renderEntityItem(e, e.integration)).join('');
+                    return this._collGroup(devLabel, devBody);
+                  }).join('');
+                  return this._collGroup(intgLabel, devGroups);
                 }).join('');
               })() : entities.map(entity => this._renderEntityItem(entity, entity.integration)).join('')}
             </div>
