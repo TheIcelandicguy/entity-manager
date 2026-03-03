@@ -2092,7 +2092,8 @@ class EntityManagerPanel extends HTMLElement {
     const btnBase = 'padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;border:2px solid';
     overlay.querySelector('.confirm-dialog-actions').innerHTML = `
       <button id="em-edd-rename" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">✎ Rename</button>
-      <button id="em-edd-open-ha" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">↗ Open in HA</button>
+      <button id="em-edd-open-ha" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">↗ More Info</button>
+      ${e.device_id ? `<button id="em-edd-open-device" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">🔌 Device</button>` : ''}
       <button id="em-edd-toggle" style="${btnBase} ${isDisabled ? '#4caf50;background:#4caf50;color:white' : '#f44336;background:#f44336;color:white'}">
         ${isDisabled ? '✓ Enable' : '✕ Disable'}
       </button>
@@ -2102,7 +2103,18 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
     overlay.querySelector('#em-edd-open-ha')?.addEventListener('click', () => {
       closeDialog();
-      window.location.href = `/config/entities/edit/${entityId}`;
+      // Fire hass-more-info — the standard HA event for opening native entity popup
+      setTimeout(() => {
+        this.dispatchEvent(new CustomEvent('hass-more-info', {
+          detail: { entityId },
+          bubbles: true,
+          composed: true,
+        }));
+      }, 150);
+    });
+    overlay.querySelector('#em-edd-open-device')?.addEventListener('click', () => {
+      closeDialog();
+      window.location.href = `/config/devices/device/${e.device_id}`;
     });
     overlay.querySelector('#em-edd-rename')?.addEventListener('click', () => {
       closeDialog();
