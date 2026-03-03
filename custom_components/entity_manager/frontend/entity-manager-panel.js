@@ -3597,129 +3597,6 @@ class EntityManagerPanel extends HTMLElement {
   
   // ===== ENTITY STATE PREVIEW =====
   
-  _showStatePreview(entityId, targetElement) {
-    // Remove existing preview
-    this._hideStatePreview();
-    
-    const state = this._hass?.states?.[entityId];
-    if (!state) return;
-    
-    const preview = document.createElement('div');
-    preview.className = 'entity-state-preview';
-    preview.innerHTML = `
-      <div class="preview-header">
-        <span class="preview-state-icon">${this._getStateIcon(state)}</span>
-        <span class="preview-state-value">${this._escapeHtml(state.state)}</span>
-      </div>
-      <div class="preview-body">
-        <div class="preview-row">
-          <span class="preview-label">Entity ID:</span>
-          <span class="preview-value">${this._escapeHtml(entityId)}</span>
-        </div>
-        <div class="preview-row">
-          <span class="preview-label">Name:</span>
-          <span class="preview-value">${this._escapeHtml(state.attributes.friendly_name || 'N/A')}</span>
-        </div>
-        <div class="preview-row">
-          <span class="preview-label">Last Changed:</span>
-          <span class="preview-value">${this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime())}</span>
-        </div>
-        ${state.attributes.device_class ? `
-          <div class="preview-row">
-            <span class="preview-label">Device Class:</span>
-            <span class="preview-value">${this._escapeHtml(state.attributes.device_class)}</span>
-          </div>
-        ` : ''}
-        ${state.attributes.unit_of_measurement ? `
-          <div class="preview-row">
-            <span class="preview-label">Unit:</span>
-            <span class="preview-value">${this._escapeHtml(state.attributes.unit_of_measurement)}</span>
-          </div>
-        ` : ''}
-      </div>
-    `;
-    
-    document.body.appendChild(preview);
-    
-    // Position the preview
-    const rect = targetElement.getBoundingClientRect();
-    preview.style.left = `${rect.right + 10}px`;
-    preview.style.top = `${rect.top}px`;
-    
-    // Adjust if off screen
-    const previewRect = preview.getBoundingClientRect();
-    if (previewRect.right > window.innerWidth) {
-      preview.style.left = `${rect.left - previewRect.width - 10}px`;
-    }
-    if (previewRect.bottom > window.innerHeight) {
-      preview.style.top = `${window.innerHeight - previewRect.height - 10}px`;
-    }
-    
-    this._statePreviewElement = preview;
-  }
-  
-  _hideStatePreview() {
-    if (this._statePreviewElement) {
-      this._statePreviewElement.remove();
-      this._statePreviewElement = null;
-    }
-  }
-  
-  _getStateIcon(state) {
-    const domain = state.entity_id.split('.')[0];
-    const stateValue = state.state;
-    
-    const icons = {
-      'light': stateValue === 'on' ? '💡' : '⚫',
-      'switch': stateValue === 'on' ? '🔘' : '⭕',
-      'sensor': '📊',
-      'binary_sensor': stateValue === 'on' ? '🟢' : '🔴',
-      'climate': '🌡️',
-      'cover': stateValue === 'open' ? '🪟' : '🚪',
-      'lock': stateValue === 'locked' ? '🔒' : '🔓',
-      'camera': '📷',
-      'media_player': '🎵',
-      'vacuum': '🧹',
-      'fan': '🌀',
-      'automation': stateValue === 'on' ? '⚡' : '💤',
-      'script': '📜',
-      'scene': '🎬',
-      'input_boolean': stateValue === 'on' ? '✅' : '❌',
-      'input_number': '🔢',
-      'input_text': '📝',
-      'input_select': '📋',
-      'person': '👤',
-      'device_tracker': stateValue === 'home' ? '🏠' : '📍',
-      'weather': '🌤️',
-      'sun': '☀️',
-      'update': state.attributes.in_progress ? '⏳' : (stateValue === 'on' ? '🆕' : '✓')
-    };
-    
-    return icons[domain] || '📦';
-  }
-  
-  _attachStatePreviewListeners() {
-    let previewTimeout = null;
-    
-    this.content.querySelectorAll('.entity-item').forEach(item => {
-      item.addEventListener('mouseenter', () => {
-        const entityId = item.dataset.entityId;
-        if (!entityId) return;
-        
-        previewTimeout = setTimeout(() => {
-          this._showStatePreview(entityId, item);
-        }, 500); // Delay before showing preview
-      });
-      
-      item.addEventListener('mouseleave', () => {
-        if (previewTimeout) {
-          clearTimeout(previewTimeout);
-          previewTimeout = null;
-        }
-        this._hideStatePreview();
-      });
-    });
-  }
   
   // ===== SMART GROUPS =====
   
@@ -6592,8 +6469,6 @@ class EntityManagerPanel extends HTMLElement {
     // Drag and drop
     this._attachDragDropListeners();
     
-    // State preview on hover
-    this._attachStatePreviewListeners();
   }
 
   updateSelectedCount() {
