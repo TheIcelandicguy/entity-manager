@@ -2676,14 +2676,10 @@ class EntityManagerPanel extends HTMLElement {
   _renderLabelsList(labelsList, labeledEntities) {
     const byDevice = this.labelViewMode === 'device';
 
-    // Filter to labels that have items in the active mode, sort by count desc
+    // Show only labels that have items in the active mode, sorted alphabetically
     const labels = Object.values(labeledEntities)
       .filter(l => byDevice ? (l.devices?.length || 0) > 0 : (l.entities?.length || 0) > 0)
-      .sort((a, b) => {
-        const aC = byDevice ? (a.devices?.length || 0) : (a.entities?.length || 0);
-        const bC = byDevice ? (b.devices?.length || 0) : (b.entities?.length || 0);
-        return bC - aC;
-      });
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     if (labels.length === 0) {
       labelsList.innerHTML = `<div class="sidebar-item" style="opacity: 0.7;"><span class="icon">📝</span><span class="label">No labeled ${byDevice ? 'devices' : 'entities'}</span></div>`;
@@ -2694,33 +2690,10 @@ class EntityManagerPanel extends HTMLElement {
 
     let html = displayLabels.map(label => {
       const isActive = this.selectedLabelFilter === label.label_id;
-      const count = byDevice ? (label.devices?.length || 0) : (label.entities?.length || 0);
-
-      const subItems = byDevice
-        ? (label.devices || []).map(d => `
-            <div class="sidebar-item sidebar-label-device-item" data-device-id="${this._escapeAttr(d.device_id)}" title="${this._escapeAttr(d.name)}">
-              <span class="icon" style="font-size:10px;width:14px">▸</span>
-              <span class="label">${this._escapeHtml(d.name)}</span>
-            </div>
-          `).join('')
-        : (label.entities || []).map(eid => `
-            <div class="sidebar-item sidebar-label-entity-item" data-entity-id="${this._escapeAttr(eid)}" title="${this._escapeAttr(eid)}">
-              <span class="icon" style="font-size:10px;width:14px">▸</span>
-              <span class="label" style="font-size:11px">${this._escapeHtml(eid)}</span>
-            </div>
-          `).join('');
-
       return `
-        <div class="sidebar-label-group">
-          <div class="sidebar-item ${isActive ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
-            <span class="icon" style="color: ${this._escapeAttr(this._labelColorCss(label.color))};">●</span>
-            <span class="label">${this._escapeHtml(label.name)}</span>
-            <span class="count">${count}</span>
-            <button data-edit-label="${this._escapeAttr(label.label_id)}"
-              style="background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:0 2px;font-size:13px;line-height:1;opacity:0.7;flex-shrink:0"
-              title="Edit label">✎</button>
-          </div>
-          <div class="sidebar-label-breakdown">${subItems}</div>
+        <div class="sidebar-item ${isActive ? 'active' : ''}" data-label-id="${this._escapeAttr(label.label_id)}">
+          <span class="icon" style="color: ${this._escapeAttr(this._labelColorCss(label.color))};">●</span>
+          <span class="label">${this._escapeHtml(label.name)}</span>
         </div>
       `;
     }).join('');
@@ -2734,43 +2707,6 @@ class EntityManagerPanel extends HTMLElement {
     html += `<div class="sidebar-item" data-action="load-labels" style="opacity: 0.7;"><span class="icon">🔄</span><span class="label">Refresh</span></div>`;
 
     labelsList.innerHTML = html;
-
-    // Device sub-items — expand + scroll to device in main view
-    labelsList.querySelectorAll('.sidebar-label-device-item').forEach(item => {
-      item.addEventListener('click', e => {
-        e.stopPropagation();
-        const deviceId = item.dataset.deviceId;
-        for (const intg of (this.data || [])) {
-          if (intg.devices[deviceId]) {
-            this.selectedLabelFilter = null;
-            this.expandedIntegrations.add(intg.integration);
-            this.expandedDevices.add(deviceId);
-            this.updateView();
-            this._reRenderSidebar();
-            setTimeout(() => {
-              const el = this.content.querySelector(`.device-header[data-device="${deviceId}"]`);
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 150);
-            return;
-          }
-        }
-        this._showToast('Device not found in current view', 'info');
-      });
-    });
-
-    // Entity sub-items — search for that entity in main view
-    labelsList.querySelectorAll('.sidebar-label-entity-item').forEach(item => {
-      item.addEventListener('click', e => {
-        e.stopPropagation();
-        const entityId = item.dataset.entityId;
-        this.selectedLabelFilter = null;
-        this.searchTerm = entityId;
-        const searchInput = this.content.querySelector('#search-input');
-        if (searchInput) searchInput.value = entityId;
-        this.updateView();
-        this._reRenderSidebar();
-      });
-    });
   }
   
   async _filterByLabel(labelId) {
