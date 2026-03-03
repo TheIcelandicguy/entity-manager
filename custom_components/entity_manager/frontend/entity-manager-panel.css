@@ -3943,6 +3943,28 @@ body.em-dialog-open {
 .em-area-clear { color: var(--secondary-text-color); font-style: italic; }
 .em-area-dot { font-size: 10px; flex-shrink: 0; }
 
+/* Device count enabled/disabled colors */
+.count-enabled { color: var(--em-success, #4caf50); }
+.count-disabled { color: var(--em-danger, #f44336); }
+
+/* Device bulk action buttons */
+.device-enable-all {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--em-success, #4caf50);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+}
+.device-disable-all {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--em-danger, #f44336);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+}
+
 /* Device assign-area button */
 .device-assign-area-btn {
   font-size: 11px;

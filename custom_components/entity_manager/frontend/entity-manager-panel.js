@@ -6141,10 +6141,10 @@ class EntityManagerPanel extends HTMLElement {
           <span class="device-name-wrap">
             <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>${selectionIndicator}
           </span>
-          <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
+          <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span class="count-enabled">${enabledCount}</span>/<span class="count-disabled">${disabledCount}</span>)</span>
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">
-            <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device" style="padding:2px 8px;font-size:11px;background:#4caf50;color:#fff;border:none;border-radius:4px">Enable All</button>
-            <button class="btn btn-sm device-disable-all" data-device="${this._escapeAttr(deviceId)}" title="Disable all entities in this device" style="padding:2px 8px;font-size:11px;background:#f44336;color:#fff;border:none;border-radius:4px">Disable All</button>
+            <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device">Enable All</button>
+            <button class="btn btn-sm device-disable-all" data-device="${this._escapeAttr(deviceId)}" title="Disable all entities in this device">Disable All</button>
           </div>
           <button class="btn btn-sm device-assign-area-btn${areaName ? '' : ' no-area'}" data-device-id="${this._escapeAttr(deviceId)}" title="Assign device to area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>
         </div>
