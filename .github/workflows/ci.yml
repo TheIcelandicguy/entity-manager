@@ -46,7 +46,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install pytest pytest-asyncio pytest-homeassistant-custom-component homeassistant voluptuous
+      - run: pip install "homeassistant>=2024.7.0" pytest pytest-asyncio pytest-homeassistant-custom-component voluptuous
       - run: pytest tests/ -v --tb=short
 
   python-tests-312:
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest pytest-asyncio pytest-homeassistant-custom-component homeassistant voluptuous
+      - run: pip install "homeassistant>=2024.7.0" pytest pytest-asyncio pytest-homeassistant-custom-component voluptuous
       - run: pytest tests/ -v --tb=short
 
   frontend-tests:
