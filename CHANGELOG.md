@@ -1,5 +1,45 @@
 # Changelog
 
+## Version 2.10.0 - Device Grouping, Area Assignment & Smart Groups
+
+### ✨ New Features
+
+#### Integration View — Device Grouping
+- Entities inside each integration are now grouped by device with collapsible dropdowns (collapsed by default)
+- Devices and entities both sorted alphabetically
+- Entity list displays in a 2-column grid for easier scanning
+- Device header shows green ✓ (all selected) or orange ✓ (partial) selection indicator that updates live without a full re-render
+
+#### Area / Room Assignment
+- **Device header**: 📍 button assigns the whole device to a room/area
+- **Entity context menu**: "Assign to area" sets an entity-level area override
+- **Unassigned smart group header**: "📍 Assign all" bulk-assigns all unassigned entities
+- Area picker dialog groups areas by floor with collapsible sections (open by default)
+- "＋ New area" button creates a new HA area on the fly and auto-selects it
+
+#### Smart Groups — Floor Mode
+- New "Floor" grouping mode alongside "Room" — groups entities by Floor → Area → Device hierarchy
+- "No Floor / No Area" fallback group for unassigned entities
+- Unassigned group shows entities nested by integration → device (collapsible dropdowns)
+
+#### Sidebar Improvements
+- **Select Open Device** action selects all entities from currently expanded device dropdowns
+- Device header shows selection indicator immediately without page reload
+
+#### Config Entry Health Card
+- New stat card shows integrations in error states (setup_error, setup_retry, failed_unload, etc.)
+- Dialog groups entries by state with a Reload button per entry
+
+#### Other
+- Dry-run rename preview: shows affected YAML files before committing a rename
+- Last-seen timestamps for unavailable entities (scans 90-day history)
+- Stale entity cleanup: Keep / Disable / Remove per stale entity
+- Bulk label add/remove in multi-select toolbar
+- Custom entity presets: save selected entities as a named preset, enable/disable from sidebar
+- Watch & auto-sync script (`watch-and-sync.ps1`) for live development
+
+---
+
 ## Version 2.9.2 - Entity Detail, Update Manager & UI Polish
 
 ### ✨ New Features

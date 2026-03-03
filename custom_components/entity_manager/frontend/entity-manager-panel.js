@@ -151,7 +151,8 @@ class EntityManagerPanel extends HTMLElement {
     this.hacsItems = null;
     this.templateCount = 0;
     this.lovelaceCardCount = 0;
-    
+    this.configHealthCount = 0;
+
     // Theme customization state
     this.activeTheme = 'default'; // 'default' follows HA, or saved theme name
     this.customThemes = this._loadSavedThemes();
@@ -162,6 +163,9 @@ class EntityManagerPanel extends HTMLElement {
     
     // Activity log state
     this.activityLog = this._loadActivityLog();
+
+    // Brands token for integration icon URLs (HA 2026.3+)
+    this._brandsToken = '';
     
     // Sidebar state
     this.sidebarCollapsed = localStorage.getItem('em-sidebar-collapsed') === 'true';
@@ -194,6 +198,7 @@ class EntityManagerPanel extends HTMLElement {
     this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name
     this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
     this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
+    this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
     
     // Lazy loading state
     this.visibleEntityCounts = {}; // Track visible entities per integration
@@ -1565,6 +1570,7 @@ class EntityManagerPanel extends HTMLElement {
         <div class="em-context-item" data-action="bulk-disable"><span class="icon">✕</span> Disable All Selected</div>
         <div class="em-context-divider"></div>
         <div class="em-context-item" data-action="bulk-labels"><span class="icon">🔖</span> Add Labels to Selected</div>
+        <div class="em-context-item" data-action="bulk-remove-labels"><span class="icon">🏷️</span> Remove Labels from Selected</div>
         <div class="em-context-item" data-action="bulk-favorite"><span class="icon">★</span> Add All to Favorites</div>
         <div class="em-context-item" data-action="bulk-compare"><span class="icon">⇔</span> Compare Selected</div>
         <div class="em-context-divider"></div>
@@ -1582,6 +1588,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>
       <div class="em-context-item" data-action="tags"><span class="icon">🏷️</span> Manage Tags</div>
       <div class="em-context-item" data-action="labels"><span class="icon">🔖</span> Manage Labels</div>
+      <div class="em-context-item" data-action="assign-area"><span class="icon">📍</span> Assign to area</div>
       <div class="em-context-item" data-action="alias"><span class="icon">📝</span> Set Alias</div>
       <div class="em-context-item" data-action="compare"><span class="icon">⇔</span> Add to Comparison</div>
       <div class="em-context-divider"></div>
@@ -1603,6 +1610,13 @@ class EntityManagerPanel extends HTMLElement {
       case 'favorite':      this._toggleFavorite(entityId); break;
       case 'tags':          this._showTagEditor(entityId); break;
       case 'labels':        this._showLabelEditor(entityId); break;
+      case 'assign-area':
+        this._showAreaPickerDialog('Assign entity to area', async areaId => {
+          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: areaId });
+          this.floorsData = null;
+          await this.loadData();
+        });
+        break;
       case 'alias':         this._showAliasEditor(entityId); break;
       case 'compare':       this._addToComparison(entityId); break;
       case 'stats':         this._showEntityStatistics(entityId); break;
@@ -1620,7 +1634,8 @@ class EntityManagerPanel extends HTMLElement {
       case 'bulk-rename':   this._openBulkRenameDialog(); break;
       case 'bulk-enable':   await this._bulkEnableSelected(); break;
       case 'bulk-disable':  await this._disableSelectedEntities(); break;
-      case 'bulk-labels':   this._showBulkLabelEditor(); break;
+      case 'bulk-labels':          this._showBulkLabelEditor(); break;
+      case 'bulk-remove-labels':   this._showBulkLabelRemover(); break;
       case 'bulk-favorite':
         for (const id of this.selectedEntities) {
           if (!this.favorites.has(id)) this._toggleFavorite(id);
@@ -2330,6 +2345,19 @@ class EntityManagerPanel extends HTMLElement {
     this._saveToStorage('em-filter-presets', this.filterPresets);
   }
   
+  _saveEntityPreset() {
+    const entityIds = [...(this.selectedEntities || new Set())];
+    if (!entityIds.length) { this._showToast('No entities selected', 'info'); return; }
+    this._showPromptDialog('Save Preset', 'Name for this preset:', `Preset ${Date.now() % 1000}`, name => {
+      if (!name?.trim()) return;
+      const presets = this._loadFromStorage('em-presets', []);
+      presets.push({ id: `ep_${Date.now()}`, name: name.trim(), entityIds });
+      this._saveToStorage('em-presets', presets);
+      this._reRenderSidebar();
+      this._showToast(`Preset "${name.trim()}" saved (${entityIds.length} entities)`, 'success');
+    });
+  }
+
   _saveCurrentFilterPreset(presetName) {
     const savePreset = (name) => {
       const preset = {
@@ -3238,6 +3266,74 @@ class EntityManagerPanel extends HTMLElement {
     this._saveEntityAliases();
   }
   
+  async _showBulkLabelRemover() {
+    if (!this.selectedEntities?.size) return;
+    const entityIds = [...this.selectedEntities];
+
+    // Collect all label IDs present on any selected entity
+    const labelPresence = new Map(); // labelId → Set of entityIds that have it
+    for (const eid of entityIds) {
+      try {
+        const current = await this._getEntityLabels(eid);
+        for (const lid of current) {
+          if (!labelPresence.has(lid)) labelPresence.set(lid, new Set());
+          labelPresence.get(lid).add(eid);
+        }
+      } catch (_) { /* skip */ }
+    }
+
+    const allLabels = await this._loadHALabels();
+    const presentLabels = allLabels.filter(l => labelPresence.has(l.label_id));
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Remove Labels from Selected',
+      color: '#f44336',
+      contentHtml: `
+        <div class="bulk-label-editor">
+          <p style="color:var(--em-text-secondary);margin-bottom:8px">Remove labels from ${entityIds.length} selected ${entityIds.length === 1 ? 'entity' : 'entities'}</p>
+          ${presentLabels.length === 0
+            ? '<p style="color:var(--em-text-secondary);padding:16px 0">No labels found on selected entities.</p>'
+            : `<div style="max-height:220px;overflow-y:auto">
+                ${presentLabels.map(l => `
+                  <label class="label-checkbox" style="display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer;border-radius:4px;margin:4px 0">
+                    <input type="checkbox" data-label-id="${this._escapeAttr(l.label_id)}">
+                    <span style="width:16px;height:16px;border-radius:50%;background:${this._labelColorCss(l.color)};display:inline-block;flex-shrink:0"></span>
+                    <span>${this._escapeHtml(l.name)}</span>
+                    <span style="font-size:10px;opacity:0.5;margin-left:auto">${labelPresence.get(l.label_id).size} entit${labelPresence.get(l.label_id).size !== 1 ? 'ies' : 'y'}</span>
+                  </label>`).join('')}
+              </div>`
+          }
+        </div>`,
+      actionsHtml: `
+        <button class="btn btn-secondary confirm-no">Cancel</button>
+        <button class="btn" style="background:#f44336;color:#fff;border:none" id="apply-remove-labels-btn"${presentLabels.length === 0 ? ' disabled' : ''}>Remove Labels</button>`,
+    });
+
+    overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+    overlay.querySelector('#apply-remove-labels-btn')?.addEventListener('click', async () => {
+      const toRemove = new Set(
+        Array.from(overlay.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.dataset.labelId)
+      );
+      if (!toRemove.size) { this._showToast('Select at least one label', 'warning'); return; }
+
+      closeDialog();
+      this._showToast(`Removing labels from ${entityIds.length} entities…`, 'info', 0);
+      let ok = 0;
+      for (const eid of entityIds) {
+        try {
+          const current = await this._getEntityLabels(eid);
+          const updated = current.filter(lid => !toRemove.has(lid));
+          if (updated.length !== current.length) {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, labels: updated });
+            ok++;
+          }
+        } catch (_) { /* skip */ }
+      }
+      document.querySelector('.em-toast')?.remove();
+      this._showToast(`Labels removed from ${ok} entit${ok !== 1 ? 'ies' : 'y'}`, 'success');
+    });
+  }
+
   _showAliasEditor(entityId) {
     const currentAlias = this.entityAliases[entityId] || '';
     
@@ -3528,7 +3624,18 @@ class EntityManagerPanel extends HTMLElement {
   _setSmartGroupMode(mode) {
     this.smartGroupMode = mode;
     localStorage.setItem('em-smart-group-mode', mode);
-    this.updateView();
+    if (mode === 'floor' && !this.floorsData) {
+      // Fetch floor/area data then re-render
+      this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' }).then(data => {
+        this.floorsData = data;
+        this.updateView();
+      }).catch(() => {
+        this.floorsData = { floors: [], areas: [] };
+        this.updateView();
+      });
+    } else {
+      this.updateView();
+    }
   }
   
   _getSmartGroups() {
@@ -3551,6 +3658,22 @@ class EntityManagerPanel extends HTMLElement {
               // Group by entity domain
               groupKey = entity.entity_id.split('.')[0];
               break;
+            case 'floor': {
+              // Group by floor → area. Use floorsData cache; fall back to area name or "No Area"
+              const fDevInfo = this.deviceInfo[deviceId];
+              const areaId = fDevInfo?.area_id || null;
+              if (!areaId) { groupKey = 'No Floor / No Area'; break; }
+              const areaObj = (this.floorsData?.areas || []).find(a => a.area_id === areaId);
+              const areaName = areaObj?.name || areaId;
+              const floorId = areaObj?.floor_id;
+              if (floorId) {
+                const floorObj = (this.floorsData?.floors || []).find(f => f.floor_id === floorId);
+                groupKey = `${floorObj?.name || floorId} › ${areaName}`;
+              } else {
+                groupKey = `No Floor › ${areaName}`;
+              }
+              break;
+            }
             case 'device-name': {
               // Filter by device name keyword, then group by device name
               const devName = (this.getDeviceName(deviceId) || '').toLowerCase();
@@ -4031,6 +4154,10 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">☐</span>
             <span class="label">Deselect All</span>
           </div>
+          <div class="sidebar-item" data-action="select-open-integration">
+            <span class="icon">☑</span>
+            <span class="label">Select Open Device</span>
+          </div>
           <div class="sidebar-item" data-action="refresh">
             <span class="icon">↺</span>
             <span class="label">Refresh</span>
@@ -4103,6 +4230,10 @@ class EntityManagerPanel extends HTMLElement {
               <span class="icon">📂</span>
               <span class="label">By Type</span>
             </div>
+            <div class="sidebar-item ${this.smartGroupMode === 'floor' ? 'active' : ''}" data-group-mode="floor">
+              <span class="icon">🏢</span>
+              <span class="label">By Floor</span>
+            </div>
             <div class="sidebar-item ${this.smartGroupMode === 'device-name' ? 'active' : ''}" data-group-mode="device-name">
               <span class="icon">🔍</span>
               <span class="label">By Device Name</span>
@@ -4136,6 +4267,32 @@ class EntityManagerPanel extends HTMLElement {
           ` : ''}
         </div>
         
+        <div class="sidebar-section ${this.sidebarOpenSections.has('presets') ? '' : 'section-collapsed'}">
+          <div class="sidebar-section-title" data-section-id="presets">Presets</div>
+          ${(() => {
+            const presets = this._loadFromStorage('em-presets', []);
+            const hasSel = this.selectedEntities?.size > 0;
+            const saveBtn = `
+              <div class="sidebar-item ${hasSel ? '' : 'disabled'}" data-action="save-entity-preset" title="${hasSel ? 'Save selected entities as a preset' : 'Select entities first'}">
+                <span class="icon">＋</span>
+                <span class="label" style="opacity:${hasSel ? 1 : 0.4}">Save selection as preset</span>
+              </div>`;
+            if (!presets.length) return saveBtn;
+            const rows = presets.map(p => `
+              <div class="sidebar-item em-preset-row" style="flex-wrap:wrap;gap:4px;padding:6px 8px" data-ep-id="${this._escapeAttr(p.id)}">
+                <span class="label" style="flex:1;font-size:12px" title="${p.entityIds.length} entities">${this._escapeHtml(p.name)}</span>
+                <span style="font-size:10px;opacity:0.5;flex-shrink:0">${p.entityIds.length}</span>
+                <div style="display:flex;gap:3px;flex-basis:100%">
+                  <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:#4caf50;color:#fff;border:none;border-radius:3px">Enable</button>
+                  <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:#f44336;color:#fff;border:none;border-radius:3px">Disable</button>
+                  <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">✎</button>
+                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:#f44336" title="Delete">✕</button>
+                </div>
+              </div>`).join('');
+            return saveBtn + rows;
+          })()}
+        </div>
+
         <div class="sidebar-section ${this.sidebarOpenSections.has('integrations') ? '' : 'section-collapsed'}">
           <div class="sidebar-section-title" data-section-id="integrations">Integrations</div>
           ${this.selectedIntegrationFilter ? `
@@ -4152,7 +4309,7 @@ class EntityManagerPanel extends HTMLElement {
           ` : ''}
           ${(this.showAllSidebarIntegrations ? integrationList : integrationList.slice(0, 10)).map(int => `
             <div class="sidebar-item ${this.selectedIntegrationFilter === int.name ? 'active' : ''}" data-integration="${int.name}">
-              <img class="sidebar-icon" src="https://brands.home-assistant.io/${int.name}/icon.png" 
+              <img class="sidebar-icon" src="${this._brandIconUrl(int.name)}"
                    onerror="this.style.display='none'" alt="">
               <span class="label">${int.name}</span>
               <span class="count">${int.count}</span>
@@ -4392,6 +4549,29 @@ class EntityManagerPanel extends HTMLElement {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
+  // ── Brands proxy API (HA 2026.3+) ────────────────────────────────────────
+
+  async _fetchBrandsToken() {
+    try {
+      const res = await this._hass.callWS({ type: 'brands/access_token' });
+      this._brandsToken = res.access_token || res.token || '';
+    } catch (_) {
+      // Older HA versions don't have this command — fall back to CDN URLs
+      this._brandsToken = null; // null = use CDN fallback
+    }
+  }
+
+  /** Returns the correct brand icon URL for a given integration domain. */
+  _brandIconUrl(domain) {
+    const d = encodeURIComponent(domain);
+    if (this._brandsToken) {
+      return `/api/brands/integration/${d}/icon.png?token=${this._brandsToken}`;
+    }
+    // Fallback: CDN (works on HA < 2026.3 or before token arrives)
+    // /_/ = "best available" path on the brands CDN
+    return `https://brands.home-assistant.io/_/${d}/icon.png`;
+  }
+
   async loadData() {
     this.setLoading(true);
     try {
@@ -4420,7 +4600,11 @@ class EntityManagerPanel extends HTMLElement {
 
       this.domainOptions = this.extractDomains(this.data);
       this.updateDomainOptions();
-      
+
+      // Fetch brands token lazily (non-blocking — icons fall back to CDN until ready)
+      // Only fetch when in initial '' state; null means already tried and failed (old HA)
+      if (this._brandsToken === '') this._fetchBrandsToken();
+
       this.loadDeviceInfo();
     } catch (error) {
       console.error('Entity Manager Error:', error);
@@ -4461,11 +4645,17 @@ class EntityManagerPanel extends HTMLElement {
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
       // Count entities stuck in unavailable
       this.unavailableCount = states.filter(s => s.state === 'unavailable').length;
-      // Count entities not updated in 30+ days (excluding meta-states)
-      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      // Count entities not updated in 30+ days (excluding meta-states and dismissed)
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      const thirtyDaysAgo = Date.now() - thirtyDaysMs;
+      const staleDismissed = this._loadFromStorage('em-stale-dismissed', {});
+      const staleDismissedActive = new Set(
+        Object.entries(staleDismissed).filter(([, ts]) => Date.now() - ts < thirtyDaysMs).map(([eid]) => eid)
+      );
       this.healthCount = states.filter(s => {
         if (s.state === 'unavailable' || s.state === 'unknown') return false;
         if (!s.last_updated) return false;
+        if (staleDismissedActive.has(s.entity_id)) return false;
         return new Date(s.last_updated).getTime() < thirtyDaysAgo;
       }).length;
       // Count orphaned entities (no device) from entity registry data
@@ -4476,6 +4666,15 @@ class EntityManagerPanel extends HTMLElement {
           if (noDevice) this.orphanedCount += noDevice.entities.length;
         });
       }
+      // Config entry health count (non-blocking — stat card updates when ready)
+      this._hass.callWS({ type: 'entity_manager/get_config_entry_health' }).then(entries => {
+        this.configHealthCount = entries.length;
+        const healthCard = this.querySelector('[data-stat-type="config-health"] .stat-value');
+        if (healthCard) {
+          healthCard.textContent = String(this.configHealthCount);
+          healthCard.style.color = this.configHealthCount > 0 ? '#f44336' : '#4caf50';
+        }
+      }).catch(() => { this.configHealthCount = 0; });
       // Count templates via backend (covers YAML platform=template + template.* domain)
       try {
         const templateSensors = await this._hass.callWS({ type: 'entity_manager/get_template_sensors' });
@@ -4494,38 +4693,38 @@ class EntityManagerPanel extends HTMLElement {
         this.hacsItems = null;
         this.hacsCount = 0;
       }
-      // Count Lovelace dashboard cards (recursive, cache configs for dialog reuse)
-      const _llCountCards = (cards) => {
-        let n = 0;
+      // Collect unique card types across dashboards (recursive, cache configs for dialog reuse)
+      const _llCollectTypes = (cards, types) => {
         for (const c of (cards || [])) {
           if (!c || typeof c !== 'object') continue;
-          n++;
-          if (c.cards) n += _llCountCards(c.cards);
-          if (c.card) n += _llCountCards([c.card]);
-          if (c.elements) n += _llCountCards(c.elements);
+          if (c.type) types.add(c.type);
+          if (c.cards) _llCollectTypes(c.cards, types);
+          if (c.card) _llCollectTypes([c.card], types);
+          if (c.elements) _llCollectTypes(c.elements, types);
         }
-        return n;
       };
       try {
         const dashboards = await this._hass.callWS({ type: 'lovelace/dashboards/list' });
         this.lovelaceDashboardList = dashboards || [];
-        let cardCount = 0;
+        const types = new Set();
         for (const dashboard of this.lovelaceDashboardList) {
           try {
             const config = await this._hass.callWS({ type: 'lovelace/config', url_path: dashboard.url_path || null });
             dashboard._config = config;
             (config?.views || []).forEach(view => {
-              cardCount += _llCountCards(view.cards || []);
-              (view.sections || []).forEach(s => { if (s) cardCount += _llCountCards(s.cards || []); });
+              _llCollectTypes(view.cards || [], types);
+              (view.sections || []).forEach(s => { if (s) _llCollectTypes(s.cards || [], types); });
             });
           } catch (e) { /* skip */ }
         }
-        this.lovelaceCardCount = cardCount;
+        this.lovelaceCardCount = types.size;
       } catch (e) {
         this.lovelaceDashboardList = [];
         try {
           const config = await this._hass.callWS({ type: 'lovelace/config' });
-          this.lovelaceCardCount = _llCountCards(config?.views?.flatMap(v => v.cards || []) || []);
+          const types = new Set();
+          _llCollectTypes(config?.views?.flatMap(v => v.cards || []) || [], types);
+          this.lovelaceCardCount = types.size;
         } catch (e2) {
           this.lovelaceCardCount = 0;
         }
@@ -5239,6 +5438,8 @@ class EntityManagerPanel extends HTMLElement {
       this._reRenderSidebar();
     } else if (action === 'save-preset') {
       this._saveCurrentFilterPreset();
+    } else if (action === 'save-entity-preset') {
+      if (this.selectedEntities?.size > 0) this._saveEntityPreset();
     } else if (groupMode) {
       this._setSmartGroupMode(groupMode);
       this.querySelector('.em-sidebar').querySelectorAll('[data-group-mode]').forEach(el => {
@@ -5279,6 +5480,32 @@ class EntityManagerPanel extends HTMLElement {
       this.updateSelectedCount();
       this.updateView();
       this._showToast('Selection cleared', 'info');
+    } else if (action === 'select-open-integration') {
+      if (!this.expandedDevices.size) {
+        this._showToast('Expand a device first', 'info');
+        return;
+      }
+      let added = 0;
+      for (const deviceId of this.expandedDevices) {
+        for (const intgData of (this.data || [])) {
+          const dev = intgData.devices[deviceId];
+          if (!dev) continue;
+          dev.entities.forEach(e => {
+            if (!this.selectedEntities.has(e.entity_id)) {
+              this.selectedEntities.add(e.entity_id);
+              added++;
+            }
+          });
+        }
+      }
+      // Sync visible checkboxes
+      this.content.querySelectorAll('.entity-checkbox').forEach(cb => {
+        if (this.selectedEntities.has(cb.dataset.entityId)) cb.checked = true;
+      });
+      this.updateSelectedCount();
+      this._reRenderSidebar();
+      this._updateDeviceSelectionIndicators();
+      this._showToast(added ? `Selected ${added} entit${added !== 1 ? 'ies' : 'y'}` : 'All entities already selected', 'success');
     } else if (action === 'refresh') {
       if (this.viewState === 'updates') {
         this.loadUpdates();
@@ -5305,6 +5532,49 @@ class EntityManagerPanel extends HTMLElement {
       this._reRenderSidebar();
       this._showToast(`Showing ${integration} entities`, 'info');
     }
+
+    // Entity preset buttons (Enable / Disable / Rename / Delete)
+    this.querySelector('.em-sidebar')?.querySelectorAll('.em-preset-enable, .em-preset-disable, .em-preset-rename-btn, .em-preset-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const epId = btn.dataset.epId;
+        const presets = this._loadFromStorage('em-presets', []);
+        const preset = presets.find(p => p.id === epId);
+        if (!preset) return;
+
+        if (btn.classList.contains('em-preset-enable') || btn.classList.contains('em-preset-disable')) {
+          const isEnable = btn.classList.contains('em-preset-enable');
+          if (!preset.entityIds.length) { this._showToast('Preset is empty', 'info'); return; }
+          btn.disabled = true;
+          btn.textContent = '…';
+          try {
+            const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+            const res = await this._hass.callWS({ type: wsType, entity_ids: preset.entityIds });
+            const n = res.success?.length ?? preset.entityIds.length;
+            this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`, 'success');
+            await this.loadData();
+          } catch (err) {
+            this._showToast('Preset action failed: ' + (err.message || err), 'error');
+            btn.disabled = false;
+            btn.textContent = isEnable ? 'Enable' : 'Disable';
+          }
+
+        } else if (btn.classList.contains('em-preset-rename-btn')) {
+          this._showPromptDialog('Rename Preset', `New name for "${preset.name}":`, preset.name, newName => {
+            if (!newName?.trim()) return;
+            preset.name = newName.trim();
+            this._saveToStorage('em-presets', presets);
+            this._reRenderSidebar();
+          });
+
+        } else if (btn.classList.contains('em-preset-delete')) {
+          if (!confirm(`Delete preset "${preset.name}"?`)) return;
+          const updated = presets.filter(p => p.id !== epId);
+          this._saveToStorage('em-presets', updated);
+          this._reRenderSidebar();
+        }
+      });
+    });
   }
 
   setActiveFilter() {
@@ -5449,13 +5719,27 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-label">Stale (30d)</div>
         <div class="stat-value" style="color: ${this.healthCount > 0 ? '#ff9800' : '#4caf50'} !important;">${this.healthCount || 0}</div>
       </div>
+      <div class="stat-card clickable-stat" data-stat-type="config-health" title="Click to view integration errors">
+        <div class="stat-label">Config Errors</div>
+        <div class="stat-value" style="color: ${this.configHealthCount > 0 ? '#f44336' : '#4caf50'} !important;">${this.configHealthCount}</div>
+      </div>
       <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
         <div class="stat-label">HACS Store</div>
         <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
-        <div class="stat-label">Lovelace Cards</div>
+        <div class="stat-label">Card Types</div>
         <div class="stat-value" style="color: #9c27b0 !important;">${this.lovelaceCardCount}</div>
+      </div>
+      <div class="stat-card clickable-stat" data-stat-type="activity" title="Click to view entity activity log">
+        <div class="stat-label">Activity Log</div>
+        <div class="stat-value" style="color: #607d8b !important;">${(() => {
+          const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+          const count = Object.values(this._hass?.states || {})
+            .filter(s => new Date(s.last_changed).getTime() > dayAgo).length;
+          return count;
+        })()}</div>
+        <div style="font-size:0.72em;color:var(--secondary-text-color);margin-top:2px">entities / 24h</div>
       </div>
       ${(() => {
         const bm = (this.data || []).find(i => i.integration === 'browser_mod');
@@ -5491,6 +5775,10 @@ class EntityManagerPanel extends HTMLElement {
           this._showBrowserModDialog();
         } else if (card.dataset.statType === 'entities') {
           this._showAllEntitiesDialog();
+        } else if (card.dataset.statType === 'activity') {
+          this._showActivityLogDialog();
+        } else if (card.dataset.statType === 'config-health') {
+          this._showConfigEntryHealthDialog();
         } else {
           this.showEntityListDialog(card.dataset.statType);
         }
@@ -5594,28 +5882,36 @@ class EntityManagerPanel extends HTMLElement {
     
     const modeLabels = {
       'room': 'Room',
-      'type': 'Entity Type'
+      'type': 'Entity Type',
+      'floor': 'Floor'
     };
-    
+
     const modeIcons = {
       'room': '🏠',
-      'type': '📂'
+      'type': '📂',
+      'floor': '🏢'
     };
-    
+
     return sortedKeys.map(groupKey => {
       const entities = groups[groupKey];
       const isExpanded = this.expandedIntegrations.has(`smart_${groupKey}`);
       const enabledCount = entities.filter(e => !e.is_disabled).length;
       const disabledCount = entities.filter(e => e.is_disabled).length;
-      
+
       // Format group name
       let displayName = groupKey;
       if (this.smartGroupMode === 'type') {
         displayName = groupKey.charAt(0).toUpperCase() + groupKey.slice(1).replace(/_/g, ' ');
       } else if (this.smartGroupMode === 'room') {
         displayName = groupKey === 'Unassigned' ? '📍 Unassigned' : groupKey;
+      } else if (this.smartGroupMode === 'floor') {
+        // groupKey is already formatted as "Floor › Area" or "No Floor › Area" or "No Floor / No Area"
+        displayName = groupKey;
       }
       
+      const isUnassigned = (this.smartGroupMode === 'room'  && groupKey === 'Unassigned') ||
+                           (this.smartGroupMode === 'floor' && groupKey === 'No Floor / No Area');
+
       return `
         <div class="smart-group ${isExpanded ? 'expanded' : ''}" data-smart-group="${this._escapeAttr(groupKey)}">
           <div class="smart-group-header" data-smart-group-toggle="${this._escapeAttr(groupKey)}">
@@ -5623,14 +5919,36 @@ class EntityManagerPanel extends HTMLElement {
             <span class="smart-group-name">${this._escapeHtml(displayName)}</span>
             <span class="smart-group-count">${entities.length} entities</span>
             <span class="smart-group-stats">
-              <span style="color: #4caf50">${enabledCount}</span> / 
+              <span style="color: #4caf50">${enabledCount}</span> /
               <span style="color: #f44336">${disabledCount}</span>
             </span>
+            ${isUnassigned ? `<button class="btn btn-sm smart-group-assign-all-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to an area">📍 Assign all</button>` : ''}
             <span class="smart-group-expand">▼</span>
           </div>
           ${isExpanded ? `
             <div class="smart-group-content">
-              ${entities.map(entity => this._renderEntityItem(entity, entity.integration)).join('')}
+              ${isUnassigned ? (() => {
+                // Sub-group unassigned entities: Integration → Device → Entities
+                const byIntg = {};
+                for (const entity of entities) {
+                  const intg = entity.integration || 'unknown';
+                  if (!byIntg[intg]) byIntg[intg] = {};
+                  const devId = entity.device_id || '__no_device__';
+                  if (!byIntg[intg][devId]) byIntg[intg][devId] = [];
+                  byIntg[intg][devId].push(entity);
+                }
+                return Object.entries(byIntg).sort(([a],[b]) => a.localeCompare(b)).map(([intg, byDev]) => {
+                  const intgTotal = Object.values(byDev).flat().length;
+                  const intgLabel = `${this._escapeHtml(intg.charAt(0).toUpperCase() + intg.slice(1))} <span style="opacity:0.6;font-size:11px">(${intgTotal})</span>`;
+                  const devGroups = Object.entries(byDev).map(([devId, devEnts]) => {
+                    const devName = devId === '__no_device__' ? 'No device' : this.getDeviceName(devId);
+                    const devLabel = `${this._escapeHtml(devName)} <span style="opacity:0.6;font-size:11px">(${devEnts.length})</span>`;
+                    const devBody = devEnts.map(e => this._renderEntityItem(e, e.integration)).join('');
+                    return this._collGroup(devLabel, devBody);
+                  }).join('');
+                  return this._collGroup(intgLabel, devGroups);
+                }).join('');
+              })() : entities.map(entity => this._renderEntityItem(entity, entity.integration)).join('')}
             </div>
           ` : ''}
         </div>
@@ -5681,7 +5999,7 @@ class EntityManagerPanel extends HTMLElement {
             </label>
           </div>
           <div class="integration-logo-container">
-            <img class="integration-logo" src="https://brands.home-assistant.io/${encodeURIComponent(integration.integration)}/icon.png" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
+            <img class="integration-logo" src="${this._brandIconUrl(integration.integration)}" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
@@ -5696,8 +6014,14 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
         ${isExpanded ? `
-          <div class="entity-list" data-integration="${intName}">
-            ${this._renderEntityListWithLazyLoad(allEntities, integration.integration)}
+          <div class="integration-devices" data-integration="${intName}">
+            ${Object.entries(integration.devices)
+              .sort(([idA], [idB]) =>
+                this.getDeviceName(idA).localeCompare(this.getDeviceName(idB), undefined, { sensitivity: 'base' })
+              )
+              .map(([deviceId, device]) =>
+                this.renderDevice(deviceId, device, integration.integration)
+              ).join('')}
           </div>
         ` : ''}
       </div>
@@ -5793,56 +6117,87 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   renderDevice(deviceId, device, integration) {
+    // Default collapsed — only expanded if user explicitly opened it
     const isExpanded = this.expandedDevices.has(deviceId);
 
     const enabledCount = device.entities.filter(e => !e.is_disabled).length;
     const disabledCount = device.entities.filter(e => e.is_disabled).length;
 
+    const deviceEntityIds = device.entities.map(e => this._escapeAttr(e.entity_id)).join(',');
+    const areaId = this.deviceInfo[deviceId]?.area_id;
+    const areaName = areaId ? (this.floorsData?.areas?.find(a => a.area_id === areaId)?.name || areaId) : null;
+
+    const selectedCount = device.entities.filter(e => this.selectedEntities.has(e.entity_id)).length;
+    const totalCount = device.entities.length;
+    const selectionIndicator = selectedCount === 0 ? '' :
+      selectedCount === totalCount
+        ? '<span class="device-sel-indicator device-sel-all" title="All entities selected">✓</span>'
+        : `<span class="device-sel-indicator device-sel-partial" title="${selectedCount}/${totalCount} selected">✓</span>`;
+
     return `
-      <div class="device-item">
+      <div class="device-item ${isExpanded ? 'device-expanded' : ''}">
         <div class="device-header" data-device="${this._escapeAttr(deviceId)}">
-          <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>
-          <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
+          <span class="device-expand-arrow" style="font-size:13px;opacity:0.6;transition:transform 0.2s;transform:${isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'}">›</span>
+          <span class="device-name-wrap">
+            <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>${selectionIndicator}
+          </span>
+          <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span class="count-enabled">${enabledCount}</span>/<span class="count-disabled">${disabledCount}</span>)</span>
+          <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">
+            <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device">Enable All</button>
+            <button class="btn btn-sm device-disable-all" data-device="${this._escapeAttr(deviceId)}" title="Disable all entities in this device">Disable All</button>
+          </div>
+          <button class="btn btn-sm device-assign-area-btn${areaName ? '' : ' no-area'}" data-device-id="${this._escapeAttr(deviceId)}" title="Assign device to area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>
         </div>
         ${isExpanded ? `
-          <div class="entity-list">
-            ${device.entities.map(entity => {
-              const eid = this._escapeAttr(entity.entity_id);
-              const iid = this._escapeAttr(integration);
-              return `
-              <div class="entity-item" data-entity-id="${eid}">
-                <div class="entity-item-top">
-                  <div class="checkbox-group">
-                    <input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}"${this.selectedEntities.has(entity.entity_id) ? ' checked' : ''}>
-                  </div>
-                  <button class="favorite-btn ${this.favorites.has(entity.entity_id) ? 'is-favorite' : ''}" data-entity-id="${eid}" title="Toggle favorite">
-                    ${this.favorites.has(entity.entity_id) ? '★' : '☆'}
-                  </button>
-                  <div class="entity-info">
-                    ${entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
-                    <div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>
-                  </div>
-                  <span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>
-                </div>
-                <div class="entity-item-bottom">
-                  <div class="entity-actions">
-                    <button class="icon-btn rename-entity" data-entity-id="${eid}" title="Rename">✎</button>
-                    <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable">✓</button>
-                    <button class="icon-btn disable-entity" data-entity-id="${eid}" title="Disable">✕</button>
-                  </div>
-                </div>
-              </div>`;
-            }).join('')}
+          <div class="device-entity-list">
+            ${[...device.entities]
+              .sort((a, b) => (a.original_name || a.entity_id).localeCompare(b.original_name || b.entity_id, undefined, { sensitivity: 'base' }))
+              .map(entity => this._renderEntityItem(
+                { ...entity, deviceName: this.getDeviceName(deviceId) },
+                integration
+              )).join('')}
           </div>
         ` : ''}
       </div>
     `;
   }
 
+  _updateDeviceSelectionIndicators() {
+    this.content.querySelectorAll('.device-header').forEach(header => {
+      const deviceId = header.dataset.device;
+      let entities = [];
+      for (const intg of (this.data || [])) {
+        if (intg.devices[deviceId]) { entities = intg.devices[deviceId].entities; break; }
+      }
+      if (!entities.length) return;
+      const selectedCount = entities.filter(e => this.selectedEntities.has(e.entity_id)).length;
+      const totalCount = entities.length;
+      header.querySelector('.device-sel-indicator')?.remove();
+      if (selectedCount === 0) return;
+      const span = document.createElement('span');
+      span.className = `device-sel-indicator ${selectedCount === totalCount ? 'device-sel-all' : 'device-sel-partial'}`;
+      span.title = selectedCount === totalCount ? 'All entities selected' : `${selectedCount}/${totalCount} selected`;
+      span.textContent = '✓';
+      header.querySelector('.device-name').insertAdjacentElement('afterend', span);
+    });
+  }
+
   attachIntegrationListeners() {
+    // Collapsible sub-groups inside smart group content (e.g. Unassigned grouped by integration)
+    this.content.querySelectorAll('.smart-group-content .em-collapsible').forEach(header => {
+      header.addEventListener('click', () => {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.em-collapse-arrow');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+
     // Smart group headers
     this.content.querySelectorAll('.smart-group-header').forEach(header => {
-      header.addEventListener('click', () => {
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.smart-group-assign-all-btn')) return;
         const groupKey = header.dataset.smartGroupToggle;
         const expandKey = `smart_${groupKey}`;
         if (this.expandedIntegrations.has(expandKey)) {
@@ -5851,6 +6206,28 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedIntegrations.add(expandKey);
         }
         this.updateView();
+      });
+    });
+
+    // Smart group assign-all buttons (Unassigned / No Floor / No Area)
+    this.content.querySelectorAll('.smart-group-assign-all-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const groupKey = btn.dataset.groupKey;
+        const groups = this._getSmartGroups();
+        const entities = groups[groupKey] || [];
+        const deviceIds = [...new Set(entities.map(en => en.device_id).filter(Boolean))];
+        const noDeviceEntities = entities.filter(en => !en.device_id);
+        this._showAreaPickerDialog(`Assign ${entities.length} entities to area`, async areaId => {
+          for (const did of deviceIds) {
+            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
+          }
+          for (const ent of noDeviceEntities) {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+          }
+          this.floorsData = null;
+          await this.loadData();
+        });
       });
     });
 
@@ -5870,7 +6247,9 @@ class EntityManagerPanel extends HTMLElement {
 
     // Device headers
     this.content.querySelectorAll('.device-header').forEach(header => {
-      header.addEventListener('click', () => {
+      header.addEventListener('click', (e) => {
+        if (e.target.closest('.device-bulk-actions')) return;
+        if (e.target.closest('.device-assign-area-btn')) return;
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
           this.expandedDevices.delete(deviceId);
@@ -5878,6 +6257,49 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedDevices.add(deviceId);
         }
         this.updateView();
+      });
+    });
+
+    // Device assign-area buttons
+    this.content.querySelectorAll('.device-assign-area-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const deviceId = btn.dataset.deviceId;
+        this._showAreaPickerDialog('Assign device to area', async areaId => {
+          await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
+          this.floorsData = null;
+          await this.loadData();
+        });
+      });
+    });
+
+    // Device-level bulk enable / disable
+    this.content.querySelectorAll('.device-enable-all, .device-disable-all').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const isEnable = btn.classList.contains('device-enable-all');
+        const deviceId = btn.dataset.device;
+        // Collect entity IDs from this.data for the device
+        let entityIds = [];
+        for (const intg of (this.data || [])) {
+          const dev = intg.devices[deviceId];
+          if (dev) { entityIds = dev.entities.map(en => en.entity_id); break; }
+        }
+        if (!entityIds.length) return;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+          const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+          const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
+          const n = res.success?.length ?? entityIds.length;
+          this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+          this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
+          await this.loadData();
+        } catch (err) {
+          this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ` + (err.message || err), 'error');
+          btn.disabled = false;
+          btn.textContent = isEnable ? 'Enable All' : 'Disable All';
+        }
       });
     });
 
@@ -5920,6 +6342,7 @@ class EntityManagerPanel extends HTMLElement {
         }
         checkbox.indeterminate = false;
         this.updateSelectedCount();
+        this._updateDeviceSelectionIndicators();
       });
     });
 
@@ -5933,6 +6356,7 @@ class EntityManagerPanel extends HTMLElement {
         }
         this.updateSelectedCount();
         this._updateIntegrationCheckboxState(checkbox.dataset.integration);
+        this._updateDeviceSelectionIndicators();
       });
     });
 
@@ -6862,6 +7286,352 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
+  async _showActivityLogDialog() {
+    // Build entity_id → {integration, device_name} lookup from already-loaded data
+    const entityMap = {};
+    for (const intg of (this.data || [])) {
+      for (const [devId, dev] of Object.entries(intg.devices || {})) {
+        const devName = dev.name || (devId === 'no_device' ? '(No Device)' : 'Unknown Device');
+        for (const ent of (dev.entities || [])) {
+          entityMap[ent.entity_id] = { integration: intg.integration, device_name: devName };
+        }
+      }
+    }
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: '📋 Activity Log',
+      color: '#607d8b',
+      contentHtml: `
+        <div style="padding:0 16px 6px">
+          <div style="display:flex;align-items:center;gap:6px;padding:10px 0 8px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--secondary-text-color)">Show last:</span>
+            <div id="act-range-btns">
+              ${[1,6,24,168].map((h,i) => {
+                const label = ['1h','6h','24h','7d'][i];
+                const active = h === 24;
+                return `<button class="act-range-btn" data-hours="${h}" style="background:${active?'var(--em-primary,#4caf50)':'transparent'};color:${active?'#fff':'var(--primary-text-color)'};border:1px solid ${active?'var(--em-primary,#4caf50)':'var(--divider-color)'};border-radius:12px;padding:2px 10px;font-size:11px;cursor:pointer;margin-right:3px">${label}</button>`;
+              }).join('')}
+            </div>
+          </div>
+          <div id="act-log-body" style="max-height:68vh;overflow-y:auto;min-height:80px;display:flex;align-items:center;justify-content:center">
+            <span style="color:var(--secondary-text-color);font-size:13px">Loading…</span>
+          </div>
+        </div>
+      `,
+      actionsHtml: `<button class="btn btn-secondary act-close-btn">Close</button>`,
+      extraClass: 'act-log-dialog',
+    });
+
+    overlay.querySelector('.act-close-btn').addEventListener('click', closeDialog);
+
+    const loadLog = async (hours) => {
+      const body = overlay.querySelector('#act-log-body');
+      body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px;display:flex;align-items:center;justify-content:center';
+      body.innerHTML = `<span style="color:var(--secondary-text-color);font-size:13px">Loading…</span>`;
+
+      const endTime = new Date().toISOString();
+      const startTime = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      let events = [];
+      try {
+        events = await this._hass.callWS({ type: 'logbook/get_events', start_time: startTime, end_time: endTime });
+      } catch (e) {
+        body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px';
+        body.innerHTML = `<div style="padding:16px;color:var(--error-color);font-size:13px">⚠ Could not load logbook: ${this._escapeHtml(e.message || String(e))}</div>`;
+        return;
+      }
+
+      const entityEvents = (events || []).filter(e => e.entity_id);
+      if (!entityEvents.length) {
+        body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px';
+        body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--secondary-text-color);font-size:13px">No entity activity in this period.</div>`;
+        return;
+      }
+
+      // Group: integration → device_name → entity_id → events[]
+      const grouped = {};
+      for (const evt of entityEvents) {
+        const eid = evt.entity_id;
+        const info = entityMap[eid] || { integration: eid.split('.')[0], device_name: 'Other' };
+        const { integration, device_name } = info;
+        if (!grouped[integration]) grouped[integration] = {};
+        if (!grouped[integration][device_name]) grouped[integration][device_name] = {};
+        if (!grouped[integration][device_name][eid]) grouped[integration][device_name][eid] = { events: [] };
+        grouped[integration][device_name][eid].events.push(evt);
+      }
+
+      // Render integration → device → entity → event rows
+      const today = new Date().toDateString();
+      let html = '';
+      for (const intg of Object.keys(grouped).sort()) {
+        let intgTotal = 0;
+        let devicesHtml = '';
+        for (const [devName, entities] of Object.entries(grouped[intg]).sort(([a],[b]) => a.localeCompare(b))) {
+          let devTotal = 0;
+          let entitiesHtml = '';
+          for (const [eid, entData] of Object.entries(entities)) {
+            const evts = entData.events.slice().reverse(); // newest first
+            devTotal += evts.length;
+            const rows = evts.map(evt => {
+              const d = new Date(evt.when);
+              const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const dayPfx = d.toDateString() !== today
+                ? `<span style="font-size:9px;opacity:0.65">${d.toLocaleDateString([],{month:'short',day:'numeric'})} </span>` : '';
+              const ctxIcon = evt.context_event_type === 'automation' ? '🤖'
+                : evt.context_event_type === 'script' ? '⚙️'
+                : evt.context_user_id ? '👤' : '';
+              const ctxSpan = (ctxIcon || evt.context_name)
+                ? `<span style="font-size:10px;color:var(--secondary-text-color);font-style:italic;white-space:nowrap;flex-shrink:0">${ctxIcon}${evt.context_name ? ' ' + this._escapeHtml(evt.context_name) : ''}</span>` : '';
+              return `<div style="display:flex;align-items:baseline;gap:8px;padding:2px 0;border-bottom:1px solid rgba(128,128,128,.1)">
+                <span style="font-size:10px;color:var(--secondary-text-color);min-width:52px;flex-shrink:0;font-variant-numeric:tabular-nums">${dayPfx}${timeStr}</span>
+                <span style="font-size:12px;flex:1">${this._escapeHtml(evt.message || '—')}</span>
+                ${ctxSpan}
+              </div>`;
+            }).join('');
+            entitiesHtml += `
+              <div style="margin:4px 0 8px;padding:6px 8px;background:rgba(128,128,128,.06);border-radius:6px;border-left:2px solid rgba(128,128,128,.18)">
+                <div style="font-size:10px;font-family:monospace;color:var(--secondary-text-color);margin-bottom:4px">${this._escapeHtml(eid)}</div>
+                ${rows}
+              </div>`;
+          }
+          intgTotal += devTotal;
+          devicesHtml += this._collGroup(
+            `${this._escapeHtml(devName)} <span style="font-size:10px;color:var(--secondary-text-color)">(${devTotal})</span>`,
+            entitiesHtml
+          );
+        }
+        html += this._collGroup(
+          `<strong>${this._escapeHtml(intg)}</strong> <span style="font-size:10px;color:var(--secondary-text-color)">(${intgTotal})</span>`,
+          devicesHtml
+        );
+      }
+
+      body.style.cssText = 'max-height:68vh;overflow-y:auto;min-height:80px';
+      body.innerHTML = `<div style="padding-bottom:8px">${html}</div>`;
+
+      // Attach collapsible listeners (createDialog doesn't do this automatically)
+      body.querySelectorAll('.em-collapsible').forEach(header => {
+        header.addEventListener('click', () => {
+          const bodyEl = header.nextElementSibling;
+          const arrow = header.querySelector('.em-collapse-arrow');
+          const collapsed = bodyEl.style.display === 'none';
+          bodyEl.style.display = collapsed ? '' : 'none';
+          if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
+      });
+    };
+
+    // Range button handler — update active styles, reload data
+    overlay.querySelector('#act-range-btns').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.act-range-btn');
+      if (!btn) return;
+      const hours = parseInt(btn.dataset.hours, 10);
+      overlay.querySelectorAll('.act-range-btn').forEach(b => {
+        const active = parseInt(b.dataset.hours, 10) === hours;
+        b.style.background = active ? 'var(--em-primary,#4caf50)' : 'transparent';
+        b.style.color = active ? '#fff' : 'var(--primary-text-color)';
+        b.style.borderColor = active ? 'var(--em-primary,#4caf50)' : 'var(--divider-color)';
+      });
+      await loadLog(hours);
+    });
+
+    await loadLog(24);
+  }
+
+  async _showAreaPickerDialog(title, onSelect) {
+    const buildContent = (floors, areas) => {
+      // Group areas by floor
+      const byFloor = {};
+      const noFloor = [];
+      for (const area of areas) {
+        if (area.floor_id) {
+          if (!byFloor[area.floor_id]) {
+            const f = floors.find(f => f.floor_id === area.floor_id);
+            byFloor[area.floor_id] = { name: f?.name || area.floor_id, areas: [] };
+          }
+          byFloor[area.floor_id].areas.push(area);
+        } else {
+          noFloor.push(area);
+        }
+      }
+
+      const areaRows = (areaList) => areaList.map(a => `
+        <div class="em-area-option" data-area-id="${this._escapeAttr(a.area_id)}">
+          <span class="em-area-dot">●</span>${this._escapeHtml(a.name)}
+        </div>`).join('');
+
+      const floorGroupsHtml = Object.values(byFloor).map(f =>
+        this._collGroup(`🏢 ${this._escapeHtml(f.name)}`, areaRows(f.areas))
+      ).join('');
+
+      const noFloorHtml = noFloor.length
+        ? this._collGroup('📂 No Floor', areaRows(noFloor))
+        : '';
+
+      return `
+        <div class="em-area-picker">
+          <div class="em-area-option em-area-clear" data-area-id="">
+            <span class="em-area-dot" style="opacity:0.4">○</span>— No Area —
+          </div>
+          ${floorGroupsHtml}${noFloorHtml}
+          ${!areas.length ? `<div style="padding:12px;color:var(--secondary-text-color);font-style:italic">No areas defined yet.</div>` : ''}
+        </div>`;
+    };
+
+    // Ensure floor/area data is loaded
+    if (!this.floorsData) {
+      try {
+        this.floorsData = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
+      } catch (e) {
+        this.floorsData = { floors: [], areas: [] };
+      }
+    }
+
+    const { overlay, closeDialog } = this.createDialog({
+      title,
+      contentHtml: buildContent(this.floorsData.floors || [], this.floorsData.areas || []),
+      actionsHtml: `
+        <button class="btn btn-secondary em-area-create-btn">＋ New area</button>
+        <button class="btn btn-secondary em-area-cancel-btn">Cancel</button>`,
+    });
+
+    const wireUp = () => {
+      // Open all collapsible groups by default
+      overlay.querySelectorAll('.em-collapsible').forEach(header => {
+        const body = header.nextElementSibling;
+        const arrow = header.querySelector('.em-collapse-arrow');
+        body.style.display = '';
+        if (arrow) arrow.style.transform = '';
+        // Re-attach toggle (remove old listener by cloning)
+        const fresh = header.cloneNode(true);
+        header.replaceWith(fresh);
+        fresh.addEventListener('click', () => {
+          const b = fresh.nextElementSibling;
+          const a = fresh.querySelector('.em-collapse-arrow');
+          const collapsed = b.style.display === 'none';
+          b.style.display = collapsed ? '' : 'none';
+          if (a) a.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
+      });
+
+      // Area selection
+      overlay.querySelectorAll('.em-area-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+          closeDialog();
+          onSelect(opt.dataset.areaId || null);
+        });
+      });
+    };
+
+    wireUp();
+
+    // Create new area
+    overlay.querySelector('.em-area-create-btn').addEventListener('click', () => {
+      this._showPromptDialog('Create new area', 'Enter area name:', '', async (name) => {
+        if (!name.trim()) return;
+        try {
+          const newArea = await this._hass.callWS({ type: 'config/area_registry/create', name: name.trim() });
+          // Rebuild floorsData with the new area included
+          this.floorsData = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
+          // Auto-select the newly created area
+          closeDialog();
+          onSelect(newArea.area_id);
+        } catch (e) {
+          this._showToast('Failed to create area: ' + (e.message || e), 'error');
+        }
+      });
+    });
+
+    overlay.querySelector('.em-area-cancel-btn').addEventListener('click', closeDialog);
+  }
+
+  async _showConfigEntryHealthDialog() {
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Integration Config Errors',
+      color: '#f44336',
+      contentHtml: `<div style="padding:16px;text-align:center;color:var(--secondary-text-color)">Loading…</div>`,
+      actionsHtml: `<button class="btn btn-secondary em-health-close">Close</button>`,
+    });
+    overlay.querySelector('.em-health-close').addEventListener('click', closeDialog);
+
+    const render = (entries) => {
+      const body = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+      if (!entries.length) {
+        body.innerHTML = `<div style="padding:32px;text-align:center;color:#4caf50;font-size:15px">✓ All integrations are healthy</div>`;
+        return;
+      }
+
+      const stateLabel = { setup_error: 'Setup Error', setup_retry: 'Retrying', failed_unload: 'Failed Unload', migration_error: 'Migration Error', not_loaded: 'Not Loaded' };
+      const stateColor = { setup_error: '#f44336', setup_retry: '#ff9800', failed_unload: '#f44336', migration_error: '#9c27b0', not_loaded: '#607d8b' };
+
+      const byState = {};
+      entries.forEach(e => {
+        const s = e.state;
+        if (!byState[s]) byState[s] = [];
+        byState[s].push(e);
+      });
+
+      let html = '';
+      for (const [state, items] of Object.entries(byState)) {
+        const label = stateLabel[state] || state;
+        const color = stateColor[state] || '#607d8b';
+        const rows = items.map(e => `
+          <div class="entity-list-item" style="padding:10px 12px;display:flex;align-items:center;gap:10px" data-entry-id="${this._escapeHtml(e.entry_id)}">
+            <img src="${this._brandIconUrl(e.domain)}" style="width:24px;height:24px;flex-shrink:0" onerror="this.style.display='none'" alt="">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:13px">${this._escapeHtml(e.title || e.domain)}</div>
+              <div style="font-size:11px;opacity:0.7">${this._escapeHtml(e.domain)}${e.disabled_by ? ' · disabled' : ''}</div>
+            </div>
+            ${e.disabled_by
+              ? `<span style="background:#607d8b;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">${this._escapeHtml(e.disabled_by)}</span>`
+              : `<button class="btn em-reload-entry" data-entry-id="${this._escapeHtml(e.entry_id)}" style="padding:4px 12px;font-size:12px">Reload</button>`
+            }
+          </div>`).join('');
+        html += this._collGroup(
+          `<span style="color:${color}">${label}</span> <span style="font-size:11px;color:var(--secondary-text-color)">(${items.length})</span>`,
+          rows
+        );
+      }
+      body.innerHTML = `<div style="padding:8px 0">${html}</div>`;
+
+      body.querySelectorAll('.em-collapsible').forEach(h => {
+        h.addEventListener('click', () => {
+          const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
+          const collapsed = b.style.display === 'none';
+          b.style.display = collapsed ? '' : 'none';
+          if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        });
+      });
+
+      body.querySelectorAll('.em-reload-entry').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const entryId = btn.dataset.entryId;
+          btn.disabled = true;
+          btn.textContent = 'Reloading…';
+          try {
+            await this._hass.callWS({ type: 'config_entries/reload', entry_id: entryId });
+            this._showToast('Integration reloading…', 'success');
+            await new Promise(r => setTimeout(r, 1500));
+            const fresh = await this._hass.callWS({ type: 'entity_manager/get_config_entry_health' });
+            this.configHealthCount = fresh.length;
+            render(fresh);
+          } catch (e) {
+            this._showToast('Reload failed: ' + (e.message || e), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Reload';
+          }
+        });
+      });
+    };
+
+    try {
+      const entries = await this._hass.callWS({ type: 'entity_manager/get_config_entry_health' });
+      render(entries);
+    } catch (e) {
+      const body = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+      body.innerHTML = `<div style="padding:16px;color:var(--error-color)">⚠ ${this._escapeHtml(String(e.message || e))}</div>`;
+    }
+  }
+
   async _showBrowserModDialog() {
     const bmIntegration = (this.data || []).find(i => i.integration === 'browser_mod');
     if (!bmIntegration) {
@@ -7577,24 +8347,73 @@ class EntityManagerPanel extends HTMLElement {
             unavailByDomain[d].push(s);
           });
 
+          // Build entity rows; lastSeenMap filled in after async history fetch
+          const _unavailRows = (items, lastSeenMap) => items.map(s => {
+            const lsTs = lastSeenMap[s.entity_id];
+            const lsHtml = lsTs
+              ? `<span>Last seen: <strong style="color:#4caf50">${this._fmtAgo(new Date(lsTs).toISOString())}</strong></span>`
+              : `<span style="opacity:0.5">Last seen: <em>unknown (&gt;90d)</em></span>`;
+            return `
+              <div class="entity-list-item" style="padding:10px 12px">
+                <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                  <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                  <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+                </div>
+                <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px;flex-wrap:wrap">
+                  <span>Down since: <strong style="color:#f44336">${this._fmtAgo(s.last_changed, 'Unknown')}</strong></span>
+                  ${lsHtml}
+                </div>
+              </div>`;
+          }).join('');
+
+          const _buildUnavailHtml = (lastSeenMap) =>
+            Object.entries(unavailByDomain).sort().map(([domain, items]) => {
+              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              return this._collGroup(`${domainLabel} (${items.length})`, _unavailRows(items, lastSeenMap));
+            }).join('');
+
           if (unavailEntities.length === 0) {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reachable!</p>';
           } else {
-            groupedHtml = Object.entries(unavailByDomain).sort().map(([domain, items]) => {
-              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              const body = items.map(s => `
-                <div class="entity-list-item" style="padding:10px 12px">
-                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
-                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
-                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
-                  </div>
-                  <div style="font-size:0.88em;margin-top:4px;opacity:0.8">
-                    Unavailable since: <strong style="color:#f44336">${this._fmtAgo(s.last_changed, 'Unknown')}</strong>
-                  </div>
-                </div>
-              `).join('');
-              return this._collGroup(`${domainLabel} (${items.length})`, body);
-            }).join('');
+            // Render immediately; patch in last-seen after history arrives
+            groupedHtml = _buildUnavailHtml({});
+            setTimeout(async () => {
+              try {
+                const hist = await this._hass.callWS({
+                  type: 'history/history_during_period',
+                  start_time: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+                  end_time: new Date().toISOString(),
+                  entity_ids: unavailEntities.map(s => s.entity_id),
+                  minimal_response: true,
+                  no_attributes: true,
+                });
+                const lastSeenMap = {};
+                for (const [eid, records] of Object.entries(hist || {})) {
+                  for (let i = records.length - 1; i >= 0; i--) {
+                    const r = records[i];
+                    const st = r.state ?? r.s;
+                    if (st && st !== 'unavailable' && st !== 'unknown') {
+                      lastSeenMap[eid] = r.last_changed ?? r.lu;
+                      break;
+                    }
+                  }
+                }
+                if (overlay?.isConnected) {
+                  const contentEl = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+                  if (contentEl) {
+                    contentEl.innerHTML = `<div class="entity-list-body">${_buildUnavailHtml(lastSeenMap)}</div>`;
+                    contentEl.querySelectorAll('.em-collapsible').forEach(h => {
+                      h.addEventListener('click', () => {
+                        const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
+                        const collapsed = b.style.display === 'none';
+                        b.style.display = collapsed ? '' : 'none';
+                        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+                      });
+                    });
+                  }
+                }
+              } catch (_) { /* history unavailable — silent */ }
+            }, 0);
           }
           entities = unavailEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
 
@@ -7635,10 +8454,20 @@ class EntityManagerPanel extends HTMLElement {
           color = '#ff9800';
           allowToggle = false;
 
-          const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+          // Load dismissed map — entity_id → timestamp; dismiss hides for 30 days
+          const dismissedRaw = this._loadFromStorage('em-stale-dismissed', {});
+          const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          // Prune expired dismissals
+          const dismissed = Object.fromEntries(
+            Object.entries(dismissedRaw).filter(([, ts]) => now - ts < thirtyDaysMs)
+          );
+
+          const thirtyDaysAgo = now - thirtyDaysMs;
           const staleEntities = states.filter(s => {
             if (s.state === 'unavailable' || s.state === 'unknown') return false;
             if (!s.last_updated) return false;
+            if (dismissed[s.entity_id]) return false;
             return new Date(s.last_updated).getTime() < thirtyDaysAgo;
           });
 
@@ -7649,27 +8478,95 @@ class EntityManagerPanel extends HTMLElement {
             staleByDomain[d].push(s);
           });
 
+          // Build a single entity row with Keep / Disable / Remove actions
+          const _staleRow = (s) => `
+            <div class="entity-list-item em-stale-row" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:10px 12px">
+              <div class="entity-list-row" style="flex-wrap:wrap;align-items:center;gap:6px">
+                <span class="entity-list-name" style="font-weight:600;flex:1">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
+              </div>
+              <div style="font-size:0.88em;margin-top:4px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+                <span style="opacity:0.8">State: <strong>${this._escapeHtml(String(s.state))}</strong></span>
+                <span style="opacity:0.8">Last updated: <strong style="color:#ff9800">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
+                <span style="margin-left:auto;display:flex;gap:6px">
+                  <button class="btn em-stale-keep" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:transparent;border:1px solid var(--divider-color);color:var(--primary-text-color)" title="Hide from stale list for 30 days">Keep</button>
+                  <button class="btn em-stale-disable" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:#ff9800;color:#fff;border:none" title="Disable this entity">Disable</button>
+                  <button class="btn em-stale-remove" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:#f44336;color:#fff;border:none" title="Remove from registry">Remove</button>
+                </span>
+              </div>
+            </div>`;
+
           if (staleEntities.length === 0) {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reporting regularly.</p>';
           } else {
             groupedHtml = Object.entries(staleByDomain).sort().map(([domain, items]) => {
               const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              const body = items.map(s => `
-                <div class="entity-list-item" style="padding:10px 12px">
-                  <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
-                    <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
-                    <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
-                  </div>
-                  <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px">
-                    <span>State: <strong>${this._escapeHtml(String(s.state))}</strong></span>
-                    <span>Last updated: <strong style="color:#ff9800">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
-                  </div>
-                </div>
-              `).join('');
-              return this._collGroup(`${domainLabel} (${items.length})`, body);
+              return this._collGroup(`${domainLabel} (${items.length})`, items.map(_staleRow).join(''));
             }).join('');
           }
           entities = staleEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
+
+          // Attach stale action handlers after dialog renders
+          setTimeout(() => {
+            if (!overlay?.isConnected) return;
+            // Helper: remove a row from dialog and decrement domain count badge
+            const _removeStaleRow = (entityId) => {
+              const row = overlay.querySelector(`.em-stale-row[data-entity-id="${CSS.escape(entityId)}"]`);
+              if (!row) return;
+              const groupBody = row.closest('.em-group-body');
+              row.remove();
+              if (groupBody && !groupBody.querySelector('.em-stale-row')) {
+                groupBody.closest('.em-collapsible')?.nextElementSibling?.remove();
+                groupBody.closest('.em-collapsible')?.remove();
+              }
+            };
+
+            overlay.addEventListener('click', async (e) => {
+              const keepBtn = e.target.closest('.em-stale-keep');
+              const disableBtn = e.target.closest('.em-stale-disable');
+              const removeBtn = e.target.closest('.em-stale-remove');
+              if (!keepBtn && !disableBtn && !removeBtn) return;
+
+              const entityId = (keepBtn || disableBtn || removeBtn).dataset.entityId;
+
+              if (keepBtn) {
+                dismissed[entityId] = Date.now();
+                this._saveToStorage('em-stale-dismissed', dismissed);
+                _removeStaleRow(entityId);
+                this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
+                this._showToast(`${entityId} hidden for 30 days`, 'info');
+
+              } else if (disableBtn) {
+                disableBtn.disabled = true;
+                disableBtn.textContent = '…';
+                try {
+                  await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
+                  _removeStaleRow(entityId);
+                  this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
+                  this._showToast(`${entityId} disabled`, 'success');
+                } catch (err) {
+                  disableBtn.disabled = false;
+                  disableBtn.textContent = 'Disable';
+                  this._showToast('Disable failed: ' + (err.message || err), 'error');
+                }
+
+              } else if (removeBtn) {
+                if (!confirm(`Remove ${entityId} from the entity registry?\n\nThis cannot be undone.`)) return;
+                removeBtn.disabled = true;
+                removeBtn.textContent = '…';
+                try {
+                  const res = await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: entityId });
+                  _removeStaleRow(entityId);
+                  this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
+                  this._showToast(`${entityId} removed${res.warning ? ' — ' + res.warning : ''}`, res.warning ? 'warning' : 'success');
+                } catch (err) {
+                  removeBtn.disabled = false;
+                  removeBtn.textContent = 'Remove';
+                  this._showToast('Remove failed: ' + (err.message || err), 'error');
+                }
+              }
+            });
+          }, 0);
 
         } else if (type === 'hacs') {
           title = 'HACS Store';
@@ -8617,14 +9514,65 @@ class EntityManagerPanel extends HTMLElement {
 
       const domain = entityId.split('.')[0];
       const newEntityId = `${domain}.${newName}`;
-      
+
       if (newEntityId === entityId) {
         closeDialog();
         return;
       }
-      
-      closeDialog();
-      await this.renameEntity(entityId, newEntityId);
+
+      // Dry-run: scan YAML for references before committing
+      yesBtn.disabled = true;
+      yesBtn.textContent = 'Checking…';
+      try {
+        const preview = await this._hass.callWS({
+          type: 'entity_manager/update_yaml_references',
+          old_entity_id: entityId,
+          new_entity_id: newEntityId,
+          dry_run: true,
+        });
+
+        if (preview.total_replacements === 0) {
+          // No YAML references — rename immediately
+          closeDialog();
+          await this.renameEntity(entityId, newEntityId);
+          return;
+        }
+
+        // Show preview in-place inside the dialog before confirming
+        const content = overlay.querySelector('.confirm-dialog-content');
+        const fileRows = preview.files_updated.map(f =>
+          `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
+             <span style="font-size:12px;font-family:monospace">${this._escapeHtml(f.file)}</span>
+             <span style="font-size:11px;color:var(--secondary-text-color)">${f.replacements} ref${f.replacements !== 1 ? 's' : ''}</span>
+           </div>`).join('');
+        content.innerHTML = `
+          <p style="margin-bottom:8px">Rename <strong>${this._escapeHtml(entityId)}</strong> → <strong>${this._escapeHtml(newEntityId)}</strong></p>
+          <div style="background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#ff9800">
+              ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${preview.files_updated.length} file${preview.files_updated.length !== 1 ? 's' : ''} will be updated:
+            </div>
+            <div style="max-height:180px;overflow-y:auto">${fileRows}</div>
+          </div>
+          <p style="font-size:12px;opacity:0.7">Confirm to rename the entity and update all references.</p>
+        `;
+        yesBtn.disabled = false;
+        yesBtn.textContent = 'Confirm Rename';
+
+        // Replace the click handler to commit on next click
+        const newHandler = async () => {
+          yesBtn.disabled = true;
+          yesBtn.textContent = 'Renaming…';
+          closeDialog();
+          await this.renameEntity(entityId, newEntityId);
+        };
+        yesBtn.replaceWith(yesBtn.cloneNode(true)); // Remove old listeners
+        overlay.querySelector('.confirm-yes').addEventListener('click', newHandler);
+
+      } catch (_) {
+        // dry_run failed (old HA?) — proceed without preview
+        closeDialog();
+        await this.renameEntity(entityId, newEntityId);
+      }
     };
 
     yesBtn.addEventListener('click', performRename);

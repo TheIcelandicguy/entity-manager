@@ -14,7 +14,7 @@ Solves the common problem of managing hundreds of disabled diagnostic entities (
 
 ## Project Stats
 
-- **Version**: 2.9.2
+- **Version**: 2.10.0
 - **License**: MIT
 - **Language**: Python (backend), JavaScript (frontend)
 - **HA Minimum**: 2024.1.0

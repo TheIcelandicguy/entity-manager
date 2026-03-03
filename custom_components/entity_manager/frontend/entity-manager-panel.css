@@ -874,6 +874,10 @@ body.em-dialog-open {
   animation: slideUp 0.3s ease;
   overflow: hidden;
   border: var(--dialog-border-width) solid var(--em-primary-dark);
+  /* Flex column so header/actions stay pinned and content scrolls */
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
 }
 
 /* Entity detail dialog: wider + scrollable body */
@@ -906,6 +910,7 @@ body.em-dialog-open {
   padding: var(--dialog-header-padding);
   border-bottom: 2px solid var(--divider-color, #e0e0e0);
   background: var(--card-background-color, #ffffff);
+  flex-shrink: 0;
 }
 
 .confirm-dialog-header h2 {
@@ -932,6 +937,15 @@ body.em-dialog-open {
   gap: var(--dialog-gap);
   justify-content: flex-end;
   background: var(--card-background-color, #ffffff);
+  flex-shrink: 0;
+}
+
+/* The single content div between header and actions scrolls */
+.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions) {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .entity-list-dialog .confirm-dialog-actions {
@@ -965,7 +979,8 @@ body.em-dialog-open {
   padding: 0;
   background: var(--card-background-color, #ffffff);
   overflow-y: auto;
-  max-height: 60vh;
+  min-height: 0;
+  flex: 1;
 }
 
 .entity-list-group {
@@ -1580,8 +1595,15 @@ body.em-dialog-open {
   background: var(--divider-color);
 }
 
-.device-name {
+.device-name-wrap {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.device-name {
   font-weight: 600;
   color: var(--em-text-primary);
   font-size: 1.25em;
@@ -2325,10 +2347,12 @@ body.em-dialog-open {
     flex-wrap: wrap;
   }
   
-  .device-name {
-    font-size: 1em;
+  .device-name-wrap {
     flex-basis: 100%;
     margin-bottom: 4px;
+  }
+  .device-name {
+    font-size: 1em;
   }
   
   .device-count {
@@ -2373,8 +2397,10 @@ body.em-dialog-open {
   .entity-item-bottom {
     padding-top: 8px;
     border-top: 1px solid var(--em-border-light);
+    flex-wrap: wrap;
+    gap: 6px;
   }
-  
+
   .update-item {
     padding: 10px;
     gap: 12px;
@@ -2456,7 +2482,7 @@ body.em-dialog-open {
     display: flex;
     justify-content: flex-end;
     gap: 4px;
-    width: 100%;
+    flex-shrink: 0;
   }
   
   .favorite-btn {
@@ -2495,9 +2521,24 @@ body.em-dialog-open {
   .empty-state {
     padding: 32px 16px;
   }
-  
+
   .empty-state h2 {
     font-size: 20px;
+  }
+
+  /* Dialogs: use more viewport height on tablet/mobile */
+  .confirm-dialog-box {
+    max-height: 95vh;
+    width: 95%;
+    border-radius: 12px;
+  }
+
+  .confirm-dialog-header {
+    padding: 16px 16px 12px;
+  }
+
+  .confirm-dialog-header h2 {
+    font-size: 18px;
   }
 }
 
@@ -2637,8 +2678,17 @@ body.em-dialog-open {
   
   .entity-item-bottom {
     margin-top: 4px;
+    flex-wrap: wrap;
+    gap: 4px;
   }
-  
+
+  /* Actions drop to own row on small phones */
+  .entity-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    flex-shrink: 0;
+  }
+
   .update-item {
     padding: 8px;
     gap: 8px;
@@ -2667,6 +2717,13 @@ body.em-dialog-open {
   .update-btn {
     padding: 5px 10px;
     font-size: 10px;
+  }
+
+  /* Dialogs: near full-screen on phones */
+  .confirm-dialog-box {
+    max-height: 98vh;
+    width: 98%;
+    border-radius: 8px;
   }
 }
 
@@ -3853,6 +3910,95 @@ body.em-dialog-open {
   transform: rotate(180deg);
 }
 
+/* Assign all button inside smart group header */
+.smart-group-assign-all-btn {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 11px;
+  padding: 2px 8px;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.smart-group-assign-all-btn:hover { opacity: 1; }
+
+/* Area picker dialog */
+.em-area-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.em-area-option {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+.em-area-option:hover { background: var(--secondary-background-color); }
+.em-area-clear { color: var(--secondary-text-color); font-style: italic; }
+.em-area-dot { font-size: 10px; flex-shrink: 0; }
+
+/* Device count enabled/disabled colors */
+.count-enabled { color: var(--em-success, #4caf50); }
+.count-disabled { color: var(--em-danger, #f44336); }
+
+/* Device bulk action buttons */
+.device-enable-all {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--em-success, #4caf50);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+}
+.device-disable-all {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--em-danger, #f44336);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+}
+
+/* Device assign-area button */
+.device-assign-area-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  opacity: 0.75;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.device-assign-area-btn:hover { opacity: 1; }
+.device-assign-area-btn.no-area {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* Device selection indicator */
+.device-sel-indicator {
+  font-size: 22px;
+  font-weight: 700;
+  margin-left: 8px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.device-sel-all { color: #4caf50; }
+.device-sel-partial { color: #ff9800; }
+
+/* Device entity list — 2-column grid */
+.device-entity-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px 0 4px 16px;
+}
+
 .smart-group-content {
   display: none;
   padding: 12px;
@@ -4061,6 +4207,11 @@ body.em-dialog-open {
 }
 
 /* ===== ENTITY STATE PREVIEW ===== */
+
+/* Hover-only feature — hide on touch/mobile */
+@media (hover: none) {
+  .entity-state-preview { display: none !important; }
+}
 
 .entity-state-preview {
   position: fixed;
