@@ -6122,11 +6122,18 @@ class EntityManagerPanel extends HTMLElement {
     const areaId = this.deviceInfo[deviceId]?.area_id;
     const areaName = areaId ? (this.floorsData?.areas?.find(a => a.area_id === areaId)?.name || areaId) : null;
 
+    const selectedCount = device.entities.filter(e => this.selectedEntities.has(e.entity_id)).length;
+    const totalCount = device.entities.length;
+    const selectionIndicator = selectedCount === 0 ? '' :
+      selectedCount === totalCount
+        ? '<span class="device-sel-indicator device-sel-all" title="All entities selected">✓</span>'
+        : `<span class="device-sel-indicator device-sel-partial" title="${selectedCount}/${totalCount} selected">–</span>`;
+
     return `
       <div class="device-item ${isExpanded ? 'device-expanded' : ''}">
         <div class="device-header" data-device="${this._escapeAttr(deviceId)}">
           <span class="device-expand-arrow" style="font-size:13px;opacity:0.6;transition:transform 0.2s;transform:${isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'}">›</span>
-          <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>
+          <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>${selectionIndicator}
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">
             <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device" style="padding:2px 8px;font-size:11px;background:#4caf50;color:#fff;border:none;border-radius:4px">Enable All</button>

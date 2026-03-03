@@ -3949,6 +3949,16 @@ body.em-dialog-open {
   font-style: italic;
 }
 
+/* Device selection indicator */
+.device-sel-indicator {
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.device-sel-all { color: #4caf50; }
+.device-sel-partial { color: #ff9800; }
+
 .smart-group-content {
   display: none;
   padding: 12px;
