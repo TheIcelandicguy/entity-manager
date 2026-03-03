@@ -6113,8 +6113,8 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   renderDevice(deviceId, device, integration) {
-    // Default expanded — only collapsed if user explicitly closed it
-    const isExpanded = !this.expandedDevices.has(`collapsed_${deviceId}`);
+    // Default collapsed — only expanded if user explicitly opened it
+    const isExpanded = this.expandedDevices.has(deviceId);
 
     const enabledCount = device.entities.filter(e => !e.is_disabled).length;
     const disabledCount = device.entities.filter(e => e.is_disabled).length;
@@ -6216,10 +6216,10 @@ class EntityManagerPanel extends HTMLElement {
         if (e.target.closest('.device-bulk-actions')) return;
         if (e.target.closest('.device-assign-area-btn')) return;
         const deviceId = header.dataset.device;
-        if (this.expandedDevices.has(`collapsed_${deviceId}`)) {
-          this.expandedDevices.delete(`collapsed_${deviceId}`);
+        if (this.expandedDevices.has(deviceId)) {
+          this.expandedDevices.delete(deviceId);
         } else {
-          this.expandedDevices.add(`collapsed_${deviceId}`);
+          this.expandedDevices.add(deviceId);
         }
         this.updateView();
       });
