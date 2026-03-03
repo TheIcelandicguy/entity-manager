@@ -2101,7 +2101,8 @@ class EntityManagerPanel extends HTMLElement {
     // Attach listeners
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
     overlay.querySelector('#em-edd-open-ha')?.addEventListener('click', () => {
-      window.open(`/config/entities/edit/${encodeURIComponent(entityId)}`, '_blank');
+      closeDialog();
+      this._scrollToAndHighlight(entityId);
     });
     overlay.querySelector('#em-edd-rename')?.addEventListener('click', () => {
       closeDialog();
@@ -2198,6 +2199,54 @@ class EntityManagerPanel extends HTMLElement {
         if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
       });
     });
+  }
+
+  _scrollToAndHighlight(entityId) {
+    const doHighlight = (el) => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('em-entity-highlight');
+      setTimeout(() => el.classList.remove('em-entity-highlight'), 3000);
+    };
+
+    // If in updates view, switch to all-entities list first
+    if (this.viewState === 'updates') this.viewState = 'all';
+    // Switch to integration grouping so entity items are in standard DOM positions
+    if (this.smartGroupMode !== 'integration') {
+      this.smartGroupMode = 'integration';
+      localStorage.setItem('em-smart-group-mode', 'integration');
+    }
+    // Clear search so entity isn't filtered out
+    if (this.searchTerm) {
+      this.searchTerm = '';
+      const searchInput = this.querySelector('#em-search');
+      if (searchInput) searchInput.value = '';
+    }
+
+    // Find which integration + device this entity belongs to and expand them
+    let targetIntegration = null;
+    let targetDeviceId = null;
+    for (const intg of (this.data || [])) {
+      for (const [devId, dev] of Object.entries(intg.devices || {})) {
+        if (dev.entities?.some(e => e.entity_id === entityId)) {
+          targetIntegration = intg.integration;
+          targetDeviceId = devId;
+          break;
+        }
+      }
+      if (targetIntegration) break;
+    }
+    if (targetIntegration) {
+      this.expandedIntegrations.add(targetIntegration);
+      if (targetDeviceId) this.expandedDevices.add(targetDeviceId);
+    }
+
+    this.updateView();
+
+    // After DOM updates, scroll to and highlight the entity row
+    setTimeout(() => {
+      const el = this.content?.querySelector(`.entity-item[data-entity-id="${CSS.escape(entityId)}"]`);
+      if (el) doHighlight(el);
+    }, 200);
   }
 
   _showContextMenu(e, entityId) {
