@@ -2102,8 +2102,7 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
     overlay.querySelector('#em-edd-open-ha')?.addEventListener('click', () => {
       closeDialog();
-      history.pushState(null, '', `/config/entities/edit/${encodeURIComponent(entityId)}`);
-      window.dispatchEvent(new CustomEvent('location-changed'));
+      window.location.href = `/config/entities/edit/${entityId}`;
     });
     overlay.querySelector('#em-edd-rename')?.addEventListener('click', () => {
       closeDialog();
