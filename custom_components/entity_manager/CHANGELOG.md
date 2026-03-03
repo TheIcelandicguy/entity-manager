@@ -2,6 +2,27 @@
 
 All notable changes to Entity Manager will be documented in this file.
 
+## [2.10.0] - 2026-03-03
+
+### Added
+- **Device grouping in integration view**: entities grouped by device with collapsible dropdowns; 2-column entity grid; devices and entities sorted alphabetically
+- **Device selection indicator**: green ✓ (all) / orange ✓ (partial) on device header, updates live
+- **Area/room assignment**: 📍 button on device headers, context menu on entities, bulk assign on Unassigned smart group; inline area creation
+- **Floor smart group mode**: groups entities by Floor → Area hierarchy; "No Floor / No Area" fallback
+- **Unassigned sub-groups**: integration → device nesting inside Unassigned smart group
+- **Select Open Device** sidebar action: selects entities from expanded device dropdowns
+- **Config entry health stat card**: shows broken integrations with per-entry Reload button
+- **Dry-run rename preview**: shows affected YAML files before committing rename
+- **Last-seen timestamps** for unavailable entities (90-day history scan)
+- **Stale entity cleanup workflow**: Keep / Disable / Remove per stale entity with dismissal storage
+- **Bulk label operations**: add/remove labels across selected entities from multi-select toolbar
+- **Custom entity presets**: save named selections, enable/disable from sidebar
+- `watch-and-sync.ps1`: auto-syncs to HA on file save during development
+
+### Changed
+- Lovelace stat card shows unique card type count instead of total card count
+- Device Enable All / Disable All button styles moved to CSS classes
+
 ## [2.9.2] - 2026-02-23
 
 ### Added
