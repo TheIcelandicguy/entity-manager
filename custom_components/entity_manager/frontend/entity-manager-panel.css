@@ -1595,8 +1595,15 @@ body.em-dialog-open {
   background: var(--divider-color);
 }
 
-.device-name {
+.device-name-wrap {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.device-name {
   font-weight: 600;
   color: var(--em-text-primary);
   font-size: 1.25em;
@@ -2340,10 +2347,12 @@ body.em-dialog-open {
     flex-wrap: wrap;
   }
   
-  .device-name {
-    font-size: 1em;
+  .device-name-wrap {
     flex-basis: 100%;
     margin-bottom: 4px;
+  }
+  .device-name {
+    font-size: 1em;
   }
   
   .device-count {

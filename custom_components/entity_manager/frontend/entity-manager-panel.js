@@ -6134,7 +6134,9 @@ class EntityManagerPanel extends HTMLElement {
       <div class="device-item ${isExpanded ? 'device-expanded' : ''}">
         <div class="device-header" data-device="${this._escapeAttr(deviceId)}">
           <span class="device-expand-arrow" style="font-size:13px;opacity:0.6;transition:transform 0.2s;transform:${isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'}">›</span>
-          <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>${selectionIndicator}
+          <span class="device-name-wrap">
+            <span class="device-name">${this._escapeHtml(this.getDeviceName(deviceId))}</span>${selectionIndicator}
+          </span>
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount}</span>/<span style="color: #f44336">${disabledCount}</span>)</span>
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">
             <button class="btn btn-sm device-enable-all" data-device="${this._escapeAttr(deviceId)}" title="Enable all entities in this device" style="padding:2px 8px;font-size:11px;background:#4caf50;color:#fff;border:none;border-radius:4px">Enable All</button>
