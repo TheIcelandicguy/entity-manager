@@ -3969,6 +3969,14 @@ body.em-dialog-open {
 .device-sel-all { color: #4caf50; }
 .device-sel-partial { color: #ff9800; }
 
+/* Device entity list — 2-column grid */
+.device-entity-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px 0 4px 16px;
+}
+
 .smart-group-content {
   display: none;
   padding: 12px;
