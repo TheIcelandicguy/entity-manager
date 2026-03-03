@@ -4156,7 +4156,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>
           <div class="sidebar-item" data-action="select-open-integration">
             <span class="icon">☑</span>
-            <span class="label">Select Open Integration</span>
+            <span class="label">Select Open Device</span>
           </div>
           <div class="sidebar-item" data-action="refresh">
             <span class="icon">↺</span>
@@ -5481,23 +5481,22 @@ class EntityManagerPanel extends HTMLElement {
       this.updateView();
       this._showToast('Selection cleared', 'info');
     } else if (action === 'select-open-integration') {
-      const openIntgs = [...this.expandedIntegrations].filter(k => !k.startsWith('smart_'));
-      if (!openIntgs.length) {
-        this._showToast('Expand an integration first', 'info');
+      if (!this.expandedDevices.size) {
+        this._showToast('Expand a device first', 'info');
         return;
       }
       let added = 0;
-      for (const intg of openIntgs) {
-        const intgData = (this.data || []).find(i => i.integration === intg);
-        if (!intgData) continue;
-        Object.values(intgData.devices).forEach(dev => {
+      for (const deviceId of this.expandedDevices) {
+        for (const intgData of (this.data || [])) {
+          const dev = intgData.devices[deviceId];
+          if (!dev) continue;
           dev.entities.forEach(e => {
             if (!this.selectedEntities.has(e.entity_id)) {
               this.selectedEntities.add(e.entity_id);
               added++;
             }
           });
-        });
+        }
       }
       // Sync visible checkboxes
       this.content.querySelectorAll('.entity-checkbox').forEach(cb => {
