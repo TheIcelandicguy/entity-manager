@@ -1710,7 +1710,6 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   async _showEntityDetailsDialog(entityId) {
-    // Show a loading dialog immediately
     const { overlay, closeDialog } = this.createDialog({
       title: entityId,
       color: 'var(--em-primary)',
@@ -1720,19 +1719,32 @@ class EntityManagerPanel extends HTMLElement {
     });
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
 
-    // Fetch registry details + history in parallel
-    let details, history;
+    const ago30d = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const ago7d  = new Date(Date.now() - 7  * 24 * 3600 * 1000).toISOString();
+    const now    = new Date().toISOString();
+
+    let details, history, logbook, automations, statsResult;
     try {
-      [details, history] = await Promise.all([
+      [details, history, logbook, automations, statsResult] = await Promise.all([
         this._hass.callWS({ type: 'entity_manager/get_entity_details', entity_id: entityId }),
         this._hass.callWS({
           type: 'history/history_during_period',
           entity_ids: [entityId],
-          start_time: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-          end_time: new Date().toISOString(),
-          minimal_response: true,
-          no_attributes: true,
-          significant_changes_only: false,
+          start_time: ago30d, end_time: now,
+          minimal_response: true, no_attributes: true, significant_changes_only: false,
+        }).catch(() => null),
+        this._hass.callWS({
+          type: 'logbook/get_events',
+          start_time: ago7d, end_time: now,
+          entity_ids: [entityId],
+        }).catch(() => []),
+        this._hass.callWS({ type: 'config/automation/list' }).catch(() => []),
+        this._hass.callWS({
+          type: 'recorder/statistics_during_period',
+          statistic_ids: [entityId],
+          start_time: ago30d, end_time: now,
+          period: 'day', units: {},
+          types: ['mean', 'min', 'max', 'sum'],
         }).catch(() => null),
       ]);
     } catch (err) {
@@ -1878,6 +1890,167 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     })() : `<div style="padding:16px 0;color:var(--em-text-secondary)">No history available</div>`;
 
+    // ── Section: Entity Picture ────────────────────────────────────
+    const picUrl = state?.attributes?.entity_picture;
+    const entityPictureHtml = picUrl ? `
+      <div style="padding:8px 0;text-align:center">
+        <img src="${this._escapeAttr(picUrl.startsWith('/') ? picUrl : '')}" alt="Entity picture"
+          style="max-width:100%;max-height:200px;border-radius:8px;object-fit:contain"
+          onerror="this.style.display='none'">
+      </div>` : null;
+
+    // ── Section: Quick Control ─────────────────────────────────────
+    const quickControlHtml = (() => {
+      if (!state || isDisabled) return `<div style="padding:12px 0;color:var(--em-text-secondary)">Entity is ${isDisabled ? 'disabled' : 'unavailable'} — no controls available.</div>`;
+      const attrs = state.attributes;
+      const ctrlBtn = (label, bg, svcDomain, svcService, svcData = {}) =>
+        `<button class="em-edd-ctrl-btn" data-domain="${this._escapeAttr(svcDomain)}" data-service="${this._escapeAttr(svcService)}" data-svc='${JSON.stringify(svcData)}'
+          style="padding:10px 20px;border-radius:8px;border:none;background:${bg};color:white;cursor:pointer;font-size:14px;font-weight:600;transition:opacity 0.15s"
+          onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">${label}</button>`;
+      const isOn = state.state === 'on';
+      if (domain === 'light') {
+        const brightness = attrs.brightness != null ? Math.round(attrs.brightness / 255 * 100) : null;
+        return `<div style="display:flex;flex-direction:column;gap:14px;padding:8px 0">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${ctrlBtn(isOn ? '💡 Turn Off' : '💡 Turn On', isOn ? '#607d8b' : '#ff9800', 'light', isOn ? 'turn_off' : 'turn_on', { entity_id: entityId })}
+          </div>
+          ${brightness != null ? `<div>
+            <div style="font-size:12px;color:var(--em-text-secondary);margin-bottom:6px">Brightness: <span id="em-brightness-val">${brightness}%</span></div>
+            <input type="range" min="0" max="100" value="${brightness}" id="em-brightness-slider" style="width:100%;accent-color:var(--em-primary)">
+          </div>` : ''}
+          ${attrs.color_temp_kelvin ? `<div style="font-size:12px;color:var(--em-text-secondary)">Color temp: ${attrs.color_temp_kelvin}K</div>` : ''}
+        </div>`;
+      }
+      if (['switch','input_boolean','fan','automation','binary_sensor'].includes(domain)) {
+        return `<div style="padding:8px 0">
+          ${ctrlBtn(isOn ? '✕ Turn Off' : '✓ Turn On', isOn ? '#f44336' : '#4caf50', domain, isOn ? 'turn_off' : 'turn_on', { entity_id: entityId })}
+        </div>`;
+      }
+      if (domain === 'cover') {
+        return `<div style="display:flex;gap:8px;padding:8px 0;flex-wrap:wrap">
+          ${ctrlBtn('⬆ Open',  '#4caf50', 'cover', 'open_cover',  { entity_id: entityId })}
+          ${ctrlBtn('⏹ Stop',  '#ff9800', 'cover', 'stop_cover',  { entity_id: entityId })}
+          ${ctrlBtn('⬇ Close', '#607d8b', 'cover', 'close_cover', { entity_id: entityId })}
+        </div>`;
+      }
+      if (domain === 'lock') {
+        const locked = state.state === 'locked';
+        return `<div style="padding:8px 0">
+          ${ctrlBtn(locked ? '🔓 Unlock' : '🔒 Lock', locked ? '#ff9800' : '#4caf50', 'lock', locked ? 'unlock' : 'lock', { entity_id: entityId })}
+        </div>`;
+      }
+      if (domain === 'input_number') {
+        const min = attrs.min ?? 0, max = attrs.max ?? 100, step = attrs.step ?? 1;
+        const val = parseFloat(state.state) || min;
+        const unit = attrs.unit_of_measurement || '';
+        return `<div style="padding:8px 0">
+          <div style="font-size:12px;color:var(--em-text-secondary);margin-bottom:6px">Value: <span id="em-num-val">${val}${unit}</span></div>
+          <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" id="em-num-slider" style="width:100%;accent-color:var(--em-primary)">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--em-text-secondary);margin-top:4px"><span>${min}</span><span>${max}</span></div>
+        </div>`;
+      }
+      if (domain === 'input_select') {
+        const options = attrs.options || [];
+        return `<div style="padding:8px 0">
+          <select id="em-select-input" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--em-border);background:var(--em-bg-primary);color:var(--em-text-primary);font-size:14px">
+            ${options.map(o => `<option value="${this._escapeAttr(o)}"${o === state.state ? ' selected' : ''}>${this._escapeHtml(o)}</option>`).join('')}
+          </select>
+        </div>`;
+      }
+      if (domain === 'script')
+        return `<div style="padding:8px 0">${ctrlBtn('▶ Run Script', '#2196f3', 'script', 'turn_on', { entity_id: entityId })}</div>`;
+      if (domain === 'scene')
+        return `<div style="padding:8px 0">${ctrlBtn('🎬 Activate', '#9c27b0', 'scene', 'turn_on', { entity_id: entityId })}</div>`;
+      if (domain === 'media_player') {
+        const playing = state.state === 'playing';
+        return `<div style="display:flex;gap:8px;padding:8px 0;flex-wrap:wrap">
+          ${ctrlBtn(playing ? '⏸ Pause' : '▶ Play', '#2196f3', 'media_player', playing ? 'media_pause' : 'media_play', { entity_id: entityId })}
+          ${ctrlBtn('⏹ Stop', '#607d8b', 'media_player', 'media_stop', { entity_id: entityId })}
+        </div>`;
+      }
+      return `<div style="padding:12px 0;color:var(--em-text-secondary)">No controls available for this entity type.</div>`;
+    })();
+
+    // ── Section: Related Entities ──────────────────────────────────
+    const relatedEntitiesHtml = (() => {
+      if (!e.device_id) return `<div style="padding:8px 0;color:var(--em-text-secondary)">Entity has no device.</div>`;
+      let peers = [];
+      for (const intg of (this.data || [])) {
+        const dev = intg.devices[e.device_id];
+        if (dev) { peers = dev.entities.filter(en => en.entity_id !== entityId); break; }
+      }
+      if (!peers.length) return `<div style="padding:8px 0;color:var(--em-text-secondary)">No other entities on this device.</div>`;
+      return `<div style="padding:8px 0">
+        ${peers.sort((a, b) => (a.original_name||a.entity_id).localeCompare(b.original_name||b.entity_id)).map(en => {
+          const st = this._hass?.states[en.entity_id];
+          return `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--em-border-light);align-items:center">
+            <span style="flex:1;font-size:12px;font-family:monospace;color:var(--em-text-secondary)">${this._escapeHtml(en.entity_id)}</span>
+            <span style="font-size:12px;font-weight:600;color:${stateColor(st?.state)}">${st ? this._escapeHtml(st.state) : '<i>disabled</i>'}</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    })();
+
+    // ── Section: Automations ───────────────────────────────────────
+    const referencingAutomations = (automations || []).filter(a => {
+      try { return JSON.stringify(a).includes(entityId); } catch { return false; }
+    });
+    const automationsHtml = (() => {
+      if (!referencingAutomations.length)
+        return `<div style="padding:8px 0;color:var(--em-text-secondary)">No automations reference this entity.</div>`;
+      return `<div style="padding:8px 0">
+        ${referencingAutomations.map(a => {
+          const autoState = Object.values(this._hass?.states || {}).find(s => s.attributes?.id === a.id || s.entity_id === `automation.${(a.alias||'').toLowerCase().replace(/\s+/g,'_')}`);
+          const on = autoState?.state === 'on';
+          return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--em-border-light);align-items:center">
+            <span style="font-size:14px">${on ? '⚡' : '💤'}</span>
+            <span style="flex:1;font-size:13px">${this._escapeHtml(a.alias || a.id || 'Unknown')}</span>
+            <span style="font-size:11px;color:${on ? '#4caf50' : 'var(--em-text-secondary)'};font-weight:600">${on ? 'on' : 'off'}</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    })();
+
+    // ── Section: Logbook ───────────────────────────────────────────
+    const logbookHtml = (() => {
+      if (!logbook?.length)
+        return `<div style="padding:8px 0;color:var(--em-text-secondary)">No logbook entries in the last 7 days.</div>`;
+      return `<div style="padding:8px 0">
+        ${[...logbook].reverse().slice(0, 25).map(entry => `
+          <div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--em-border-light);align-items:flex-start">
+            <span style="font-size:11px;color:var(--em-text-secondary);min-width:80px;flex-shrink:0">${this._escapeHtml(this._fmtAgo(entry.when))}</span>
+            <span style="font-size:12px">${this._escapeHtml((entry.name ? entry.name + ': ' : '') + (entry.message || ''))}</span>
+          </div>`).join('')}
+      </div>`;
+    })();
+
+    // ── Section: Statistics ────────────────────────────────────────
+    const statisticsHtml = (() => {
+      const stats = statsResult?.[entityId];
+      if (!stats?.length)
+        return `<div style="padding:8px 0;color:var(--em-text-secondary)">No long-term statistics recorded for this entity.</div>`;
+      const unit = state?.attributes?.unit_of_measurement || '';
+      const means = stats.filter(s => s.mean != null).map(s => s.mean);
+      const mins  = stats.filter(s => s.min  != null).map(s => s.min);
+      const maxs  = stats.filter(s => s.max  != null).map(s => s.max);
+      const avg = means.length ? (means.reduce((a,b)=>a+b,0)/means.length).toFixed(2) : null;
+      const minV = mins.length  ? Math.min(...mins).toFixed(2) : null;
+      const maxV = maxs.length  ? Math.max(...maxs).toFixed(2) : null;
+      const card = (label, val, color) => `
+        <div style="text-align:center;background:var(--em-bg-secondary);border-radius:8px;padding:10px">
+          <div style="font-size:11px;color:var(--em-text-secondary);margin-bottom:4px">${label}</div>
+          <div style="font-size:18px;font-weight:700;color:${color}">${val}<span style="font-size:12px;color:var(--em-text-secondary);margin-left:2px">${unit}</span></div>
+        </div>`;
+      return `<div style="padding:8px 0">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
+          ${avg  != null ? card('30-day avg', avg,  'var(--em-primary)') : ''}
+          ${minV != null ? card('Min',        minV, '#2196f3') : ''}
+          ${maxV != null ? card('Max',        maxV, '#f44336') : ''}
+        </div>
+        <div style="font-size:11px;color:var(--em-text-secondary)">${stats.length} daily data points recorded</div>
+      </div>`;
+    })();
+
     // ── Assemble sections ──────────────────────────────────────────
     // Open overview + state by default; rest collapsed
     const openGroup = (label, bodyHtml) => `
@@ -1898,6 +2071,12 @@ class EntityManagerPanel extends HTMLElement {
     const totalLabelCount = entityLabels.length + deviceLabels.length;
     sectionsHtml += this._collGroup(`Labels${totalLabelCount ? ` (${totalLabelCount})` : ''}`, labelsHtml);
     sectionsHtml += this._collGroup('State History (last 30 days)', histHtml);
+    sectionsHtml += this._collGroup('Quick Control', quickControlHtml);
+    if (entityPictureHtml) sectionsHtml += this._collGroup('Entity Picture', entityPictureHtml);
+    sectionsHtml += this._collGroup(`Automations${referencingAutomations.length ? ` (${referencingAutomations.length})` : ''}`, automationsHtml);
+    sectionsHtml += this._collGroup('Related Entities', relatedEntitiesHtml);
+    sectionsHtml += this._collGroup('Logbook (last 7 days)', logbookHtml);
+    sectionsHtml += this._collGroup('Statistics (30 days)', statisticsHtml);
 
     const friendlyTitle = state?.attributes?.friendly_name || e.original_name || entityId;
 
@@ -1913,6 +2092,7 @@ class EntityManagerPanel extends HTMLElement {
     const btnBase = 'padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;border:2px solid';
     overlay.querySelector('.confirm-dialog-actions').innerHTML = `
       <button id="em-edd-rename" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">✎ Rename</button>
+      <button id="em-edd-open-ha" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">↗ Open in HA</button>
       <button id="em-edd-toggle" style="${btnBase} ${isDisabled ? '#4caf50;background:#4caf50;color:white' : '#f44336;background:#f44336;color:white'}">
         ${isDisabled ? '✓ Enable' : '✕ Disable'}
       </button>
@@ -1920,6 +2100,9 @@ class EntityManagerPanel extends HTMLElement {
 
     // Attach listeners
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
+    overlay.querySelector('#em-edd-open-ha')?.addEventListener('click', () => {
+      window.open(`/config/entities/edit/${encodeURIComponent(entityId)}`, '_blank');
+    });
     overlay.querySelector('#em-edd-rename')?.addEventListener('click', () => {
       closeDialog();
       this.showRenameDialog(entityId);
@@ -1929,6 +2112,55 @@ class EntityManagerPanel extends HTMLElement {
       else await this.disableEntity(entityId);
       closeDialog();
     });
+
+    // Quick control — service call buttons
+    overlay.querySelectorAll('.em-edd-ctrl-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const svcDomain = btn.dataset.domain;
+        const svcService = btn.dataset.service;
+        const svcData = JSON.parse(btn.dataset.svc || '{}');
+        try {
+          await this._hass.callService(svcDomain, svcService, svcData);
+        } catch (err) {
+          this._showToast(`Failed: ${err.message || err}`, 'error');
+        }
+      });
+    });
+
+    // Brightness slider (lights)
+    const bSlider = overlay.querySelector('#em-brightness-slider');
+    const bValEl  = overlay.querySelector('#em-brightness-val');
+    if (bSlider && bValEl) {
+      bSlider.addEventListener('input', () => { bValEl.textContent = `${bSlider.value}%`; });
+      bSlider.addEventListener('change', async () => {
+        try {
+          await this._hass.callService('light', 'turn_on', { entity_id: entityId, brightness_pct: parseInt(bSlider.value) });
+        } catch (err) { this._showToast(`Failed: ${err.message || err}`, 'error'); }
+      });
+    }
+
+    // Number slider (input_number)
+    const nSlider = overlay.querySelector('#em-num-slider');
+    const nValEl  = overlay.querySelector('#em-num-val');
+    if (nSlider && nValEl) {
+      const numUnit = state?.attributes?.unit_of_measurement || '';
+      nSlider.addEventListener('input', () => { nValEl.textContent = `${nSlider.value}${numUnit}`; });
+      nSlider.addEventListener('change', async () => {
+        try {
+          await this._hass.callService('input_number', 'set_value', { entity_id: entityId, value: parseFloat(nSlider.value) });
+        } catch (err) { this._showToast(`Failed: ${err.message || err}`, 'error'); }
+      });
+    }
+
+    // Select input (input_select)
+    const selInput = overlay.querySelector('#em-select-input');
+    if (selInput) {
+      selInput.addEventListener('change', async () => {
+        try {
+          await this._hass.callService('input_select', 'select_option', { entity_id: entityId, option: selInput.value });
+        } catch (err) { this._showToast(`Failed: ${err.message || err}`, 'error'); }
+      });
+    }
 
     // Manage entity labels
     overlay.querySelector('#em-edd-manage-entity-labels')?.addEventListener('click', () => {
