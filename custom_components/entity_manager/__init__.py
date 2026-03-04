@@ -26,6 +26,10 @@ SERVICE_SCHEMA = vol.Schema(
     }
 )
 
+_MANIFEST_VERSION: str = json.loads(
+    (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+).get("version", "0")
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Entity Manager component."""
@@ -48,51 +52,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_setup_intents(hass)
 
     # Register services (delegates to shared helpers in websocket_api)
-    async def handle_enable_entity_service(call):
-        """Handle enable entity service call."""
-        entity_id = call.data.get("entity_id")
-        if entity_id:
+    def _make_service_handler(action, fn):
+        async def _handler(call):
+            entity_id = call.data["entity_id"]
             try:
-                enable_entity(hass, entity_id)
-                _LOGGER.info("Enabled entity: %s", entity_id)
+                fn(hass, entity_id)
+                _LOGGER.info("%s entity: %s", action, entity_id)
             except ValueError as err:
-                _LOGGER.error("Failed to enable entity %s: %s", entity_id, err)
+                _LOGGER.error("Failed to %s entity %s: %s", action, entity_id, err)
             except Exception as err:
-                _LOGGER.error("Unexpected error enabling entity %s: %s", entity_id, err)
-
-    async def handle_disable_entity_service(call):
-        """Handle disable entity service call."""
-        entity_id = call.data.get("entity_id")
-        if entity_id:
-            try:
-                disable_entity(hass, entity_id)
-                _LOGGER.info("Disabled entity: %s", entity_id)
-            except ValueError as err:
-                _LOGGER.error("Failed to disable entity %s: %s", entity_id, err)
-            except Exception as err:
-                _LOGGER.error(
-                    "Unexpected error disabling entity %s: %s", entity_id, err
-                )
+                _LOGGER.error("Unexpected error %sing entity %s: %s", action, entity_id, err)
+        return _handler
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_ENABLE_ENTITY,
-        handle_enable_entity_service,
+        _make_service_handler("enable", enable_entity),
         schema=SERVICE_SCHEMA,
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_DISABLE_ENTITY,
-        handle_disable_entity_service,
+        _make_service_handler("disable", disable_entity),
         schema=SERVICE_SCHEMA,
     )
 
     # Register the frontend panel
-    manifest_path = Path(__file__).parent / "manifest.json"
-    manifest = await hass.async_add_executor_job(manifest_path.read_text)
-    version = json.loads(manifest).get("version", "0")
-
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -104,7 +90,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-manager-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={version}",
+                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={_MANIFEST_VERSION}",
             }
         },
         require_admin=True,
