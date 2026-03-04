@@ -219,6 +219,24 @@ async def handle_disable_entity(
         connection.send_error(msg["id"], "disable_failed", str(err))
 
 
+def _bulk_toggle(
+    hass: HomeAssistant,
+    entity_ids: list[str],
+    action: str,
+) -> dict[str, list]:
+    """Enable or disable a list of entities, returning success/failed lists."""
+    fn = enable_entity if action == "enable" else disable_entity
+    results: dict[str, list] = {"success": [], "failed": []}
+    for entity_id in entity_ids:
+        try:
+            fn(hass, entity_id)
+            results["success"].append(entity_id)
+        except Exception as err:
+            _LOGGER.error("Error %sing entity %s: %s", action, entity_id, err)
+            results["failed"].append({"entity_id": entity_id, "error": str(err)})
+    return results
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/bulk_enable",
@@ -235,19 +253,7 @@ async def handle_bulk_enable(
     msg: dict[str, Any],
 ) -> None:
     """Handle bulk enable request."""
-    entity_ids = msg["entity_ids"]
-
-    results: dict[str, list] = {"success": [], "failed": []}
-
-    for entity_id in entity_ids:
-        try:
-            enable_entity(hass, entity_id)
-            results["success"].append(entity_id)
-        except Exception as err:
-            _LOGGER.error("Error enabling entity %s: %s", entity_id, err)
-            results["failed"].append({"entity_id": entity_id, "error": str(err)})
-
-    connection.send_result(msg["id"], results)
+    connection.send_result(msg["id"], _bulk_toggle(hass, msg["entity_ids"], "enable"))
 
 
 @websocket_api.websocket_command(
@@ -266,19 +272,7 @@ async def handle_bulk_disable(
     msg: dict[str, Any],
 ) -> None:
     """Handle bulk disable request."""
-    entity_ids = msg["entity_ids"]
-
-    results: dict[str, list] = {"success": [], "failed": []}
-
-    for entity_id in entity_ids:
-        try:
-            disable_entity(hass, entity_id)
-            results["success"].append(entity_id)
-        except Exception as err:
-            _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
-            results["failed"].append({"entity_id": entity_id, "error": str(err)})
-
-    connection.send_result(msg["id"], results)
+    connection.send_result(msg["id"], _bulk_toggle(hass, msg["entity_ids"], "disable"))
 
 
 @websocket_api.websocket_command(
