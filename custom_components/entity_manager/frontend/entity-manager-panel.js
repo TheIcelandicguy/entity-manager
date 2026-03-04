@@ -288,9 +288,9 @@ class EntityManagerPanel extends HTMLElement {
   _triggerBadge(item) {
     if (item.triggered_by === 'human') {
       const who = item.triggered_by_name ? ` (${this._escapeHtml(item.triggered_by_name)})` : '';
-      return `<span style="color:#4caf50">Human${who}</span>`;
+      return `<span style="color:var(--em-success)">Human${who}</span>`;
     }
-    if (item.triggered_by === 'automation') return `<span style="color:#2196f3">Automation / Script</span>`;
+    if (item.triggered_by === 'automation') return `<span style="color:var(--em-primary)">Automation / Script</span>`;
     return `<span style="opacity:0.6">HA / System</span>`;
   }
 
@@ -315,7 +315,7 @@ class EntityManagerPanel extends HTMLElement {
               style="padding:2px 10px;font-size:0.8em">Rename</button>
             <button class="em-entity-remove btn"
               data-entity-id="${eid}" data-entity-type="${this._escapeAttr(opts.entityType)}"
-              style="padding:2px 10px;font-size:0.8em;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
+              style="padding:2px 10px;font-size:0.8em;background:var(--em-danger);color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
           </div>
         </div>
         ${opts.infoHtml ? `
@@ -1812,8 +1812,8 @@ class EntityManagerPanel extends HTMLElement {
     // ── Section: Registry ──────────────────────────────────────────
     const registryHtml = `<div style="padding:8px 0">
       ${row('Status', isDisabled
-        ? `<span style="color:#f44336;font-weight:600">Disabled</span> <span style="color:var(--em-text-secondary);font-size:12px">(by ${this._escapeHtml(e.disabled_by)})</span>`
-        : `<span style="color:#4caf50;font-weight:600">Enabled</span>`)}
+        ? `<span style="color:var(--em-danger);font-weight:600">Disabled</span> <span style="color:var(--em-text-secondary);font-size:12px">(by ${this._escapeHtml(e.disabled_by)})</span>`
+        : `<span style="color:var(--em-success);font-weight:600">Enabled</span>`)}
       ${e.hidden_by ? row('Hidden by', this._escapeHtml(e.hidden_by)) : ''}
       ${row('Entity category', this._escapeHtml(e.entity_category || '—'))}
       ${row('Device class', this._escapeHtml(e.device_class || e.original_device_class || '—'))}
@@ -2094,7 +2094,7 @@ class EntityManagerPanel extends HTMLElement {
       <button id="em-edd-rename" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">✎ Rename</button>
       <button id="em-edd-open-ha" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">↗ More Info</button>
       ${e.device_id ? `<button id="em-edd-open-device" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">🔌 Device</button>` : ''}
-      <button id="em-edd-toggle" style="${btnBase} ${isDisabled ? '#4caf50;background:#4caf50;color:white' : '#f44336;background:#f44336;color:white'}">
+      <button id="em-edd-toggle" style="${btnBase} ${isDisabled ? '#4caf50;background:var(--em-success);color:white' : '#f44336;background:var(--em-danger);color:white'}">
         ${isDisabled ? '✓ Enable' : '✕ Disable'}
       </button>
       <button id="em-edd-close" style="${btnBase} var(--em-border);background:transparent;color:var(--em-text-primary)">Close</button>`;
@@ -3842,7 +3842,7 @@ class EntityManagerPanel extends HTMLElement {
         </div>`,
       actionsHtml: `
         <button class="btn btn-secondary confirm-no">Cancel</button>
-        <button class="btn" style="background:#f44336;color:#fff;border:none" id="apply-remove-labels-btn"${presentLabels.length === 0 ? ' disabled' : ''}>Remove Labels</button>`,
+        <button class="btn" style="background:var(--em-danger);color:#fff;border:none" id="apply-remove-labels-btn"${presentLabels.length === 0 ? ' disabled' : ''}>Remove Labels</button>`,
     });
 
     overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
@@ -4704,10 +4704,10 @@ class EntityManagerPanel extends HTMLElement {
                 <span class="label" style="flex:1;font-size:12px" title="${p.entityIds.length} entities">${this._escapeHtml(p.name)}</span>
                 <span style="font-size:10px;opacity:0.5;flex-shrink:0">${p.entityIds.length}</span>
                 <div style="display:flex;gap:3px;flex-basis:100%">
-                  <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:#4caf50;color:#fff;border:none;border-radius:3px">Enable</button>
-                  <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:#f44336;color:#fff;border:none;border-radius:3px">Disable</button>
+                  <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-success);color:#fff;border:none;border-radius:3px">Enable</button>
+                  <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-danger);color:#fff;border:none;border-radius:3px">Disable</button>
                   <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">✎</button>
-                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:#f44336" title="Delete">✕</button>
+                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:var(--em-danger)" title="Delete">✕</button>
                 </div>
               </div>`).join('');
             return saveBtn + rows;
@@ -5093,7 +5093,7 @@ class EntityManagerPanel extends HTMLElement {
         const healthCard = this.querySelector('[data-stat-type="config-health"] .stat-value');
         if (healthCard) {
           healthCard.textContent = String(this.configHealthCount);
-          healthCard.style.color = this.configHealthCount > 0 ? '#f44336' : '#4caf50';
+          healthCard.style.color = this.configHealthCount > 0 ? 'var(--em-danger)' : 'var(--em-success)';
         }
       }).catch(() => { this.configHealthCount = 0; });
       // Count templates via backend (covers YAML platform=template + template.* domain)
@@ -6120,19 +6120,19 @@ class EntityManagerPanel extends HTMLElement {
       </div>
       <div class="stat-card clickable-stat" data-stat-type="automation" title="Click to view automations">
         <div class="stat-label">Automations</div>
-        <div class="stat-value" style="color: #2196f3 !important;">${this.automationCount}</div>
+        <div class="stat-value" style="color:var(--em-primary) !important;">${this.automationCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="script" title="Click to view scripts">
         <div class="stat-label">Scripts</div>
-        <div class="stat-value" style="color: #2196f3 !important;">${this.scriptCount}</div>
+        <div class="stat-value" style="color:var(--em-primary) !important;">${this.scriptCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="helper" title="Click to view helpers">
         <div class="stat-label">Helpers</div>
-        <div class="stat-value" style="color: #2196f3 !important;">${this.helperCount}</div>
+        <div class="stat-value" style="color:var(--em-primary) !important;">${this.helperCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="template" title="Click to view templates">
         <div class="stat-label">Templates</div>
-        <div class="stat-value" style="color: #ff9800 !important;">${this.templateCount}</div>
+        <div class="stat-value" style="color:var(--em-warning) !important;">${this.templateCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="unavailable" title="Click to view unavailable entities">
         <div class="stat-label">Unavailable</div>
@@ -6152,7 +6152,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>
       <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
         <div class="stat-label">HACS Store</div>
-        <div class="stat-value" style="color: #4caf50 !important;">${this.hacsCount}</div>
+        <div class="stat-value" style="color:var(--em-success) !important;">${this.hacsCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
         <div class="stat-label">Card Types</div>
@@ -6185,11 +6185,11 @@ class EntityManagerPanel extends HTMLElement {
           const activeEnt = device.entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
           if (activeEnt && this._hass?.states[activeEnt.entity_id]?.state === 'on') activeCount++;
         });
-        const activeLabel = activeCount > 0 ? `<div style="font-size:0.72em;color:#4caf50;margin-top:2px">● ${activeCount} active</div>` : '';
+        const activeLabel = activeCount > 0 ? `<div style="font-size:0.72em;color:var(--em-success);margin-top:2px">● ${activeCount} active</div>` : '';
         return `
           <div class="stat-card clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
             <div class="stat-label">Browsers${hasStale ? ' ⚠' : ''}</div>
-            <div class="stat-value" style="color: #2196f3 !important;">${browserCount}</div>
+            <div class="stat-value" style="color:var(--em-primary) !important;">${browserCount}</div>
             ${activeLabel}
           </div>`;
       })()}
@@ -6352,8 +6352,8 @@ class EntityManagerPanel extends HTMLElement {
             <span class="smart-group-name">${this._escapeHtml(displayName)}</span>
             <span class="smart-group-count">${entities.length} entities</span>
             <span class="smart-group-stats">
-              <span style="color: #4caf50">${enabledCount}</span> /
-              <span style="color: #f44336">${disabledCount}</span>
+              <span style="color:var(--em-success)">${enabledCount}</span> /
+              <span style="color:var(--em-danger)">${disabledCount}</span>
             </span>
             ${isUnassigned ? `<button class="btn btn-sm smart-group-assign-all-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to an area">📍 Assign all</button>` : ''}
             <span class="smart-group-expand">▼</span>
@@ -6437,11 +6437,11 @@ class EntityManagerPanel extends HTMLElement {
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}">›</span>
           <div class="integration-info">
             <div class="integration-name">${intDisplay}</div>
-            <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color: #4caf50">${enabledCount} enabled</span> / <span style="color: #f44336">${disabledCount} disabled</span>)</div>
+            <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
           </div>
           <div class="integration-actions">
-            <button class="btn view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities" style="${_ivf === 'enabled' ? '' : 'color:#4caf50;border-color:#4caf50'}">View Enabled</button>
-            <button class="btn view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities" style="${_ivf === 'disabled' ? '' : 'color:#f44336;border-color:#f44336'}">View Disabled</button>
+            <button class="btn view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities" style="${_ivf === 'enabled' ? '' : 'color:var(--em-success);border-color:var(--em-success)'}">View Enabled</button>
+            <button class="btn view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities" style="${_ivf === 'disabled' ? '' : 'color:var(--em-danger);border-color:var(--em-danger)'}">View Disabled</button>
             <button class="btn btn-secondary enable-integration" data-integration="${intName}">Enable All</button>
             <button class="btn btn-secondary disable-integration" data-integration="${intName}">Disable All</button>
           </div>
@@ -7116,13 +7116,13 @@ class EntityManagerPanel extends HTMLElement {
       // Re-render the whole backup row in place
       const row = this.content?.querySelector('#ha-auto-backup-toggle')?.closest('div[style]');
       if (row) {
-        row.style.borderColor = newVal ? '#4caf50' : '#f44336';
+        row.style.borderColor = newVal ? 'var(--em-success)' : 'var(--em-danger)';
         row.style.background = newVal ? 'rgba(76,175,80,0.1)' : 'rgba(244,67,54,0.08)';
         const btn = row.querySelector('#ha-auto-backup-toggle');
         if (btn) {
           btn.textContent = newVal ? 'ON' : 'OFF';
-          btn.style.background = newVal ? '#4caf50' : '#f44336';
-          btn.style.borderColor = newVal ? '#4caf50' : '#f44336';
+          btn.style.background = newVal ? 'var(--em-success)' : 'var(--em-danger)';
+          btn.style.borderColor = newVal ? 'var(--em-success)' : 'var(--em-danger)';
         }
         const desc = row.querySelector('span:last-child');
         if (desc) desc.textContent = newVal
@@ -7316,7 +7316,7 @@ class EntityManagerPanel extends HTMLElement {
                   style="accent-color:var(--em-success);width:14px;height:14px;cursor:pointer;margin:0">
                 <span>🛡 Backup</span>
               </label>` : ''}
-            ${releaseUrl ? `<button class="update-btn skip-btn" data-action="release-notes" data-url="${this._escapeAttr(releaseUrl)}" style="border-color:#2196f3;color:#2196f3">Release Notes</button>` : ''}
+            ${releaseUrl ? `<button class="update-btn skip-btn" data-action="release-notes" data-url="${this._escapeAttr(releaseUrl)}" style="border-color:var(--em-primary);color:var(--em-primary)">Release Notes</button>` : ''}
             <button class="update-btn" data-action="update" data-entity-id="${this._escapeAttr(entityId)}">Update</button>
           </div>
         ` : ''}
@@ -7603,7 +7603,7 @@ class EntityManagerPanel extends HTMLElement {
         ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--em-bg-secondary);color:var(--em-text-secondary);flex-shrink:0">${this._escapeHtml(entity.entity_category)}</span>`
         : '';
       const disabledBadge = disabled
-        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(244,67,54,0.1);color:#f44336;flex-shrink:0">disabled</span>`
+        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(244,67,54,0.1);color:var(--em-danger);flex-shrink:0">disabled</span>`
         : '';
       return `<div class="entity-list-item em-entity-row" style="padding:7px 14px;cursor:pointer"
                    data-entity-id="${this._escapeAttr(entity.entity_id)}">
@@ -7740,7 +7740,7 @@ class EntityManagerPanel extends HTMLElement {
               ${[1,6,24,168].map((h,i) => {
                 const label = ['1h','6h','24h','7d'][i];
                 const active = h === 24;
-                return `<button class="act-range-btn" data-hours="${h}" style="background:${active?'var(--em-primary,#4caf50)':'transparent'};color:${active?'#fff':'var(--primary-text-color)'};border:1px solid ${active?'var(--em-primary,#4caf50)':'var(--divider-color)'};border-radius:12px;padding:2px 10px;font-size:11px;cursor:pointer;margin-right:3px">${label}</button>`;
+                return `<button class="act-range-btn" data-hours="${h}" style="background:${active?'var(--em-primary,#2196f3)':'transparent'};color:${active?'#fff':'var(--primary-text-color)'};border:1px solid ${active?'var(--em-primary,#2196f3)':'var(--divider-color)'};border-radius:12px;padding:2px 10px;font-size:11px;cursor:pointer;margin-right:3px">${label}</button>`;
               }).join('')}
             </div>
           </div>
@@ -7858,9 +7858,9 @@ class EntityManagerPanel extends HTMLElement {
       const hours = parseInt(btn.dataset.hours, 10);
       overlay.querySelectorAll('.act-range-btn').forEach(b => {
         const active = parseInt(b.dataset.hours, 10) === hours;
-        b.style.background = active ? 'var(--em-primary,#4caf50)' : 'transparent';
+        b.style.background = active ? 'var(--em-primary,#2196f3)' : 'transparent';
         b.style.color = active ? '#fff' : 'var(--primary-text-color)';
-        b.style.borderColor = active ? 'var(--em-primary,#4caf50)' : 'var(--divider-color)';
+        b.style.borderColor = active ? 'var(--em-primary,#2196f3)' : 'var(--divider-color)';
       });
       await loadLog(hours);
     });
@@ -7987,7 +7987,7 @@ class EntityManagerPanel extends HTMLElement {
     const render = (entries) => {
       const body = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
       if (!entries.length) {
-        body.innerHTML = `<div style="padding:32px;text-align:center;color:#4caf50;font-size:15px">✓ All integrations are healthy</div>`;
+        body.innerHTML = `<div style="padding:32px;text-align:center;color:var(--em-success);font-size:15px">✓ All integrations are healthy</div>`;
         return;
       }
 
@@ -8134,13 +8134,13 @@ class EntityManagerPanel extends HTMLElement {
       // Status badge: active > visible > stale/never
       let statusBadge = '';
       if (b.isActive) {
-        statusBadge = `<span style="background:#4caf50;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">● Active</span>`;
+        statusBadge = `<span style="background:var(--em-success);color:#fff;padding:1px 8px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">● Active</span>`;
       } else if (b.isVisible) {
-        statusBadge = `<span style="background:#2196f3;color:#fff;padding:1px 8px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">● Visible</span>`;
+        statusBadge = `<span style="background:var(--em-primary);color:#fff;padding:1px 8px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">● Visible</span>`;
       } else if (b.neverSeen) {
-        statusBadge = `<span style="background:#ff9800;color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">never active</span>`;
+        statusBadge = `<span style="background:var(--em-warning);color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">never active</span>`;
       } else if (b.isStale) {
-        statusBadge = `<span style="background:#ff9800;color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">stale</span>`;
+        statusBadge = `<span style="background:var(--em-warning);color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">stale</span>`;
       }
 
       const pathHtml = (b.isActive || b.isVisible) && b.currentPath
@@ -8149,9 +8149,9 @@ class EntityManagerPanel extends HTMLElement {
 
       const deregisterBtn = b.browserId
         ? `<button class="btn em-bm-deregister" data-browser-id="${this._escapeAttr(b.browserId)}" data-device-id="${eid}"
-              style="background:#f44336;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.8em;cursor:pointer">Deregister</button>`
+              style="background:var(--em-danger);color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.8em;cursor:pointer">Deregister</button>`
         : `<a href="/config/integrations/integration/browser_mod" target="_blank"
-              style="font-size:0.8em;color:#2196f3;padding:3px 6px;text-decoration:none">Manage ↗</a>`;
+              style="font-size:0.8em;color:var(--em-primary);padding:3px 6px;text-decoration:none">Manage ↗</a>`;
 
       const browserIdChip = b.browserId
         ? `<span class="em-bm-browser-id-chip" data-browser-id="${this._escapeAttr(b.browserId)}"
@@ -8223,7 +8223,7 @@ class EntityManagerPanel extends HTMLElement {
         <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%;align-items:center">
           <div style="display:flex;gap:8px;margin-right:auto;flex-wrap:wrap">
             ${staleIds.length > 0
-              ? `<button class="btn" id="em-bm-cleanup-stale" style="background:#ff9800;color:#fff;border:none;border-radius:4px;padding:6px 16px;cursor:pointer">
+              ? `<button class="btn" id="em-bm-cleanup-stale" style="background:var(--em-warning);color:#fff;border:none;border-radius:4px;padding:6px 16px;cursor:pointer">
                    Clean up stale (${staleIds.length})
                  </button>`
               : ''}
@@ -8265,7 +8265,7 @@ class EntityManagerPanel extends HTMLElement {
           await navigator.clipboard.writeText(id);
           const prev = btn.textContent;
           btn.textContent = '✓';
-          btn.style.color = '#4caf50';
+          btn.style.color = 'var(--em-success)';
           btn.style.opacity = '1';
           setTimeout(() => { btn.textContent = prev; btn.style.color = ''; btn.style.opacity = ''; }, 1500);
         } catch (_) {
@@ -8421,7 +8421,7 @@ class EntityManagerPanel extends HTMLElement {
                   <span class="entity-list-name">${this._escapeHtml(d.name)}</span>
                   <span class="entity-list-id-inline">${this._escapeHtml(d.id)}</span>
                   ${d.meta ? `<span class="entity-list-id-inline">${this._escapeHtml(d.meta)}</span>` : ''}
-                  ${isDup ? '<span style="background:#ff9800;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">duplicate</span>' : ''}
+                  ${isDup ? '<span style="background:var(--em-warning);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">duplicate</span>' : ''}
                 </div>
               </div>
             `;
@@ -8663,22 +8663,22 @@ class EntityManagerPanel extends HTMLElement {
               const s = t.state;
               if (s === null || s === undefined || s === '')
                 return t.disabled
-                  ? `<span style="color:#f44336">No state (disabled)</span>`
+                  ? `<span style="color:var(--em-danger)">No state (disabled)</span>`
                   : `<span style="opacity:0.5">—</span>`;
               if (s === 'unknown')
-                return `<span style="color:#ff9800" title="Template has not been evaluated yet">Not evaluated</span>`;
+                return `<span style="color:var(--em-warning)" title="Template has not been evaluated yet">Not evaluated</span>`;
               if (s === 'unavailable')
-                return `<span style="color:#f44336" title="A dependency is offline or the template has an error">Unavailable</span>`;
+                return `<span style="color:var(--em-danger)" title="A dependency is offline or the template has an error">Unavailable</span>`;
               const uom = t.unit_of_measurement ? ` ${this._escapeHtml(t.unit_of_measurement)}` : '';
               return `<span>${this._escapeHtml(String(s))}${uom}</span>`;
             };
 
             const renderTemplateItem = (t) => {
               const disabledBadge = t.disabled
-                ? `<span style="background:#f44336;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">disabled</span>`
+                ? `<span style="background:var(--em-danger);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px;vertical-align:middle">disabled</span>`
                 : '';
               const connectedHtml = t.connected_entities && t.connected_entities.length > 0
-                ? `<div style="margin-top:5px;font-size:0.82em;opacity:0.75">Connected to: ${t.connected_entities.map(e => `<span style="color:#2196f3">${this._escapeHtml(e)}</span>`).join(', ')}</div>`
+                ? `<div style="margin-top:5px;font-size:0.82em;opacity:0.75">Connected to: ${t.connected_entities.map(e => `<span style="color:var(--em-primary)">${this._escapeHtml(e)}</span>`).join(', ')}</div>`
                 : '';
               const entityIdAttr = this._escapeHtml(t.entity_id);
               const currentName = this._escapeHtml(t.name || '');
@@ -8689,7 +8689,7 @@ class EntityManagerPanel extends HTMLElement {
                     <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7;flex:1;min-width:0">${entityIdAttr}</span>
                     <div style="display:flex;gap:6px;flex-shrink:0">
                       <button class="em-tpl-edit btn btn-secondary" data-entity-id="${entityIdAttr}" data-current-name="${currentName}" style="padding:2px 10px;font-size:0.8em">Rename</button>
-                      <button class="em-tpl-remove btn" data-entity-id="${entityIdAttr}" style="padding:2px 10px;font-size:0.8em;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
+                      <button class="em-tpl-remove btn" data-entity-id="${entityIdAttr}" style="padding:2px 10px;font-size:0.8em;background:var(--em-danger);color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
                     </div>
                   </div>
                   <div style="font-size:0.88em;margin-top:5px;display:flex;gap:16px;flex-wrap:wrap;opacity:0.9">
@@ -8754,8 +8754,8 @@ class EntityManagerPanel extends HTMLElement {
                       </div>
                       <div style="font-size:0.88em;margin-top:5px;display:flex;gap:16px;flex-wrap:wrap;opacity:0.9">
                         <span>Installed: <strong>${this._escapeHtml(inst)}</strong></span>
-                        <span>Latest: <strong style="color:#4caf50">${this._escapeHtml(latest)}</strong></span>
-                        ${releaseUrl ? `<a href="${this._escapeAttr(releaseUrl)}" target="_blank" rel="noopener" style="color:#2196f3">Release notes</a>` : ''}
+                        <span>Latest: <strong style="color:var(--em-success)">${this._escapeHtml(latest)}</strong></span>
+                        ${releaseUrl ? `<a href="${this._escapeAttr(releaseUrl)}" target="_blank" rel="noopener" style="color:var(--em-primary)">Release notes</a>` : ''}
                       </div>
                     </div>
                   `;
@@ -8782,7 +8782,7 @@ class EntityManagerPanel extends HTMLElement {
           const _unavailRows = (items, lastSeenMap) => items.map(s => {
             const lsTs = lastSeenMap[s.entity_id];
             const lsHtml = lsTs
-              ? `<span>Last seen: <strong style="color:#4caf50">${this._fmtAgo(new Date(lsTs).toISOString())}</strong></span>`
+              ? `<span>Last seen: <strong style="color:var(--em-success)">${this._fmtAgo(new Date(lsTs).toISOString())}</strong></span>`
               : `<span style="opacity:0.5">Last seen: <em>unknown (&gt;90d)</em></span>`;
             return `
               <div class="entity-list-item" style="padding:10px 12px">
@@ -8791,7 +8791,7 @@ class EntityManagerPanel extends HTMLElement {
                   <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
                 </div>
                 <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px;flex-wrap:wrap">
-                  <span>Down since: <strong style="color:#f44336">${this._fmtAgo(s.last_changed, 'Unknown')}</strong></span>
+                  <span>Down since: <strong style="color:var(--em-danger)">${this._fmtAgo(s.last_changed, 'Unknown')}</strong></span>
                   ${lsHtml}
                 </div>
               </div>`;
@@ -8871,7 +8871,7 @@ class EntityManagerPanel extends HTMLElement {
                   <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
                     <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(e.original_name || e.entity_id)}</span>
                     <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(e.entity_id)}</span>
-                    ${e.is_disabled ? '<span style="background:#f44336;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px">disabled</span>' : ''}
+                    ${e.is_disabled ? '<span style="background:var(--em-danger);color:#fff;padding:1px 6px;border-radius:10px;font-size:0.78em;margin-left:6px">disabled</span>' : ''}
                   </div>
                 </div>
               `).join('');
@@ -8918,11 +8918,11 @@ class EntityManagerPanel extends HTMLElement {
               </div>
               <div style="font-size:0.88em;margin-top:4px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
                 <span style="opacity:0.8">State: <strong>${this._escapeHtml(String(s.state))}</strong></span>
-                <span style="opacity:0.8">Last updated: <strong style="color:#ff9800">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
+                <span style="opacity:0.8">Last updated: <strong style="color:var(--em-warning)">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
                 <span style="margin-left:auto;display:flex;gap:6px">
                   <button class="btn em-stale-keep" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:transparent;border:1px solid var(--divider-color);color:var(--primary-text-color)" title="Hide from stale list for 30 days">Keep</button>
-                  <button class="btn em-stale-disable" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:#ff9800;color:#fff;border:none" title="Disable this entity">Disable</button>
-                  <button class="btn em-stale-remove" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:#f44336;color:#fff;border:none" title="Remove from registry">Remove</button>
+                  <button class="btn em-stale-disable" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:var(--em-warning);color:#fff;border:none" title="Disable this entity">Disable</button>
+                  <button class="btn em-stale-remove" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:var(--em-danger);color:#fff;border:none" title="Remove from registry">Remove</button>
                 </span>
               </div>
             </div>`;
@@ -9068,8 +9068,8 @@ class EntityManagerPanel extends HTMLElement {
             const renderStoreItem = (item) => {
               const isInstalled = installedNames.has((item.name || '').toLowerCase());
               const badges = [
-                isInstalled ? `<span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:10px;font-size:0.82em;margin-left:6px;vertical-align:middle">installed</span>` : '',
-                item.new ? `<span style="background:#ff9800;color:#fff;padding:2px 8px;border-radius:10px;font-size:0.82em;margin-left:6px;vertical-align:middle">new</span>` : '',
+                isInstalled ? `<span style="background:var(--em-success);color:#fff;padding:2px 8px;border-radius:10px;font-size:0.82em;margin-left:6px;vertical-align:middle">installed</span>` : '',
+                item.new ? `<span style="background:var(--em-warning);color:#fff;padding:2px 8px;border-radius:10px;font-size:0.82em;margin-left:6px;vertical-align:middle">new</span>` : '',
               ].join('');
               const meta = [
                 item.full_name ? this._escapeHtml(item.full_name) : '',
@@ -9203,7 +9203,7 @@ class EntityManagerPanel extends HTMLElement {
                   <span style="font-size:0.82em;opacity:0.75">${d.views} view${d.views !== 1 ? 's' : ''}</span>
                   <span style="font-size:0.82em;font-weight:600;color:#9c27b0">${d.cards} card${d.cards !== 1 ? 's' : ''}</span>
                   <a href="${this._escapeHtml(d.url)}" target="_blank"
-                     style="font-size:0.8em;color:#2196f3;text-decoration:none;flex-shrink:0">Open ↗</a>
+                     style="font-size:0.8em;color:var(--em-primary);text-decoration:none;flex-shrink:0">Open ↗</a>
                 </div>
               </div>
             `).join('') : '<p style="padding:12px;opacity:0.6">No dashboards found.</p>';
@@ -9239,7 +9239,7 @@ class EntityManagerPanel extends HTMLElement {
               return `
                 <div class="entity-list-item" style="padding:7px 12px">
                   <div style="display:flex;align-items:center;gap:8px">
-                    <code style="flex:0 0 190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.83em;${isCustom ? 'color:#ff9800' : ''}">${this._escapeHtml(t)}</code>
+                    <code style="flex:0 0 190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.83em;${isCustom ? 'color:var(--em-warning)' : ''}">${this._escapeHtml(t)}</code>
                     ${badge}
                     <div style="flex:1;background:rgba(128,128,128,0.15);border-radius:3px;height:7px">
                       <div style="background:${barColor};width:${pct}%;height:7px;border-radius:3px;min-width:3px"></div>
@@ -9915,7 +9915,7 @@ class EntityManagerPanel extends HTMLElement {
           <p style="margin-bottom: 12px;">Current Entity ID: <strong>${this._escapeHtml(entityId)}</strong></p>
           <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
           <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${this._escapeAttr(entityId.split('.')[1])}" pattern="[a-z0-9_]+" title="Only lowercase letters, numbers, and underscores">
-          <p style="margin-top: 8px; font-size: 14px; color: #f44336;">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
+          <p style="margin-top: 8px; font-size: 14px; color:var(--em-danger);">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
         </div>
       `,
       actionsHtml: `
@@ -9979,7 +9979,7 @@ class EntityManagerPanel extends HTMLElement {
         content.innerHTML = `
           <p style="margin-bottom:8px">Rename <strong>${this._escapeHtml(entityId)}</strong> → <strong>${this._escapeHtml(newEntityId)}</strong></p>
           <div style="background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.3);border-radius:6px;padding:10px 12px;margin-bottom:10px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#ff9800">
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-warning)">
               ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${preview.files_updated.length} file${preview.files_updated.length !== 1 ? 's' : ''} will be updated:
             </div>
             <div style="max-height:180px;overflow-y:auto">${fileRows}</div>
