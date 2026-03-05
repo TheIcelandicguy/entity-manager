@@ -2245,9 +2245,15 @@ class EntityManagerPanel extends HTMLElement {
     // Collect all entities
     const allEntities = [];
     for (const intg of (this.data || [])) {
-      for (const dev of Object.values(intg.devices || {})) {
+      for (const [devId, dev] of Object.entries(intg.devices || {})) {
+        const devEntityCount = (dev.entities || []).length;
         for (const entity of (dev.entities || [])) {
-          allEntities.push({ ...entity, integration: intg.integration });
+          allEntities.push({
+            ...entity,
+            integration: intg.integration,
+            deviceName: dev.name || null,
+            deviceEntityCount: devEntityCount,
+          });
         }
       }
     }
@@ -2300,8 +2306,9 @@ class EntityManagerPanel extends HTMLElement {
         const deviceArea = deviceAreaMap.get(entity.device_id);
         if (!entityArea && !deviceArea && !seenDevicesForArea.has(entity.device_id)) {
           seenDevicesForArea.add(entity.device_id);
-          area.push({ entity, name: entity.name || entity.entity_id,
-            reason: 'Device has no area assigned',
+          area.push({ entity,
+            name: entity.deviceName || entity.device_id,
+            reason: `No area assigned · ${entity.deviceEntityCount} entit${entity.deviceEntityCount !== 1 ? 'ies' : 'y'}`,
             action: 'assign-area', actionLabel: 'Assign Area', deviceId: entity.device_id });
         }
       }
@@ -2309,27 +2316,56 @@ class EntityManagerPanel extends HTMLElement {
 
     const total = health.length + disable.length + naming.length + area.length;
 
+    const renderRow = (item, indent = false) => `
+      <div class="em-sug-row" style="display:flex;gap:10px;padding:7px 4px 7px ${indent ? '16px' : '4px'};border-bottom:1px solid var(--em-border-light);align-items:center">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+          <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
+          <div style="font-size:11px;color:var(--em-text-secondary);margin-top:2px">${this._escapeHtml(item.reason)}</div>
+        </div>
+        <button class="em-sug-action btn btn-sm"
+            data-action="${this._escapeAttr(item.action)}"
+            data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+            ${item.deviceId ? `data-device-id="${this._escapeAttr(item.deviceId)}"` : ''}
+            style="flex-shrink:0;white-space:nowrap">
+          ${item.actionLabel}
+        </button>
+      </div>`;
+
+    // Flat list (health, disable, area)
     const renderSection = (emoji, title, items, maxShow = 30) => {
       const shown = items.slice(0, maxShow);
       const extra = items.length - shown.length;
-      const rows  = shown.map(item => `
-        <div class="em-sug-row" style="display:flex;gap:10px;padding:7px 4px;border-bottom:1px solid var(--em-border-light);align-items:center">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
-            <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
-            <div style="font-size:11px;color:var(--em-text-secondary);margin-top:2px">${this._escapeHtml(item.reason)}</div>
-          </div>
-          <button class="em-sug-action btn btn-sm"
-              data-action="${this._escapeAttr(item.action)}"
-              data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
-              ${item.deviceId ? `data-device-id="${this._escapeAttr(item.deviceId)}"` : ''}
-              style="flex-shrink:0;white-space:nowrap">
-            ${item.actionLabel}
-          </button>
-        </div>`).join('');
+      const body = `<div style="padding:2px 0">
+        ${shown.map(item => renderRow(item)).join('') || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
+        ${extra ? `<div style="padding:8px 4px;color:var(--em-text-secondary);font-size:12px">…and ${extra} more</div>` : ''}
+      </div>`;
+      return this._collGroup(
+        `${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+    };
+
+    // Grouped by device (naming, area)
+    const renderSectionGrouped = (emoji, title, items) => {
+      const groups = new Map();
+      const noDevice = [];
+      for (const item of items) {
+        const did = item.entity.device_id;
+        if (!did) { noDevice.push(item); continue; }
+        if (!groups.has(did)) {
+          groups.set(did, { deviceName: item.entity.deviceName || did, items: [] });
+        }
+        groups.get(did).items.push(item);
+      }
+      let rows = '';
+      for (const group of groups.values()) {
+        rows += `<div style="padding:5px 4px 3px;font-size:11px;font-weight:700;color:var(--em-text-secondary);
+                             text-transform:uppercase;letter-spacing:0.04em;
+                             border-bottom:1px solid var(--em-border)">${this._escapeHtml(group.deviceName)}</div>`;
+        rows += group.items.map(item => renderRow(item, true)).join('');
+      }
+      rows += noDevice.map(item => renderRow(item)).join('');
       const body = `<div style="padding:2px 0">
         ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
-        ${extra ? `<div style="padding:8px 4px;color:var(--em-text-secondary);font-size:12px">…and ${extra} more</div>` : ''}
       </div>`;
       return this._collGroup(
         `${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
@@ -2344,8 +2380,8 @@ class EntityManagerPanel extends HTMLElement {
            </div>
            ${renderSection('🏥', 'Health Issues', health)}
            ${renderSection('🚫', 'Disable Candidates', disable)}
-           ${renderSection('✏️', 'Naming Improvements', naming)}
-           ${renderSection('📍', 'Area Assignment', area)}`
+           ${renderSectionGrouped('✏️', 'Naming Improvements', naming)}
+           ${renderSectionGrouped('📍', 'Area Assignment', area)}`
       }
     </div>`;
 
