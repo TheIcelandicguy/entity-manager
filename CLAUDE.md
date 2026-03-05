@@ -83,9 +83,10 @@ Entity Registry / Device Registry / Area Registry / Label Registry
 2. **Web Components**: `EntityManagerPanel extends HTMLElement`
 3. **State Management**: Instance properties (see State Properties below)
 4. **HA Integration**: `this._hass.callWS()` for WebSocket, `this._hass.callService()` for services
-5. **Styling**: Separate CSS file + HA CSS variables (`--em-*` custom properties)
+5. **Styling**: Separate CSS file + HA CSS variables (`--em-*` custom properties) — never hardcode hex colors
 6. **Dialog pattern**: `this.createDialog({ title, contentHtml, actionsHtml })` → `{ overlay, closeDialog }`
 7. **Collapsible groups**: `this._collGroup(label, bodyHtml)` — collapsed by default
+8. **Dialog buttons**: always use `.btn` CSS classes — never inline `style=` on buttons (see Dialog Conventions below)
 
 ### Home Assistant Conventions
 
@@ -186,7 +187,7 @@ Opened by clicking any entity card body. Sections:
 13. **Logbook (last 7 days)** — 25 most recent logbook events
 14. **Statistics (30 days)** — avg/min/max stat cards from recorder
 
-Action buttons: **✎ Rename** · **↗ More Info** (hass-more-info event) · **🔌 Device** (navigate to device page) · **Enable/Disable** · **Close**
+Action buttons: **✎ Rename** · **↗ More Info** (hass-more-info event) · **🔌 Device** (navigate to device page) · **Enable/Disable** · **Done**
 
 ## Development Workflow
 
@@ -254,6 +255,51 @@ async def handle_new_command(hass, connection, msg):
 websocket_api.async_register_command(hass, handle_new_command)
 ```
 
+### Dialog Conventions
+
+**Button classes** (defined in `entity-manager-panel.css`):
+
+| Class | Use |
+|---|---|
+| `btn btn-primary` | Positive/submit action (Save, Rename, Apply, Enable All) |
+| `btn btn-secondary` | Neutral dismiss or secondary action (Done, Cancel, Clear, Preview) |
+| `btn btn-success` | Enable / confirm safe action |
+| `btn btn-danger` | Delete / destructive action (Disable, Remove, Deregister) |
+| `btn btn-warning` | Caution action (Clean up stale, etc.) |
+
+**Rules:**
+- Dismiss-only buttons always use label **"Done"** + `btn-secondary` — never "Close", never `btn-primary`
+- Cancel buttons always use label **"Cancel"** + `btn-secondary`
+- Destructive buttons use `btn-danger` — never inline `style="background:#..."`
+- Never write inline `style=` on `<button>` elements; always use a `.btn-*` class
+
+**`color` param on `createDialog`** — sets the dialog header accent stripe:
+
+| Situation | Value |
+|---|---|
+| Info / neutral | `'var(--em-primary)'` |
+| Success / healthy | `'var(--em-success)'` |
+| Warning / stale / pending | `'var(--em-warning)'` |
+| Error / destructive | `'var(--em-danger)'` |
+| Helper / purple accent | `'var(--em-purple)'` |
+
+**CSS variable reference** (all defined in `:root` in `entity-manager-panel.css`):
+
+```
+--em-primary / --em-primary-dark / --em-primary-light
+--em-success / --em-success-dark
+--em-danger  / --em-danger-dark
+--em-warning / --em-warning-dark
+--em-purple  / --em-purple-dark
+--em-text-primary / --em-text-secondary / --em-text-disabled
+--em-bg-primary / --em-bg-secondary / --em-bg-hover
+--em-border / --em-border-light
+--em-badge-builtin-bg / --em-badge-builtin-fg   (Lovelace built-in card badge)
+--em-badge-custom-bg  / --em-badge-custom-fg    (Lovelace custom card badge)
+```
+
+Never hardcode hex colors anywhere in JS or inline styles — use the vars above.
+
 ### Area Picker
 
 ```javascript
@@ -301,7 +347,7 @@ fetch('/local/entity-manager-panel.js').then(r => r.text()).then(t => console.lo
 - Keep functions focused and single-purpose
 - Handle errors gracefully — wrap `callWS` in `.catch(() => null)` for non-critical fetches
 - Use `this._escapeHtml()` / `this._escapeAttr()` for all user-sourced strings in HTML
-- Use `--em-*` CSS variables for theming; never hardcode colours except for semantic use (red=error, green=success, etc.)
+- Use `--em-*` CSS variables for all colors — never hardcode hex values anywhere in JS or inline styles (semantic colors like red=error, green=success are covered by `--em-danger`, `--em-success`, etc.)
 - Set `this.floorsData = null` after any area registry update to force refresh
 - Deduplicate device-level suggestions (use a `Set` of device_id)
 - Always call `this._reRenderSidebar()` instead of duplicating the sidebar rebuild block
