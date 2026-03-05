@@ -44,6 +44,13 @@ entity-manager-panel *::after {
   --em-border-light: var(--divider-color, #eeeeee);
   --em-shadow: var(--shadow-elevation-2dp_-_box-shadow, 0 2px 4px rgba(0,0,0,0.1));
   --em-shadow-hover: var(--shadow-elevation-4dp_-_box-shadow, 0 4px 8px rgba(0,0,0,0.15));
+  --em-purple: #9c27b0;
+  --em-purple-dark: #6a1b9a;
+  /* Badge colors for built-in / custom card type indicators */
+  --em-badge-builtin-bg: rgba(33, 150, 243, 0.12);
+  --em-badge-builtin-fg: var(--em-primary-dark, #1565c0);
+  --em-badge-custom-bg: rgba(255, 152, 0, 0.12);
+  --em-badge-custom-fg: var(--em-warning-dark, #f57c00);
   /* Dialog spacing & sizing */
   --dialog-padding: 24px;
   --dialog-border-width: 2px;
@@ -1351,6 +1358,26 @@ body.em-dialog-open {
 }
 
 .btn-success:hover {
+  opacity: 0.8;
+}
+
+.btn-danger {
+  background: var(--em-danger) !important;
+  color: white !important;
+  border: 2px solid var(--em-danger) !important;
+}
+
+.btn-danger:hover {
+  opacity: 0.8;
+}
+
+.btn-warning {
+  background: var(--em-warning) !important;
+  color: white !important;
+  border: 2px solid var(--em-warning) !important;
+}
+
+.btn-warning:hover {
   opacity: 0.8;
 }
 
