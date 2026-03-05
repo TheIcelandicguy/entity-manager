@@ -315,7 +315,7 @@ class EntityManagerPanel extends HTMLElement {
               style="padding:2px 10px;font-size:0.8em">Rename</button>
             <button class="em-entity-remove btn"
               data-entity-id="${eid}" data-entity-type="${this._escapeAttr(opts.entityType)}"
-              style="padding:2px 10px;font-size:0.8em;background:var(--em-danger);color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
+              class="btn btn-danger" style="padding:2px 10px;font-size:0.8em">Remove</button>
           </div>
         </div>
         ${opts.infoHtml ? `
@@ -1714,7 +1714,7 @@ class EntityManagerPanel extends HTMLElement {
       title: entityId,
       color: 'var(--em-primary)',
       contentHtml: `<div id="em-edd-body" style="padding:40px;text-align:center;color:var(--em-text-secondary)">Loading entity details…</div>`,
-      actionsHtml: `<button id="em-edd-close" style="padding:8px 20px;border:2px solid var(--em-border);background:transparent;color:var(--em-text-primary);border-radius:8px;cursor:pointer">Close</button>`,
+      actionsHtml: `<button id="em-edd-close" class="btn btn-secondary">Done</button>`,
       extraClass: 'em-entity-detail',
     });
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
@@ -4703,8 +4703,8 @@ class EntityManagerPanel extends HTMLElement {
                 <span class="label" style="flex:1;font-size:12px" title="${p.entityIds.length} entities">${this._escapeHtml(p.name)}</span>
                 <span style="font-size:10px;opacity:0.5;flex-shrink:0">${p.entityIds.length}</span>
                 <div style="display:flex;gap:3px;flex-basis:100%">
-                  <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-success);color:#fff;border:none;border-radius:3px">Enable</button>
-                  <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-danger);color:#fff;border:none;border-radius:3px">Disable</button>
+                  <button class="btn btn-success em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0">Enable</button>
+                  <button class="btn btn-danger em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0">Disable</button>
                   <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">✎</button>
                   <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:var(--em-danger)" title="Delete">✕</button>
                 </div>
@@ -6159,7 +6159,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>
       <div class="stat-card clickable-stat" data-stat-type="activity" title="Click to view entity activity log">
         <div class="stat-label">Activity Log</div>
-        <div class="stat-value" style="color: #607d8b !important;">${(() => {
+        <div class="stat-value" style="color: var(--em-text-secondary) !important;">${(() => {
           const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
           const count = Object.values(this._hass?.states || {})
             .filter(s => new Date(s.last_changed).getTime() > dayAgo).length;
@@ -7224,7 +7224,7 @@ class EntityManagerPanel extends HTMLElement {
       return `
         <div style="display:flex;align-items:center;justify-content:space-between;
                     padding:10px 14px;border-radius:10px;margin-top:10px;
-                    border:2px solid ${on ? '#4caf50' : '#f44336'};
+                    border:2px solid ${on ? 'var(--em-success)' : 'var(--em-danger)'};
                     background:${on ? 'rgba(76,175,80,0.1)' : 'rgba(244,67,54,0.08)'}">
           <div style="display:flex;flex-direction:column;gap:2px">
             <span style="font-size:13px;font-weight:600;color:var(--em-text-primary)">🛡 HA Auto-backup before updates</span>
@@ -7233,10 +7233,9 @@ class EntityManagerPanel extends HTMLElement {
             </span>
           </div>
           <button id="ha-auto-backup-toggle"
+            class="btn ${on ? 'btn-success' : 'btn-danger'}"
             title="Toggle HA's global backup before update setting"
-            style="padding:7px 20px;border-radius:20px;border:2px solid ${on ? '#4caf50' : '#f44336'};
-                   background:${on ? '#4caf50' : '#f44336'};color:white;
-                   cursor:pointer;font-size:13px;font-weight:700;min-width:64px;flex-shrink:0">
+            style="padding:7px 20px;border-radius:20px;font-size:13px;font-weight:700;min-width:64px;flex-shrink:0">
             ${on ? 'ON' : 'OFF'}
           </button>
         </div>`;
@@ -8012,7 +8011,7 @@ class EntityManagerPanel extends HTMLElement {
               <div style="font-size:11px;opacity:0.7">${this._escapeHtml(e.domain)}${e.disabled_by ? ' · disabled' : ''}</div>
             </div>
             ${e.disabled_by
-              ? `<span style="background:#607d8b;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">${this._escapeHtml(e.disabled_by)}</span>`
+              ? `<span style="background:var(--em-text-disabled);color:#fff;padding:2px 8px;border-radius:10px;font-size:11px">${this._escapeHtml(e.disabled_by)}</span>`
               : `<button class="btn em-reload-entry" data-entry-id="${this._escapeHtml(e.entry_id)}" style="padding:4px 12px;font-size:12px">Reload</button>`
             }
           </div>`).join('');
@@ -8147,8 +8146,8 @@ class EntityManagerPanel extends HTMLElement {
         : '';
 
       const deregisterBtn = b.browserId
-        ? `<button class="btn em-bm-deregister" data-browser-id="${this._escapeAttr(b.browserId)}" data-device-id="${eid}"
-              style="background:var(--em-danger);color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:0.8em;cursor:pointer">Deregister</button>`
+        ? `<button class="btn btn-danger em-bm-deregister" data-browser-id="${this._escapeAttr(b.browserId)}" data-device-id="${eid}"
+              style="padding:3px 10px;font-size:0.8em">Deregister</button>`
         : `<a href="/config/integrations/integration/browser_mod" target="_blank"
               style="font-size:0.8em;color:var(--em-primary);padding:3px 6px;text-decoration:none">Manage ↗</a>`;
 
@@ -8688,7 +8687,7 @@ class EntityManagerPanel extends HTMLElement {
                     <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7;flex:1;min-width:0">${entityIdAttr}</span>
                     <div style="display:flex;gap:6px;flex-shrink:0">
                       <button class="em-tpl-edit btn btn-secondary" data-entity-id="${entityIdAttr}" data-current-name="${currentName}" style="padding:2px 10px;font-size:0.8em">Rename</button>
-                      <button class="em-tpl-remove btn" data-entity-id="${entityIdAttr}" style="padding:2px 10px;font-size:0.8em;background:var(--em-danger);color:#fff;border:none;border-radius:4px;cursor:pointer">Remove</button>
+                      <button class="btn btn-danger em-tpl-remove" data-entity-id="${entityIdAttr}" style="padding:2px 10px;font-size:0.8em">Remove</button>
                     </div>
                   </div>
                   <div style="font-size:0.88em;margin-top:5px;display:flex;gap:16px;flex-wrap:wrap;opacity:0.9">
@@ -8920,8 +8919,8 @@ class EntityManagerPanel extends HTMLElement {
                 <span style="opacity:0.8">Last updated: <strong style="color:var(--em-warning)">${this._fmtAgo(s.last_updated, 'Unknown')}</strong></span>
                 <span style="margin-left:auto;display:flex;gap:6px">
                   <button class="btn em-stale-keep" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:transparent;border:1px solid var(--divider-color);color:var(--primary-text-color)" title="Hide from stale list for 30 days">Keep</button>
-                  <button class="btn em-stale-disable" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:var(--em-warning);color:#fff;border:none" title="Disable this entity">Disable</button>
-                  <button class="btn em-stale-remove" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px;background:var(--em-danger);color:#fff;border:none" title="Remove from registry">Remove</button>
+                  <button class="btn btn-warning em-stale-disable" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px" title="Disable this entity">Disable</button>
+                  <button class="btn btn-danger em-stale-remove" data-entity-id="${this._escapeAttr(s.entity_id)}" style="padding:2px 10px;font-size:11px" title="Remove from registry">Remove</button>
                 </span>
               </div>
             </div>`;
@@ -9054,7 +9053,7 @@ class EntityManagerPanel extends HTMLElement {
               <div class="entity-list-group" style="margin-bottom: 12px;">
                 <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
                   <input id="hacs-search" type="search" placeholder="Search store…" autocomplete="off"
-                    style="flex:1;padding:6px 10px;border-radius:6px;border:2px solid #2196f3;background:var(--em-bg-secondary,#121212);color:var(--em-text-primary,#e0e0e0);font-size:0.9em;outline:none">
+                    style="flex:1;padding:6px 10px;border-radius:6px;border:2px solid var(--em-primary);background:var(--em-bg-secondary,#121212);color:var(--em-text-primary,#e0e0e0);font-size:0.9em;outline:none">
                   <button class="btn btn-secondary hacs-my-downloads-btn" title="Show only installed items">
                     My Downloads (${installedCount})
                   </button>
@@ -9912,7 +9911,7 @@ class EntityManagerPanel extends HTMLElement {
       contentHtml: `
         <div class="confirm-dialog-content">
           <p style="margin-bottom: 12px;">Current Entity ID: <strong>${this._escapeHtml(entityId)}</strong></p>
-          <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
+          <p style="margin-bottom: 8px; color: var(--em-text-secondary);">Enter new entity ID (without domain prefix):</p>
           <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${this._escapeAttr(entityId.split('.')[1])}" pattern="[a-z0-9_]+" title="Only lowercase letters, numbers, and underscores">
           <p style="margin-top: 8px; font-size: 14px; color:var(--em-danger);">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
         </div>
