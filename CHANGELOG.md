@@ -30,6 +30,32 @@
 - New stat card shows integrations in error states (setup_error, setup_retry, failed_unload, etc.)
 - Dialog groups entries by state with a Reload button per entry
 
+#### Entity Detail Dialog — Expanded
+- **Quick Control** section: domain-aware controls rendered inline (light on/off + brightness slider, switch/fan/automation toggle, cover open/stop/close, lock/unlock, input_number slider, input_select dropdown, script run, scene activate, media_player play/pause/stop)
+- **Automations** section: lists all automations that reference this entity (scanned via `config/automation/list`)
+- **Related Entities** section: other entities on the same device with live state
+- **Logbook** section: last 25 logbook events over 7 days
+- **Statistics** section: 30-day avg/min/max stat cards from long-term recorder data
+- **Entity Picture** section: shown when entity has `entity_picture` attribute
+- **↗ More Info** button: fires native HA `hass-more-info` event to open HA's entity popup
+- **🔌 Device** button: navigates to `/config/devices/device/<id>` in HA
+
+#### Labels Sidebar
+- Two mode rows added: **By Device** and **By Entity** — filter the label list to show only labels that have devices or entities respectively
+- Mode persisted per session in `localStorage`
+
+#### Theme — Follow HA Theme
+- New **Follow HA Theme** option reads active HA CSS variables at runtime (`--primary-color`, `--card-background-color`, etc.) and maps them to Entity Manager's `--em-*` variables
+- Automatically reacts to HA theme switches via existing `MutationObserver`
+
+#### 💡 Suggestions Stat Card
+- New stat card opens an analysis dialog covering four categories:
+  - **🏥 Health Issues**: entities unavailable > 7 days (Disable action)
+  - **🚫 Disable Candidates**: diagnostic entities unchanged 30d+, long-term unavailable entities
+  - **✏️ Naming Improvements**: entity IDs with auto-generated hash strings, generic names
+  - **📍 Area Assignment**: devices with no area (deduplicated per device, Assign Area picker)
+- Each suggestion row has an inline quick-action button; acted rows remove from list
+
 #### Other
 - Dry-run rename preview: shows affected YAML files before committing a rename
 - Last-seen timestamps for unavailable entities (scans 90-day history)
@@ -37,6 +63,7 @@
 - Bulk label add/remove in multi-select toolbar
 - Custom entity presets: save selected entities as a named preset, enable/disable from sidebar
 - Watch & auto-sync script (`watch-and-sync.ps1`) for live development
+- `_scrollToAndHighlight(entityId)`: closes dialog, expands entity's integration group, scrolls to and flashes blue highlight on entity row for 3 seconds
 
 ---
 

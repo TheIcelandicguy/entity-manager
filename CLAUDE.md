@@ -4,13 +4,15 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration that provides a centralized interface for managing disabled and enabled entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration that provides a centralized panel for managing, inspecting, and bulk-operating on all entities across every integration and device. It goes far beyond simple enable/disable — it is a full entity management workbench.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
-- Organized tree view by Integration → Device → Entity
-- Search and filter capabilities across all entities
-- Voice assistant support for hands-free control
+- Organized tree view by Integration → Device → Entity (or by Room, Floor, Type)
+- Entity detail dialog with live controls, history, logbook, automations, statistics
+- Area/room assignment for devices and entities
+- Smart suggestions: health issues, disable candidates, naming problems, unassigned devices
+- Search, filter, label, and preset capabilities across all entities
 
 ## Repository Structure
 
@@ -21,13 +23,14 @@ entity-manager/
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN)
 │   ├── manifest.json                   # Integration metadata
-│   ├── services.py                     # Service definitions (alternative implementation)
+│   ├── services.py                     # Service definitions
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
 │   ├── websocket_api.py                # WebSocket command handlers
 │   ├── frontend/
-│   │   └── entity-manager-panel.js     # Custom web component UI (~720 lines)
+│   │   ├── entity-manager-panel.js     # Custom web component UI (large single-file)
+│   │   └── entity-manager-panel.css    # Extracted CSS (loaded separately)
 │   └── translations/
 │       └── en.json                     # English translations
 ├── sentences/en/
@@ -35,10 +38,7 @@ entity-manager/
 ├── hacs.json                           # HACS configuration
 ├── info.md                             # HACS info page
 ├── README.md                           # User documentation
-├── INSTALL.md                          # Installation guide
-├── QUICKSTART.md                       # Quick reference
-├── STRUCTURE.md                        # Code structure documentation
-├── PROJECT_SUMMARY.md                  # Project overview
+├── CHANGELOG.md                        # Version history
 └── LICENSE                             # MIT License
 ```
 
@@ -53,7 +53,7 @@ WebSocket API (Python handlers)
          ↓
 Home Assistant Core APIs
          ↓
-Entity Registry / Device Registry
+Entity Registry / Device Registry / Area Registry / Label Registry
 ```
 
 ### Component Responsibilities
@@ -65,6 +65,7 @@ Entity Registry / Device Registry
 | `websocket_api.py` | WebSocket commands for entity operations |
 | `voice_assistant.py` | Intent handlers for voice commands |
 | `entity-manager-panel.js` | Complete frontend UI as a custom element |
+| `entity-manager-panel.css` | All panel styles (loaded via resource registration) |
 
 ## Key Patterns and Conventions
 
@@ -78,22 +79,24 @@ Entity Registry / Device Registry
 
 ### JavaScript Code Style
 
-1. **Vanilla JS**: No frameworks - pure ES6+ JavaScript
+1. **Vanilla JS**: No frameworks — pure ES6+ JavaScript
 2. **Web Components**: `EntityManagerPanel extends HTMLElement`
-3. **State Management**: Instance properties (`this.data`, `this.selectedEntities`)
-4. **HA Integration**: Access `this.hass.callWS()` for WebSocket calls
-5. **Styling**: CSS-in-JS using template literals, HA CSS variables
+3. **State Management**: Instance properties (see State Properties below)
+4. **HA Integration**: `this._hass.callWS()` for WebSocket, `this._hass.callService()` for services
+5. **Styling**: Separate CSS file + HA CSS variables (`--em-*` custom properties)
+6. **Dialog pattern**: `this.createDialog({ title, contentHtml, actionsHtml })` → `{ overlay, closeDialog }`
+7. **Collapsible groups**: `this._collGroup(label, bodyHtml)` — collapsed by default
 
 ### Home Assistant Conventions
 
 1. **Domain**: `entity_manager` (used consistently across all files)
 2. **Services**: `entity_manager.enable_entity`, `entity_manager.disable_entity`
-3. **WebSocket Types**: `entity_manager/get_disabled_entities`, `entity_manager/enable_entity`, etc.
+3. **WebSocket Types**: `entity_manager/get_disabled_entities`, etc.
 4. **Admin Required**: All WebSocket commands use `@websocket_api.require_admin`
 
 ## WebSocket API Reference
 
-### Commands
+### Custom Commands (entity_manager/*)
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -102,185 +105,203 @@ Entity Registry / Device Registry
 | `entity_manager/disable_entity` | `entity_id: string` | Disable a single entity |
 | `entity_manager/bulk_enable` | `entity_ids: string[]` | Enable multiple entities |
 | `entity_manager/bulk_disable` | `entity_ids: string[]` | Disable multiple entities |
+| `entity_manager/get_entity_details` | `entity_id: string` | Full entity details (registry, device, area, labels, config entry) |
+| `entity_manager/get_automations` | — | Automations list with last_triggered + triggered_by user |
+| `entity_manager/get_areas_and_floors` | — | Areas grouped by floor (cached in `this.floorsData`) |
+| `entity_manager/get_config_entry_health` | — | Config entries in error states |
+| `entity_manager/update_yaml_references` | `old_id, new_id, dry_run?` | Update entity_id references in YAML files |
+| `entity_manager/rename_entity` | `entity_id, new_id` | Rename entity_id in registry |
 
-### Response Structure (get_disabled_entities)
+### Native HA Commands Used
 
-```python
-[
-    {
-        "integration": "shelly",
-        "devices": {
-            "device_id": {
-                "device_id": "abc123",
-                "entities": [
-                    {
-                        "entity_id": "sensor.shelly_power",
-                        "platform": "shelly",
-                        "device_id": "abc123",
-                        "disabled_by": "user",  # or "integration", "config_entry"
-                        "original_name": "Power",
-                        "entity_category": "diagnostic",  # or "config", null
-                        "is_disabled": true
-                    }
-                ],
-                "total_entities": 10,
-                "disabled_entities": 5
-            }
-        },
-        "total_entities": 50,
-        "disabled_entities": 25
-    }
-]
-```
+| Command | Used for |
+|---------|----------|
+| `config/entity_registry/list` | Area data, label data for suggestions/detail |
+| `config/device_registry/list` | Device area data |
+| `config/device_registry/update` | Assign device to area |
+| `config/entity_registry/update` | Assign entity to area, update labels |
+| `config/automation/list` | Find automations referencing an entity |
+| `history/history_during_period` | State history (entity detail, last-seen unavailable) |
+| `logbook/get_events` | Logbook entries in entity detail |
+| `recorder/statistics_during_period` | Long-term statistics in entity detail |
+| `lovelace/config` | Dashboard config (Lovelace dialog) |
+
+## Frontend State Properties
+
+Key instance properties on `EntityManagerPanel`:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `this.data` | Array | Entity data from `get_disabled_entities`, grouped by integration → device |
+| `this._hass` | Object | Home Assistant connection object |
+| `this.viewState` | string | `'all'` \| `'disabled'` \| `'enabled'` \| `'updates'` |
+| `this.smartGroupMode` | string | `'integration'` \| `'room'` \| `'floor'` \| `'type'` \| `'device-name'` |
+| `this.searchTerm` | string | Current search filter |
+| `this.selectedEntities` | Set | Currently selected entity IDs |
+| `this.expandedIntegrations` | Set | Integration names with expanded device list |
+| `this.expandedDevices` | Set | Device IDs with expanded entity list |
+| `this.floorsData` | Object\|null | Cached `{ floors, areas }` — set to `null` after area updates |
+| `this.favorites` | Set | Favorited entity IDs (localStorage) |
+| `this.labelsCache` | Array | HA label objects |
+| `this.labelViewMode` | string | `'entity'` \| `'device'` (sidebar labels section) |
+| `this.activeTheme` | string | Current theme name (including `'Follow HA Theme'`) |
+
+## Key Frontend Methods
+
+| Method | Description |
+|--------|-------------|
+| `loadData()` | Fetch all entity data from backend, update stat counts |
+| `updateView()` | Re-render the entity list based on current filters/grouping |
+| `_reRenderSidebar()` | Rebuild sidebar HTML — always use instead of duplicating sidebar code |
+| `_collGroup(label, bodyHtml)` | Render a collapsed group with toggle arrow |
+| `createDialog({ title, contentHtml, actionsHtml })` | Create modal dialog, returns `{ overlay, closeDialog }` |
+| `_showAreaPickerDialog(title, onSelect)` | Area picker grouped by floor; calls `onSelect(area_id)` |
+| `_showEntityDetailsDialog(entityId)` | Full entity detail dialog with 10+ sections |
+| `_showSuggestionsDialog()` | Analyze all entities, show 4-category suggestions |
+| `_scrollToAndHighlight(entityId)` | Close dialog, expand group, scroll to entity, flash highlight 3s |
+| `_showToast(msg, type)` | Show temporary toast notification |
+| `showRenameDialog(entityId)` | Open rename dialog with dry-run YAML preview |
+| `disableEntity(entityId)` / `enableEntity(entityId)` | Single entity enable/disable with undo |
+| `_fmtAgo(isoStr, fallback)` | Format ISO timestamp as relative time ago |
+| `_escapeHtml(s)` / `_escapeAttr(s)` | HTML-safe encoding |
+| `_loadFromStorage(key, default)` / `_saveToStorage(key, val)` | localStorage I/O |
+| `_applyHATheme()` | Read HA CSS vars and map to `--em-*` variables |
+
+## Entity Detail Dialog Sections
+
+Opened by clicking any entity card body. Sections:
+
+1. **Overview** — entity ID, friendly name, domain, platform, unique ID, aliases (open by default)
+2. **Current State** — large state value + all attributes (open by default)
+3. **Registry** — category, device class, disabled/hidden state, icon, unit
+4. **Device** — manufacturer, model, SW/HW version, serial, config URL
+5. **Integration** — title, domain, source, version, state
+6. **Area** — assigned area name and floor
+7. **Labels** — entity and device labels with edit buttons
+8. **State History** — last 30 days newest-first
+9. **Quick Control** — domain-aware live controls (buttons, sliders, selects)
+10. **Entity Picture** — shown when `entity_picture` attribute exists
+11. **Automations (N)** — automations referencing this entity
+12. **Related Entities** — other entities on the same device
+13. **Logbook (last 7 days)** — 25 most recent logbook events
+14. **Statistics (30 days)** — avg/min/max stat cards from recorder
+
+Action buttons: **✎ Rename** · **↗ More Info** (hass-more-info event) · **🔌 Device** (navigate to device page) · **Enable/Disable** · **Close**
 
 ## Development Workflow
 
 ### Local Development
 
 1. Edit files in `custom_components/entity_manager/`
-2. Copy to Home Assistant's `custom_components` directory
-3. Restart Home Assistant
-4. Clear browser cache (for frontend changes)
-5. Test changes in the Entity Manager panel
+2. Run `./sync-to-ha.ps1` (PowerShell) to copy to Z: drive (Home Assistant network share)
+3. Restart HA for Python changes; clear browser cache for JS/CSS changes
+4. Test in the Entity Manager sidebar panel
+
+### Sync Script
+
+```powershell
+# sync-to-ha.ps1 — uses robocopy, exit code 1 = success (robocopy quirk)
+```
 
 ### Making Backend Changes
 
-- **Add WebSocket command**: Edit `websocket_api.py`, add handler with decorators
+- **Add WebSocket command**: Edit `websocket_api.py`, add handler with decorators, register in `async_setup_ws_api()`
 - **Add service**: Edit `__init__.py` service registration, update `services.yaml`
-- **Add voice intent**: Edit `voice_assistant.py`, add patterns to `sentences/en/entity_manager.yaml`
 
 ### Making Frontend Changes
 
-- Edit `custom_components/entity_manager/frontend/entity-manager-panel.js`
-- The panel is a single-file web component
-- Uses Home Assistant theme CSS variables for styling
-- Clear browser cache after changes
+- Edit `entity-manager-panel.js` and/or `entity-manager-panel.css`
+- Run sync script after each edit
+- Clear browser cache after syncing
 
-## Common Tasks
+## Common Patterns
+
+### Adding a New Stat Card
+
+1. Add HTML to `statsEl.innerHTML` block: `<div class="stat-card clickable-stat" data-stat-type="mytype">…</div>`
+2. Add handler in the `card.dataset.statType` if/else chain
+3. Implement `_showMyTypeDialog()` method using `createDialog` + body update pattern
+
+### Body Update Pattern (dialogs)
+
+```javascript
+const { overlay, closeDialog } = this.createDialog({ title, contentHtml: '<div id="my-body">Loading…</div>', actionsHtml: '…' });
+// After async work:
+const body = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
+body.innerHTML = `…new content…`;
+// Wire collapsible toggles:
+body.querySelectorAll('.em-collapsible').forEach(h => {
+  h.addEventListener('click', () => {
+    const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
+    const collapsed = b.style.display === 'none';
+    b.style.display = collapsed ? '' : 'none';
+    if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+  });
+});
+```
 
 ### Adding a New WebSocket Command
 
 ```python
 # In websocket_api.py
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "entity_manager/new_command",
-        vol.Required("param"): str,
-    }
-)
+@websocket_api.websocket_command({ vol.Required("type"): "entity_manager/new_command" })
 @websocket_api.require_admin
 @websocket_api.async_response
-async def handle_new_command(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Handle new command."""
-    # Implementation
+async def handle_new_command(hass, connection, msg):
     connection.send_result(msg["id"], {"success": True})
 
 # Register in async_setup_ws_api():
 websocket_api.async_register_command(hass, handle_new_command)
 ```
 
-### Modifying Entity State
-
-```python
-# Enable entity
-entity_reg.async_update_entity(entity_id, disabled_by=None)
-
-# Disable entity
-entity_reg.async_update_entity(
-    entity_id,
-    disabled_by=er.RegistryEntryDisabler.USER
-)
-```
-
-### Frontend WebSocket Call
+### Area Picker
 
 ```javascript
-// In entity-manager-panel.js
-const result = await this.hass.callWS({
-    type: 'entity_manager/enable_entity',
-    entity_id: 'sensor.example',
+this._showAreaPickerDialog('Dialog title', async (areaId) => {
+  await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
+  this.floorsData = null; // Force refresh
+  await this.loadData();
 });
 ```
 
-## Important Files to Understand
-
-### `__init__.py` (Entry Point)
-- `async_setup()`: Basic component setup
-- `async_setup_entry()`: Config entry setup, registers services and panel
-- `async_unload_entry()`: Cleanup on unload
-- Registers sidebar panel using `frontend.async_register_built_in_panel()`
-
-### `websocket_api.py` (Backend Logic)
-- Core business logic for entity operations
-- Groups entities by platform (integration) and device
-- Handles bulk operations with success/failure tracking
-
-### `entity-manager-panel.js` (Frontend UI)
-- `EntityManagerPanel` class extending `HTMLElement`
-- State: `data`, `deviceInfo`, `expandedIntegrations`, `expandedDevices`, `selectedEntities`, `searchTerm`, `viewState`
-- Key methods: `loadData()`, `updateView()`, `render()`, `bulkEnable()`, `bulkDisable()`
-
-## Testing Considerations
-
-1. **Test with multiple integrations** - Ensure grouping works correctly
-2. **Test bulk operations** - Verify partial failures are handled
-3. **Test search functionality** - Matches entity ID, name, device, integration
-4. **Test with no disabled entities** - Empty state should display properly
-5. **Test admin requirement** - Non-admin users should be blocked
-6. **Test browser cache** - Frontend changes require cache clear
-
 ## Version Information
 
-- **Current Version**: 1.0.0
+- **Current Version**: 2.10.0 (in development on `feat/v2.10.0` branch)
+- **Last Release**: 2.9.2
 - **Minimum Home Assistant**: 2024.1.0
-- **IoT Class**: local_push
 - **HACS Compatible**: Yes
 
 ## Git Workflow
 
-- Main development branch specified in task context
-- Commit messages should be descriptive and concise
-- Push changes to the designated feature branch
+- Feature branches off `main`; squash-merge PRs (linear history required)
+- After merge: create GitHub release, tag `vX.Y.Z`, target `main`
+- GitHub username: **TheIcelandicguy**
+- gh CLI not installed — create PRs manually at `github.com/TheIcelandicguy/entity-manager/compare`
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Panel not showing**: Check that integration is added via Settings → Integrations
+1. **Panel not showing**: Check integration is added via Settings → Integrations
 2. **403 errors**: Ensure user has admin privileges
 3. **Frontend not updating**: Clear browser cache, check console for JS errors
-4. **Services not working**: Check Home Assistant logs for registration errors
+4. **503 on card load**: Remove `?v=1` cache-busting param from resource registration
+5. **Services not working**: Check Home Assistant logs for registration errors
 
-### Debug Logging
+### Debug
 
-Add to Home Assistant `configuration.yaml`:
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.entity_manager: debug
+```javascript
+// Browser console
+customElements.get('entity-manager-panel')  // check registration
+fetch('/local/entity-manager-panel.js').then(r => r.text()).then(t => console.log(t.length))
 ```
-
-## Extension Points
-
-For adding new features, consider:
-
-1. **Filtering options**: Modify `updateView()` in JS, add filter UI
-2. **Export functionality**: Add new WebSocket command, button in toolbar
-3. **Scheduling**: New backend service, UI for schedules, storage in HA
-4. **Presets**: Save/load entity configurations
-5. **Statistics**: Track enable/disable history
 
 ## Code Quality Guidelines
 
 - Keep functions focused and single-purpose
-- Handle errors gracefully with user feedback
-- Use Home Assistant's entity/device registries, don't cache stale data
-- Follow Home Assistant's async patterns
-- Use CSS variables for theming compatibility
-- Minimize DOM updates by batching changes
+- Handle errors gracefully — wrap `callWS` in `.catch(() => null)` for non-critical fetches
+- Use `this._escapeHtml()` / `this._escapeAttr()` for all user-sourced strings in HTML
+- Use `--em-*` CSS variables for theming; never hardcode colours except for semantic use (red=error, green=success, etc.)
+- Set `this.floorsData = null` after any area registry update to force refresh
+- Deduplicate device-level suggestions (use a `Set` of device_id)
+- Always call `this._reRenderSidebar()` instead of duplicating the sidebar rebuild block
