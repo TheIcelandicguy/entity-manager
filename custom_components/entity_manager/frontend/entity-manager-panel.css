@@ -1298,6 +1298,13 @@ body.em-dialog-open {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.btn-sm {
+  padding: 4px 12px !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
 .btn:active {
   transform: scale(0.98);
 }
