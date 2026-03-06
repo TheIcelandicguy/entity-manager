@@ -1376,16 +1376,19 @@ class EntityManagerPanel extends HTMLElement {
         return `
           <div class="bulk-rename-entity-row"
                data-old-entity="${this._escapeAttr(entityId)}"
-               style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--em-border);">
-            <span style="font-family:monospace;font-size:0.82em;opacity:0.5;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
-            <span style="font-family:monospace;font-size:0.82em;background:var(--em-bg-secondary);padding:2px 6px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;flex-shrink:0;"
-                  title="${this._escapeAttr(entityId)}">${this._escapeHtml(objectId)}</span>
-            <span style="opacity:0.4;flex-shrink:0;">→</span>
-            <span style="font-family:monospace;font-size:0.82em;opacity:0.5;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
-            <input type="text" class="bulk-new-name rename-input"
-                   value="${this._escapeAttr(objectId)}"
-                   placeholder="new_name"
-                   style="flex:1;min-width:80px;font-family:monospace;font-size:0.85em;">
+               style="padding:7px 0;border-bottom:1px solid var(--em-border);">
+            <div style="font-family:monospace;font-size:0.82em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:5px;"
+                 title="${this._escapeAttr(entityId)}">
+              <span style="opacity:0.45">${this._escapeHtml(domain)}.</span><span style="background:var(--em-bg-secondary);padding:1px 5px;border-radius:4px;">${this._escapeHtml(objectId)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span style="opacity:0.4;flex-shrink:0;font-size:0.9em;">→</span>
+              <span style="font-family:monospace;font-size:0.82em;opacity:0.45;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
+              <input type="text" class="bulk-new-name rename-input"
+                     value="${this._escapeAttr(objectId)}"
+                     placeholder="new_name"
+                     style="flex:1;min-width:0;font-family:monospace;font-size:0.85em;">
+            </div>
           </div>
         `;
       }).join('');
@@ -1393,6 +1396,7 @@ class EntityManagerPanel extends HTMLElement {
       const { overlay, closeDialog } = this.createDialog({
         title: `Bulk Rename — ${selectedCount} Entities`,
         color: 'var(--em-primary)',
+        extraClass: 'em-wide',
         contentHtml: `
           <div class="bulk-rename-content">
             <details style="margin-bottom:12px;">
@@ -1409,9 +1413,19 @@ class EntityManagerPanel extends HTMLElement {
                   <input type="text" id="bulk-replace" class="rename-input" placeholder="e.g., lounge_">
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
-                  <label><input type="checkbox" id="bulk-regex"> Use regex</label>
+                  <label style="display:inline-flex;align-items:center;gap:4px;"><input type="checkbox" id="bulk-regex"> Use regex
+                    <span id="bulk-regex-help-btn" title="Regex help" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--em-text-secondary);color:var(--em-bg-primary);font-size:10px;font-weight:bold;cursor:pointer;flex-shrink:0;">?</span>
+                  </label>
                   <label><input type="checkbox" id="bulk-case"> Case sensitive</label>
                   <button class="btn btn-secondary" id="bulk-apply-pattern" style="margin-left:auto;padding:3px 12px;font-size:0.85em;">Apply to all</button>
+                </div>
+                <div id="bulk-regex-help-box" style="display:none;margin-top:8px;padding:10px 12px;background:var(--em-bg-secondary);border:1px solid var(--em-border);border-radius:6px;font-size:12px;line-height:1.6;">
+                  <strong>Regex find/replace</strong> — matches the <em>object_id</em> part only (after the dot).<br><br>
+                  <strong>Without regex</strong> — plain text match, case-insensitive by default. Use <em>Case sensitive</em> to match exact casing.<br><br>
+                  <strong>Common patterns:</strong><br>
+                  <code>^shelly_</code> — starts with "shelly_"<br>
+                  <code>_\d+$</code> — ends with numbers<br>
+                  <code>(old|legacy)</code> — matches either word
                 </div>
               </div>
             </details>
@@ -1446,6 +1460,11 @@ class EntityManagerPanel extends HTMLElement {
             : 'Edit the new names directly, or use "Auto-fill with pattern" above.';
         }
       };
+
+      overlay.querySelector('#bulk-regex-help-btn').addEventListener('click', () => {
+        const box = overlay.querySelector('#bulk-regex-help-box');
+        box.style.display = box.style.display === 'none' ? 'block' : 'none';
+      });
 
       overlay.querySelector('#bulk-apply-pattern').addEventListener('click', () => {
         const find = overlay.querySelector('#bulk-find').value;
@@ -1495,6 +1514,7 @@ class EntityManagerPanel extends HTMLElement {
       const { overlay, closeDialog } = this.createDialog({
         title: 'Bulk Rename Entities',
         color: 'var(--em-primary)',
+        extraClass: 'em-wide',
         contentHtml: `
           <div class="bulk-rename-content">
             <p style="margin-bottom: 8px; color: var(--em-text-secondary);">
@@ -2316,8 +2336,9 @@ class EntityManagerPanel extends HTMLElement {
 
     const total = health.length + disable.length + naming.length + area.length;
 
-    const renderRow = (item, indent = false) => `
-      <div class="em-sug-row" style="display:flex;gap:10px;padding:7px 4px 7px ${indent ? '16px' : '4px'};border-bottom:1px solid var(--em-border-light);align-items:center">
+    // Flat row (health, disable sections)
+    const renderRow = (item) => `
+      <div class="em-sug-row" style="display:flex;gap:10px;padding:7px 4px;border-bottom:1px solid var(--em-border-light);align-items:center">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
           <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
@@ -2326,13 +2347,12 @@ class EntityManagerPanel extends HTMLElement {
         <button class="em-sug-action btn btn-sm"
             data-action="${this._escapeAttr(item.action)}"
             data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
-            ${item.deviceId ? `data-device-id="${this._escapeAttr(item.deviceId)}"` : ''}
             style="flex-shrink:0;white-space:nowrap">
           ${item.actionLabel}
         </button>
       </div>`;
 
-    // Flat list (health, disable, area)
+    // Flat list (health, disable)
     const renderSection = (emoji, title, items, maxShow = 30) => {
       const shown = items.slice(0, maxShow);
       const extra = items.length - shown.length;
@@ -2344,26 +2364,73 @@ class EntityManagerPanel extends HTMLElement {
         `${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
     };
 
-    // Grouped by device (naming, area)
-    const renderSectionGrouped = (emoji, title, items) => {
+    // Naming row: checkbox + entity info + individual Rename button
+    const renderNamingRow = (item) => `
+      <div class="em-sug-row em-sug-naming-row" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
+        <input type="checkbox" class="em-sug-naming-cb"
+               data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+               style="flex-shrink:0;cursor:pointer;width:15px;height:15px;accent-color:var(--em-primary)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+          <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
+          <div style="font-size:11px;color:var(--em-text-secondary);margin-top:2px">${this._escapeHtml(item.reason)}</div>
+        </div>
+        <button class="em-sug-action btn btn-sm"
+            data-action="rename"
+            data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+            style="flex-shrink:0;white-space:nowrap">Rename</button>
+      </div>`;
+
+    // Naming section: grouped by device as collapsible dropdowns, checkboxes + bulk rename bar
+    const renderNamingSection = (emoji, title, items) => {
       const groups = new Map();
       const noDevice = [];
       for (const item of items) {
         const did = item.entity.device_id;
         if (!did) { noDevice.push(item); continue; }
-        if (!groups.has(did)) {
-          groups.set(did, { deviceName: item.entity.deviceName || did, items: [] });
-        }
+        if (!groups.has(did)) groups.set(did, { deviceName: item.entity.deviceName || did, items: [] });
         groups.get(did).items.push(item);
       }
       let rows = '';
       for (const group of groups.values()) {
-        rows += `<div style="padding:5px 4px 3px;font-size:11px;font-weight:700;color:var(--em-text-secondary);
-                             text-transform:uppercase;letter-spacing:0.04em;
-                             border-bottom:1px solid var(--em-border)">${this._escapeHtml(group.deviceName)}</div>`;
-        rows += group.items.map(item => renderRow(item, true)).join('');
+        const entityRows = group.items.map(renderNamingRow).join('');
+        rows += `
+          <div class="em-naming-device-group" style="border-bottom:1px solid var(--em-border)">
+            <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
+              <span class="em-naming-arrow" style="font-size:10px;color:var(--em-text-secondary);transition:transform 0.15s;transform:rotate(-90deg)">▼</span>
+              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.deviceName)}</span>
+              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
+              <input type="checkbox" class="em-naming-group-select-all" title="Select all in group"
+                     style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary);flex-shrink:0">
+            </div>
+            <div class="em-naming-device-body" style="display:none">${entityRows}</div>
+          </div>`;
       }
-      rows += noDevice.map(item => renderRow(item)).join('');
+      rows += noDevice.map(renderNamingRow).join('');
+      const body = `<div style="padding:2px 0">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
+          <button class="btn btn-primary btn-sm em-naming-rename-btn" disabled
+              style="opacity:0.4;pointer-events:none">Rename Selected (0)</button>
+          <span style="font-size:11px;color:var(--em-text-secondary)">Check entities to bulk rename</span>
+        </div>
+        ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
+      </div>`;
+      return this._collGroup(
+        `${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+    };
+
+    // Area section: one card per device, Assign Area button below device info
+    const renderAreaSection = (emoji, title, items) => {
+      const rows = items.map(item => `
+        <div class="em-sug-area-card" style="padding:11px 14px 12px;border-bottom:1px solid var(--em-border-light)">
+          <div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+          <div style="font-size:12px;color:var(--em-text-secondary);margin-top:3px">${this._escapeHtml(item.reason)}</div>
+          <button class="em-sug-action btn btn-secondary btn-sm"
+              data-action="assign-area"
+              data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+              data-device-id="${this._escapeAttr(item.deviceId)}"
+              style="margin-top:8px">📍 Assign Area</button>
+        </div>`).join('');
       const body = `<div style="padding:2px 0">
         ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
       </div>`;
@@ -2380,12 +2447,12 @@ class EntityManagerPanel extends HTMLElement {
            </div>
            ${renderSection('🏥', 'Health Issues', health)}
            ${renderSection('🚫', 'Disable Candidates', disable)}
-           ${renderSectionGrouped('✏️', 'Naming Improvements', naming)}
-           ${renderSectionGrouped('📍', 'Area Assignment', area)}`
+           ${renderNamingSection('✏️', 'Naming Improvements', naming)}
+           ${renderAreaSection('📍', 'Area Assignment', area)}`
       }
     </div>`;
 
-    // Collapsible toggles
+    // Collapsible toggles (section headers)
     dialogBody.querySelectorAll('.em-collapsible').forEach(h => {
       h.addEventListener('click', () => {
         const b = h.nextElementSibling, arrow = h.querySelector('.em-collapse-arrow');
@@ -2395,16 +2462,91 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Action buttons
+    // Naming: device group dropdowns
+    dialogBody.querySelectorAll('.em-naming-device-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const group = toggle.closest('.em-naming-device-group');
+        const body = group.querySelector('.em-naming-device-body');
+        const arrow = toggle.querySelector('.em-naming-arrow');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+
+    // Naming: checkbox → update bulk rename button
+    const updateNamingBulkBar = () => {
+      const checked = [...dialogBody.querySelectorAll('.em-sug-naming-cb:checked')];
+      const btn = dialogBody.querySelector('.em-naming-rename-btn');
+      if (!btn) return;
+      if (checked.length > 0) {
+        btn.textContent = `Rename Selected (${checked.length})`;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = '';
+      } else {
+        btn.textContent = 'Rename Selected (0)';
+        btn.disabled = true;
+        btn.style.opacity = '0.4';
+        btn.style.pointerEvents = 'none';
+      }
+    };
+    dialogBody.querySelectorAll('.em-sug-naming-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        // Update this group's select-all indeterminate state
+        const group = cb.closest('.em-naming-device-group');
+        if (group) {
+          const groupCbs = [...group.querySelectorAll('.em-sug-naming-cb')];
+          const groupChecked = groupCbs.filter(c => c.checked).length;
+          const groupSelectAll = group.querySelector('.em-naming-group-select-all');
+          if (groupSelectAll) {
+            groupSelectAll.checked = groupChecked === groupCbs.length;
+            groupSelectAll.indeterminate = groupChecked > 0 && groupChecked < groupCbs.length;
+          }
+        }
+        updateNamingBulkBar();
+      });
+    });
+    // Per-group select-all checkboxes
+    dialogBody.querySelectorAll('.em-naming-group-select-all').forEach(selectAll => {
+      selectAll.addEventListener('click', e => e.stopPropagation()); // don't toggle the dropdown
+      selectAll.addEventListener('change', () => {
+        const group = selectAll.closest('.em-naming-device-group');
+        // Expand the group so checked items are visible
+        const body = group.querySelector('.em-naming-device-body');
+        const arrow = group.querySelector('.em-naming-arrow');
+        body.style.display = '';
+        arrow.style.transform = '';
+        group.querySelectorAll('.em-sug-naming-cb').forEach(cb => {
+          cb.checked = selectAll.checked;
+        });
+        updateNamingBulkBar();
+      });
+    });
+    const namingRenameBtn = dialogBody.querySelector('.em-naming-rename-btn');
+    if (namingRenameBtn) {
+      namingRenameBtn.addEventListener('click', () => {
+        const checkedIds = [...dialogBody.querySelectorAll('.em-sug-naming-cb:checked')]
+          .map(cb => cb.dataset.entityId);
+        if (checkedIds.length === 0) return;
+        closeDialog();
+        const prevSelected = this.selectedEntities;
+        this.selectedEntities = new Set(checkedIds);
+        this._openBulkRenameDialog();
+        this.selectedEntities = prevSelected;
+      });
+    }
+
+    // Action buttons (disable, individual rename, assign-area)
     dialogBody.querySelectorAll('.em-sug-action').forEach(btn => {
       btn.addEventListener('click', async () => {
         const { action, entityId, deviceId } = btn.dataset;
-        const row = btn.closest('.em-sug-row');
+        const card = btn.closest('.em-sug-area-card, .em-sug-row');
         if (action === 'disable') {
           btn.disabled = true;
           btn.textContent = '…';
           await this.disableEntity(entityId);
-          row?.remove();
+          card?.remove();
         } else if (action === 'rename') {
           closeDialog();
           this.showRenameDialog(entityId);
@@ -2412,7 +2554,7 @@ class EntityManagerPanel extends HTMLElement {
           this._showAreaPickerDialog('Assign device to area', async areaId => {
             await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
             this.floorsData = null;
-            row?.remove();
+            card?.remove();
           });
         }
       });
@@ -8813,15 +8955,31 @@ class EntityManagerPanel extends HTMLElement {
           });
 
           // Build entity rows; lastSeenMap filled in after async history fetch
+          // Build disabled lookup from entity registry data
+          const disabledMap = new Map();
+          for (const intg of (this.data || [])) {
+            for (const dev of Object.values(intg.devices || {})) {
+              for (const e of (dev.entities || [])) {
+                disabledMap.set(e.entity_id, !!e.is_disabled);
+              }
+            }
+          }
+
           const _unavailRows = (items, lastSeenMap) => items.map(s => {
             const lsTs = lastSeenMap[s.entity_id];
             const lsHtml = lsTs
               ? `<span>Last seen: <strong style="color:var(--em-success)">${this._fmtAgo(new Date(lsTs).toISOString())}</strong></span>`
               : `<span style="opacity:0.5">Last seen: <em>unknown (&gt;90d)</em></span>`;
+            const isDisabled = disabledMap.get(s.entity_id);
+            const statusBadge = isDisabled === undefined ? '' :
+              isDisabled
+                ? `<span style="background:var(--em-danger);color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;font-weight:600">Disabled</span>`
+                : `<span style="background:var(--em-success);color:#fff;padding:1px 7px;border-radius:10px;font-size:0.78em;font-weight:600">Enabled</span>`;
             return `
               <div class="entity-list-item" style="padding:10px 12px">
-                <div class="entity-list-row" style="flex-wrap:wrap;align-items:center">
+                <div class="entity-list-row" style="flex-wrap:wrap;align-items:center;gap:6px">
                   <span class="entity-list-name" style="font-weight:600">${this._escapeHtml(s.attributes.friendly_name || s.entity_id)}</span>
+                  ${statusBadge}
                   <span class="entity-list-id-inline" style="font-size:0.82em;opacity:0.7">${this._escapeHtml(s.entity_id)}</span>
                 </div>
                 <div style="font-size:0.88em;margin-top:4px;opacity:0.8;display:flex;gap:16px;flex-wrap:wrap">

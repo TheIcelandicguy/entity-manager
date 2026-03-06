@@ -861,6 +861,11 @@ body.em-dialog-open {
   max-height: 90vh;
 }
 
+/* Wide dialog variant */
+.confirm-dialog-box.em-wide {
+  max-width: 720px;
+}
+
 /* Entity detail dialog: wider + scrollable body */
 .confirm-dialog-box.em-entity-detail {
   max-width: 680px;
