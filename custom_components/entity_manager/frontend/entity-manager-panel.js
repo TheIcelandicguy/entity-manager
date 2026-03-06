@@ -244,6 +244,42 @@ class EntityManagerPanel extends HTMLElement {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  // ── Option B: count-up animation for numeric stat values ──────────────────
+  _animateStatCounters(container) {
+    container.querySelectorAll('.stat-value').forEach(el => {
+      const num = parseInt(el.textContent.trim(), 10);
+      if (isNaN(num) || num < 2) return;
+      const duration = Math.min(900, 250 + Math.sqrt(num) * 18);
+      const start = performance.now();
+      const tick = (now) => {
+        const t = Math.min((now - start) / duration, 1);
+        const eased = 1 - (1 - t) ** 3; // cubic ease-out
+        el.textContent = Math.round(eased * num);
+        if (t < 1) requestAnimationFrame(tick);
+        else el.textContent = num;
+      };
+      el.textContent = '0';
+      requestAnimationFrame(tick);
+    });
+  }
+
+  // ── Option D: attach one delegated ripple listener to main content ─────────
+  _attachRippleListener() {
+    this.content.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn');
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const ripple = document.createElement('span');
+      ripple.className = 'em-ripple';
+      ripple.style.cssText = `width:${size}px;height:${size}px;`
+        + `left:${e.clientX - rect.left - size / 2}px;`
+        + `top:${e.clientY - rect.top - size / 2}px`;
+      btn.appendChild(ripple);
+      ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+    });
+  }
+
   _escapeAttr(str) {
     if (str == null) return '';
     const s = String(str);
@@ -5575,6 +5611,9 @@ class EntityManagerPanel extends HTMLElement {
         }
       });
     });
+
+    // Option D: single delegated ripple listener for all .btn clicks
+    this._attachRippleListener();
   }
 
   setActiveFilter() {
@@ -5794,6 +5833,13 @@ class EntityManagerPanel extends HTMLElement {
     if (disabledBtn) disabledBtn.innerHTML = `Disabled (<span class="filter-count">${disabledEntities}</span>)`;
     if (updatesBtn) updatesBtn.innerHTML = `Updates (<span class="filter-count">${this.updateCount}</span>)`;
 
+    // Option B: animate stat counters; Option C: stagger stat cards
+    this._animateStatCounters(statsEl);
+    statsEl.querySelectorAll('.stat-card').forEach((card, i) => {
+      card.style.animation = `em-stagger-in 0.35s ease both`;
+      card.style.animationDelay = `${i * 35}ms`;
+    });
+
     // Render content
     if (filteredData.length === 0) {
       let emptyMessage = 'No entities found';
@@ -5861,6 +5907,11 @@ class EntityManagerPanel extends HTMLElement {
         
         contentEl.innerHTML = this._renderSmartGroups(filteredGroups);
         this.attachIntegrationListeners();
+        // Option C: stagger smart group cards
+        contentEl.querySelectorAll('.smart-group').forEach((el, i) => {
+          el.style.animation = `em-stagger-in 0.4s ease both`;
+          el.style.animationDelay = `${i * 55}ms`;
+        });
         return;
       }
     }
@@ -5875,6 +5926,12 @@ class EntityManagerPanel extends HTMLElement {
 
     // Re-attach event listeners for integration headers and entity checkboxes
     this.attachIntegrationListeners();
+
+    // Option C: stagger integration group cards
+    contentEl.querySelectorAll('.integration-group').forEach((el, i) => {
+      el.style.animation = `em-stagger-in 0.4s ease both`;
+      el.style.animationDelay = `${i * 55}ms`;
+    });
   }
 
   _renderSmartGroups(groups) {
