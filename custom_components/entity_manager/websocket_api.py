@@ -1,8 +1,10 @@
 """WebSocket API for Entity Manager."""
 
+import asyncio
 import json
 import logging
 import re
+import uuid as uuid_module
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -143,6 +145,7 @@ async def handle_get_disabled_entities(
                         if entity.entity_category
                         else None,
                         "is_disabled": is_disabled,
+                        "config_entry_id": entity.config_entry_id,
                     }
                 )
 
@@ -373,7 +376,7 @@ async def handle_export_states(
                 }
             )
 
-        export_data.sort(key=lambda e: str(e["entity_id"]))
+        export_data.sort(key=lambda e: e["entity_id"])
         connection.send_result(msg["id"], export_data)
     except Exception as err:
         _LOGGER.error("Error exporting entity states: %s", err, exc_info=True)
@@ -576,6 +579,36 @@ async def handle_remove_entity(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "entity_manager/assign_entity_device",
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("device_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_assign_entity_device(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Assign an entity to a device in the entity registry."""
+    entity_id = msg["entity_id"]
+    device_id = msg["device_id"]
+    entity_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    entry = entity_reg.async_get(entity_id)
+    if not entry:
+        connection.send_error(msg["id"], "not_found", f"Entity {entity_id} not found")
+        return
+    if not dev_reg.async_get(device_id):
+        connection.send_error(msg["id"], "not_found", f"Device {device_id} not found")
+        return
+    entity_reg.async_update_entity(entity_id, device_id=device_id)
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "entity_manager/get_automations",
     }
 )
@@ -588,12 +621,15 @@ async def handle_get_automations(
 ) -> None:
     """Return all automations with last_triggered and trigger context."""
     try:
+        states = list(hass.states.async_all("automation"))
+        trigger_results = await asyncio.gather(
+            *[_resolve_trigger_context(hass, s) for s in states],
+            return_exceptions=True,
+        )
         results: list[dict[str, Any]] = []
-        for state in hass.states.async_all("automation"):
+        for state, trig in zip(states, trigger_results):
+            triggered_by, triggered_by_name = trig if not isinstance(trig, Exception) else (None, None)
             attrs = dict(state.attributes)
-            triggered_by, triggered_by_name = await _resolve_trigger_context(
-                hass, state
-            )
             results.append(
                 {
                     "entity_id": state.entity_id,
@@ -629,8 +665,11 @@ async def handle_get_template_sensors(
     """Handle get template sensors request."""
     try:
         entity_reg = er.async_get(hass)
-        results: list[dict[str, Any]] = []
         seen: set[str] = set()
+
+        # Collect partial result dicts and their associated states for parallel resolution
+        partials: list[dict[str, Any]] = []
+        trig_states: list[Any] = []
 
         for entity in entity_reg.entities.values():
             entity_id = entity.entity_id
@@ -642,16 +681,14 @@ async def handle_get_template_sensors(
             connected = attrs.get("entity_id", [])
             if isinstance(connected, str):
                 connected = [connected]
-            triggered_by, triggered_by_name = await _resolve_trigger_context(
-                hass, state
-            )
-            results.append(
+            partials.append(
                 {
                     "entity_id": entity_id,
                     "name": entity.original_name
                     or attrs.get("friendly_name")
                     or entity_id,
                     "platform": entity.platform or "template",
+                    "unique_id": entity.unique_id,
                     "disabled": bool(entity.disabled),
                     "state": state.state if state else None,
                     "last_changed": state.last_changed.isoformat()
@@ -663,10 +700,9 @@ async def handle_get_template_sensors(
                     "connected_entities": list(connected),
                     "unit_of_measurement": attrs.get("unit_of_measurement"),
                     "device_class": attrs.get("device_class"),
-                    "triggered_by": triggered_by,
-                    "triggered_by_name": triggered_by_name,
                 }
             )
+            trig_states.append(state)
 
         # Pick up any template.* states not in the registry
         for state in hass.states.async_all():
@@ -676,10 +712,7 @@ async def handle_get_template_sensors(
                 connected = attrs.get("entity_id", [])
                 if isinstance(connected, str):
                     connected = [connected]
-                triggered_by, triggered_by_name = await _resolve_trigger_context(
-                    hass, state
-                )
-                results.append(
+                partials.append(
                     {
                         "entity_id": state.entity_id,
                         "name": attrs.get("friendly_name") or state.entity_id,
@@ -695,10 +728,19 @@ async def handle_get_template_sensors(
                         "connected_entities": list(connected),
                         "unit_of_measurement": attrs.get("unit_of_measurement"),
                         "device_class": attrs.get("device_class"),
-                        "triggered_by": triggered_by,
-                        "triggered_by_name": triggered_by_name,
                     }
                 )
+                trig_states.append(state)
+
+        # Resolve all trigger contexts in parallel
+        trigger_results = await asyncio.gather(
+            *[_resolve_trigger_context(hass, s) for s in trig_states],
+            return_exceptions=True,
+        )
+        results: list[dict[str, Any]] = []
+        for partial, trig in zip(partials, trigger_results):
+            triggered_by, triggered_by_name = trig if not isinstance(trig, Exception) else (None, None)
+            results.append({**partial, "triggered_by": triggered_by, "triggered_by_name": triggered_by_name})
 
         results.sort(key=lambda e: e["entity_id"])
         connection.send_result(msg["id"], results)
@@ -729,7 +771,7 @@ async def handle_update_yaml_references(
     """
     old_id = msg["old_entity_id"]
     new_id = msg["new_entity_id"]
-    dry_run: bool = msg.get("dry_run", False)
+    dry_run: bool = msg["dry_run"]
     config_path = Path(hass.config.config_dir)
 
     # Matches old_entity_id as a whole token — not part of a longer identifier.
@@ -892,7 +934,7 @@ async def handle_get_entity_details(
                 "title": ce.title,
                 "source": ce.source,
                 "version": ce.version,
-                "state": str(ce.state.value),
+                "state": ce.state.value,
                 "disabled_by": str(ce.disabled_by.value) if ce.disabled_by else None,
             }
 
@@ -938,7 +980,7 @@ async def handle_get_config_entry_health(
     try:
         unhealthy: list[dict[str, Any]] = []
         for entry in hass.config_entries.async_entries():
-            state_val = str(entry.state.value)
+            state_val = entry.state.value
             if state_val == "loaded":
                 continue
             unhealthy.append(
@@ -1012,6 +1054,129 @@ async def handle_get_areas_and_floors(
         connection.send_error(msg["id"], "get_failed", str(err))
 
 
+_YAML_SKIP = {
+    "custom_components", ".storage", "deps", "tts",
+    "__pycache__", "backups", "www", ".git",
+}
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/register_template",
+        vol.Required("entity_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_register_template(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Inject a unique_id into a YAML-defined template entity and reload templates."""
+    entity_id: str = msg["entity_id"]
+    entity_reg = er.async_get(hass)
+    entity = entity_reg.async_get(entity_id)
+
+    if not entity:
+        connection.send_error(msg["id"], "not_found", f"Entity {entity_id} not found")
+        return
+
+    if entity.unique_id:
+        connection.send_error(
+            msg["id"], "already_registered",
+            "This template already has a unique_id — use Edit to open it in HA."
+        )
+        return
+
+    new_uuid = str(uuid_module.uuid4())
+    entity_name: str = entity.original_name or ""
+    object_id: str = entity_id.split(".", 1)[1]
+    config_path = Path(hass.config.config_dir)
+
+    def _find_and_inject() -> dict[str, Any]:
+        for filepath in sorted(config_path.rglob("*.yaml")):
+            rel = filepath.relative_to(config_path)
+            if any(p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]):
+                continue
+            try:
+                content = filepath.read_text(encoding="utf-8")
+
+                # Strategy 1 — new-style template block: find `name: <entity_name>`
+                if entity_name:
+                    name_pat = re.compile(
+                        r'^(\s*)(name\s*:\s*["\']?)' + re.escape(entity_name) + r'(["\']?\s*)$',
+                        re.MULTILINE,
+                    )
+                    m = name_pat.search(content)
+                    if m:
+                        indent = m.group(1)
+                        new_content = (
+                            content[: m.end()]
+                            + f"\n{indent}unique_id: {new_uuid}"
+                            + content[m.end():]
+                        )
+                        filepath.write_text(new_content, encoding="utf-8")
+                        return {
+                            "success": True,
+                            "file": str(rel),
+                            "unique_id": new_uuid,
+                        }
+
+                # Strategy 2 — old-style platform template: `<object_id>:` as a YAML key
+                old_pat = re.compile(
+                    r'^(\s+)(' + re.escape(object_id) + r')\s*:\s*$',
+                    re.MULTILINE,
+                )
+                m = old_pat.search(content)
+                if m:
+                    indent = m.group(1)
+                    new_content = (
+                        content[: m.end()]
+                        + f"\n{indent}  unique_id: {new_uuid}"
+                        + content[m.end():]
+                    )
+                    filepath.write_text(new_content, encoding="utf-8")
+                    return {
+                        "success": True,
+                        "file": str(rel),
+                        "unique_id": new_uuid,
+                    }
+
+            except Exception:  # noqa: BLE001
+                continue
+
+        return {
+            "success": False,
+            "unique_id": new_uuid,
+            "error": (
+                "Could not find the template definition in your YAML files. "
+                "Add the following line manually inside the template block:\n"
+                f"  unique_id: {new_uuid}"
+            ),
+        }
+
+    result = await hass.async_add_executor_job(_find_and_inject)
+
+    if result["success"]:
+        # Reload template integration so HA picks up the new unique_id
+        try:
+            await hass.services.async_call("template", "reload", {}, blocking=True)
+        except Exception:  # noqa: BLE001
+            try:
+                await hass.services.async_call(
+                    "homeassistant", "reload_config_entry", {}, blocking=True
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        _LOGGER.info(
+            "Registered template %s with unique_id %s in %s",
+            entity_id, new_uuid, result.get("file"),
+        )
+
+    connection.send_result(msg["id"], result)
+
+
 @callback
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
@@ -1027,8 +1192,10 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_get_template_sensors)
     websocket_api.async_register_command(hass, handle_update_entity_display_name)
     websocket_api.async_register_command(hass, handle_remove_entity)
+    websocket_api.async_register_command(hass, handle_assign_entity_device)
     websocket_api.async_register_command(hass, handle_update_yaml_references)
     websocket_api.async_register_command(hass, handle_get_entity_details)
     websocket_api.async_register_command(hass, handle_get_config_entry_health)
     websocket_api.async_register_command(hass, handle_get_areas_and_floors)
+    websocket_api.async_register_command(hass, handle_register_template)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")

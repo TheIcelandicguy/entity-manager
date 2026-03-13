@@ -1,6 +1,80 @@
 # Changelog
 
-## Version 2.10.0 - Device Grouping, Area Assignment & Smart Groups
+## Version 2.12.1 - Code Quality & Test Infrastructure
+
+### 🔧 Technical
+
+#### Performance
+- `handle_get_automations` and `handle_get_template_sensors` now resolve trigger contexts in parallel via `asyncio.gather` — eliminates serial O(n) await loops for large installs
+- Activity Log history fetch is now skipped (with a console warning) when the instance has more than 150 entities, preventing oversized WebSocket requests
+
+#### Code Quality
+- Extracted `_reAttachCollapsibles(root, opts)` helper — replaced 11 identical collapsible toggle blocks throughout the panel; supports `expand` and `selector` options
+- Replaced 4 remaining hardcoded hex/rgba inline styles with named CSS classes (`stat-value-lovelace`, `em-disabled-badge`, `btn em-dialog-btn-danger`, `em-rename-preview-box`) and CSS variables (`--em-purple`, `--em-muted`)
+- 9 previously silent `catch` blocks now emit `console.warn` or `_showToast` so errors surface to developers and users
+
+#### Test Infrastructure
+- Added Vitest test runner (`npm test`) with jsdom environment — 28 frontend unit tests covering `_formatTimeDiff`, `_fmtAgo`, `_escapeHtml`, `_escapeAttr`, `_collGroup`, `_reAttachCollapsibles`, and `_animateStatCounters` RAF cancellation guard
+- Added 11 new Python tests for previously uncovered WebSocket handlers: `handle_get_automations`, `handle_get_template_sensors`, `handle_get_entity_details`, `handle_get_config_entry_health`, and `handle_update_yaml_references` (dry-run and live modes)
+- ESLint config updated to allow Node.js globals in test and Vitest config files
+
+---
+
+## Version 2.12.0 - Activity Log Mini Cards & Most Active Insights
+
+### ✨ New Features
+
+#### Activity Log — Mini Entity Cards
+- Entity rows in the Activity Log dialog now render as mini entity cards matching the visual language of all other stat dialogs: dark header band with friendly name, most recent state chip, and time-ago; entity ID and integration domain in the body; full state-change history inline below
+
+#### Activity Log — Most Active Insights Panel
+- New "Most Active" panel at the top of the Activity Log shows the top 5 entities, devices, and integrations by event count over the selected time range
+- Each entry shows a mini bar chart and event count, plus a "last seen X ago" line sourced from HA's recorder history (accurate across HA restarts)
+
+### 🔧 Technical
+- `_renderMiniEntityCard()` gains optional `contentHtml` param — renders a block content area (with border-top separator) between the card body and the actions row; used by the Activity Log for inline event history
+- Added `.em-mini-card-content` CSS class for the new content slot
+
+---
+
+## Version 2.11.0 - Mini Entity Cards, Navigation Links & Visual Polish
+
+### ✨ New Features
+
+#### Mini Entity Cards in All Stat Dialogs
+- Automations, Scripts, Helpers, Templates, Unavailable, Cleanup (Orphaned/Stale) dialogs now show items as rich mini cards matching the main view style: dark header band with name, state chip, and time-ago; monospace entity ID in the body; action buttons at the bottom
+- Bulk selection checkboxes, Rename, and Labels continue to work inside dialogs unchanged
+
+#### HA Navigation from Mini Cards
+- Every mini card has a **↗ button** (blue border, primary colour) that navigates context-appropriately:
+  - Automations → automation editor (`/config/automation/edit/{id}`)
+  - Scripts → script editor (`/config/script/edit/{object_id}`)
+  - All other entities → HA more-info popup
+
+#### Suggestions Dialog Visual Overhaul
+- Dialog widened to 720 px for better readability
+- Each of the five sections now has its own colour tint applied to header, body, device groups, entity rows, and chevron icons:
+  - 🟣 Health Issues — purple
+  - ⬜ Disable Candidates — neutral
+  - 🟠 Naming Improvements — orange
+  - 🔴 Area Assignment — red
+  - 🟡 Label Suggestions — amber
+
+#### Animated UI Polish
+- Stat counter numbers animate up from zero on load
+- Entity cards have a staggered entrance animation
+- Buttons show a ripple effect on click
+
+### 🔧 Changed
+- `_renderManagedItem()` removed — fully superseded by `_renderMiniEntityCard()`
+
+### 🐛 Fixed
+- Automation On/Off toggle in the Automations dialog now works correctly
+- Template remove button correctly targets its own card row via dual-class wrapper
+
+---
+
+## Version 2.10.0 - Device Grouping, Area Assignment, Activity Log & UX Overhaul
 
 ### ✨ New Features
 
@@ -22,13 +96,81 @@
 - "No Floor / No Area" fallback group for unassigned entities
 - Unassigned group shows entities nested by integration → device (collapsible dropdowns)
 
-#### Sidebar Improvements
-- **Select Open Device** action selects all entities from currently expanded device dropdowns
-- Device header shows selection indicator immediately without page reload
+#### Activity Log — Full HA History
+- Completely redesigned Activity Log now reads **real Home Assistant state history** via `history/history_during_period` — not just Entity Manager actions
+- Events grouped by **Room → Device → Entity** with three levels of collapsible sections (all collapsed by default)
+- **Time range selector**: 1h (default), 6h, 24h, 7d
+- **Search bar** filters across entity ID, device name, room name, and state value in real time
+- **Room filter chips** — All / None buttons plus individual room toggles; selection saved to localStorage
+- Room and device grouping is area-aware: entities are placed in their assigned HA room; unassigned entities go to "No Room"
 
-#### Config Entry Health Card
-- New stat card shows integrations in error states (setup_error, setup_retry, failed_unload, etc.)
-- Dialog groups entries by state with a Reload button per entry
+#### Labels Sidebar — Sub-header Grouping
+- Labels section now splits into six sub-headers: **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, **Entities**
+- Each sub-header only renders if labels of that type exist
+- Device labels resolved from `config/device_registry/list`; area labels from `config/area_registry/list`; automation/script/scene labels resolved by entity domain
+- Clicking any label still filters the main view as before; filter logic merges entity IDs from all matching caches
+
+#### Label Suggestions in Suggestions Dialog
+- New **🏷️ Label Suggestions** section in the Suggestions stat card dialog
+- 18 semantic label categories: Lights, Dimmable Lights, Color Lights, Switches, Temperature Sensors, Humidity Sensors, Motion Sensors, Door/Window Sensors, Presence Sensors, Energy Monitors, Media Players, Climate Controls, Covers, Cameras, Locks, Battery Devices, Network Devices, Buttons & Remotes
+- Each card shows how many unlabelled entities match and lets you **Apply to N** with one click — creates the label in HA if it doesn't exist, then batch-applies it
+
+#### Help Guide Redesign
+- Two-column layout: clickable **Table of Contents** on the left (19 sections), scrollable content on the right
+- TOC links smooth-scroll to the relevant section
+- All 18 feature areas documented inline — no need to leave the panel
+
+#### Sidebar — Actions Consolidation
+- Favorites, Activity Log, Comparison View, and Columns moved from the former "Quick Filters" section into the **Actions** section
+- **Quick Filters** sidebar section removed; the Actions section is now the single hub for panel-level actions
+
+#### Bulk Action Buttons on Entity Cards
+- **Bulk Rename** (✎✎) and **Bulk Labels** (🏷️) buttons now appear on every entity card in the action row alongside Rename / Enable / Disable
+- Buttons are always visible — greyed out and disabled when fewer than 2 entities are selected, fully coloured and active the instant a second entity is selected
+- Button state updates reactively in real time as checkboxes are toggled — no extra click required
+- Styling uses the same CSS class pattern as other icon-btn variants (blue for Bulk Rename, amber for Bulk Labels) with matching hover effects
+
+#### Devices View — Category Cards
+- Devices view now organises every device's entities into standard HA category cards: **⚡ Controls**, **📊 Sensors**, **⚙️ Configuration**, **🔧 Diagnostic**, **📡 Connectivity**
+- Each category card is independently collapsible — expanding one never affects others (pure DOM toggle, no re-render)
+- Card header shows entity count, enabled/disabled breakdown, a coloured category chip, Enable All / Disable All, and an area assignment button
+- Category mapping mirrors native HA Shelly device layout: Controls = null category + non-sensor domains; Sensors = null category + sensor/binary_sensor domains; Configuration/Diagnostic/Connectivity = matching `entity_category` values
+
+#### Devices View — Same-Name Grouping
+- Devices that share the same display name (e.g. multiple Shelly relays named "Borðstofu ljós") are merged into a single expandable group
+- All entities across same-name devices are gathered and split by category card, giving a unified view identical to the native HA device page
+- Single-device entries still use the standard individual device card
+
+#### Devices View — Alphabetical Sorting
+- All devices in the Devices view are now sorted A → Z by display name for easy scanning
+
+#### Entity Detail Dialog — Mini Card Style
+- Every section in the entity detail dialog (Registry, Device, Integration, Area, State History, Dependencies, Automation Impact) now renders as compact mini entity cards
+- Cards display in a 3-column responsive grid (`flex: 1 1 160px`), fitting significantly more information per row
+- State history cards show a time chip in the header and the state value in the body with colour coding
+
+#### Entity Config URL Button
+- Entities whose device has a `configuration_url` now show a **🔗** button in the entity action row
+- Clicking it opens the device's web interface in a new tab
+
+#### Mobile & Tablet Responsive Layout
+- Full responsive overhaul with three breakpoints: **768px** (tablet), **600px** (medium phone), **480px** (small phone)
+- **Stat cards**: always 3 per row on mobile — labels fully visible, no truncation
+- **Device/category card headers**: bulk action buttons and area button wrap to a second line on narrow screens
+- **Entity list inside devices**: switches from 2-column to 1-column grid at ≤600px
+- **Entity action row**: buttons wrap to next line with 36px touch targets at ≤600px
+- **Dialog padding**: CSS variables reduce from 24px → 16px → 12px at each breakpoint so dialogs use screen space efficiently
+- **Entity detail mini cards**: stack to single column on small phones
+- Sidebar overlay, hamburger button, and click-outside-to-close all remain functional at all sizes
+
+#### Integration View — Category Cards
+- Expanding a device in the integration view now shows the same **⚡ Controls / 📊 Sensors / ⚙️ Configuration / 🔧 Diagnostic / 📡 Connectivity** category cards as the Devices view
+- Categories start collapsed — one click on the device expands it, one more click on a category shows its entities
+- Consistent with the Devices view layout so the interface looks the same everywhere
+
+#### Entity Detail Dialog — Polish
+- Entity ID shown in the dialog body is now **15px bold** (was 11px muted) — easy to read and copy
+- Section headers (Overview, Current State, Registry, Device, etc.) now have a full **blue border box** (`2px solid var(--em-primary)`, `border-radius:8px`) instead of a left-side bar only
 
 #### Other
 - Dry-run rename preview: shows affected YAML files before committing a rename
@@ -37,6 +179,10 @@
 - Bulk label add/remove in multi-select toolbar
 - Custom entity presets: save selected entities as a named preset, enable/disable from sidebar
 - Watch & auto-sync script (`watch-and-sync.ps1`) for live development
+
+### 🗑️ Removed
+- **Custom Tags** — browser-local entity tags removed in favour of Home Assistant's native Labels system
+- **Entity hover preview** — mouse-over state popup removed for a cleaner, less cluttered interface
 
 ---
 

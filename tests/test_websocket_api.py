@@ -1,5 +1,6 @@
 """Unit tests for websocket_api.py core functions."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,10 +15,15 @@ from custom_components.entity_manager.websocket_api import (
     handle_bulk_enable,
     handle_disable_entity,
     handle_enable_entity,
+    handle_get_automations,
+    handle_get_config_entry_health,
     handle_get_disabled_entities,
+    handle_get_entity_details,
+    handle_get_template_sensors,
     handle_remove_entity,
     handle_rename_entity,
     handle_update_entity_display_name,
+    handle_update_yaml_references,
 )
 
 
@@ -420,3 +426,274 @@ async def test_ws_remove_not_found(hass: HomeAssistant) -> None:
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# handle_get_automations
+# ---------------------------------------------------------------------------
+
+async def test_ws_get_automations_returns_all(hass: HomeAssistant) -> None:
+    """All automation states are returned with required keys."""
+    hass.states.async_set(
+        "automation.lights_on",
+        "on",
+        {"friendly_name": "Lights On", "last_triggered": None},
+    )
+    hass.states.async_set(
+        "automation.alarm_off",
+        "off",
+        {"friendly_name": "Alarm Off", "last_triggered": None},
+    )
+    conn = _mock_conn()
+    msg = {"id": 20, "type": "entity_manager/get_automations"}
+
+    await handle_get_automations(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    results = conn.send_result.call_args[0][1]
+    assert isinstance(results, list)
+    entity_ids = [r["entity_id"] for r in results]
+    assert "automation.lights_on" in entity_ids
+    assert "automation.alarm_off" in entity_ids
+
+    # Each entry must carry the expected keys
+    for item in results:
+        for key in ("entity_id", "name", "state", "last_triggered", "triggered_by"):
+            assert key in item, f"Missing key '{key}' in automation result"
+
+
+async def test_ws_get_automations_trigger_context_system(hass: HomeAssistant) -> None:
+    """An automation with no context reports triggered_by='system'."""
+    hass.states.async_set(
+        "automation.context_test",
+        "on",
+        {"friendly_name": "Context Test"},
+    )
+    conn = _mock_conn()
+    msg = {"id": 21, "type": "entity_manager/get_automations"}
+
+    await handle_get_automations(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    results = conn.send_result.call_args[0][1]
+    target = next(r for r in results if r["entity_id"] == "automation.context_test")
+    # A state set without a parent_id / user_id resolves to "system"
+    assert target["triggered_by"] == "system"
+
+
+async def test_ws_get_automations_empty(hass: HomeAssistant) -> None:
+    """No automation states → returns empty list."""
+    conn = _mock_conn()
+    msg = {"id": 22, "type": "entity_manager/get_automations"}
+
+    await handle_get_automations(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    assert conn.send_result.call_args[0][1] == []
+
+
+# ---------------------------------------------------------------------------
+# handle_get_template_sensors
+# ---------------------------------------------------------------------------
+
+async def test_ws_get_template_sensors_from_states(hass: HomeAssistant) -> None:
+    """template.* states not in the entity registry are still returned."""
+    hass.states.async_set(
+        "template.my_calc",
+        "42",
+        {"friendly_name": "My Calculation"},
+    )
+    conn = _mock_conn()
+    msg = {"id": 23, "type": "entity_manager/get_template_sensors"}
+
+    await handle_get_template_sensors(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    results = conn.send_result.call_args[0][1]
+    entity_ids = [r["entity_id"] for r in results]
+    assert "template.my_calc" in entity_ids
+
+    target = next(r for r in results if r["entity_id"] == "template.my_calc")
+    for key in ("entity_id", "name", "state", "platform", "disabled", "triggered_by"):
+        assert key in target, f"Missing key '{key}' in template sensor result"
+    assert target["state"] == "42"
+    assert target["platform"] == "template"
+
+
+async def test_ws_get_template_sensors_empty(hass: HomeAssistant) -> None:
+    """No template entities or states → returns empty list."""
+    conn = _mock_conn()
+    msg = {"id": 24, "type": "entity_manager/get_template_sensors"}
+
+    await handle_get_template_sensors(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    assert conn.send_result.call_args[0][1] == []
+
+
+# ---------------------------------------------------------------------------
+# handle_get_entity_details
+# ---------------------------------------------------------------------------
+
+async def test_ws_get_entity_details_success(hass: HomeAssistant) -> None:
+    """Returns a well-formed result dict for a registered entity."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.detail_test")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 25,
+        "type": "entity_manager/get_entity_details",
+        "entity_id": "sensor.detail_test",
+    }
+
+    await handle_get_entity_details(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    result = conn.send_result.call_args[0][1]
+
+    # Top-level shape
+    for key in ("entity", "device", "area", "config_entry", "labels"):
+        assert key in result, f"Missing top-level key '{key}'"
+
+    # Entity sub-dict shape
+    entity_info = result["entity"]
+    for key in ("entity_id", "platform", "domain", "unique_id", "disabled_by"):
+        assert key in entity_info, f"Missing entity key '{key}'"
+
+    assert entity_info["entity_id"] == "sensor.detail_test"
+    assert entity_info["disabled_by"] is None
+
+
+async def test_ws_get_entity_details_not_found(hass: HomeAssistant) -> None:
+    conn = _mock_conn()
+    msg = {
+        "id": 26,
+        "type": "entity_manager/get_entity_details",
+        "entity_id": "sensor.no_such_detail",
+    }
+
+    await handle_get_entity_details(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_error.assert_called_once()
+    assert conn.send_error.call_args[0][1] == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# handle_get_config_entry_health
+# ---------------------------------------------------------------------------
+
+async def test_ws_get_config_entry_health_all_loaded(hass: HomeAssistant) -> None:
+    """When all config entries are loaded the result list is empty."""
+    conn = _mock_conn()
+    msg = {"id": 27, "type": "entity_manager/get_config_entry_health"}
+
+    await handle_get_config_entry_health(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    result = conn.send_result.call_args[0][1]
+    assert isinstance(result, list)
+    # In the test harness every config entry is in the "loaded" state, so none
+    # should appear in the unhealthy list.
+    loaded_entries = [e for e in result if e.get("state") == "loaded"]
+    assert loaded_entries == []
+
+
+# ---------------------------------------------------------------------------
+# handle_update_yaml_references
+# ---------------------------------------------------------------------------
+
+async def test_ws_update_yaml_dry_run(hass: HomeAssistant, tmp_path: Path) -> None:
+    """dry_run=True scans files but does not write them."""
+    # Point HA's config dir at our temp directory
+    hass.config.config_dir = str(tmp_path)
+
+    yaml_file = tmp_path / "automations.yaml"
+    original = "- entity_id: sensor.old_id\n  state: 'on'\n"
+    yaml_file.write_text(original, encoding="utf-8")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 28,
+        "type": "entity_manager/update_yaml_references",
+        "old_entity_id": "sensor.old_id",
+        "new_entity_id": "sensor.new_id",
+        "dry_run": True,
+    }
+
+    await handle_update_yaml_references(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    result = conn.send_result.call_args[0][1]
+
+    assert result["success"] is True
+    assert result["dry_run"] is True
+    assert result["total_replacements"] == 1
+    assert len(result["files_updated"]) == 1
+
+    # File must NOT have been modified
+    assert yaml_file.read_text(encoding="utf-8") == original
+
+
+async def test_ws_update_yaml_applies_replacements(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """dry_run=False writes the replacements to disk."""
+    hass.config.config_dir = str(tmp_path)
+
+    yaml_file = tmp_path / "scripts.yaml"
+    yaml_file.write_text(
+        "entity_id: sensor.alpha\nother: sensor.alpha\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    msg = {
+        "id": 29,
+        "type": "entity_manager/update_yaml_references",
+        "old_entity_id": "sensor.alpha",
+        "new_entity_id": "sensor.beta",
+        "dry_run": False,
+    }
+
+    await handle_update_yaml_references(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total_replacements"] == 2
+    assert result["dry_run"] is False
+
+    updated = yaml_file.read_text(encoding="utf-8")
+    assert "sensor.beta" in updated
+    assert "sensor.alpha" not in updated
+
+
+async def test_ws_update_yaml_no_matches(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """When the old entity ID does not appear the counts are zero."""
+    hass.config.config_dir = str(tmp_path)
+    (tmp_path / "config.yaml").write_text("domain: homeassistant\n", encoding="utf-8")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 30,
+        "type": "entity_manager/update_yaml_references",
+        "old_entity_id": "sensor.nonexistent",
+        "new_entity_id": "sensor.new",
+        "dry_run": False,
+    }
+
+    await handle_update_yaml_references(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total_replacements"] == 0
+    assert result["files_updated"] == []

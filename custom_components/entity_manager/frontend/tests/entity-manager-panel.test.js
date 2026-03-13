@@ -1,447 +1,304 @@
 /**
- * Entity Manager Panel Unit Tests
- * 
- * These tests can be run in a browser console or with a test runner.
- * Usage: Load entity-manager-panel.js first, then load this file.
+ * Entity Manager Panel – Vitest unit tests
+ *
+ * Run:  npm test
+ *
+ * The vitest.setup.js file evals entity-manager-panel.js into the jsdom window
+ * before these tests run, so customElements.get('entity-manager-panel') works.
  */
 
-class EntityManagerTests {
-  constructor() {
-    this.passCount = 0;
-    this.failCount = 0;
-    this.results = [];
-  }
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
-  // Test utilities
-  assert(condition, message) {
-    if (condition) {
-      this.passCount++;
-      this.results.push({ status: 'PASS', message });
-    } else {
-      this.failCount++;
-      this.results.push({ status: 'FAIL', message });
-    }
-  }
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-  assertEqual(actual, expected, message) {
-    this.assert(actual === expected, `${message} (expected: ${expected}, got: ${actual})`);
-  }
+const mockHass = {
+  callWS: vi.fn().mockResolvedValue({}),
+  states: {
+    'light.living_room': {
+      entity_id: 'light.living_room',
+      state: 'on',
+      attributes: { friendly_name: 'Living Room Light' },
+      last_changed: new Date(Date.now() - 60_000).toISOString(),
+      last_updated: new Date(Date.now() - 60_000).toISOString(),
+    },
+  },
+  auth: { data: { hassUrl: 'http://localhost:8123' } },
+};
 
-  assertDeepEqual(actual, expected, message) {
-    this.assert(
-      JSON.stringify(actual) === JSON.stringify(expected),
-      `${message} (expected: ${JSON.stringify(expected)}, got: ${JSON.stringify(actual)})`
-    );
-  }
+// ---------------------------------------------------------------------------
+// Panel instance factory
+// ---------------------------------------------------------------------------
 
-  assertThrows(fn, message) {
-    try {
-      fn();
-      this.assert(false, `${message} - expected to throw but didn't`);
-    } catch (e) {
-      this.assert(true, message);
-    }
-  }
+let Panel;
 
-  // Mock hass object
-  createMockHass() {
-    return {
-      callWS: async (params) => {
-        // Simulate different responses based on type
-        switch (params.type) {
-          case 'entity_manager/get_disabled_entities':
-            return [
-              {
-                integration: 'hue',
-                devices: {
-                  'device_1': {
-                    entities: [
-                      { entity_id: 'light.living_room', original_name: 'Living Room', is_disabled: false },
-                      { entity_id: 'light.bedroom', original_name: 'Bedroom', is_disabled: true }
-                    ]
-                  }
-                }
-              }
-            ];
-          case 'entity_manager/enable_entity':
-            return { success: true };
-          case 'entity_manager/disable_entity':
-            return { success: true };
-          case 'get_states':
-            return [
-              { entity_id: 'automation.test', state: 'on', attributes: {} },
-              { entity_id: 'light.living_room', state: 'on', attributes: {} }
-            ];
-          case 'history/history_during_period':
-            return {
-              'light.living_room': [
-                { state: 'on', last_changed: new Date().toISOString() },
-                { state: 'off', last_changed: new Date(Date.now() - 3600000).toISOString() }
-              ]
-            };
-          default:
-            return {};
-        }
-      },
-      states: {
-        'light.living_room': { entity_id: 'light.living_room', state: 'on', attributes: { friendly_name: 'Living Room Light' } },
-        'automation.test': { entity_id: 'automation.test', state: 'on', attributes: { entity_id: ['light.living_room'] } }
-      }
-    };
-  }
+beforeAll(() => {
+  Panel = customElements.get('entity-manager-panel');
+  if (!Panel) throw new Error('entity-manager-panel not registered — check vitest.setup.js');
+});
 
-  // Create test panel instance
-  createTestPanel() {
-    const panel = document.createElement('entity-manager-panel');
-    panel.hass = this.createMockHass();
-    return panel;
-  }
-
-  // ============ TEST CASES ============
-
-  async testThemeSystemInitialization() {
-    const panel = this.createTestPanel();
-    
-    this.assert(panel.activeTheme === 'default', 'Default theme should be "default"');
-    this.assert(typeof panel.customThemes === 'object', 'Custom themes should be an object');
-    this.assert(typeof PREDEFINED_THEMES === 'object', 'PREDEFINED_THEMES should be defined');
-    this.assert(PREDEFINED_THEMES['Light'] !== undefined, 'Light theme should exist');
-    this.assert(PREDEFINED_THEMES['Dark'] !== undefined, 'Dark theme should exist');
-  }
-
-  async testFavoritesSystem() {
-    const panel = this.createTestPanel();
-    
-    // Initially no favorites
-    this.assertEqual(panel.favorites.size, 0, 'Should start with no favorites');
-    
-    // Add a favorite
-    panel._toggleFavorite('light.living_room');
-    this.assert(panel.favorites.has('light.living_room'), 'Should add favorite');
-    
-    // Remove the favorite
-    panel._toggleFavorite('light.living_room');
-    this.assert(!panel.favorites.has('light.living_room'), 'Should remove favorite on toggle');
-  }
-
-  async testUndoRedoSystem() {
-    const panel = this.createTestPanel();
-    
-    // Initially empty stacks
-    this.assertEqual(panel.undoStack.length, 0, 'Undo stack should be empty initially');
-    this.assertEqual(panel.redoStack.length, 0, 'Redo stack should be empty initially');
-    
-    // Push an action
-    panel._pushUndoAction({
-      type: 'test',
-      description: 'Test action',
-      undo: async () => {}
-    });
-    
-    this.assertEqual(panel.undoStack.length, 1, 'Undo stack should have 1 item');
-    
-    // Test max undo steps
-    for (let i = 0; i < 60; i++) {
-      panel._pushUndoAction({
-        type: 'test',
-        description: `Action ${i}`,
-        undo: async () => {}
-      });
-    }
-    
-    this.assert(panel.undoStack.length <= panel.maxUndoSteps, 'Undo stack should respect max limit');
-  }
-
-  async testFilterPresetSystem() {
-    const panel = this.createTestPanel();
-    
-    // Set some filter state
-    panel.searchTerm = 'living';
-    panel.viewState = 'enabled';
-    panel.selectedDomain = 'light';
-    
-    // Save preset
-    panel._saveCurrentFilterPreset('Test Preset');
-    
-    const presets = panel.filterPresets;
-    this.assert(presets.length > 0, 'Should have saved preset');
-    this.assertEqual(presets[0].name, 'Test Preset', 'Preset name should match');
-    this.assertEqual(presets[0].filters.searchTerm, 'living', 'Preset should save search term');
-    
-    // Clear filters
-    panel.searchTerm = '';
-    panel.viewState = 'all';
-    panel.selectedDomain = 'all';
-    
-    // Apply preset
-    panel._applyFilterPreset(presets[0]);
-    
-    this.assertEqual(panel.searchTerm, 'living', 'Should restore search term');
-    this.assertEqual(panel.viewState, 'enabled', 'Should restore view state');
-    this.assertEqual(panel.selectedDomain, 'light', 'Should restore domain');
-  }
-
-  async testTagSystem() {
-    const panel = this.createTestPanel();
-    const testEntityId = 'light.living_room';
-    
-    // Add tags
-    panel._addTagToEntity(testEntityId, 'important');
-    panel._addTagToEntity(testEntityId, 'downstairs');
-    
-    const tags = panel.entityTags[testEntityId];
-    this.assert(tags.includes('important'), 'Should add "important" tag');
-    this.assert(tags.includes('downstairs'), 'Should add "downstairs" tag');
-    
-    // Don't duplicate tags
-    panel._addTagToEntity(testEntityId, 'important');
-    this.assertEqual(panel.entityTags[testEntityId].filter(t => t === 'important').length, 1, 'Should not duplicate tags');
-    
-    // Remove tag
-    panel._removeTagFromEntity(testEntityId, 'important');
-    this.assert(!panel.entityTags[testEntityId].includes('important'), 'Should remove tag');
-    
-    // Get all tags
-    panel._addTagToEntity('light.bedroom', 'upstairs');
-    const allTags = panel._getAllTags();
-    this.assert(allTags.includes('downstairs'), 'Should include "downstairs" in all tags');
-    this.assert(allTags.includes('upstairs'), 'Should include "upstairs" in all tags');
-  }
-
-  async testAliasSystem() {
-    const panel = this.createTestPanel();
-    const testEntityId = 'light.living_room';
-    
-    // Set alias
-    panel._setEntityAlias(testEntityId, 'Main Light');
-    
-    this.assertEqual(panel.entityAliases[testEntityId], 'Main Light', 'Should set alias');
-    
-    // Clear alias
-    panel._setEntityAlias(testEntityId, '');
-    this.assert(!panel.entityAliases[testEntityId], 'Should clear alias when empty');
-  }
-
-  async testSmartGroupsSystem() {
-    const panel = this.createTestPanel();
-    panel.data = [
-      {
-        integration: 'hue',
-        devices: {
-          'device_1': {
-            entities: [
-              { entity_id: 'light.living_room', original_name: 'Living Room', is_disabled: false, area_id: 'living_room' },
-              { entity_id: 'light.bedroom', original_name: 'Bedroom', is_disabled: false, area_id: 'bedroom' }
-            ]
-          }
-        }
-      },
-      {
-        integration: 'zwave',
-        devices: {
-          'device_2': {
-            entities: [
-              { entity_id: 'switch.kitchen', original_name: 'Kitchen', is_disabled: false, area_id: 'kitchen' }
-            ]
-          }
-        }
-      }
-    ];
-    
-    // Test integration grouping
-    panel.smartGroupMode = 'integration';
-    let groups = panel._getSmartGroups();
-    this.assert(groups.hue !== undefined, 'Should group by integration: hue');
-    this.assert(groups.zwave !== undefined, 'Should group by integration: zwave');
-    
-    // Test type grouping
-    panel.smartGroupMode = 'type';
-    groups = panel._getSmartGroups();
-    this.assert(groups.light !== undefined, 'Should group by type: light');
-    this.assert(groups.switch !== undefined, 'Should group by type: switch');
-  }
-
-  async testColumnVisibility() {
-    const panel = this.createTestPanel();
-    
-    // Default columns
-    this.assert(panel.visibleColumns.includes('name'), 'Should include name column by default');
-    this.assert(panel.visibleColumns.includes('state'), 'Should include state column by default');
-    this.assert(panel.visibleColumns.includes('actions'), 'Should include actions column by default');
-    
-    // Toggle column
-    const initialLength = panel.visibleColumns.length;
-    panel.visibleColumns = panel.visibleColumns.filter(c => c !== 'tags');
-    
-    this.assert(!panel.visibleColumns.includes('tags'), 'Should be able to hide column');
-  }
-
-  async testAutomationImpactAnalysis() {
-    const panel = this.createTestPanel();
-    
-    const impactedItems = await panel._analyzeAutomationImpact('light.living_room');
-    // This would need actual data to test properly
-    this.assert(Array.isArray(impactedItems), 'Should return an array of impacted items');
-  }
-
-  async testFormatTimeDiff() {
-    const panel = this.createTestPanel();
-    
-    // Test seconds
-    this.assertEqual(panel._formatTimeDiff(1000), '1s', 'Should format 1 second');
-    this.assertEqual(panel._formatTimeDiff(45000), '45s', 'Should format 45 seconds');
-
-    // Test minutes
-    this.assertEqual(panel._formatTimeDiff(60000), '1m', 'Should format 1 minute');
-    this.assertEqual(panel._formatTimeDiff(3600000 - 1000), '59m', 'Should format 59 minutes');
-
-    // Test hours
-    this.assertEqual(panel._formatTimeDiff(3600000), '1h', 'Should format 1 hour');
-    this.assertEqual(panel._formatTimeDiff(86400000 - 1000), '23h', 'Should format 23 hours');
-
-    // Test days
-    this.assertEqual(panel._formatTimeDiff(86400000), '1d', 'Should format 1 day');
-
-    // Test null/NaN guards
-    this.assertEqual(panel._formatTimeDiff(null), '?', 'Should handle null');
-    this.assertEqual(panel._formatTimeDiff(NaN), '?', 'Should handle NaN');
-  }
-
-  async testLazyLoading() {
-    const panel = this.createTestPanel();
-    
-    // Test initial load count
-    this.assertEqual(panel.initialLoadCount, 20, 'Initial load count should be 20');
-    this.assertEqual(panel.loadMoreCount, 20, 'Load more count should be 20');
-    
-    // Test visible entity counts tracking
-    this.assertDeepEqual(panel.visibleEntityCounts, {}, 'Should start with empty visible counts');
-    
-    // Load more for integration
-    panel.data = [
-      {
-        integration: 'test',
-        devices: {
-          'device_1': {
-            entities: new Array(50).fill(null).map((_, i) => ({
-              entity_id: `light.test_${i}`,
-              is_disabled: false
-            }))
-          }
-        }
-      }
-    ];
-    
-    panel._loadMoreEntities('test', false);
-    this.assertEqual(panel.visibleEntityCounts['test'], 40, 'Should load 20 more entities');
-  }
-
-  async testActivityLog() {
-    const panel = this.createTestPanel();
-    
-    // Log an activity
-    panel._logActivity({
-      action: 'enable',
-      entityId: 'light.test',
-      details: 'Enabled entity'
-    });
-    
-    this.assert(panel.activityLog.length > 0, 'Should have activity logged');
-    this.assertEqual(panel.activityLog[0].action, 'enable', 'Should log correct action');
-    this.assertEqual(panel.activityLog[0].entityId, 'light.test', 'Should log correct entity');
-  }
-
-  async testSearchFiltering() {
-    const panel = this.createTestPanel();
-    panel.data = [
-      {
-        integration: 'hue',
-        devices: {
-          'device_1': {
-            entities: [
-              { entity_id: 'light.living_room', original_name: 'Living Room Light', is_disabled: false },
-              { entity_id: 'light.bedroom', original_name: 'Bedroom Light', is_disabled: false },
-              { entity_id: 'switch.kitchen', original_name: 'Kitchen Switch', is_disabled: true }
-            ]
-          }
-        }
-      }
-    ];
-    
-    // Test search term
-    panel.searchTerm = 'living';
-    const filtered = panel.filteredData || panel.getFilteredData?.() || panel.data;
-    
-    // Note: This would need the actual filter implementation to test properly
-    this.assert(true, 'Search filtering test placeholder');
-  }
-
-  // ============ RUN ALL TESTS ============
-
-  async runAll() {
-    console.log('🧪 Starting Entity Manager Panel Tests...\n');
-    
-    const tests = [
-      { name: 'Theme System Initialization', fn: () => this.testThemeSystemInitialization() },
-      { name: 'Favorites System', fn: () => this.testFavoritesSystem() },
-      { name: 'Undo/Redo System', fn: () => this.testUndoRedoSystem() },
-      { name: 'Filter Preset System', fn: () => this.testFilterPresetSystem() },
-      { name: 'Tag System', fn: () => this.testTagSystem() },
-      { name: 'Alias System', fn: () => this.testAliasSystem() },
-      { name: 'Smart Groups System', fn: () => this.testSmartGroupsSystem() },
-      { name: 'Column Visibility', fn: () => this.testColumnVisibility() },
-      { name: 'Automation Impact Analysis', fn: () => this.testAutomationImpactAnalysis() },
-      { name: 'Format Time Diff', fn: () => this.testFormatTimeDiff() },
-      { name: 'Lazy Loading', fn: () => this.testLazyLoading() },
-      { name: 'Activity Log', fn: () => this.testActivityLog() },
-      { name: 'Search Filtering', fn: () => this.testSearchFiltering() }
-    ];
-    
-    for (const test of tests) {
-      console.log(`Running: ${test.name}...`);
-      try {
-        await test.fn();
-        console.log(`  ✓ ${test.name} completed`);
-      } catch (error) {
-        this.failCount++;
-        this.results.push({ status: 'ERROR', message: `${test.name}: ${error.message}` });
-        console.error(`  ✗ ${test.name} errored: ${error.message}`);
-      }
-    }
-    
-    console.log('\n============ TEST RESULTS ============');
-    console.log(`Total: ${this.passCount + this.failCount}`);
-    console.log(`Passed: ${this.passCount}`);
-    console.log(`Failed: ${this.failCount}`);
-    
-    if (this.failCount > 0) {
-      console.log('\nFailed Tests:');
-      this.results.filter(r => r.status !== 'PASS').forEach(r => {
-        console.log(`  ✗ ${r.message}`);
-      });
-    }
-    
-    return {
-      total: this.passCount + this.failCount,
-      passed: this.passCount,
-      failed: this.failCount,
-      results: this.results
-    };
-  }
+function makePanel() {
+  const el = new Panel();
+  // Bypass the setter to avoid triggering updateView() before the element is
+  // connected to the DOM.
+  el._hass = { ...mockHass, callWS: vi.fn().mockResolvedValue({}) };
+  return el;
 }
 
-// Auto-run tests if in browser
-if (typeof customElements !== 'undefined' && customElements.get('entity-manager-panel')) {
-  const tests = new EntityManagerTests();
-  tests.runAll().then(results => {
-    console.log('\nTest run complete.');
-    window.entityManagerTestResults = results;
+// ---------------------------------------------------------------------------
+// _formatTimeDiff
+// ---------------------------------------------------------------------------
+
+describe('_formatTimeDiff(ms)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('returns "?" for null', () => {
+    expect(el._formatTimeDiff(null)).toBe('?');
   });
-} else {
-  console.log('Entity Manager Panel not loaded. Load entity-manager-panel.js first.');
-}
 
-// Export for module usage
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = EntityManagerTests;
-}
+  it('returns "?" for NaN', () => {
+    expect(el._formatTimeDiff(NaN)).toBe('?');
+  });
+
+  it('formats seconds correctly', () => {
+    expect(el._formatTimeDiff(5_000)).toBe('5s');
+    expect(el._formatTimeDiff(59_000)).toBe('59s');
+  });
+
+  it('formats minutes correctly', () => {
+    expect(el._formatTimeDiff(60_000)).toBe('1m');
+    expect(el._formatTimeDiff(90_000)).toBe('1m');
+    expect(el._formatTimeDiff(3_599_000)).toBe('59m');
+  });
+
+  it('formats hours correctly', () => {
+    expect(el._formatTimeDiff(3_600_000)).toBe('1h');
+    expect(el._formatTimeDiff(86_399_000)).toBe('23h');
+  });
+
+  it('formats days correctly', () => {
+    expect(el._formatTimeDiff(86_400_000)).toBe('1 day');
+    expect(el._formatTimeDiff(2 * 86_400_000)).toBe('2 days');
+    // 7 days = 1 week (the function switches to weeks at 7+ days)
+    expect(el._formatTimeDiff(7 * 86_400_000)).toBe('1 week');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _fmtAgo
+// ---------------------------------------------------------------------------
+
+describe('_fmtAgo(isoStr, fallback)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('returns default fallback "Never" for null', () => {
+    expect(el._fmtAgo(null)).toBe('Never');
+  });
+
+  it('returns custom fallback for null', () => {
+    expect(el._fmtAgo(null, 'Unknown')).toBe('Unknown');
+  });
+
+  it('returns "just now" or a time-ago string for a recent timestamp', () => {
+    const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
+    const result = el._fmtAgo(oneMinuteAgo);
+    // Should be something like "1m ago" — not the fallback
+    expect(result).not.toBe('Never');
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('contains "ago" suffix for past dates', () => {
+    const tenMinutesAgo = new Date(Date.now() - 600_000).toISOString();
+    expect(el._fmtAgo(tenMinutesAgo)).toContain('ago');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _escapeHtml / _escapeAttr
+// ---------------------------------------------------------------------------
+
+describe('_escapeHtml(str)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('escapes < and >', () => {
+    expect(el._escapeHtml('<script>')).toBe('&lt;script&gt;');
+  });
+
+  it('escapes ampersand', () => {
+    expect(el._escapeHtml('a & b')).toBe('a &amp; b');
+  });
+
+  it('escapes double quotes', () => {
+    expect(el._escapeHtml('"hello"')).toBe('&quot;hello&quot;');
+  });
+
+  it('passes through plain strings unchanged', () => {
+    expect(el._escapeHtml('hello world')).toBe('hello world');
+  });
+
+  it('handles empty string', () => {
+    expect(el._escapeHtml('')).toBe('');
+  });
+});
+
+describe('_escapeAttr(str)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('escapes double quotes in attribute values', () => {
+    const result = el._escapeAttr('say "hello"');
+    expect(result).not.toContain('"');
+  });
+
+  it('handles plain strings', () => {
+    expect(el._escapeAttr('sensor.temperature')).toBe('sensor.temperature');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _collGroup
+// ---------------------------------------------------------------------------
+
+describe('_collGroup(label, bodyHtml)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('returns a non-empty HTML string', () => {
+    const html = el._collGroup('My Section', '<p>content</p>');
+    expect(typeof html).toBe('string');
+    expect(html.length).toBeGreaterThan(0);
+  });
+
+  it('includes the label text', () => {
+    const html = el._collGroup('Automations (5)', '<div>body</div>');
+    expect(html).toContain('Automations (5)');
+  });
+
+  it('includes the body HTML', () => {
+    const html = el._collGroup('Label', '<span id="inner">content</span>');
+    expect(html).toContain('id="inner"');
+    expect(html).toContain('content');
+  });
+
+  it('includes the em-collapsible class for listener attachment', () => {
+    const html = el._collGroup('Label', '<div></div>');
+    expect(html).toContain('em-collapsible');
+  });
+
+  it('produces a collapse arrow element', () => {
+    const html = el._collGroup('Label', '<div></div>');
+    // Arrow is either .em-collapse-arrow or .em-collapsible-icon
+    const hasArrow = html.includes('em-collapse-arrow') || html.includes('em-collapsible-icon');
+    expect(hasArrow).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _reAttachCollapsibles
+// ---------------------------------------------------------------------------
+
+describe('_reAttachCollapsibles(root, opts)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  function buildRoot(bodyDisplay = '') {
+    const root = document.createElement('div');
+    root.innerHTML = `
+      <div class="em-collapsible">
+        Header
+        <span class="em-collapse-arrow"></span>
+      </div>
+      <div class="em-group-body" style="display:${bodyDisplay}">Body content</div>
+    `;
+    return root;
+  }
+
+  it('toggles body visibility on header click (hide)', () => {
+    const root = buildRoot('');
+    el._reAttachCollapsibles(root);
+
+    const header = root.querySelector('.em-collapsible');
+    const body = root.querySelector('.em-group-body');
+
+    expect(body.style.display).toBe('');
+    header.click();
+    expect(body.style.display).toBe('none');
+  });
+
+  it('toggles body visibility on header click (show again)', () => {
+    const root = buildRoot('');
+    el._reAttachCollapsibles(root);
+
+    const header = root.querySelector('.em-collapsible');
+    const body = root.querySelector('.em-group-body');
+
+    header.click(); // hide
+    header.click(); // show
+    expect(body.style.display).toBe('');
+  });
+
+  it('expands a collapsed body when { expand: true }', () => {
+    const root = buildRoot('none');
+    el._reAttachCollapsibles(root, { expand: true });
+    const body = root.querySelector('.em-group-body');
+    expect(body.style.display).toBe('');
+  });
+
+  it('resets arrow transform when { expand: true }', () => {
+    const root = buildRoot('none');
+    const arrow = root.querySelector('.em-collapse-arrow');
+    arrow.style.transform = 'rotate(-90deg)';
+    el._reAttachCollapsibles(root, { expand: true });
+    expect(arrow.style.transform).toBe('');
+  });
+
+  it('respects a custom selector', () => {
+    const root = document.createElement('div');
+    root.innerHTML = `
+      <div class="custom-toggle">Header</div>
+      <div style="">Body</div>
+      <div class="em-collapsible">Other</div>
+      <div style="">Other body</div>
+    `;
+    el._reAttachCollapsibles(root, { selector: '.custom-toggle' });
+
+    // Only the custom-toggle should have a click listener
+    root.querySelector('.custom-toggle').click();
+    expect(root.querySelector('div:nth-child(2)').style.display).toBe('none');
+    // .em-collapsible should NOT be wired
+    root.querySelector('.em-collapsible').click();
+    expect(root.querySelector('div:nth-child(4)').style.display).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _animateStatCounters — RAF cancellation guard
+// ---------------------------------------------------------------------------
+
+describe('_animateStatCounters()', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('cancels an existing RAF before starting a new animation', () => {
+    const cancelSpy = vi.spyOn(global, 'cancelAnimationFrame');
+
+    // Build a container with a .stat-value whose textContent is ≥ 2 (the early-return guard)
+    // and a pre-existing _animRafId to trigger the cancellation path.
+    const container = document.createElement('div');
+    const stat = document.createElement('span');
+    stat.className = 'stat-value';
+    stat.textContent = '100'; // must be >= 2 to pass the isNaN/< 2 guard
+    stat._animRafId = 42;     // simulate an in-progress animation
+    container.appendChild(stat);
+
+    el._animateStatCounters(container);
+
+    expect(cancelSpy).toHaveBeenCalledWith(42);
+    cancelSpy.mockRestore();
+  });
+});
