@@ -449,7 +449,7 @@ async def test_ws_get_automations_returns_all(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 20, "type": "entity_manager/get_automations"}
 
-    await handle_get_automations(hass, conn, msg)
+    handle_get_automations(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -475,7 +475,7 @@ async def test_ws_get_automations_trigger_context_system(hass: HomeAssistant) ->
     conn = _mock_conn()
     msg = {"id": 21, "type": "entity_manager/get_automations"}
 
-    await handle_get_automations(hass, conn, msg)
+    handle_get_automations(hass, conn, msg)
     await hass.async_block_till_done()
 
     results = conn.send_result.call_args[0][1]
@@ -489,7 +489,7 @@ async def test_ws_get_automations_empty(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 22, "type": "entity_manager/get_automations"}
 
-    await handle_get_automations(hass, conn, msg)
+    handle_get_automations(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -510,7 +510,7 @@ async def test_ws_get_template_sensors_from_states(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 23, "type": "entity_manager/get_template_sensors"}
 
-    await handle_get_template_sensors(hass, conn, msg)
+    handle_get_template_sensors(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -530,7 +530,7 @@ async def test_ws_get_template_sensors_empty(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 24, "type": "entity_manager/get_template_sensors"}
 
-    await handle_get_template_sensors(hass, conn, msg)
+    handle_get_template_sensors(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -553,7 +553,7 @@ async def test_ws_get_entity_details_success(hass: HomeAssistant) -> None:
         "entity_id": "sensor.detail_test",
     }
 
-    await handle_get_entity_details(hass, conn, msg)
+    handle_get_entity_details(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -580,7 +580,7 @@ async def test_ws_get_entity_details_not_found(hass: HomeAssistant) -> None:
         "entity_id": "sensor.no_such_detail",
     }
 
-    await handle_get_entity_details(hass, conn, msg)
+    handle_get_entity_details(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_error.assert_called_once()
@@ -596,7 +596,7 @@ async def test_ws_get_config_entry_health_all_loaded(hass: HomeAssistant) -> Non
     conn = _mock_conn()
     msg = {"id": 27, "type": "entity_manager/get_config_entry_health"}
 
-    await handle_get_config_entry_health(hass, conn, msg)
+    handle_get_config_entry_health(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -630,7 +630,7 @@ async def test_ws_update_yaml_dry_run(hass: HomeAssistant, tmp_path: Path) -> No
         "dry_run": True,
     }
 
-    await handle_update_yaml_references(hass, conn, msg)
+    handle_update_yaml_references(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -665,7 +665,7 @@ async def test_ws_update_yaml_applies_replacements(
         "dry_run": False,
     }
 
-    await handle_update_yaml_references(hass, conn, msg)
+    handle_update_yaml_references(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -693,7 +693,7 @@ async def test_ws_update_yaml_no_matches(
         "dry_run": False,
     }
 
-    await handle_update_yaml_references(hass, conn, msg)
+    handle_update_yaml_references(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -715,7 +715,7 @@ async def test_ws_export_states_returns_list(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 40, "type": "entity_manager/export_states"}
 
-    await handle_export_states(hass, conn, msg)
+    handle_export_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -740,7 +740,7 @@ async def test_ws_export_states_sorted(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 41, "type": "entity_manager/export_states"}
 
-    await handle_export_states(hass, conn, msg)
+    handle_export_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -757,7 +757,7 @@ async def test_ws_export_states_disabled_flag(hass: HomeAssistant) -> None:
     conn = _mock_conn()
     msg = {"id": 42, "type": "entity_manager/export_states"}
 
-    await handle_export_states(hass, conn, msg)
+    handle_export_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -783,7 +783,7 @@ async def test_ws_import_enables_disabled_entity(hass: HomeAssistant) -> None:
         "entities": [{"entity_id": "sensor.imp_enable_me", "is_disabled": False}],
     }
 
-    await handle_import_entity_states(hass, conn, msg)
+    handle_import_entity_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -808,7 +808,7 @@ async def test_ws_import_disables_enabled_entity(hass: HomeAssistant) -> None:
         "entities": [{"entity_id": "sensor.imp_disable_me", "is_disabled": True}],
     }
 
-    await handle_import_entity_states(hass, conn, msg)
+    handle_import_entity_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -833,7 +833,7 @@ async def test_ws_import_skips_already_correct_state(hass: HomeAssistant) -> Non
         "entities": [{"entity_id": "sensor.imp_already_enabled", "is_disabled": False}],
     }
 
-    await handle_import_entity_states(hass, conn, msg)
+    handle_import_entity_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -850,7 +850,7 @@ async def test_ws_import_not_found_entity_reported_as_failed(hass: HomeAssistant
         "entities": [{"entity_id": "sensor.imp_nonexistent", "is_disabled": False}],
     }
 
-    await handle_import_entity_states(hass, conn, msg)
+    handle_import_entity_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -875,7 +875,7 @@ async def test_ws_import_partial_success(hass: HomeAssistant) -> None:
         ],
     }
 
-    await handle_import_entity_states(hass, conn, msg)
+    handle_import_entity_states(hass, conn, msg)
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
