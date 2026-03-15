@@ -12361,6 +12361,19 @@ class EntityManagerPanel extends HTMLElement {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-dialog-overlay';
     overlay.setAttribute('data-theme', this.getAttribute('data-theme') || 'light');
+    // Copy --em-* variables from the panel's inline style to the overlay so that
+    // dialogs (appended to document.body, outside the panel's cascade) resolve
+    // the correct colours when EM light mode is active with HA dark theme.
+    [
+      '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
+      '--em-text-primary', '--em-text-secondary', '--em-text-disabled',
+      '--em-border', '--em-border-light',
+      '--em-primary', '--em-primary-dark', '--em-primary-light',
+      '--em-success', '--em-danger', '--em-warning',
+    ].forEach(v => {
+      const val = this.style.getPropertyValue(v);
+      if (val) overlay.style.setProperty(v, val);
+    });
     overlay.innerHTML = `
       <div class="confirm-dialog-box ${this._escapeAttr(extraClass)}">
         <div class="confirm-dialog-header"${color ? ` style="border-color: ${this._escapeAttr(color)};"` : ''}>
