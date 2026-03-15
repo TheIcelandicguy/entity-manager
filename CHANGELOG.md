@@ -1,5 +1,39 @@
 # Changelog
 
+## Version 2.13.0 - Dialog Search Header, Floor Assignment & UI Consistency
+
+### ✨ New Features
+
+#### Stat Dialog Search Bar — Always Visible
+- The search bar in every stat card dialog has moved from inside the scrollable content area into the **fixed dialog header** — the input is now permanently visible regardless of how far you scroll through a long list
+- Applies to: Automations, Scripts, Helpers, Templates, Unavailable, Orphaned, Stale, Updates, Config Health, and Cleanup dialogs
+
+#### Assign to Floor
+- New **"Assign to floor"** option in the entity right-click context menu (alongside the existing "Assign to area")
+- New **"Assign Floor"** bulk action in the sidebar — assigns all selected entities to a floor in one click
+- Two-step floor picker: select a floor → select an area within that floor (auto-assigns immediately when a floor has only one area)
+- "— No Area —" option clears the area assignment
+- Undo support — reverting a floor assignment restores the previous area
+
+#### Groups Sidebar (renamed from Smart Groups)
+- Sidebar section renamed from **Smart Groups** to **Groups** — simpler and clearer
+- Removed the enable/disable toggle — grouping is always active
+- Default grouping mode remains **By Integration**; all five modes (Integration, Room, Type, Floor, Device Name) are always accessible
+
+#### Orphaned Entities — Grouped by Integration
+- The **Orphaned Entities** section in the Cleanup dialog now groups entities by integration with collapsible sections — consistent with the layout already used in the dedicated Orphaned stat card dialog
+
+### 🐛 Bug Fixes
+
+- **Delete button on wrong cards** — the 🗑 delete button was appearing on every entity card whenever any entity was selected; it now correctly shows only on the card of the selected entity itself
+
+### 🎨 Visual
+
+- **Alternating row tint** inside colour-tinted stat dialog sections — even-numbered mini cards get a subtle tinted background so rows are easier to distinguish at a glance; each `em-sug-*` type uses its own matching shade
+- All stat dialogs now **expand the first section by default** on open — no more clicking to expand before anything is visible
+
+---
+
 ## Version 2.12.1 - Code Quality & Test Infrastructure
 
 ### 🔧 Technical

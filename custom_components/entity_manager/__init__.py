@@ -26,11 +26,6 @@ SERVICE_SCHEMA = vol.Schema(
     }
 )
 
-_MANIFEST_VERSION: str = json.loads(
-    (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
-).get("version", "0")
-
-
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Entity Manager component."""
     return True
@@ -79,6 +74,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Register the frontend panel
+    manifest_text = await hass.async_add_executor_job(
+        (Path(__file__).parent / "manifest.json").read_text
+    )
+    version = json.loads(manifest_text).get("version", "0")
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -90,7 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-manager-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={_MANIFEST_VERSION}",
+                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={version}",
             }
         },
         require_admin=True,

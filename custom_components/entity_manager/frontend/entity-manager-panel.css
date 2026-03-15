@@ -1167,6 +1167,12 @@ body.em-dialog-open {
   color: var(--em-text-primary);
 }
 
+.confirm-dialog-overlay[data-theme="dark"] .em-header-search {
+  background: var(--em-bg-primary);
+  border-color: var(--em-border);
+  color: var(--em-text-primary);
+}
+
 .confirm-dialog-overlay[data-theme="dark"] .confirm-dialog-content {
   background: var(--em-bg-secondary);
 }
@@ -1501,6 +1507,22 @@ body.em-dialog-open {
   font-size: 12px;
   color: var(--secondary-text-color);
   white-space: nowrap;
+}
+
+.device-select-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 2px 4px;
+}
+
+.device-select-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+  flex-shrink: 0;
 }
 
 .integration-icon {
@@ -2001,6 +2023,16 @@ body.em-dialog-open {
   color: white !important;
 }
 
+.icon-btn.bulk-delete-btn {
+  color: var(--em-danger) !important;
+  border-color: var(--em-danger) !important;
+}
+
+.icon-btn.bulk-delete-btn:hover {
+  background: var(--em-danger) !important;
+  color: white !important;
+}
+
 .icon-btn.entity-config-url {
   color: var(--em-primary);
   border-color: var(--em-primary);
@@ -2033,6 +2065,16 @@ body.em-dialog-open {
 
 .icon-btn.toggle-entity.toggle-on:hover {
   background: var(--em-success) !important;
+  color: white !important;
+}
+
+.icon-btn.press-entity {
+  color: var(--em-primary) !important;
+  border-color: var(--em-primary) !important;
+}
+
+.icon-btn.press-entity:hover {
+  background: var(--em-primary) !important;
   color: white !important;
 }
 
@@ -3214,6 +3256,15 @@ body.em-dialog-open {
   margin: 6px 0;
 }
 
+.em-context-item.em-context-danger {
+  color: var(--em-danger);
+}
+
+.em-context-item.em-context-danger:hover {
+  background: var(--em-danger);
+  color: #fff;
+}
+
 /* ===== SIDEBAR ===== */
 
 .em-sidebar {
@@ -3399,6 +3450,60 @@ body.em-dialog-open {
   color: var(--em-text-secondary);
 }
 
+#em-selection-group {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  margin: 2px 0;
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+}
+
+#em-selection-group.has-selection {
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
+  border-color: color-mix(in srgb, var(--em-primary) 35%, transparent);
+  animation: em-sel-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes em-sel-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--em-primary) 0%, transparent); }
+  50% { box-shadow: 0 0 8px 2px color-mix(in srgb, var(--em-primary) 35%, transparent); }
+}
+
+.sidebar-item .count.em-sel-active {
+  background: var(--em-primary) !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+
+.em-view-selected-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
+  border: 2px solid color-mix(in srgb, var(--em-primary) 40%, transparent);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--em-text-primary);
+}
+
+.em-view-selected-exit {
+  padding: 4px 12px;
+  border: 2px solid var(--em-primary);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--em-primary);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.em-view-selected-exit:hover {
+  background: var(--em-primary);
+  color: #fff;
+}
+
 .sidebar-item.more {
   color: var(--em-text-secondary);
   font-style: italic;
@@ -3436,7 +3541,62 @@ body.em-dialog-open {
   margin-left: 0;
 }
 
+#main-content::-webkit-scrollbar {
+  width: 10px;
+}
+#main-content::-webkit-scrollbar-track {
+  background: var(--em-bg-secondary);
+}
+#main-content::-webkit-scrollbar-thumb {
+  background: var(--em-border);
+  border-radius: 5px;
+  border: 2px solid var(--em-bg-secondary);
+}
+#main-content::-webkit-scrollbar-thumb:hover {
+  background: var(--em-text-secondary);
+}
+
 /* ===== ACTIVITY LOG ===== */
+
+/* Stat dialog search input — header-mounted, always visible */
+.em-header-search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 2px solid var(--em-border);
+  background: var(--em-bg-secondary);
+  color: var(--em-text-primary);
+  font-size: 0.9em;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+/* Stat dialog search input focus state */
+.em-stat-search-input:focus,
+.em-stat-search-input.focused { border-color: var(--em-primary) !important; }
+
+/* EM Action Log filter pill buttons */
+.act-type-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 12px;
+  border: 1px solid var(--em-border);
+  background: transparent;
+  color: var(--em-text-primary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.act-type-btn.active {
+  background: var(--em-primary);
+  color: #fff;
+  border-color: var(--em-primary);
+}
+.act-type-btn:not(.active):hover {
+  background: var(--em-bg-secondary);
+}
 
 .activity-item {
   display: flex;
@@ -4187,7 +4347,33 @@ body.em-dialog-open {
 
 /* Layout-specific placement */
 .smart-group-assign-all-btn { margin-left: auto; margin-right: 8px; }
-.device-assign-area-btn     { margin-left: 8px; }
+.device-assign-area-btn {
+  margin-left: 8px;
+  padding: 10px 20px;
+  font-size: 18px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: var(--em-bg-primary);
+  color: var(--em-primary);
+  border-color: var(--em-primary);
+  box-shadow: var(--em-shadow);
+  font-style: normal;
+  opacity: 1;
+}
+.device-assign-area-btn:hover {
+  background: var(--em-primary) !important;
+  color: white !important;
+  box-shadow: 0 6px 16px rgba(33, 150, 243, 0.3);
+}
+.device-assign-area-btn.no-area {
+  color: var(--em-primary);
+  opacity: 0.6;
+}
+.device-assign-area-btn.no-area:hover {
+  background: var(--em-primary) !important;
+  color: white !important;
+  border-color: var(--em-primary) !important;
+}
 .em-sug-action.em-assign-btn { margin-top: 8px; display: inline-block; }
 
 /* Area picker dialog */
@@ -4237,34 +4423,37 @@ body.em-dialog-open {
   margin-bottom: 10px;
 }
 
-/* Device bulk action buttons — same size/shape as em-assign-btn */
+/* Device bulk action buttons — outlined style matching integration-level buttons */
 .device-enable-all,
 .device-disable-all {
-  padding: 3px 9px;
-  font-size: 11px;
-  color: white;
+  padding: 10px 20px;
+  font-size: 18px;
+  font-weight: 600;
   border: 2px solid;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  background: var(--em-bg-primary);
+  transition: all 0.3s ease;
+  box-shadow: var(--em-shadow);
 }
 .device-enable-all {
-  background: var(--em-success);
+  color: var(--em-success);
   border-color: var(--em-success);
 }
 .device-enable-all:hover {
-  filter: brightness(0.88);
+  background: var(--em-success);
+  color: white;
   box-shadow: 0 6px 16px rgba(76, 175, 80, 0.3);
 }
 .device-disable-all {
-  background: var(--em-danger);
+  color: var(--em-danger);
   border-color: var(--em-danger);
 }
 .device-disable-all:hover {
-  filter: brightness(0.88);
+  background: var(--em-danger);
+  color: white;
   box-shadow: 0 6px 16px rgba(244, 67, 54, 0.3);
 }
 
@@ -4290,6 +4479,57 @@ body.em-dialog-open {
 .em-dialog-btn-primary { background: var(--em-primary); color: #fff; border: none; }
 .em-dialog-btn-danger  { background: var(--em-danger);  color: #fff; border: none; }
 .em-dialog-btn-warning { background: var(--em-warning); color: #fff; border: none; }
+
+/* Entity health alert banner */
+.em-health-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin-bottom: 10px;
+  background: rgba(244, 67, 54, 0.10);
+  border: 1.5px solid rgba(244, 67, 54, 0.45);
+  border-radius: 8px;
+  font-size: 0.92em;
+}
+.em-health-banner-icon { font-size: 1.2em; flex-shrink: 0; }
+.em-health-banner-msg  { flex: 1; line-height: 1.4; }
+.em-health-banner-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 6px;
+  color: var(--em-danger, #f44336);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+}
+.em-health-banner-settings,
+.em-health-banner-dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--em-text-secondary);
+  font-size: 1em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.em-health-banner-settings:hover,
+.em-health-banner-dismiss:hover { color: var(--em-text-primary); }
+
+/* Never-triggered / never-run badge on automation and script mini cards */
+.em-never-triggered-badge {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--em-text-secondary);
+  opacity: 0.7;
+  border: 1px dashed var(--em-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
 
 /* ── Bulk selection toolbar ─────────────────────────────────────────────── */
 .em-dialog-bulk-bar {
@@ -4624,6 +4864,10 @@ body.em-dialog-open {
   font-size: 12px;
 }
 
+/* Stat dialog tinting: mini cards inside an em-sug-section inherit .em-sug-row styling */
+.em-sug-section { margin-bottom: 6px; border-radius: 8px; overflow: hidden; }
+.em-sug-section .em-mini-card { border: 2px solid var(--em-primary); border-radius: 6px; font-size: 12px; }
+
 /* Mini card — HA entity link button in header */
 .em-mini-card-link {
   flex-shrink: 0;
@@ -4685,7 +4929,8 @@ body.em-dialog-open {
 .em-sug-health .em-naming-device-group                        { border-color: rgba(156, 39, 176, 0.6); }
 .em-sug-health .em-naming-device-toggle                       { border-bottom-color: rgba(156, 39, 176, 0.6); }
 .em-sug-health .em-naming-device-toggle .em-collapsible-icon  { border-color: rgb(156, 39, 176); color: rgb(156, 39, 176); }
-.em-sug-health .em-sug-row                                    { border-color: rgba(156, 39, 176, 0.5); }
+.em-sug-health .em-sug-row,
+.em-sug-health .em-mini-card                                  { border-color: rgba(156, 39, 176, 0.5); }
 
 /* Disable Candidates — neutral */
 .em-sug-disable .entity-list-group-title                      { background: rgba(200, 200, 200, 0.10); border-color: rgba(180, 180, 180, 0.6); color: var(--em-text-secondary); }
@@ -4693,7 +4938,8 @@ body.em-dialog-open {
 .em-sug-disable .em-naming-device-group                       { border-color: rgba(180, 180, 180, 0.5); }
 .em-sug-disable .em-naming-device-toggle                      { border-bottom-color: rgba(180, 180, 180, 0.5); }
 .em-sug-disable .em-naming-device-toggle .em-collapsible-icon { border-color: rgba(180, 180, 180, 0.8); color: rgba(180, 180, 180, 0.8); }
-.em-sug-disable .em-sug-row                                   { border-color: rgba(180, 180, 180, 0.4); }
+.em-sug-disable .em-sug-row,
+.em-sug-disable .em-mini-card                                 { border-color: rgba(180, 180, 180, 0.4); }
 
 /* Naming Improvements — orange */
 .em-sug-naming .entity-list-group-title                       { background: rgba(255, 152, 0, 0.15); border-color: rgb(255, 152, 0); color: rgb(255, 180, 60); }
@@ -4701,7 +4947,8 @@ body.em-dialog-open {
 .em-sug-naming .em-naming-device-group                        { border-color: rgba(255, 152, 0, 0.6); }
 .em-sug-naming .em-naming-device-toggle                       { border-bottom-color: rgba(255, 152, 0, 0.6); }
 .em-sug-naming .em-naming-device-toggle .em-collapsible-icon  { border-color: rgb(255, 152, 0); color: rgb(255, 152, 0); }
-.em-sug-naming .em-sug-row                                    { border-color: rgba(255, 152, 0, 0.5); }
+.em-sug-naming .em-sug-row,
+.em-sug-naming .em-mini-card                                  { border-color: rgba(255, 152, 0, 0.5); }
 
 /* Area Assignment — red */
 .em-sug-area .entity-list-group-title                         { background: rgba(244, 67, 54, 0.15); border-color: rgb(244, 67, 54); color: rgb(255, 120, 110); }
@@ -4709,7 +4956,8 @@ body.em-dialog-open {
 .em-sug-area .em-naming-device-group                          { border-color: rgba(244, 67, 54, 0.6); }
 .em-sug-area .em-naming-device-toggle                         { border-bottom-color: rgba(244, 67, 54, 0.6); }
 .em-sug-area .em-naming-device-toggle .em-collapsible-icon    { border-color: rgb(244, 67, 54); color: rgb(244, 67, 54); }
-.em-sug-area .em-sug-row                                      { border-color: rgba(244, 67, 54, 0.5); }
+.em-sug-area .em-sug-row,
+.em-sug-area .em-mini-card                                    { border-color: rgba(244, 67, 54, 0.5); }
 
 /* Label Suggestions — yellow */
 .em-sug-labels .entity-list-group-title                       { background: rgba(255, 235, 59, 0.15); border-color: rgb(220, 200, 0); color: rgb(210, 185, 0); }
@@ -4717,7 +4965,15 @@ body.em-dialog-open {
 .em-sug-labels .em-naming-device-group                        { border-color: rgba(220, 200, 0, 0.6); }
 .em-sug-labels .em-naming-device-toggle                       { border-bottom-color: rgba(220, 200, 0, 0.6); }
 .em-sug-labels .em-naming-device-toggle .em-collapsible-icon  { border-color: rgb(220, 200, 0); color: rgb(220, 200, 0); }
-.em-sug-labels .em-sug-row                                    { border-color: rgba(220, 200, 0, 0.5); }
+.em-sug-labels .em-sug-row,
+.em-sug-labels .em-mini-card                                  { border-color: rgba(220, 200, 0, 0.5); }
+
+/* Alternating mini card row tint within stat dialog sections — color cycle effect */
+.em-sug-health  .em-group-body .em-mini-card:nth-child(even) { background: rgba(156, 39, 176, 0.07); }
+.em-sug-naming  .em-group-body .em-mini-card:nth-child(even) { background: rgba(255, 152,  0, 0.07); }
+.em-sug-area    .em-group-body .em-mini-card:nth-child(even) { background: rgba(244,  67, 54, 0.07); }
+.em-sug-labels  .em-group-body .em-mini-card:nth-child(even) { background: rgba(255, 235, 59, 0.07); }
+.em-sug-disable .em-group-body .em-mini-card:nth-child(even) { background: rgba(200, 200, 200, 0.06); }
 
 /* ===== MOBILE OVERRIDES (must come after base rules) ===== */
 /* device-entity-list base rule is defined late in the file so overrides go here */

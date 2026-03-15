@@ -15,11 +15,13 @@ from custom_components.entity_manager.websocket_api import (
     handle_bulk_enable,
     handle_disable_entity,
     handle_enable_entity,
+    handle_export_states,
     handle_get_automations,
     handle_get_config_entry_health,
     handle_get_disabled_entities,
     handle_get_entity_details,
     handle_get_template_sensors,
+    handle_import_entity_states,
     handle_remove_entity,
     handle_rename_entity,
     handle_update_entity_display_name,
@@ -697,3 +699,185 @@ async def test_ws_update_yaml_no_matches(
     result = conn.send_result.call_args[0][1]
     assert result["total_replacements"] == 0
     assert result["files_updated"] == []
+
+
+# ---------------------------------------------------------------------------
+# handle_export_states
+# ---------------------------------------------------------------------------
+
+
+async def test_ws_export_states_returns_list(hass: HomeAssistant) -> None:
+    """Exported list includes registered entities with required keys."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.export_a")
+    _register(entity_reg, "sensor.export_b", disabled=True)
+
+    conn = _mock_conn()
+    msg = {"id": 40, "type": "entity_manager/export_states"}
+
+    await handle_export_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    result = conn.send_result.call_args[0][1]
+    assert isinstance(result, list)
+
+    ids = [e["entity_id"] for e in result]
+    assert "sensor.export_a" in ids
+    assert "sensor.export_b" in ids
+
+    for item in result:
+        for key in ("entity_id", "platform", "is_disabled", "disabled_by"):
+            assert key in item, f"Missing key '{key}' in export result"
+
+
+async def test_ws_export_states_sorted(hass: HomeAssistant) -> None:
+    """Export result is sorted by entity_id."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.zzz")
+    _register(entity_reg, "sensor.aaa")
+
+    conn = _mock_conn()
+    msg = {"id": 41, "type": "entity_manager/export_states"}
+
+    await handle_export_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    entity_ids = [e["entity_id"] for e in result]
+    assert entity_ids == sorted(entity_ids)
+
+
+async def test_ws_export_states_disabled_flag(hass: HomeAssistant) -> None:
+    """is_disabled is True for disabled entities, False for enabled ones."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.exp_enabled")
+    _register(entity_reg, "sensor.exp_disabled", disabled=True)
+
+    conn = _mock_conn()
+    msg = {"id": 42, "type": "entity_manager/export_states"}
+
+    await handle_export_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    by_id = {e["entity_id"]: e for e in result}
+    assert by_id["sensor.exp_enabled"]["is_disabled"] is False
+    assert by_id["sensor.exp_disabled"]["is_disabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# handle_import_entity_states
+# ---------------------------------------------------------------------------
+
+
+async def test_ws_import_enables_disabled_entity(hass: HomeAssistant) -> None:
+    """Importing with is_disabled=False re-enables a currently-disabled entity."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.imp_enable_me", disabled=True)
+
+    conn = _mock_conn()
+    msg = {
+        "id": 50,
+        "type": "entity_manager/import_entity_states",
+        "entities": [{"entity_id": "sensor.imp_enable_me", "is_disabled": False}],
+    }
+
+    await handle_import_entity_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    result = conn.send_result.call_args[0][1]
+    assert result["success"] == 1
+    assert result["failed"] == 0
+
+    entry = entity_reg.async_get("sensor.imp_enable_me")
+    assert entry is not None
+    assert entry.disabled_by is None
+
+
+async def test_ws_import_disables_enabled_entity(hass: HomeAssistant) -> None:
+    """Importing with is_disabled=True disables a currently-enabled entity."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.imp_disable_me")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 51,
+        "type": "entity_manager/import_entity_states",
+        "entities": [{"entity_id": "sensor.imp_disable_me", "is_disabled": True}],
+    }
+
+    await handle_import_entity_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    conn.send_result.assert_called_once()
+    result = conn.send_result.call_args[0][1]
+    assert result["success"] == 1
+    assert result["failed"] == 0
+
+    entry = entity_reg.async_get("sensor.imp_disable_me")
+    assert entry is not None
+    assert entry.disabled_by == er.RegistryEntryDisabler.USER
+
+
+async def test_ws_import_skips_already_correct_state(hass: HomeAssistant) -> None:
+    """Entities already in the correct state count as success (no-op)."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.imp_already_enabled")  # already enabled
+
+    conn = _mock_conn()
+    msg = {
+        "id": 52,
+        "type": "entity_manager/import_entity_states",
+        "entities": [{"entity_id": "sensor.imp_already_enabled", "is_disabled": False}],
+    }
+
+    await handle_import_entity_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    assert result["success"] == 1
+    assert result["failed"] == 0
+
+
+async def test_ws_import_not_found_entity_reported_as_failed(hass: HomeAssistant) -> None:
+    """Entities not in the registry are reported in the failed list."""
+    conn = _mock_conn()
+    msg = {
+        "id": 53,
+        "type": "entity_manager/import_entity_states",
+        "entities": [{"entity_id": "sensor.imp_nonexistent", "is_disabled": False}],
+    }
+
+    await handle_import_entity_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    assert result["success"] == 0
+    assert result["failed"] == 1
+    failed_ids = [f["entity_id"] for f in result["failed_entities"]]
+    assert "sensor.imp_nonexistent" in failed_ids
+
+
+async def test_ws_import_partial_success(hass: HomeAssistant) -> None:
+    """Known entity succeeds; unknown entity fails; counts are accurate."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.imp_known")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 54,
+        "type": "entity_manager/import_entity_states",
+        "entities": [
+            {"entity_id": "sensor.imp_known", "is_disabled": True},
+            {"entity_id": "sensor.imp_unknown", "is_disabled": False},
+        ],
+    }
+
+    await handle_import_entity_states(hass, conn, msg)
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    assert result["success"] == 1
+    assert result["failed"] == 1

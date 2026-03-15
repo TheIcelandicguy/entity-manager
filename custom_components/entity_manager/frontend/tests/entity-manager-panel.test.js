@@ -302,3 +302,130 @@ describe('_animateStatCounters()', () => {
     cancelSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// _triggerBadge — null vs undefined distinction
+// ---------------------------------------------------------------------------
+
+describe('_triggerBadge(item)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('returns "Never triggered" badge when last_triggered is explicitly null', () => {
+    const html = el._triggerBadge({ last_triggered: null });
+    expect(html).toContain('Never triggered');
+    expect(html).toContain('em-never-triggered-badge');
+  });
+
+  it('does NOT return "Never triggered" when last_triggered is undefined (field absent)', () => {
+    // Template sensors have no last_triggered field (undefined, not null)
+    const html = el._triggerBadge({ triggered_by: undefined });
+    expect(html).not.toContain('Never triggered');
+  });
+
+  it('returns human trigger badge for triggered_by="human"', () => {
+    const item = { triggered_by: 'human', triggered_by_name: 'alice' };
+    const html = el._triggerBadge(item);
+    expect(html).toContain('alice');
+    expect(html).not.toContain('Never triggered');
+  });
+
+  it('returns automation badge for triggered_by="automation"', () => {
+    const html = el._triggerBadge({ triggered_by: 'automation' });
+    expect(html).toContain('Automation');
+    expect(html).not.toContain('Never triggered');
+  });
+
+  it('returns system/HA badge for unknown trigger type', () => {
+    const html = el._triggerBadge({ triggered_by: 'system' });
+    expect(html).toContain('HA');
+    expect(html).not.toContain('Never triggered');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _attachDialogSearch — filtering and group hiding
+// ---------------------------------------------------------------------------
+
+describe('_attachDialogSearch(root)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  function buildSearchRoot(cards) {
+    const root = document.createElement('div');
+    root.innerHTML = `<input type="search" id="em-stat-search">`;
+    const group = document.createElement('div');
+    group.className = 'em-collapsible';
+    root.appendChild(group);
+    const body = document.createElement('div');
+    body.className = 'em-group-body';
+    root.appendChild(body);
+
+    cards.forEach(({ id, name }) => {
+      const card = document.createElement('div');
+      card.className = 'em-mini-card';
+      card.dataset.entityId = id;
+      const nameEl = document.createElement('span');
+      nameEl.className = 'entity-header-device';
+      nameEl.textContent = name;
+      card.appendChild(nameEl);
+      body.appendChild(card);
+    });
+    return root;
+  }
+
+  it('adds the em-stat-search-input class to the input', () => {
+    const root = buildSearchRoot([{ id: 'sensor.a', name: 'Sensor A' }]);
+    el._attachDialogSearch(root);
+    expect(root.querySelector('#em-stat-search').classList.contains('em-stat-search-input')).toBe(true);
+  });
+
+  it('hides cards whose entity_id does not match the search term', () => {
+    const root = buildSearchRoot([
+      { id: 'sensor.temperature', name: 'Temperature' },
+      { id: 'light.kitchen', name: 'Kitchen Light' },
+    ]);
+    el._attachDialogSearch(root);
+    const input = root.querySelector('#em-stat-search');
+    input.value = 'temperature';
+    input.dispatchEvent(new Event('input'));
+
+    const cards = root.querySelectorAll('.em-mini-card');
+    expect(cards[0].style.display).toBe(''); // matches
+    expect(cards[1].style.display).toBe('none'); // does not match
+  });
+
+  it('shows all cards when search is cleared', () => {
+    const root = buildSearchRoot([
+      { id: 'sensor.foo', name: 'Foo' },
+      { id: 'sensor.bar', name: 'Bar' },
+    ]);
+    el._attachDialogSearch(root);
+    const input = root.querySelector('#em-stat-search');
+
+    input.value = 'foo';
+    input.dispatchEvent(new Event('input'));
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+
+    root.querySelectorAll('.em-mini-card').forEach(card => {
+      expect(card.style.display).not.toBe('none');
+    });
+  });
+
+  it('hides group header when all cards in the group are hidden', () => {
+    const root = buildSearchRoot([{ id: 'sensor.xyz', name: 'XYZ' }]);
+    el._attachDialogSearch(root);
+    const input = root.querySelector('#em-stat-search');
+    input.value = 'no_match_at_all';
+    input.dispatchEvent(new Event('input'));
+
+    const body = root.querySelector('.em-group-body');
+    expect(body.style.display).toBe('none');
+  });
+
+  it('does nothing when there is no #em-stat-search input', () => {
+    const root = document.createElement('div'); // no search input
+    expect(() => el._attachDialogSearch(root)).not.toThrow();
+  });
+});

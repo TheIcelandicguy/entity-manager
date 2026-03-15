@@ -385,6 +385,55 @@ async def handle_export_states(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "entity_manager/import_entity_states",
+        vol.Required("entities"): [
+            {
+                vol.Required("entity_id"): str,
+                vol.Required("is_disabled"): bool,
+            }
+        ],
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_import_entity_states(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Apply enable/disable state from an exported config file."""
+    entity_reg = er.async_get(hass)
+    success_count = 0
+    failed: list[dict[str, str]] = []
+
+    for item in msg["entities"]:
+        entity_id = item["entity_id"]
+        is_disabled = item["is_disabled"]
+        entry = entity_reg.async_get(entity_id)
+        if entry is None:
+            failed.append({"entity_id": entity_id, "error": "not found"})
+            continue
+        try:
+            currently_disabled = bool(entry.disabled_by)
+            if is_disabled and not currently_disabled:
+                entity_reg.async_update_entity(
+                    entity_id, disabled_by=er.RegistryEntryDisabler.USER
+                )
+            elif not is_disabled and currently_disabled:
+                entity_reg.async_update_entity(entity_id, disabled_by=None)
+            success_count += 1
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("Failed to import state for %s: %s", entity_id, err)
+            failed.append({"entity_id": entity_id, "error": str(err)})
+
+    connection.send_result(
+        msg["id"],
+        {"success": success_count, "failed": len(failed), "failed_entities": failed},
+    )
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "entity_manager/list_hacs_items",
     }
 )
@@ -1187,6 +1236,7 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_bulk_disable)
     websocket_api.async_register_command(hass, handle_rename_entity)
     websocket_api.async_register_command(hass, handle_export_states)
+    websocket_api.async_register_command(hass, handle_import_entity_states)
     websocket_api.async_register_command(hass, handle_list_hacs_items)
     websocket_api.async_register_command(hass, handle_get_automations)
     websocket_api.async_register_command(hass, handle_get_template_sensors)
