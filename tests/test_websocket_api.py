@@ -632,6 +632,7 @@ async def test_ws_update_yaml_dry_run(hass: HomeAssistant, tmp_path: Path) -> No
 
     handle_update_yaml_references(hass, conn, msg)
     await hass.async_block_till_done()
+    await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -667,6 +668,7 @@ async def test_ws_update_yaml_applies_replacements(
 
     handle_update_yaml_references(hass, conn, msg)
     await hass.async_block_till_done()
+    await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
     assert result["total_replacements"] == 2
@@ -694,6 +696,7 @@ async def test_ws_update_yaml_no_matches(
     }
 
     handle_update_yaml_references(hass, conn, msg)
+    await hass.async_block_till_done()
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]

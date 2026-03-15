@@ -1,6 +1,5 @@
 """WebSocket API for Entity Manager."""
 
-import asyncio
 import json
 import logging
 import re
@@ -376,7 +375,7 @@ async def handle_export_states(
                 }
             )
 
-        export_data.sort(key=lambda e: e["entity_id"])
+        export_data.sort(key=lambda e: str(e["entity_id"]))
         connection.send_result(msg["id"], export_data)
     except Exception as err:
         _LOGGER.error("Error exporting entity states: %s", err, exc_info=True)
@@ -671,15 +670,14 @@ async def handle_get_automations(
     """Return all automations with last_triggered and trigger context."""
     try:
         states = list(hass.states.async_all("automation"))
-        trigger_results = await asyncio.gather(
-            *[_resolve_trigger_context(hass, s) for s in states],
-            return_exceptions=True,
-        )
         results: list[dict[str, Any]] = []
-        for state, trig in zip(states, trigger_results):
-            triggered_by, triggered_by_name = (
-                trig if not isinstance(trig, Exception) else (None, None)
-            )
+        for state in states:
+            try:
+                triggered_by, triggered_by_name = await _resolve_trigger_context(
+                    hass, state
+                )
+            except Exception:  # noqa: BLE001
+                triggered_by, triggered_by_name = None, None
             attrs = dict(state.attributes)
             results.append(
                 {
@@ -783,16 +781,14 @@ async def handle_get_template_sensors(
                 )
                 trig_states.append(state)
 
-        # Resolve all trigger contexts in parallel
-        trigger_results = await asyncio.gather(
-            *[_resolve_trigger_context(hass, s) for s in trig_states],
-            return_exceptions=True,
-        )
         results: list[dict[str, Any]] = []
-        for partial, trig in zip(partials, trigger_results):
-            triggered_by, triggered_by_name = (
-                trig if not isinstance(trig, Exception) else (None, None)
-            )
+        for partial, state in zip(partials, trig_states):
+            try:
+                triggered_by, triggered_by_name = await _resolve_trigger_context(
+                    hass, state
+                )
+            except Exception:  # noqa: BLE001
+                triggered_by, triggered_by_name = None, None
             results.append(
                 {
                     **partial,
