@@ -877,7 +877,7 @@ async def handle_update_yaml_references(
             "total_replacements": sum(r["replacements"] for r in results),
         }
 
-    result = await hass.async_add_executor_job(_do_replace)
+    result = _do_replace()
     if not dry_run:
         _LOGGER.info(
             "YAML reference update %s → %s: %d replacement(s) in %d file(s)",

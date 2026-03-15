@@ -33,6 +33,7 @@ from custom_components.entity_manager.websocket_api import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _register(
     entity_reg: er.EntityRegistry,
     entity_id: str,
@@ -63,6 +64,7 @@ def _mock_conn() -> MagicMock:
 # ---------------------------------------------------------------------------
 # enable_entity / disable_entity  (pure-Python helpers, no WS layer)
 # ---------------------------------------------------------------------------
+
 
 async def test_enable_entity_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
@@ -99,6 +101,7 @@ async def test_disable_entity_not_found(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # _bulk_toggle
 # ---------------------------------------------------------------------------
+
 
 async def test_bulk_toggle_enable_all_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
@@ -137,11 +140,16 @@ async def test_bulk_toggle_disable_all_success(hass: HomeAssistant) -> None:
 # handle_enable_entity  (WebSocket handler)
 # ---------------------------------------------------------------------------
 
+
 async def test_ws_enable_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
     _register(entity_reg, "sensor.ws_enable", disabled=True)
     conn = _mock_conn()
-    msg = {"id": 1, "type": "entity_manager/enable_entity", "entity_id": "sensor.ws_enable"}
+    msg = {
+        "id": 1,
+        "type": "entity_manager/enable_entity",
+        "entity_id": "sensor.ws_enable",
+    }
 
     handle_enable_entity(hass, conn, msg)
     await hass.async_block_till_done()
@@ -152,7 +160,11 @@ async def test_ws_enable_success(hass: HomeAssistant) -> None:
 
 async def test_ws_enable_not_found(hass: HomeAssistant) -> None:
     conn = _mock_conn()
-    msg = {"id": 2, "type": "entity_manager/enable_entity", "entity_id": "sensor.no_such"}
+    msg = {
+        "id": 2,
+        "type": "entity_manager/enable_entity",
+        "entity_id": "sensor.no_such",
+    }
 
     handle_enable_entity(hass, conn, msg)
     await hass.async_block_till_done()
@@ -167,11 +179,16 @@ async def test_ws_enable_not_found(hass: HomeAssistant) -> None:
 # handle_disable_entity  (WebSocket handler)
 # ---------------------------------------------------------------------------
 
+
 async def test_ws_disable_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
     _register(entity_reg, "sensor.ws_disable")
     conn = _mock_conn()
-    msg = {"id": 3, "type": "entity_manager/disable_entity", "entity_id": "sensor.ws_disable"}
+    msg = {
+        "id": 3,
+        "type": "entity_manager/disable_entity",
+        "entity_id": "sensor.ws_disable",
+    }
 
     handle_disable_entity(hass, conn, msg)
     await hass.async_block_till_done()
@@ -183,6 +200,7 @@ async def test_ws_disable_success(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # handle_bulk_enable / handle_bulk_disable  (WebSocket handlers)
 # ---------------------------------------------------------------------------
+
 
 async def test_ws_bulk_enable_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
@@ -227,6 +245,7 @@ async def test_ws_bulk_disable_partial(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # handle_get_disabled_entities  (WebSocket handler)
 # ---------------------------------------------------------------------------
+
 
 async def test_ws_get_disabled_only(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
@@ -275,6 +294,7 @@ async def test_ws_get_all(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # handle_rename_entity  (WebSocket handler)
 # ---------------------------------------------------------------------------
+
 
 async def test_ws_rename_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
@@ -357,6 +377,7 @@ async def test_ws_rename_already_exists(hass: HomeAssistant) -> None:
 # handle_update_entity_display_name  (WebSocket handler)
 # ---------------------------------------------------------------------------
 
+
 async def test_ws_update_name_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
     _register(entity_reg, "sensor.update_name")
@@ -394,6 +415,7 @@ async def test_ws_update_name_not_found(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # handle_remove_entity  (WebSocket handler)
 # ---------------------------------------------------------------------------
+
 
 async def test_ws_remove_success(hass: HomeAssistant) -> None:
     entity_reg = er.async_get(hass)
@@ -433,6 +455,7 @@ async def test_ws_remove_not_found(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # handle_get_automations
 # ---------------------------------------------------------------------------
+
 
 async def test_ws_get_automations_returns_all(hass: HomeAssistant) -> None:
     """All automation states are returned with required keys."""
@@ -500,6 +523,7 @@ async def test_ws_get_automations_empty(hass: HomeAssistant) -> None:
 # handle_get_template_sensors
 # ---------------------------------------------------------------------------
 
+
 async def test_ws_get_template_sensors_from_states(hass: HomeAssistant) -> None:
     """template.* states not in the entity registry are still returned."""
     hass.states.async_set(
@@ -540,6 +564,7 @@ async def test_ws_get_template_sensors_empty(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 # handle_get_entity_details
 # ---------------------------------------------------------------------------
+
 
 async def test_ws_get_entity_details_success(hass: HomeAssistant) -> None:
     """Returns a well-formed result dict for a registered entity."""
@@ -591,6 +616,7 @@ async def test_ws_get_entity_details_not_found(hass: HomeAssistant) -> None:
 # handle_get_config_entry_health
 # ---------------------------------------------------------------------------
 
+
 async def test_ws_get_config_entry_health_all_loaded(hass: HomeAssistant) -> None:
     """When all config entries are loaded the result list is empty."""
     conn = _mock_conn()
@@ -612,6 +638,7 @@ async def test_ws_get_config_entry_health_all_loaded(hass: HomeAssistant) -> Non
 # handle_update_yaml_references
 # ---------------------------------------------------------------------------
 
+
 async def test_ws_update_yaml_dry_run(hass: HomeAssistant, tmp_path: Path) -> None:
     """dry_run=True scans files but does not write them."""
     # Point HA's config dir at our temp directory
@@ -631,7 +658,6 @@ async def test_ws_update_yaml_dry_run(hass: HomeAssistant, tmp_path: Path) -> No
     }
 
     handle_update_yaml_references(hass, conn, msg)
-    await hass.async_block_till_done()
     await hass.async_block_till_done()
 
     conn.send_result.assert_called_once()
@@ -668,7 +694,6 @@ async def test_ws_update_yaml_applies_replacements(
 
     handle_update_yaml_references(hass, conn, msg)
     await hass.async_block_till_done()
-    await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
     assert result["total_replacements"] == 2
@@ -679,9 +704,7 @@ async def test_ws_update_yaml_applies_replacements(
     assert "sensor.alpha" not in updated
 
 
-async def test_ws_update_yaml_no_matches(
-    hass: HomeAssistant, tmp_path: Path
-) -> None:
+async def test_ws_update_yaml_no_matches(hass: HomeAssistant, tmp_path: Path) -> None:
     """When the old entity ID does not appear the counts are zero."""
     hass.config.config_dir = str(tmp_path)
     (tmp_path / "config.yaml").write_text("domain: homeassistant\n", encoding="utf-8")
@@ -696,7 +719,6 @@ async def test_ws_update_yaml_no_matches(
     }
 
     handle_update_yaml_references(hass, conn, msg)
-    await hass.async_block_till_done()
     await hass.async_block_till_done()
 
     result = conn.send_result.call_args[0][1]
@@ -844,7 +866,9 @@ async def test_ws_import_skips_already_correct_state(hass: HomeAssistant) -> Non
     assert result["failed"] == 0
 
 
-async def test_ws_import_not_found_entity_reported_as_failed(hass: HomeAssistant) -> None:
+async def test_ws_import_not_found_entity_reported_as_failed(
+    hass: HomeAssistant,
+) -> None:
     """Entities not in the registry are reported in the failed list."""
     conn = _mock_conn()
     msg = {
