@@ -70,21 +70,10 @@ entity-manager-panel *::after {
   --em-shadow-hover: 0 4px 8px rgba(0,0,0,0.4);
 }
 
-/* Dark mode via system preference */
-@media (prefers-color-scheme: dark) {
-  entity-manager-panel {
-    --em-text-primary: #e0e0e0;
-    --em-text-secondary: #b0b0b0;
-    --em-text-disabled: #757575;
-    --em-bg-primary: #1e1e1e;
-    --em-bg-secondary: #2d2d2d;
-    --em-bg-hover: #3d3d3d;
-    --em-border: #424242;
-    --em-border-light: #383838;
-    --em-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    --em-shadow-hover: 0 4px 8px rgba(0,0,0,0.4);
-  }
-}
+/* Dark mode is controlled exclusively by [data-theme="dark"] (HA theme selector).
+   Do NOT use prefers-color-scheme here — it fires on Android system dark even when
+   the user has explicitly chosen the HA Light theme, which overrides variables and
+   causes checkboxes and card backgrounds to appear black in light mode. */
 
 .app-header {
   background: var(--em-bg-primary);
@@ -1499,8 +1488,12 @@ body.em-dialog-open {
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: var(--primary-color);
+  accent-color: var(--em-primary);
+  color-scheme: light;
   flex-shrink: 0;
+}
+[data-theme="dark"] .integration-select-checkbox {
+  color-scheme: dark;
 }
 
 .integration-select-text {
@@ -1521,8 +1514,12 @@ body.em-dialog-open {
   width: 16px;
   height: 16px;
   cursor: pointer;
-  accent-color: var(--primary-color);
+  accent-color: var(--em-primary);
+  color-scheme: light;
   flex-shrink: 0;
+}
+[data-theme="dark"] .device-select-checkbox {
+  color-scheme: dark;
 }
 
 .integration-icon {
@@ -2049,6 +2046,9 @@ body.em-dialog-open {
 .icon-btn.toggle-entity {
   color: var(--em-success) !important;
   border-color: var(--em-success) !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-btn.toggle-entity:hover {
@@ -2722,10 +2722,10 @@ body.em-dialog-open {
   }
   
   .icon-btn {
-    padding: 8px 12px;
-    font-size: 1em;
+    padding: 5px 8px;
+    font-size: 0.95em;
   }
-  
+
   .confirm-dialog-box {
     width: 95%;
     margin: 0 10px;
@@ -2969,10 +2969,10 @@ body.em-dialog-open {
   }
   
   .icon-btn {
-    padding: 8px 10px;
-    font-size: 1em;
-    min-width: 40px;
-    min-height: 40px;
+    padding: 5px 7px;
+    font-size: 0.9em;
+    min-width: 36px;
+    min-height: 36px;
   }
   
   .entity-item-top {
@@ -4503,6 +4503,7 @@ body.em-dialog-open {
   border: 1.5px solid rgba(244, 67, 54, 0.45);
   border-radius: 8px;
   font-size: 0.92em;
+  color: var(--em-text-primary);
 }
 .em-health-banner-icon { font-size: 1.2em; flex-shrink: 0; }
 .em-health-banner-msg  { flex: 1; line-height: 1.4; }

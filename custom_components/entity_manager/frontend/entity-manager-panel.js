@@ -7207,7 +7207,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>
           ${col('actions') ? `<div class="entity-actions">
             ${configUrl ? `<a class="icon-btn entity-config-url" href="${this._escapeAttr(configUrl)}" target="_blank" title="Open device page">🔗</a>` : ''}
-            ${isToggleable ? `<button class="icon-btn toggle-entity${isOn ? ' toggle-on' : ''}" data-entity-id="${eid}" title="${isOn ? 'Turn off' : 'Turn on'}">⏻</button>` : ''}
+            ${isToggleable ? `<button class="icon-btn toggle-entity${isOn ? ' toggle-on' : ''}" data-entity-id="${eid}" title="${isOn ? 'Turn off' : 'Turn on'}"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>` : ''}
             ${isPressable ? `<button class="icon-btn press-entity" data-entity-id="${eid}" title="Press">▶</button>` : ''}
             <button class="icon-btn rename-entity" data-entity-id="${eid}" title="Rename">✎</button>
             <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable">✓</button>
