@@ -1,4 +1,5 @@
-# CLAUDE.md - AI Assistant Guide for Entity Manager
+#
+ CLAUDE.md - AI Assistant Guide for Entity Manager
 
 This document provides comprehensive guidance for AI assistants working with the Entity Manager codebase.
 
@@ -314,6 +315,30 @@ const result = await this.hass.callWS({
     entity_id: 'sensor.example',
 });
 
+### Frontend Service Calls — Entity Targeting Rules
+
+**Entity-targeted services with no extra data** (e.g. `button.press`): use `callWS` with `target`. Using `callService` with `entity_id` in service_data silently succeeds but does nothing in modern HA.
+
+```javascript
+// CORRECT
+await this._hass.callWS({
+    type: 'call_service',
+    domain: 'button',
+    service: 'press',
+    target: { entity_id: entityId },
+});
+
+// WRONG — silently no-ops in modern HA
+await this._hass.callService('button', 'press', { entity_id: entityId }); // ❌
+```
+
+**Services with extra data** (e.g. `update.install`): `callService` with `entity_id` in the data object works because those services read it from service_data:
+
+```javascript
+await this._hass.callService('update', 'install', { entity_id: entityId, backup: true });
+```
+
+## Important Files to Understand
 // Bulk operation
 const result = await this.hass.callWS({
     type: 'entity_manager/bulk_enable',
@@ -329,6 +354,22 @@ const result = await this.hass.callWS({
 
 ### Saving to Undo Stack Before Mutations (Frontend)
 
+### `entity-manager-panel.js` (Frontend UI)
+- `EntityManagerPanel` class extending `HTMLElement`
+- State: `data`, `deviceInfo`, `expandedIntegrations`, `expandedDevices`, `selectedEntities`, `searchTerm`, `viewState`, `labeledEntitiesCache`, `labeledDevicesCache`, `labeledAreasCache`
+- Key methods: `loadData()`, `updateView()`, `render()`, `bulkEnable()`, `bulkDisable()`, `updateSelectedCount()`
+- Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderManagedItem()`, `_renderMiniEntityCard()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()`
+- Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAreaPickerDialog()`, `_showFloorPickerDialog()`
+
+### Entity Card Action Row (`icon-btn` pattern)
+- Every entity card renders an `.entity-actions` row with `.icon-btn` buttons: Rename (✎), Enable (✓), Disable (✕), Bulk Rename (✎✎), Bulk Labels (🏷️)
+- Bulk Rename uses CSS class `bulk-rename-btn` (blue, matches `--em-primary`); Bulk Labels uses `bulk-labels-btn` (amber, matches `--em-warning`)
+- Both bulk buttons are **always rendered** but carry the `disabled` attribute when `selectedEntities.size < 2`
+- `updateSelectedCount()` flips `disabled` on all `[data-action="bulk-rename"]` and `[data-action="bulk-labels"]` elements in real time — no full re-render needed
+- Disabled state styled via `.icon-btn:disabled` CSS rule: `opacity:0.4`, `cursor:not-allowed`, muted border/color
+- Additional `.icon-btn` variants: `entity-config-url` (external link, opens config URL in new tab), `toggle-entity` / `toggle-entity.toggle-on` (on/off toggle with active state color)
+- Labels: `_loadLabeledEntities()`, `_loadLabeledDevices()`, `_loadLabeledAreas()`, `_renderLabelsList()`
+- No custom tags — uses HA native Labels exclusively
 ```javascript
 // Always call before any state-changing operation
 this.saveToUndo();
@@ -387,7 +428,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.10.0
+- **Current Version**: 2.13.1
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
@@ -421,6 +462,21 @@ logger:
     custom_components.entity_manager: debug
 ```
 
+## Key HA WebSocket APIs Used
+
+| API | Purpose |
+|-----|---------|
+| `entity_manager/get_disabled_entities` | Main entity tree |
+| `entity_manager/get_entity_details` | Entity detail dialog |
+| `history/history_during_period` | Activity Log state history (requires `entity_ids`) |
+| `config/area_registry/list` | Area names and floor assignments |
+| `config/device_registry/list` | Device → area mapping |
+| `config/entity_registry/list` | Entity → area/label mapping |
+| `config/label_registry/list` | All HA labels |
+| `logbook/get_events` | **Deprecated in this codebase** — replaced by history API |
+
+> **Note**: `history/history_during_period` with `minimal_response: true` returns timestamps as Unix seconds (floats in `lc`/`lu` fields) and states as `s`. Multiply by 1000 before passing to `new Date()`.
+
 ## Extension Points
 
 For adding new features:
@@ -438,5 +494,22 @@ For adding new features:
 - Handle errors per-item in bulk loops — don't abort the whole batch on a single failure
 - Use HA entity/device registries directly; never cache stale data beyond a single request
 - In JS, always call `saveToUndo()` before any mutating operation
-- Use HA CSS variables (`var(--primary-color)`, `var(--card-background-color)`, etc.) for all colors
+- Never reference HA theme variables (e.g. `var(--secondary-background-color)`, `var(--card-background-color)`) directly in component CSS — always use `--em-*` equivalents so EM light/dark mode overrides take effect correctly
 - Prefer `this.hass.callWS()` over `this.hass.callService()` for entity manager operations
+
+### CSS Cascade Traps
+
+Several base rules are defined late in `entity-manager-panel.css` (after the `@media` blocks), so their mobile overrides **must** be placed at the end of the file, after the base rules:
+
+| Rule | Location | Notes |
+|------|----------|-------|
+| `.device-entity-list` grid columns | Late in file | 1-col override at end in `@media (max-width: 600px)` |
+| `.btn`, `.btn-secondary` | Line ~1316 | Font-size 18px; mobile overrides at end of file |
+| `.device-enable-all`, `.device-disable-all` | Line ~4660 | Font-size 18px; mobile overrides at end of file |
+| `.device-assign-area-btn` | Line ~4583 | Same cascade issue; end-of-file overrides |
+
+**Rule**: When a base CSS rule comes after existing `@media` blocks, add the mobile override in the `/* ===== MOBILE OVERRIDES ===== */` section at the bottom of the CSS file.
+
+### Dialog Content Wrapper Rule
+
+`createDialog()` applies `flex: 1; overflow-y: auto` to **every direct child** of `.confirm-dialog-box` that is not the header or actions. Always wrap `contentHtml` content in a single `<div>` — never pass multiple sibling elements as top-level content — or each element becomes its own independent scroll box.
