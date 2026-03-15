@@ -10648,6 +10648,13 @@ class EntityManagerPanel extends HTMLElement {
     const _cfArrow = overlay.querySelector('.em-collapse-arrow, .em-collapsible-icon');
     if (_cfBody) _cfBody.style.display = '';
     if (_cfArrow) _cfArrow.style.transform = '';
+    // Also expand first integration sub-group inside the orphaned section
+    if (_cfBody) {
+      const _firstSubBody = _cfBody.querySelector('.em-group-body');
+      const _firstSubArrow = _cfBody.querySelector('.em-collapse-arrow, .em-collapsible-icon');
+      if (_firstSubBody) _firstSubBody.style.display = '';
+      if (_firstSubArrow) _firstSubArrow.style.transform = '';
+    }
     this._attachDialogSearch(overlay);
 
     // ── Listeners ─────────────────────────────────────────────────────

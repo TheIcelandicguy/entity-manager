@@ -2821,6 +2821,12 @@ body.em-dialog-open {
     margin-bottom: 8px;
   }
 
+  .device-enable-all,
+  .device-disable-all {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
   /* ---- Dialog CSS variable overrides ---- */
   :root {
     --dialog-header-padding: 16px 16px 12px 16px;
@@ -2944,10 +2950,16 @@ body.em-dialog-open {
     padding: 5px 8px;
   }
   
+  .device-enable-all,
+  .device-disable-all {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+
   .device-name {
     font-size: 0.9em;
   }
-  
+
   .entity-id {
     font-size: 11px;
   }
