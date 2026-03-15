@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, compare, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.10.0-blue)
+![Version](https://img.shields.io/badge/version-2.14.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -12,9 +12,8 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Entity Renaming](#entity-renaming)
   - [Search & Filtering](#search--filtering)
   - [Sidebar Navigation](#sidebar-navigation)
-  - [Smart Grouping](#smart-grouping)
+  - [Grouping](#grouping)
   - [Favorites](#favorites)
-  - [Custom Tags](#custom-tags)
   - [Entity Aliases](#entity-aliases)
   - [Labels Integration](#labels-integration)
   - [Entity Comparison](#entity-comparison)
@@ -23,6 +22,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Undo / Redo](#undo--redo)
   - [Filter Presets](#filter-presets)
   - [Column Customization](#column-customization)
+  - [Devices View](#devices-view)
   - [Entity Detail Dialog](#entity-detail-dialog)
   - [Firmware Update Manager](#firmware-update-manager)
   - [Export & Import](#export--import)
@@ -47,13 +47,18 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - Real-time entity state display with color-coded status badges
 - Alphabetically sorted integrations for easy navigation
 - Device grouping with entity counts per device and integration
+- **Bulk Rename** (✎✎) and **Bulk Labels** (🏷️) buttons on every entity card — greyed out until 2+ entities are selected, then activate instantly as you check boxes
 ### Entity Renaming
 - Click-to-rename any entity directly from the panel
 - **Domain preservation** -- the `sensor.`, `light.`, etc. prefix is locked and stays intact
 - **Automatic propagation** across automations, scripts, and helpers
 - Conflict validation prevents duplicate entity IDs
-- **Bulk rename** with regex find/replace -- preview changes before applying
-- Case-sensitive and regex pattern matching options
+- **Bulk Rename panel** — opens as a full-width inline view with a split layout: entity picker on the left (grouped by integration → device, collapsible, with per-group checkboxes) and the rename queue on the right
+- **Live preview** in the queue — each entry shows the original entity ID, an editable new name field, and a live preview of the resulting ID (turns green when changed)
+- **Find & Replace** at the top filters the entity picker in real time as you type; supports regex and case-sensitive matching
+- **Domain preservation** — the `sensor.`, `light.`, etc. prefix is always locked
+- **Automatic propagation** across automations, scripts, and helpers
+- Conflict validation prevents duplicate entity IDs
 ### Search & Filtering
 Entity Manager provides multiple ways to find exactly what you need:
 
@@ -65,37 +70,31 @@ Entity Manager provides multiple ways to find exactly what you need:
 | **State Filter** | Toggle between All, Enabled, or Disabled with live entity counts |
 | **Integration Filter** | Click an integration in the sidebar to show only its entities |
 | **Label Filter** | Filter by Home Assistant labels |
-| **Tag Filter** | Filter by custom tags using `#tagname` syntax |
 | **Filter Presets** | Save and load your favorite filter combinations |
 
 All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
 ### Sidebar Navigation
 A collapsible sidebar provides quick access to every feature:
-- **Actions** -- Undo, Redo, Export, Import
-- **Quick Filters** -- Favorites, Activity Log, Comparison View, Column Settings
-- **Labels** -- Browse and filter by Home Assistant labels with entity counts
-- **Smart Groups** -- Switch between grouping modes
+- **Actions** -- Undo, Redo, Export, Import, Favorites, Activity Log, Comparison View, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area**, **Assign Floor**, View Selected, Deselect All
+- **Labels** -- Browse and filter by Home Assistant labels grouped by **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, and **Entities**
+- **Groups** -- Switch between grouping modes: Integration (default), Room, Type, Floor, Device Name
+- **Domains** -- Filter by entity domain
 - **Integrations** -- Quick-filter list with integration icons from Home Assistant Brands
-- **Help** -- Built-in guide and keyboard shortcuts reference
-Toggle the sidebar with **Ctrl+B** or the mobile menu button. Collapse state is remembered between sessions.
-### Smart Grouping
+- **Help** -- Built-in two-column guide with clickable table of contents
+Toggle the sidebar with the mobile menu button. Each section's collapse state is remembered between sessions.
+### Grouping
 Group entities by different criteria to get the view you need:
 - **Integration** (default) -- organized by integration and device
 - **Room / Area** -- grouped by Home Assistant area assignments
 - **Type** -- grouped by entity domain (all sensors together, all lights together, etc.)
-Toggle with **Ctrl+G** or from the sidebar. Your preference is saved.
+- **Floor** -- grouped by Floor → Area → Device hierarchy
+- **Device Name** -- all devices with matching names merged into one group
+Switch modes from the **Groups** sidebar section or with **Ctrl+G**. Your preference is saved between sessions.
 ### Favorites
 - Star any entity to mark it as a favorite
 - Dedicated **Favorites** filter in the sidebar shows only starred entities
 - Favorites count displayed in the sidebar
 - Add/remove via right-click context menu or bulk selection
-- Persisted in browser local storage
-### Custom Tags
-- Add unlimited custom tags to any entity (e.g., `#critical`, `#outdoor`, `#basement`)
-- Tag chips displayed on entities with one-click removal
-- Search entities by tag using `#` prefix in the search box
-- Auto-complete suggestions from your existing tags
-- Manage tags via right-click context menu
 - Persisted in browser local storage
 ### Entity Aliases
 - Create custom display names for entities without renaming them
@@ -105,9 +104,10 @@ Toggle with **Ctrl+G** or from the sidebar. Your preference is saved.
 ### Labels Integration
 - View and filter by **Home Assistant's built-in label system**
 - Create new labels directly from Entity Manager
-- Labels shown in the sidebar with entity counts
-- Expandable list with refresh capability
-- Label data is cached for performance
+- Labels sidebar split into six sub-groups: **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, **Entities** — only shown when labels of that type exist
+- Clicking a label filters the main view, merging entity IDs from all matching groups
+- **Label Suggestions** in the Suggestions dialog — 18 semantic categories (Lights, Dimmable Lights, Switches, Temperature Sensors, Motion Sensors, etc.); one-click "Apply to N" creates and assigns the label in HA
+- Expandable list with refresh capability; label data cached for performance
 ### Entity Comparison
 - Compare up to **4 entities side-by-side** in a table view
 - View all properties and metadata for each entity
@@ -121,11 +121,12 @@ Right-click any entity to access deep analysis tools:
 - **Statistics** -- detailed entity properties, metadata, and configuration
 - **State History** -- view entity state changes over time
 ### Activity Log
-- Tracks your recent operations: enables, disables, renames, and bulk actions
-- Stores up to **100 recent activities** with timestamps
-- Accessible from the sidebar
-- Clear log button to start fresh
-- Persisted in browser local storage
+- Reads **real Home Assistant state history** — shows every entity state change across your entire HA instance, not just Entity Manager actions
+- Events grouped by **Room → Device → Entity** with three collapsible levels
+- **Time range**: 1h (default), 6h, 24h, 7d
+- **Search bar** filters by entity ID, device, room, or state value
+- **Room filter chips** with All / None buttons — select specific rooms to focus on; selection persisted between sessions
+- Accessible from the Actions sidebar section
 ### Undo / Redo
 Full operation history with unlimited undo/redo:
 - **Ctrl+Z** to undo the last operation
@@ -145,9 +146,16 @@ Choose which columns to display in the entity table:
 - Entity Category
 - Disabled By
 - Automations Count
-- Tags
 - Alias
 Toggle columns from the sidebar **Columns** button. Preferences are saved between sessions.
+### Devices View
+A dedicated **Devices** tab shows all devices sorted alphabetically and organised by category:
+- Devices with the same display name are **merged into a single group** — useful for Shelly multi-relay devices where all channels share one name
+- Every device (and same-name group) is split into standard HA category cards: **⚡ Controls**, **📊 Sensors**, **⚙️ Configuration**, **🔧 Diagnostic**, **📡 Connectivity**
+- Each category card shows entity count, enabled/disabled breakdown, and its own **Enable All / Disable All** buttons
+- Cards are independently collapsible — opening one never affects others
+- Entities whose device has a `configuration_url` show a **🔗** button to open the device web UI in a new tab
+
 ### Entity Detail Dialog
 Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity:
 
@@ -162,7 +170,7 @@ Click any entity card (not a button or checkbox) to open a full detail dialog wi
 | **Labels** | All HA labels attached to the entity |
 | **State History** | Last 30 days of state changes, newest first |
 
-Action buttons in the dialog footer let you **Rename** or **Enable/Disable** the entity without leaving the dialog.
+All sections render as compact mini cards in a 3-column grid for easy scanning. Action buttons in the dialog footer let you **Rename** or **Enable/Disable** the entity without leaving the dialog.
 
 ### Firmware Update Manager
 A dedicated **Updates** tab to manage all firmware and software updates:
@@ -201,12 +209,18 @@ Entity Manager ships with a comprehensive theming engine:
 - Detects Home Assistant light/dark mode
 - Respects system color scheme preferences
 - Manual override available per theme
+**Stat Card Color Accents:**
+- Every stat card has a unique colored **top-border accent** and **subtle tinted background** — both in light and dark mode
+- Text colors automatically compensate so labels and values are always readable against their tinted background
+- Works correctly in mixed-mode setups (e.g. HA dark + EM light or EM dark + HA light)
 ### Context Menu
 Right-click any entity (or multi-selection) for a full context menu:
 **Single entity:**
 - Rename / Enable / Disable
 - Add to Favorites
-- Manage Tags / Labels / Alias
+- Manage Labels / Alias
+- **Assign to area** — pick from HA areas grouped by floor
+- **Assign to floor** — two-step floor picker; auto-selects area when a floor has only one
 - Add to Comparison
 - View Statistics / State History
 - Show Dependencies / Analyze Impact
@@ -306,13 +320,55 @@ The toolbar displays live stats for your Home Assistant instance:
 - **Lovelace Cards count** - Clickable to inspect dashboards, card type distribution, and entity references
 - **Update count** - Amber-highlighted when updates are available; clickable to open the Updates view
 
-All counts update in real-time as you make changes. Every stat card opens a detail dialog — click any entity row inside a dialog to open the **Entity Detail dialog** showing the full registry entry, device info, all state attributes, area, labels, and 30-day state history.
+All counts update in real-time as you make changes.
+
+### Stat Card Dialogs — Mini Entity Cards
+Every stat card opens a dedicated dialog where items are displayed as **mini entity cards** matching the visual style of the main view:
+- Dark header band showing the friendly name, state chip (On/Off/Running/unavailable/…), and time-ago
+- Monospace entity ID in the body with domain or mode info below
+- Action buttons (Edit, Rename, Toggle, Remove…) in a row at the bottom
+- **Search bar is pinned in the dialog header** — always visible, never scrolls away
+- First section expands automatically so content is visible without any extra clicks
+- Colour-tinted section backgrounds make different categories instantly recognisable; alternating row tints aid readability in long lists
+
+Each card has a **↗ button** that takes you directly to the right place in HA:
+- **Automations** → opens the automation editor for that automation
+- **Scripts** → opens the script editor
+- **Everything else** → opens the HA more-info popup for the entity
+
+Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in the main view.
+
+### Cleanup View
+The **Cleanup** stat card surfaces housekeeping tasks in four sections:
+- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration with collapsible sections; Remove or Assign to device; "Remove All" bulk button
+- **Stale entities** — entities with no state change in 30+ days; grouped by domain; Keep (hide for 30 d), Disable, or Remove per entity
+- **Ghost devices** — devices registered in HA but with zero entities; Remove
+- **Never triggered** — automations and scripts that have never been triggered
+
+### Suggestions Dialog
+Five colour-coded sections help you improve your entity setup:
+- 🟣 **Health Issues** (purple) — entities unavailable for 7+ days → suggested for disable
+- ⬜ **Disable Candidates** (neutral) — diagnostic entities unchanged for 30+ days
+- 🟠 **Naming Improvements** (orange) — entities with auto-generated hashes or generic names
+- 🔴 **Area Assignment** (red) — devices with no area assigned — bulk-assign directly from the dialog
+- 🟡 **Label Suggestions** (amber) — smart HA label recommendations — click *Apply to N* to create and assign instantly
+
+Each section has its own colour tint on the header, body, device groups, and entity rows for quick visual scanning.
+
 ### Mobile & Responsive Design
-- Fully responsive layout for phones, tablets, and desktops
-- Collapsible sidebar with dedicated mobile toggle button
-- Touch-friendly buttons and controls
-- Optimized dialogs and overlays for small screens
-- Auto-close sidebar on mobile when tapping outside
+Three-breakpoint responsive layout designed and tested on real Android phones:
+
+| Breakpoint | Target | Key changes |
+|---|---|---|
+| ≤768px | Tablets | Sidebar becomes overlay, stat cards 3-per-row, device headers wrap; action buttons scale to 13px |
+| ≤600px | Medium phones (~540px) | Entity list 1-column, action buttons wrap with 36px touch targets |
+| ≤480px | Small phones | Further font/padding reductions (11px), mini cards stack to 1-column |
+
+- Collapsible sidebar with dedicated mobile toggle button; tap outside to close
+- Stat cards always show **3 per row** on mobile — labels never truncated
+- Device card headers wrap bulk actions and area button to a second line on narrow screens; buttons compact to fit without overflowing or truncating
+- Dialog padding scales down at each breakpoint so dialogs use screen space efficiently
+- All touch targets minimum 36×36px on mobile
 ---
 ## Installation
 ### HACS (Recommended)
@@ -405,8 +461,9 @@ Entity Manager stores user preferences in the browser:
 | `em-activity-log` | Recent operation history |
 | `em-custom-themes` | User-created themes |
 | `em-active-theme` | Currently selected theme |
-| `em-entity-tags` | Custom entity tags |
 | `em-entity-aliases` | Entity display aliases |
+| `em-activity-watch` | Activity Log room filter selection |
+| `em-sidebar-sections` | Sidebar section open/closed states |
 | `em-filter-presets` | Saved filter combinations |
 | `em-visible-columns` | Column visibility preferences |
 | `em-sidebar-collapsed` | Sidebar state |
@@ -414,10 +471,55 @@ Entity Manager stores user preferences in the browser:
 | `em-entity-order` | Custom entity ordering |
 ---
 ## Screenshots
-### Light Theme
-![Entity Manager Light Mode](screenshots/light-mode.png)
-### Rename Dialog
-![Rename Entity](screenshots/rename-dialog.png)
+
+### Main Panel
+
+| Light Theme | Dark Theme |
+|:---:|:---:|
+| ![Light Theme](screenshots/main-panel-light.png) | ![Dark Theme](screenshots/main-panel-dark.png) |
+
+### Themes
+
+| HA Default | High Contrast | OLED | Theme Editor |
+|:---:|:---:|:---:|:---:|
+| ![HA Default](screenshots/theme-ha-default.png) | ![High Contrast](screenshots/theme-high-contrast.png) | ![OLED](screenshots/theme-oled.png) | ![Theme Editor](screenshots/theme-editor.png) |
+
+### Entity Cards
+
+| Integration View | Devices View |
+|:---:|:---:|
+| ![Integration View](screenshots/entity-card-integration.png) | ![Devices View](screenshots/entity-card-devices.png) |
+
+### Bulk Rename
+
+![Bulk Rename](screenshots/bulk-rename.png)
+
+### Stat Dialogs
+
+| Automations | Scripts | Helpers | Templates |
+|:---:|:---:|:---:|:---:|
+| ![Automations](screenshots/automations-dialog.png) | ![Scripts](screenshots/scripts-dialog.png) | ![Helpers](screenshots/helpers-dialog.png) | ![Templates](screenshots/templates-dialog.png) |
+
+| Unavailable | Updates | HACS Store | Lovelace Cards |
+|:---:|:---:|:---:|:---:|
+| ![Unavailable](screenshots/unavailable-dialog.png) | ![Updates](screenshots/updates-view.png) | ![HACS Store](screenshots/hacs-store-dialog.png) | ![Cards](screenshots/cards-dialog.png) |
+
+### Cleanup & Health
+
+| Cleanup | Cleanup (expanded) | Card Types | Config Health |
+|:---:|:---:|:---:|:---:|
+| ![Cleanup](screenshots/cleanup-dialog.png) | ![Cleanup Expanded](screenshots/cleanup-dialog-expanded.png) | ![Card Types](screenshots/card-types-dialog.png) | ![Config Health](screenshots/config-health-dialog.png) |
+
+### Devices View
+
+![Devices View](screenshots/devices-view.png)
+
+### Suggestions
+
+| Overview | Area Suggestions | Naming Suggestions |
+|:---:|:---:|:---:|
+| ![Suggestions](screenshots/suggestions-dialog.png) | ![Area](screenshots/suggestions-area.png) | ![Naming](screenshots/suggestions-naming.png) |
+
 ---
 ## Use Cases
 - **Cleaning up after integrations** -- disable the dozens of unused entities that some integrations create

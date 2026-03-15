@@ -21,4 +21,17 @@ export default [
       "prefer-const": "warn",
     },
   },
+  // Test files run in Node.js (vitest) — allow Node globals alongside browser globals
+  {
+    files: [
+      "custom_components/entity_manager/frontend/tests/**/*.js",
+      "vitest.config.js",
+    ],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
+  },
 ];
