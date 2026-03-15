@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, compare, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.13.1-blue)
+![Version](https://img.shields.io/badge/version-2.14.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -53,8 +53,12 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - **Domain preservation** -- the `sensor.`, `light.`, etc. prefix is locked and stays intact
 - **Automatic propagation** across automations, scripts, and helpers
 - Conflict validation prevents duplicate entity IDs
-- **Bulk rename** with regex find/replace -- preview changes before applying
-- Case-sensitive and regex pattern matching options
+- **Bulk Rename panel** — opens as a full-width inline view with a split layout: entity picker on the left (grouped by integration → device, collapsible, with per-group checkboxes) and the rename queue on the right
+- **Live preview** in the queue — each entry shows the original entity ID, an editable new name field, and a live preview of the resulting ID (turns green when changed)
+- **Find & Replace** at the top filters the entity picker in real time as you type; supports regex and case-sensitive matching
+- **Domain preservation** — the `sensor.`, `light.`, etc. prefix is always locked
+- **Automatic propagation** across automations, scripts, and helpers
+- Conflict validation prevents duplicate entity IDs
 ### Search & Filtering
 Entity Manager provides multiple ways to find exactly what you need:
 
@@ -467,10 +471,55 @@ Entity Manager stores user preferences in the browser:
 | `em-entity-order` | Custom entity ordering |
 ---
 ## Screenshots
-### Light Theme
-![Entity Manager Light Mode](screenshots/light-mode.png)
-### Rename Dialog
-![Rename Entity](screenshots/rename-dialog.png)
+
+### Main Panel
+
+| Light Theme | Dark Theme |
+|:---:|:---:|
+| ![Light Theme](screenshots/main-panel-light.png) | ![Dark Theme](screenshots/main-panel-dark.png) |
+
+### Themes
+
+| HA Default | High Contrast | OLED | Theme Editor |
+|:---:|:---:|:---:|:---:|
+| ![HA Default](screenshots/theme-ha-default.png) | ![High Contrast](screenshots/theme-high-contrast.png) | ![OLED](screenshots/theme-oled.png) | ![Theme Editor](screenshots/theme-editor.png) |
+
+### Entity Cards
+
+| Integration View | Devices View |
+|:---:|:---:|
+| ![Integration View](screenshots/entity-card-integration.png) | ![Devices View](screenshots/entity-card-devices.png) |
+
+### Bulk Rename
+
+![Bulk Rename](screenshots/bulk-rename.png)
+
+### Stat Dialogs
+
+| Automations | Scripts | Helpers | Templates |
+|:---:|:---:|:---:|:---:|
+| ![Automations](screenshots/automations-dialog.png) | ![Scripts](screenshots/scripts-dialog.png) | ![Helpers](screenshots/helpers-dialog.png) | ![Templates](screenshots/templates-dialog.png) |
+
+| Unavailable | Updates | HACS Store | Lovelace Cards |
+|:---:|:---:|:---:|:---:|
+| ![Unavailable](screenshots/unavailable-dialog.png) | ![Updates](screenshots/updates-view.png) | ![HACS Store](screenshots/hacs-store-dialog.png) | ![Cards](screenshots/cards-dialog.png) |
+
+### Cleanup & Health
+
+| Cleanup | Cleanup (expanded) | Card Types | Config Health |
+|:---:|:---:|:---:|:---:|
+| ![Cleanup](screenshots/cleanup-dialog.png) | ![Cleanup Expanded](screenshots/cleanup-dialog-expanded.png) | ![Card Types](screenshots/card-types-dialog.png) | ![Config Health](screenshots/config-health-dialog.png) |
+
+### Devices View
+
+![Devices View](screenshots/devices-view.png)
+
+### Suggestions
+
+| Overview | Area Suggestions | Naming Suggestions |
+|:---:|:---:|:---:|
+| ![Suggestions](screenshots/suggestions-dialog.png) | ![Area](screenshots/suggestions-area.png) | ![Naming](screenshots/suggestions-naming.png) |
+
 ---
 ## Use Cases
 - **Cleaning up after integrations** -- disable the dozens of unused entities that some integrations create

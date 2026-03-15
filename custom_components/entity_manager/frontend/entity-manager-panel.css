@@ -3375,12 +3375,426 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* ===== BULK RENAME ===== */
 
+/* Hide toolbar/stats when bulk rename inline view is active */
+#main-content.em-bulk-rename-active .toolbar,
+#main-content.em-bulk-rename-active .toolbar-row-2,
+#main-content.em-bulk-rename-active .toolbar-search,
+#main-content.em-bulk-rename-active #stats { display: none; }
+
+/* Inline view fills available height */
+.em-bulk-rename-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px 16px;
+  min-height: calc(100vh - 140px);
+}
+
+/* Banner */
+.em-bulk-rename-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--em-primary);
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* Actions row at bottom */
+.em-bulk-rename-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* Two-column split: entity picker | rename queue */
+.brv-split {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left column: search bar + entity list */
+.bulk-rename-top-box {
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
+  overflow: hidden;
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+  min-width: 0;
+}
+
+.bulk-rename-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--em-border);
+  background: var(--em-bg-secondary);
+  flex-wrap: wrap;
+}
+
+.bulk-rename-picker-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Integration group header */
+.brp-int-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px 8px 14px;
+  background: var(--em-bg-secondary);
+  border-left: 3px solid var(--em-primary);
+  border-bottom: 1px solid var(--em-border);
+  color: var(--em-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.brp-int-header:hover { background: var(--em-bg-hover); }
+
+/* Device group header */
+.brp-dev-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 28px;
+  background: var(--em-bg-primary, var(--em-surface));
+  border-bottom: 1px solid var(--em-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--em-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 31px;
+  z-index: 1;
+}
+.brp-dev-header:hover { background: var(--em-bg-hover); }
+
+.brp-chevron { flex-shrink: 0; transition: transform 0.15s; }
+.brp-int-name { flex: 1; }
+.brp-dev-name { flex: 1; }
+.brp-group-count {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(33,150,243,0.12);
+  color: var(--em-primary);
+  border: 1px solid rgba(33,150,243,0.25);
+  flex-shrink: 0;
+}
+.brp-dev-header .brp-group-count {
+  background: var(--em-bg-secondary);
+  color: var(--em-text-secondary);
+  border: 1px solid var(--em-border);
+}
+
+/* Indent entity rows inside device bodies */
+.brp-dev-body { padding: 4px 8px; display: flex; flex-direction: column; gap: 4px; }
+.brp-dev-body .bulk-rename-picker-row { padding-left: 28px; }
+
+.bulk-rename-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--em-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+  min-width: 0;
+}
+.bulk-rename-picker-row:hover { background: var(--em-bg-hover); }
+.bulk-rename-picker-row.is-checked { background: rgba(33,150,243,0.07); border-color: rgba(33,150,243,0.4); }
+.bulk-rename-picker-row input[type="checkbox"] {
+  accent-color: var(--em-primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Right column: rename queue */
+.bulk-rename-bottom-box {
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
+  overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  min-height: 0;
+}
+
+.brv-queue-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+  flex-shrink: 0;
+}
+
+/* Queue row card */
+.bulk-rename-entity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--em-border);
+  transition: background 0.1s;
+}
+.bulk-rename-entity-row:last-child { border-bottom: none; }
+.bulk-rename-entity-row.is-renamed {
+  background: rgba(33,150,243,0.05);
+  border-left: 3px solid var(--em-primary);
+  padding-left: 8px;
+}
+
+/* From line */
+.brq-row-from {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.brq-row-id {
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--em-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.brq-row-domain { color: var(--em-text-secondary); font-weight: 400; }
+.brq-row-name {
+  font-size: 10px;
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 90px;
+}
+.brq-remove {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--em-text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  margin-left: auto;
+  transition: color 0.15s, background 0.15s;
+}
+.brq-remove:hover { color: var(--em-danger); background: rgba(244,67,54,0.1); }
+
+/* Input line */
+.brq-row-input-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--em-text-secondary);
+}
+.brq-row-input-line .bulk-new-name {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1.5px solid var(--em-border);
+  border-radius: 6px;
+  background: var(--em-bg-primary, var(--em-surface));
+  color: var(--em-text-primary);
+  transition: border-color 0.15s;
+}
+.brq-row-input-line .bulk-new-name:focus {
+  outline: none;
+  border-color: var(--em-primary);
+}
+
+/* Preview line */
+.brq-row-preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  min-width: 0;
+}
+.brq-preview-id {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+.brq-preview-id.brq-preview-changed {
+  color: var(--em-success);
+  font-weight: 600;
+}
+
+.bulk-rename-queue-inner {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bulk-rename-queue-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--em-text-secondary);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 16px;
+  line-height: 1.7;
+}
+
+/* Legacy single-column content wrapper (kept for reference) */
 .bulk-rename-content {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+/* Pattern card */
+.bulk-rename-pattern-card {
+  border: 1.5px solid var(--em-primary);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.bulk-rename-pattern-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  background: var(--em-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.bulk-rename-pattern-body {
+  padding: 12px 14px;
+  background: var(--em-bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bulk-rename-pattern-inputs {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.bulk-rename-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.bulk-rename-field-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--em-text-secondary);
+  font-weight: 600;
+}
+
+.bulk-rename-field-input {
+  padding: 7px 10px;
+  border: 1.5px solid var(--em-border);
+  border-radius: 6px;
+  background: var(--em-bg-primary, var(--em-surface));
+  color: var(--em-text-primary);
+  font-family: monospace;
+  font-size: 13px;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.bulk-rename-field-input:focus {
+  outline: none;
+  border-color: var(--em-primary);
+}
+
+.bulk-rename-field-arrow {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--em-primary);
+  flex-shrink: 0;
+  padding-bottom: 6px;
+}
+
+.bulk-rename-pattern-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--em-border);
+  padding-top: 8px;
+}
+
+.bulk-rename-opt-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--em-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.bulk-rename-opt-label input[type="checkbox"] {
+  accent-color: var(--em-primary);
+  cursor: pointer;
+}
+
+.bulk-rename-list-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 2px;
+}
+
+/* Legacy rows kept for backwards compat */
 .bulk-rename-row {
   display: flex;
   flex-direction: column;
@@ -4817,8 +5231,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .device-entity-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px 0 4px 16px;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
 }
 
 .smart-group-content {
@@ -5208,6 +5622,31 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-sug-area    .em-group-body .em-mini-card:nth-child(even) { background: rgba(244,  67, 54, 0.07); }
 .em-sug-labels  .em-group-body .em-mini-card:nth-child(even) { background: rgba(255, 235, 59, 0.07); }
 .em-sug-disable .em-group-body .em-mini-card:nth-child(even) { background: rgba(200, 200, 200, 0.06); }
+
+/* ===== LABEL CHECKBOX ===== */
+
+.label-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.label-checkbox:hover {
+  background: var(--em-bg-hover);
+  border-color: var(--em-border);
+}
+.label-checkbox input[type="checkbox"] {
+  accent-color: var(--em-primary);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
 
 /* ===== MOBILE OVERRIDES (must come after base rules) ===== */
 /* device-entity-list base rule is defined late in the file so overrides go here */

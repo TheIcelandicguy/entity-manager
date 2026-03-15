@@ -1,5 +1,25 @@
 # Changelog
 
+## Version 2.14.0 - Bulk Rename Inline Panel
+
+### ✨ New Features
+
+#### Bulk Rename — Full-Panel Inline View
+- **Bulk Rename is no longer a dialog** — it now opens as a full-width inline view that replaces the entity list, giving the entire panel's screen real estate to the rename workflow
+- **Split layout** — left column shows the entity picker grouped by integration → device; right column shows the live rename queue side-by-side
+- **Find & Replace at the top** — search pattern and replace string with Regex and Case sensitive options; typing in the Find field simultaneously filters the entity list in real time
+- **Live preview** — each rename queue row shows three lines: original entity ID, editable new name input, and a live preview of the resulting entity ID (turns green and bold as soon as the value differs from the original)
+- **Grouped entity picker** — entities are grouped into collapsible integration and device sections (collapsed by default); each group header has a checkbox to select/deselect all entities in that group at once
+- **Pre-selection support** — when entities are checked in the main view before clicking Bulk Rename, only those entities appear in the picker; opening Bulk Rename with nothing pre-selected shows all entities
+- **Action buttons in banner** — Deselect All, Rename N, and Exit buttons always visible at the top; Rename button count updates live as queue changes
+- **Sidebar shortcut** — Bulk Rename added to the Actions section of the sidebar for direct access without pre-selecting entities
+
+### 🎨 Visual
+
+- **Entity card spacing** — increased gap between entity cards in the main entity list from 4px to 8px for better readability
+
+---
+
 ## Version 2.13.1 - Light/Dark Theme Polish & Mobile Device Header Fix
 
 ### 🐛 Bug Fixes

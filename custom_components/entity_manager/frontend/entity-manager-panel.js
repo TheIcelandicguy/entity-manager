@@ -166,6 +166,7 @@ class EntityManagerPanel extends HTMLElement {
     this.viewState = 'all';
     this.viewMode = 'integrations'; // 'integrations' | 'devices'
     this._viewingSelected = false;
+    this._bulkRenameMode = false;
     this.selectedDomain = 'all';
     this.selectedIntegrationFilter = null; // Filter to show only one integration
     this.integrationViewFilter = {};       // Per-integration entity state filter: 'enabled' | 'disabled' | undefined
@@ -1667,16 +1668,35 @@ class EntityManagerPanel extends HTMLElement {
   
   // ===== BULK RENAME =====
   
-  _openBulkRenameDialog() {
-    const selectedCount = this.selectedEntities.size;
+  async _openBulkRenameDialog() {
+    this._bulkRenameMode = true;
+    this.querySelector('#main-content')?.classList.add('em-bulk-rename-active');
+    try {
+      this._bulkRenameData = await this._hass.callWS({ type: 'entity_manager/get_disabled_entities', state: 'all' });
+    } catch (_) {
+      this._bulkRenameData = this.data || [];
+    }
+    this.updateView();
+  }
 
-    // Shared helper: execute a renameMap array
-    const executeRenames = async (renameMap, closeDialog) => {
+  _renderBulkRenameView() {
+    const contentEl = this.content.querySelector('#content');
+    if (!contentEl) return;
+
+    // Guard: don't re-render while user is working (preserves input state)
+    if (contentEl.querySelector('.em-bulk-rename-view')) return;
+
+    const exitMode = async () => {
+      this._bulkRenameMode = false;
+      this.querySelector('#main-content')?.classList.remove('em-bulk-rename-active');
+      await this.loadData();
+    };
+
+    const executeRenames = async (renameMap) => {
       if (renameMap.length === 0) {
         this._showToast('No changes to apply.', 'info');
         return;
       }
-      closeDialog();
       this._showToast(`Renaming ${renameMap.length} entities...`, 'info', 0);
       const renameByDomain = {};
       for (const item of renameMap) {
@@ -1698,254 +1718,452 @@ class EntityManagerPanel extends HTMLElement {
       } else {
         this._showToast(`Renamed ${successCount}, failed ${errorCount}`, 'warning');
       }
-      await this.loadData();
+      await exitMode();
     };
 
-    if (selectedCount > 0) {
-      // ── Per-entity rename mode ──────────────────────────────────────
-      const selectedArray = Array.from(this.selectedEntities);
+    // ── Build entity list grouped by integration → device ───────────
+    const preSelected = new Set(this.selectedEntities);
+    const hassStates = this._hass?.states || {};
+    const renameData = this._bulkRenameData || this.data || [];
+    const coveredIds = new Set();
 
-      const rowsHtml = selectedArray.map(entityId => {
-        const dotIdx = entityId.indexOf('.');
-        const domain   = entityId.slice(0, dotIdx);
-        const objectId = entityId.slice(dotIdx + 1);
-        return `
-          <div class="bulk-rename-entity-row"
-               data-old-entity="${this._escapeAttr(entityId)}"
-               style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--em-border);">
-            <span style="font-family:monospace;font-size:0.82em;opacity:0.5;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
-            <span style="font-family:monospace;font-size:0.82em;background:var(--em-bg-secondary);padding:2px 6px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;flex-shrink:0;"
-                  title="${this._escapeAttr(entityId)}">${this._escapeHtml(objectId)}</span>
-            <span style="opacity:0.4;flex-shrink:0;">→</span>
-            <span style="font-family:monospace;font-size:0.82em;opacity:0.5;flex-shrink:0;">${this._escapeHtml(domain)}.</span>
-            <input type="text" class="bulk-new-name rename-input"
-                   value="${this._escapeAttr(objectId)}"
-                   placeholder="new_name"
-                   style="flex:1;min-width:80px;font-family:monospace;font-size:0.85em;">
+    const domainColors = {
+      light:'#f59e0b', switch:'#3b82f6', sensor:'#10b981', binary_sensor:'#8b5cf6',
+      automation:'#ec4899', script:'#6366f1', input_boolean:'#14b8a6',
+      media_player:'#f97316', climate:'#ef4444', cover:'#84cc16',
+    };
+
+    const makePickerRow = (entityId) => {
+      const hs = hassStates[entityId] || {};
+      const domain = entityId.split('.')[0];
+      const objectId = entityId.slice(entityId.indexOf('.') + 1);
+      const name = hs.attributes?.friendly_name || '';
+      const state = hs.state || '';
+      const dc = domainColors[domain] || 'var(--em-text-secondary)';
+      const checked = preSelected.has(entityId);
+      coveredIds.add(entityId);
+      return `<div class="bulk-rename-picker-row${checked ? ' is-checked' : ''}" data-entity-id="${this._escapeAttr(entityId)}">
+        <input type="checkbox" class="brp-cb"${checked ? ' checked' : ''} data-entity-id="${this._escapeAttr(entityId)}">
+        <span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;border:1px solid ${dc};color:${dc};white-space:nowrap;flex-shrink:0">${this._escapeHtml(domain)}</span>
+        <span style="font-family:monospace;font-size:11px;font-weight:600;color:var(--em-text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${this._escapeAttr(entityId)}">${this._escapeHtml(objectId)}</span>
+        ${name ? `<span style="font-size:11px;color:var(--em-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${this._escapeHtml(name)}</span>` : ''}
+        <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--em-bg-secondary);color:var(--em-text-secondary);flex-shrink:0">${this._escapeHtml(state)}</span>
+      </div>`;
+    };
+
+    const chevronCollapsed = `<svg class="brp-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(-90deg)"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+    const filterToSelected = preSelected.size > 0;
+
+    const groupsHtml = renameData.map(intg => {
+      const intgName = intg.integration || 'unknown';
+      let intgTotal = 0;
+      const devicesHtml = Object.entries(intg.devices || {}).map(([deviceId, device]) => {
+        let entities = (device.entities || []).slice().sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+        if (filterToSelected) entities = entities.filter(e => preSelected.has(e.entity_id));
+        if (!entities.length) return '';
+        intgTotal += entities.length;
+        const devName = deviceId === 'no_device'
+          ? 'No device'
+          : (this.deviceInfo?.[deviceId]?.name_by_user || this.deviceInfo?.[deviceId]?.name || 'Unknown device');
+        const rowsHtml = entities.map(e => makePickerRow(e.entity_id)).join('');
+        return `<div class="brp-dev-group">
+          <div class="brp-dev-header">
+            <input type="checkbox" class="brp-dev-cb" style="flex-shrink:0;accent-color:var(--em-primary);width:13px;height:13px;cursor:pointer;" title="Select all in device">
+            ${chevronCollapsed}
+            <span class="brp-dev-name">${this._escapeHtml(devName)}</span>
+            <span class="brp-group-count">${entities.length}</span>
           </div>
-        `;
+          <div class="brp-dev-body" style="display:none">${rowsHtml}</div>
+        </div>`;
       }).join('');
+      if (!intgTotal) return '';
+      return `<div class="brp-int-group">
+        <div class="brp-int-header">
+          <input type="checkbox" class="brp-int-cb" style="flex-shrink:0;accent-color:#fff;width:14px;height:14px;cursor:pointer;" title="Select all in group">
+          ${chevronCollapsed}
+          <span class="brp-int-name">${this._escapeHtml(intgName)}</span>
+          <span class="brp-group-count">${intgTotal}</span>
+        </div>
+        <div class="brp-int-body" style="display:none">${devicesHtml}</div>
+      </div>`;
+    }).join('');
 
-      const { overlay, closeDialog } = this.createDialog({
-        title: `Bulk Rename — ${selectedCount} Entities`,
-        color: 'var(--em-primary)',
-        contentHtml: `
-          <div class="bulk-rename-content">
-            <details style="margin-bottom:12px;">
-              <summary style="cursor:pointer;font-size:12px;color:var(--em-text-secondary);user-select:none;list-style:none;display:inline-flex;align-items:center;gap:4px;">
-                <span class="em-details-arrow" style="display:inline-block;font-size:0.85em;transition:transform 0.15s;">▶</span> Auto-fill with pattern
-              </summary>
-              <div style="margin-top:10px;padding:10px;background:var(--em-bg-secondary);border-radius:6px;">
-                <div class="bulk-rename-row">
-                  <label>Find:</label>
-                  <input type="text" id="bulk-find" class="rename-input" placeholder="e.g., living_room_">
-                </div>
-                <div class="bulk-rename-row">
-                  <label>Replace:</label>
-                  <input type="text" id="bulk-replace" class="rename-input" placeholder="e.g., lounge_">
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
-                  <label><input type="checkbox" id="bulk-regex"> Use regex</label>
-                  <label><input type="checkbox" id="bulk-case"> Case sensitive</label>
-                  <button class="btn btn-secondary" id="bulk-apply-pattern" style="margin-left:auto;padding:3px 12px;font-size:0.85em;">Apply to all</button>
-                </div>
-              </div>
-            </details>
-
-            <div id="bulk-rename-rows" style="max-height:320px;overflow-y:auto;padding-right:4px;">
-              ${rowsHtml}
-            </div>
-
-            <p id="bulk-rename-summary" style="margin-top:10px;font-size:0.85em;color:var(--em-text-secondary);">
-              Edit the new names directly, or use "Auto-fill with pattern" above.
-            </p>
-          </div>
-        `,
-        actionsHtml: `
-          <button class="btn btn-secondary confirm-no">Cancel</button>
-          <button class="btn btn-primary confirm-yes">Rename</button>
-        `
-      });
-
-      const updateSummary = () => {
-        let changeCount = 0;
-        overlay.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
-          const old = row.dataset.oldEntity;
-          const objectId = old.slice(old.indexOf('.') + 1);
-          const newVal = row.querySelector('.bulk-new-name').value.trim();
-          if (newVal && newVal !== objectId) changeCount++;
-        });
-        const summary = overlay.querySelector('#bulk-rename-summary');
-        if (summary) {
-          summary.textContent = changeCount > 0
-            ? `${changeCount} of ${selectedCount} entities will be renamed.`
-            : 'Edit the new names directly, or use "Auto-fill with pattern" above.';
-        }
-      };
-
-      overlay.querySelector('#bulk-apply-pattern').addEventListener('click', () => {
-        const find = overlay.querySelector('#bulk-find').value;
-        const replace = overlay.querySelector('#bulk-replace').value || '';
-        const useRegex = overlay.querySelector('#bulk-regex').checked;
-        const caseSensitive = overlay.querySelector('#bulk-case').checked;
-        if (!find) { this._showToast('Enter a find pattern first.', 'info'); return; }
-        let pattern;
-        try {
-          pattern = useRegex
-            ? new RegExp(find, caseSensitive ? 'g' : 'gi')
-            : new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
-        } catch (e) {
-          this._showToast(`Invalid regex: ${e.message}`, 'danger');
-          return;
-        }
-        overlay.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
-          const old = row.dataset.oldEntity;
-          const objectId = old.slice(old.indexOf('.') + 1);
-          row.querySelector('.bulk-new-name').value = objectId.replace(pattern, replace);
-        });
-        updateSummary();
-      });
-
-      overlay.querySelectorAll('.bulk-new-name').forEach(input => {
-        input.addEventListener('input', updateSummary);
-      });
-
-      overlay.querySelector('.confirm-yes').addEventListener('click', async () => {
-        const renameMap = [];
-        overlay.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
-          const old = row.dataset.oldEntity;
-          const domain   = old.slice(0, old.indexOf('.'));
-          const objectId = old.slice(old.indexOf('.') + 1);
-          const newVal = row.querySelector('.bulk-new-name').value.trim();
-          if (newVal && newVal !== objectId) {
-            renameMap.push({ old, new: `${domain}.${newVal}` });
-          }
-        });
-        await executeRenames(renameMap, closeDialog);
-      });
-
-      overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
-
-    } else {
-      // ── Pattern / find-replace mode (no selection) ──────────────────
-      const { overlay, closeDialog } = this.createDialog({
-        title: 'Bulk Rename Entities',
-        color: 'var(--em-primary)',
-        contentHtml: `
-          <div class="bulk-rename-content">
-            <p style="margin-bottom: 8px; color: var(--em-text-secondary);">
-              Rename all visible entities using find/replace patterns.
-            </p>
-            <div class="bulk-rename-row">
-              <label>Find pattern:</label>
-              <input type="text" id="bulk-find" class="rename-input" placeholder="e.g., living_room_temperature">
-            </div>
-            <div class="bulk-rename-row">
-              <label>Replace with:</label>
-              <input type="text" id="bulk-replace" class="rename-input" placeholder="e.g., lounge_temperature">
-            </div>
-            <div class="bulk-rename-options">
-              <label><input type="checkbox" id="bulk-regex"> Use regex</label>
-              <span class="regex-help-btn" id="regex-help-btn" title="Regex help" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--em-text-secondary);color:var(--em-bg-primary);font-size:11px;font-weight:bold;cursor:pointer;margin-left:4px;flex-shrink:0;">?</span>
-              <label style="margin-left:12px;"><input type="checkbox" id="bulk-case"> Case sensitive</label>
-            </div>
-            <div id="regex-help-box" style="display:none;margin-top:8px;padding:10px 12px;background:var(--em-bg-secondary);border:1px solid var(--em-border);border-radius:6px;font-size:12px;line-height:1.6;">
-              <strong>Regex find/replace</strong> — matches the <em>object_id</em> part only (after the dot).<br><br>
-              <strong>Common patterns:</strong><br>
-              <code>^shelly_</code> — starts with "shelly_"<br>
-              <code>_\d+$</code> — ends with numbers<br>
-              <code>(old|legacy)</code> — matches either word<br>
-              <code>_v\d+</code> — "_v" followed by digits<br><br>
-              <strong>Capture groups in Replace:</strong><br>
-              Find: <code>^(sensor)_old_(.+)</code> → Replace: <code>$1_new_$2</code><br>
-              <code>sensor_old_power</code> → <code>sensor_new_power</code>
-            </div>
-            <div id="bulk-preview" class="bulk-preview"></div>
-          </div>
-        `,
-        actionsHtml: `
-          <button class="btn btn-secondary" id="bulk-preview-btn">Preview</button>
-          <button class="btn btn-secondary confirm-no">Cancel</button>
-          <button class="btn btn-primary confirm-yes" disabled>Rename</button>
-        `
-      });
-
-      const findInput = overlay.querySelector('#bulk-find');
-      const replaceInput = overlay.querySelector('#bulk-replace');
-      const previewBtn = overlay.querySelector('#bulk-preview-btn');
-      const renameBtn = overlay.querySelector('.confirm-yes');
-      const previewDiv = overlay.querySelector('#bulk-preview');
-
-      overlay.querySelector('#regex-help-btn').addEventListener('click', () => {
-        const box = overlay.querySelector('#regex-help-box');
-        box.style.display = box.style.display === 'none' ? 'block' : 'none';
-      });
-
-      let renameMap = [];
-
-      const updatePreview = () => {
-        const find = findInput.value;
-        const replace = replaceInput.value;
-        const useRegex = overlay.querySelector('#bulk-regex').checked;
-        const caseSensitive = overlay.querySelector('#bulk-case').checked;
-
-        if (!find) {
-          previewDiv.innerHTML = '<p style="color: var(--em-text-secondary);">Enter a find pattern to preview changes.</p>';
-          renameBtn.disabled = true;
-          return;
-        }
-
-        const entities = Array.from(this.querySelectorAll('.entity-checkbox')).map(cb => cb.dataset.entityId);
-        renameMap = [];
-
-        try {
-          const pattern = useRegex
-            ? new RegExp(find, caseSensitive ? 'g' : 'gi')
-            : new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
-
-          entities.forEach(entityId => {
-            const [domain, name] = entityId.split('.');
-            if (pattern.test(name)) {
-              const newName = name.replace(pattern, replace);
-              if (newName !== name) renameMap.push({ old: entityId, new: `${domain}.${newName}` });
-            }
-          });
-
-          if (renameMap.length === 0) {
-            previewDiv.innerHTML = '<p style="color: var(--em-warning);">No matches found.</p>';
-            renameBtn.disabled = true;
-          } else {
-            previewDiv.innerHTML = `
-              <p style="margin-bottom: 8px;"><strong>${renameMap.length}</strong> entities will be renamed:</p>
-              <div class="preview-list" style="max-height: 200px; overflow-y: auto;">
-                ${renameMap.slice(0, 20).map(item => `
-                  <div class="preview-item">
-                    <span class="old-name">${this._escapeHtml(item.old)}</span>
-                    <span class="arrow">→</span>
-                    <span class="new-name">${this._escapeHtml(item.new)}</span>
-                  </div>
-                `).join('')}
-                ${renameMap.length > 20 ? `<p>... and ${renameMap.length - 20} more</p>` : ''}
-              </div>
-            `;
-            renameBtn.disabled = false;
-          }
-        } catch (e) {
-          previewDiv.innerHTML = `<p style="color: var(--em-danger);">Invalid regex: ${this._escapeHtml(e.message)}</p>`;
-          renameBtn.disabled = true;
-        }
-      };
-
-      previewBtn.addEventListener('click', updatePreview);
-      findInput.addEventListener('input', () => { renameBtn.disabled = true; });
-      replaceInput.addEventListener('input', () => { renameBtn.disabled = true; });
-
-      renameBtn.addEventListener('click', async () => {
-        await executeRenames(renameMap, closeDialog);
-      });
-
-      overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+    // Entities from hass.states not in renameData — group by domain
+    const extraByDomain = {};
+    for (const [id, s] of Object.entries(hassStates).sort(([a], [b]) => a.localeCompare(b))) {
+      if (coveredIds.has(id)) continue;
+      if (filterToSelected && !preSelected.has(id)) continue;
+      const domain = id.split('.')[0];
+      if (!extraByDomain[domain]) extraByDomain[domain] = [];
+      extraByDomain[domain].push(id);
     }
+    const extraHtml = Object.entries(extraByDomain).sort(([a], [b]) => a.localeCompare(b)).map(([domain, ids]) => {
+      const rowsHtml = ids.map(makePickerRow).join('');
+      return `<div class="brp-int-group">
+        <div class="brp-int-header">
+          <input type="checkbox" class="brp-int-cb" style="flex-shrink:0;accent-color:#fff;width:14px;height:14px;cursor:pointer;" title="Select all in group">
+          ${chevronCollapsed}
+          <span class="brp-int-name">${this._escapeHtml(domain)}</span>
+          <span class="brp-group-count">${ids.length}</span>
+        </div>
+        <div class="brp-int-body" style="display:none">
+          <div class="brp-dev-group">
+            <div class="brp-dev-body">${rowsHtml}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const pickerRowsHtml = groupsHtml + extraHtml;
+
+    const queueEmptyHtml = `<div class="bulk-rename-queue-empty">Check entities above to add them to the rename queue</div>`;
+
+    // ── Render inline view into #content ─────────────────────────────
+    contentEl.innerHTML = `
+      <div class="em-bulk-rename-view">
+
+        <!-- Banner with action buttons -->
+        <div class="em-bulk-rename-banner">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Bulk Rename Entities
+          <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <button id="brp-deselect-all-top" class="btn" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Deselect all</button>
+            <button id="brq-rename-btn-top" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.9);border:1.5px solid rgba(255,255,255,0.9);color:var(--em-primary);font-weight:700;border-radius:6px;cursor:pointer;" disabled>Rename 0</button>
+            <button id="brv-exit" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">✕ Exit</button>
+          </div>
+        </div>
+
+        <!-- FIND & REPLACE -->
+        <div class="bulk-rename-pattern-card">
+          <div class="bulk-rename-pattern-header">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Find &amp; Replace
+          </div>
+          <div class="bulk-rename-pattern-body">
+            <div class="bulk-rename-pattern-inputs">
+              <div class="bulk-rename-field">
+                <label class="bulk-rename-field-label">Find</label>
+                <input type="text" id="bulk-find" class="bulk-rename-field-input" placeholder="e.g., living_room_">
+              </div>
+              <div class="bulk-rename-field-arrow">→</div>
+              <div class="bulk-rename-field">
+                <label class="bulk-rename-field-label">Replace with</label>
+                <input type="text" id="bulk-replace" class="bulk-rename-field-input" placeholder="e.g., lounge_">
+              </div>
+            </div>
+            <div class="bulk-rename-pattern-footer">
+              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-find-regex"> Regex</label>
+              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-find-case"> Case sensitive</label>
+              <button class="btn btn-primary" id="bulk-apply-pattern" style="margin-left:auto;padding:5px 16px;font-size:12px;">Apply to queue</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SPLIT: left = entity picker, right = rename queue -->
+        <div class="brv-split">
+
+          <!-- LEFT: search bar + entity list -->
+          <div class="bulk-rename-top-box">
+            <div class="bulk-rename-top-bar">
+              <div style="position:relative;flex:1;min-width:180px;">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                     style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--em-text-secondary);pointer-events:none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="brp-search" type="text" placeholder="Search by entity ID or name…"
+                       style="width:100%;box-sizing:border-box;padding:6px 8px 6px 28px;border:1.5px solid var(--em-border);border-radius:6px;background:var(--em-bg-secondary);color:var(--em-text-primary);font-size:12px;">
+              </div>
+              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
+              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+              <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
+            </div>
+            <div class="bulk-rename-picker-list" id="brp-list">
+              ${pickerRowsHtml}
+            </div>
+          </div>
+
+          <!-- RIGHT: rename queue -->
+          <div class="bulk-rename-bottom-box">
+            <div class="brv-queue-header">
+              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary)">Rename queue</span>
+              <span id="brq-count" style="font-size:11px;color:var(--em-primary);font-weight:600;margin-left:auto;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">0 queued</span>
+            </div>
+            <div class="bulk-rename-queue-inner" id="brq-rows">
+              ${queueEmptyHtml}
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Hidden anchor elements for bottom button wiring (no UI) -->
+        <button id="brp-deselect-all" style="display:none"></button>
+        <button id="brq-rename-btn" style="display:none" disabled></button>
+
+      </div>
+    `;
+
+    const view = contentEl.querySelector('.em-bulk-rename-view');
+
+    const makeQueueRow = (entityId) => {
+      const dot = entityId.indexOf('.');
+      const domain = entityId.slice(0, dot);
+      const objectId = entityId.slice(dot + 1);
+      const friendlyName = this._hass?.states[entityId]?.attributes?.friendly_name || '';
+      const row = document.createElement('div');
+      row.className = 'bulk-rename-entity-row';
+      row.dataset.oldEntity = entityId;
+      row.innerHTML = `
+        <div class="brq-row-from">
+          <span class="brq-row-id"><span class="brq-row-domain">${this._escapeHtml(domain)}.</span>${this._escapeHtml(objectId)}</span>
+          ${friendlyName ? `<span class="brq-row-name">${this._escapeHtml(friendlyName)}</span>` : ''}
+          <button class="brq-remove" title="Remove">×</button>
+        </div>
+        <div class="brq-row-input-line">
+          <span class="brq-row-domain">${this._escapeHtml(domain)}.</span>
+          <input type="text" class="bulk-new-name" value="${this._escapeAttr(objectId)}" placeholder="new_name">
+        </div>
+        <div class="brq-row-preview">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:var(--em-text-secondary)"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="brq-preview-id">${this._escapeHtml(entityId)}</span>
+        </div>
+      `;
+      row.querySelector('.bulk-new-name').addEventListener('input', syncRenameBtn);
+      return row;
+    };
+
+    const queueRows = view.querySelector('#brq-rows');
+    const renameBtn = view.querySelector('#brq-rename-btn');
+    const selCountEl = view.querySelector('#brp-sel-count');
+    const qCountEl = view.querySelector('#brq-count');
+
+    const syncRenameBtn = () => {
+      const rows = [...queueRows.querySelectorAll('.bulk-rename-entity-row')];
+      let changes = 0;
+      rows.forEach(r => {
+        const old = r.dataset.oldEntity;
+        const domain = old.slice(0, old.indexOf('.'));
+        const oid = old.slice(old.indexOf('.') + 1);
+        const nv = r.querySelector('.bulk-new-name').value.trim();
+        const changed = nv && nv !== oid;
+        if (changed) changes++;
+        r.classList.toggle('is-renamed', changed);
+        // Update live preview
+        const preview = r.querySelector('.brq-preview-id');
+        if (preview) {
+          preview.textContent = `${domain}.${nv || oid}`;
+          preview.classList.toggle('brq-preview-changed', changed);
+        }
+      });
+      const renameBtnTop = view.querySelector('#brq-rename-btn-top');
+      const label = `Rename ${changes || rows.length}`;
+      renameBtn.disabled = rows.length === 0;
+      renameBtn.textContent = label;
+      if (renameBtnTop) { renameBtnTop.disabled = rows.length === 0; renameBtnTop.textContent = label; }
+      qCountEl.textContent = `${rows.length} queued`;
+      if (rows.length === 0 && !queueRows.querySelector('.bulk-rename-queue-empty')) {
+        queueRows.innerHTML = queueEmptyHtml;
+      }
+    };
+
+    const addToQueue = (entityId) => {
+      if (queueRows.querySelector(`[data-old-entity="${CSS.escape(entityId)}"]`)) return;
+      const empty = queueRows.querySelector('.bulk-rename-queue-empty');
+      if (empty) empty.remove();
+      queueRows.appendChild(makeQueueRow(entityId));
+      syncRenameBtn();
+    };
+
+    const removeFromQueue = (entityId) => {
+      queueRows.querySelector(`[data-old-entity="${CSS.escape(entityId)}"]`)?.remove();
+      // Uncheck in picker
+      const cb = view.querySelector(`#brp-list .brp-cb[data-entity-id="${CSS.escape(entityId)}"]`);
+      if (cb) { cb.checked = false; cb.closest('.bulk-rename-picker-row')?.classList.remove('is-checked'); }
+      syncRenameBtn();
+    };
+
+    // ── Pre-populate queue for pre-selected entities ─────────────────
+    preSelected.forEach(id => addToQueue(id));
+    const initSelCount = preSelected.size;
+    if (selCountEl) selCountEl.textContent = `${initSelCount} selected`;
+
+    // ── Picker filter (search bar + find input, updates group visibility) ──
+    const filterPickerList = () => {
+      const q = view.querySelector('#brp-search').value.trim();
+      const findVal = view.querySelector('#bulk-find').value;
+      const useRegex = view.querySelector('#bulk-find-regex').checked;
+      const caseSensitive = view.querySelector('#bulk-find-case').checked;
+
+      let findPattern = null;
+      if (findVal) {
+        try {
+          const flags = caseSensitive ? '' : 'i';
+          findPattern = useRegex
+            ? new RegExp(findVal, flags)
+            : new RegExp(findVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+        } catch (_) { /* invalid regex — ignore */ }
+      }
+
+      view.querySelectorAll('#brp-list .bulk-rename-picker-row').forEach(row => {
+        const id = row.dataset.entityId;
+        const name = this._hass?.states[id]?.attributes?.friendly_name || '';
+        const searchMatch = !q || id.toLowerCase().includes(q.toLowerCase()) || name.toLowerCase().includes(q.toLowerCase());
+        const findMatch = !findPattern || findPattern.test(id) || findPattern.test(name);
+        row.style.display = (searchMatch && findMatch) ? '' : 'none';
+      });
+      // Hide device groups with no visible rows
+      view.querySelectorAll('#brp-list .brp-dev-group').forEach(dg => {
+        const anyVisible = [...dg.querySelectorAll('.bulk-rename-picker-row')].some(r => r.style.display !== 'none');
+        dg.style.display = anyVisible ? '' : 'none';
+      });
+      // Hide integration groups with no visible device groups
+      view.querySelectorAll('#brp-list .brp-int-group').forEach(ig => {
+        const anyVisible = [...ig.querySelectorAll('.brp-dev-group')].some(dg => dg.style.display !== 'none');
+        ig.style.display = anyVisible ? '' : 'none';
+      });
+    };
+
+    view.querySelector('#brp-search').addEventListener('input', filterPickerList);
+    view.querySelector('#bulk-find').addEventListener('input', filterPickerList);
+    view.querySelector('#bulk-find-regex').addEventListener('change', filterPickerList);
+    view.querySelector('#bulk-find-case').addEventListener('change', filterPickerList);
+
+    // ── Integration/device header checkboxes: select all in group ────
+    view.querySelector('#brp-list').addEventListener('change', (e) => {
+      const intCb = e.target.closest('.brp-int-cb');
+      if (intCb) {
+        const body = intCb.closest('.brp-int-header').nextElementSibling;
+        body.querySelectorAll('.brp-cb').forEach(cb => {
+          if (cb.checked !== intCb.checked) {
+            cb.checked = intCb.checked;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+        return;
+      }
+      const devCb = e.target.closest('.brp-dev-cb');
+      if (devCb) {
+        const body = devCb.closest('.brp-dev-header').nextElementSibling;
+        body.querySelectorAll('.brp-cb').forEach(cb => {
+          if (cb.checked !== devCb.checked) {
+            cb.checked = devCb.checked;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+        return;
+      }
+    }, true); // capture phase so it fires before the collapse click handler
+
+    // ── Collapsible integration/device headers ────────────────────────
+    view.querySelector('#brp-list').addEventListener('click', (e) => {
+      const intHeader = e.target.closest('.brp-int-header');
+      if (intHeader && !e.target.closest('.bulk-rename-picker-row') && !e.target.closest('.brp-int-cb')) {
+        const body = intHeader.nextElementSibling;
+        const chevron = intHeader.querySelector('.brp-chevron');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        return;
+      }
+      const devHeader = e.target.closest('.brp-dev-header');
+      if (devHeader && !e.target.closest('.bulk-rename-picker-row') && !e.target.closest('.brp-dev-cb')) {
+        const body = devHeader.nextElementSibling;
+        const chevron = devHeader.querySelector('.brp-chevron');
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (chevron) chevron.style.transform = collapsed ? '' : 'rotate(-90deg)';
+        return;
+      }
+      // Clicking a picker row toggles its checkbox
+      const row = e.target.closest('.bulk-rename-picker-row');
+      if (!row || e.target.closest('.brp-cb')) return;
+      const cb = row.querySelector('.brp-cb');
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    // ── Picker checkbox toggle ────────────────────────────────────────
+    view.querySelector('#brp-list').addEventListener('change', (e) => {
+      const cb = e.target.closest('.brp-cb');
+      if (!cb) return;
+      const entityId = cb.dataset.entityId;
+      const row = cb.closest('.bulk-rename-picker-row');
+      if (cb.checked) {
+        row.classList.add('is-checked');
+        addToQueue(entityId);
+      } else {
+        row.classList.remove('is-checked');
+        removeFromQueue(entityId);
+      }
+      const checked = view.querySelectorAll('#brp-list .brp-cb:checked').length;
+      if (selCountEl) selCountEl.textContent = `${checked} selected`;
+    });
+
+    // ── Deselect all ─────────────────────────────────────────────────
+    const doDeselectAll = () => {
+      view.querySelectorAll('#brp-list .brp-cb:checked').forEach(cb => {
+        cb.checked = false;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      // Also uncheck all group header checkboxes
+      view.querySelectorAll('#brp-list .brp-int-cb, #brp-list .brp-dev-cb').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
+    };
+    view.querySelector('#brp-deselect-all').addEventListener('click', doDeselectAll);
+    view.querySelector('#brp-deselect-all-top').addEventListener('click', doDeselectAll);
+
+    // ── Queue: remove button ──────────────────────────────────────────
+    queueRows.addEventListener('click', (e) => {
+      const btn = e.target.closest('.brq-remove');
+      if (!btn) return;
+      removeFromQueue(btn.closest('.bulk-rename-entity-row').dataset.oldEntity);
+    });
+
+    // ── Rename ────────────────────────────────────────────────────────
+    const doRename = async () => {
+      const renameMap = [];
+      queueRows.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
+        const old = row.dataset.oldEntity;
+        const domain = old.slice(0, old.indexOf('.'));
+        const objectId = old.slice(old.indexOf('.') + 1);
+        const newVal = row.querySelector('.bulk-new-name').value.trim();
+        if (newVal && newVal !== objectId) renameMap.push({ old, new: `${domain}.${newVal}` });
+      });
+      await executeRenames(renameMap);
+    };
+    renameBtn.addEventListener('click', doRename);
+    view.querySelector('#brq-rename-btn-top').addEventListener('click', doRename);
+
+    // ── Exit button ───────────────────────────────────────────────────
+    view.querySelector('#brv-exit').addEventListener('click', exitMode);
+
+    // ── Find & Replace: Apply to queue ───────────────────────────────
+    view.querySelector('#bulk-apply-pattern').addEventListener('click', () => {
+      const findVal = view.querySelector('#bulk-find').value;
+      const replaceVal = view.querySelector('#bulk-replace').value;
+      if (!findVal) return;
+      const useRegex = view.querySelector('#bulk-find-regex').checked;
+      const caseSensitive = view.querySelector('#bulk-find-case').checked;
+      const flags = caseSensitive ? 'g' : 'gi';
+      let pattern;
+      try {
+        pattern = useRegex ? new RegExp(findVal, flags) : new RegExp(findVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
+      } catch (_) {
+        this._showToast('Invalid regex pattern', 'error');
+        return;
+      }
+      view.querySelectorAll('#brq-rows .bulk-rename-entity-row').forEach(row => {
+        const entityId = row.dataset.oldEntity;
+        const objectId = entityId.slice(entityId.indexOf('.') + 1);
+        const newVal = objectId.replace(pattern, replaceVal);
+        if (newVal !== objectId) {
+          row.querySelector('.bulk-new-name').value = newVal;
+        }
+      });
+      syncRenameBtn();
+    });
   }
   
   // ===== CONTEXT MENU =====
@@ -2195,10 +2413,10 @@ class EntityManagerPanel extends HTMLElement {
     const row = (label, value, extra = '') => value != null && value !== ''
       ? `<div class="entity-item" style="margin-bottom:4px;cursor:default">
            <div class="entity-card-header">
-             <span class="entity-header-device">${label}</span>
+             <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-text-secondary);font-weight:600">${label}</span>
            </div>
            <div class="entity-card-body">
-             <div class="entity-id" style="font-size:14px;font-weight:500;word-break:break-all">${value}${extra}</div>
+             <div style="font-size:14px;font-weight:500;word-break:break-all;white-space:normal;overflow:visible">${value}${extra}</div>
            </div>
          </div>`
       : '';
@@ -2406,7 +2624,7 @@ class EntityManagerPanel extends HTMLElement {
     // Update dialog content
     overlay.querySelector('#em-edd-body').innerHTML = `
       <div style="padding:4px 8px 0">
-        <div style="font-size:15px;font-weight:600;color:var(--em-text-primary);margin-bottom:12px;font-family:monospace">${this._escapeHtml(entityId)}</div>
+        ${friendlyTitle !== entityId ? `<div style="font-size:13px;color:var(--em-text-secondary);margin-bottom:10px;font-family:monospace">${this._escapeHtml(entityId)}</div>` : ''}
         ${sectionsHtml}
       </div>`;
     overlay.querySelector('.confirm-dialog-header h2').textContent = friendlyTitle;
@@ -3935,20 +4153,25 @@ class EntityManagerPanel extends HTMLElement {
         <div class="bulk-label-editor">
           <p style="color: var(--em-text-secondary); margin-bottom: 8px;">Add labels to ${entityCount} selected ${entityCount === 1 ? 'entity' : 'entities'}</p>
           ${this._labelTargetSelectorHtml('em-bulk-label-target', 'both', true)}
-          <details style="margin-bottom: 16px;">
-            <summary style="cursor: pointer; font-size: 12px; color: var(--em-text-secondary); user-select: none;">Show selected entities</summary>
-            <div style="margin-top: 8px; max-height: 120px; overflow-y: auto; background: var(--em-bg-secondary); border-radius: 6px; padding: 8px;">
+          <div style="margin-bottom:16px;">
+            <div id="em-label-entities-toggle" style="cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--em-text-secondary);padding:4px 0;">
+              <span id="em-label-entities-arrow" style="display:inline-flex;transition:transform 0.15s;transform:rotate(-90deg)">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              Show selected entities
+            </div>
+            <div id="em-label-entities-body" style="display:none;margin-top:8px;max-height:120px;overflow-y:auto;background:var(--em-bg-secondary);border-radius:6px;padding:8px;">
               ${Array.from(this.selectedEntities).map(id => `
                 <div style="font-size: 12px; padding: 2px 4px; font-family: monospace; color: var(--em-text-primary);">${this._escapeHtml(id)}</div>
               `).join('')}
             </div>
-          </details>
+          </div>
           <div class="label-selection" id="label-selection" style="max-height: 200px; overflow-y: auto;">
             ${allLabels.length === 0 ? '<p style="color: var(--em-text-secondary);">No labels defined yet.</p>' :
               allLabels.map(label => `
-                <label class="label-checkbox" style="display: flex; align-items: center; gap: 8px; padding: 8px; cursor: pointer; border-radius: 4px; margin: 4px 0;">
+                <label class="label-checkbox">
                   <input type="checkbox" data-label-id="${label.label_id}">
-                  <span style="width: 16px; height: 16px; border-radius: 50%; background: ${this._labelColorCss(label.color)}; display: inline-block;"></span>
+                  <span style="width:20px;height:20px;border-radius:50%;background:${this._labelColorCss(label.color)};display:inline-block;flex-shrink:0;border:1px solid rgba(0,0,0,0.15)"></span>
                   <span>${label.name}</span>
                 </label>
               `).join('')}
@@ -3975,6 +4198,15 @@ class EntityManagerPanel extends HTMLElement {
     
     // Target selector
     this._attachTargetSelector(overlay, 'em-bulk-label-target');
+
+    // Selected entities toggle
+    overlay.querySelector('#em-label-entities-toggle')?.addEventListener('click', () => {
+      const body = overlay.querySelector('#em-label-entities-body');
+      const arrow = overlay.querySelector('#em-label-entities-arrow');
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : '';
+      arrow.style.transform = open ? 'rotate(-90deg)' : '';
+    });
 
     // Swatch picker click handler (bulk dialog)
     overlay.querySelector('#new-label-color').addEventListener('click', (e) => {
@@ -4866,6 +5098,15 @@ class EntityManagerPanel extends HTMLElement {
             <div class="sidebar-item" data-action="deselect-all" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
               <span class="icon">☐</span>
               <span class="label">Deselect All</span>
+            </div>
+            <div class="sidebar-item" data-action="bulk-rename">
+              <span class="icon">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </span>
+              <span class="label">Bulk Rename</span>
             </div>
           </div>
           <div class="sidebar-item" data-action="undo" id="undo-btn" ${this.undoStack.length === 0 ? 'style="opacity:0.5"' : ''}>
@@ -6328,6 +6569,8 @@ class EntityManagerPanel extends HTMLElement {
       this._reRenderSidebar();
       this.updateView();
       this._showToast('Selection cleared', 'info');
+    } else if (action === 'bulk-rename') {
+      this._openBulkRenameDialog();
     } else if (action === 'view-selected') {
       if (!this.selectedEntities.size) return;
       this._viewingSelected = true;
@@ -6417,6 +6660,12 @@ class EntityManagerPanel extends HTMLElement {
   updateView() {
     const statsEl = this.content.querySelector('#stats');
     const contentEl = this.content.querySelector('#content');
+
+    // "Bulk Rename" inline view — render rename panel instead of entity list
+    if (this._bulkRenameMode) {
+      this._renderBulkRenameView();
+      return;
+    }
 
     // "View Selected" mode — render only selected entities
     if (this._viewingSelected) {

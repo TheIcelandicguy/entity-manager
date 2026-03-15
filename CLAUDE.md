@@ -360,6 +360,7 @@ const result = await this.hass.callWS({
 - Key methods: `loadData()`, `updateView()`, `render()`, `bulkEnable()`, `bulkDisable()`, `updateSelectedCount()`
 - Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderManagedItem()`, `_renderMiniEntityCard()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()`
 - Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAreaPickerDialog()`, `_showFloorPickerDialog()`
+- Bulk rename methods: `_openBulkRenameDialog()` (async mode-switcher), `_renderBulkRenameView()` (full inline panel)
 
 ### Entity Card Action Row (`icon-btn` pattern)
 - Every entity card renders an `.entity-actions` row with `.icon-btn` buttons: Rename (✎), Enable (✓), Disable (✕), Bulk Rename (✎✎), Bulk Labels (🏷️)
@@ -428,7 +429,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.13.1
+- **Current Version**: 2.14.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
@@ -513,3 +514,18 @@ Several base rules are defined late in `entity-manager-panel.css` (after the `@m
 ### Dialog Content Wrapper Rule
 
 `createDialog()` applies `flex: 1; overflow-y: auto` to **every direct child** of `.confirm-dialog-box` that is not the header or actions. Always wrap `contentHtml` content in a single `<div>` — never pass multiple sibling elements as top-level content — or each element becomes its own independent scroll box.
+
+### Bulk Rename Inline View Pattern
+
+Bulk rename is an **inline panel view**, not a dialog. It follows the same pattern as `_viewingSelected`:
+
+- `this._bulkRenameMode = false` — state flag initialized in constructor
+- `_openBulkRenameDialog()` — async; pre-loads all entities via `get_disabled_entities` with `state:'all'` into `this._bulkRenameData`, adds `em-bulk-rename-active` class to `#main-content`, calls `updateView()`
+- `updateView()` intercepts at the top: `if (this._bulkRenameMode) { this._renderBulkRenameView(); return; }`
+- `_renderBulkRenameView()` — guards with `.em-bulk-rename-view` check to preserve in-progress inputs during hass state updates; renders into `#content` (not a dialog overlay)
+- `exitMode()` — sets `_bulkRenameMode = false`, removes `em-bulk-rename-active`, calls `loadData()`
+- CSS: `#main-content.em-bulk-rename-active` hides `.toolbar`, `.toolbar-row-2`, `.toolbar-search`, `#stats`
+- Layout: `.brv-split` flex row — `.bulk-rename-top-box` (flex:2, entity picker) + `.bulk-rename-bottom-box` (flex:1, rename queue)
+- Entity picker grouped by integration → device from `this._bulkRenameData`; enriched with state from `this._hass.states`; if `preSelected.size > 0` only those entities are shown
+- Group headers (`.brp-int-header`, `.brp-dev-header`) have checkboxes (`.brp-int-cb`, `.brp-dev-cb`) to select all in group; clicking the chevron area collapses/expands; the checkbox change handler uses capture phase to fire before the collapse click handler
+- Queue rows (`.bulk-rename-entity-row`) show three lines: original ID, input for new name, live preview (`.brq-preview-id`) that turns green (`brq-preview-changed`) when changed — updated in `syncRenameBtn()`
