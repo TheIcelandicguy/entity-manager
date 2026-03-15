@@ -1305,6 +1305,10 @@ entity-manager-panel[data-theme="dark"] .rename-input {
   width: 18px;
   height: 18px;
   accent-color: var(--em-primary);
+  color-scheme: light;
+}
+entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbox"] {
+  color-scheme: dark;
 }
 
 .btn {
@@ -1433,6 +1437,107 @@ entity-manager-panel[data-theme="dark"] .rename-input {
   font-weight: 700;
   color: var(--em-text-primary);
 }
+
+/* ── Light-mode stat card color accents ──────────────────────────────────────
+   Each card gets a colored 4px top border, subtle tinted background, and
+   matching label + value colors. Only active in light mode — dark mode has
+   sufficient contrast without tinting.                                        */
+entity-manager-panel[data-theme="light"] .stat-card {
+  border-top-width: 4px;
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="integrations"] {
+  border-color: #2196f3;
+  background: rgba(33,150,243,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="integrations"] .stat-label { color: #1565c0; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="integrations"] .stat-value { color: #1976d2; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="devices"] {
+  border-color: #5c6bc0;
+  background: rgba(92,107,192,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="devices"] .stat-label { color: #3949ab; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="devices"] .stat-value { color: #5c6bc0; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="entities"] {
+  border-color: #26a69a;
+  background: rgba(38,166,154,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="entities"] .stat-label { color: #00695c; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="entities"] .stat-value { color: #26a69a; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="automation"] {
+  border-color: #2196f3;
+  background: rgba(33,150,243,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="automation"] .stat-label { color: #1565c0; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="automation"] .stat-value { color: #1976d2; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="script"] {
+  border-color: #4caf50;
+  background: rgba(76,175,80,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="script"] .stat-label { color: #2e7d32; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="script"] .stat-value { color: #388e3c; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="helper"] {
+  border-color: #9c27b0;
+  background: rgba(156,39,176,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="helper"] .stat-label { color: #6a1b9a; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="helper"] .stat-value { color: #7b1fa2; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="template"] {
+  border-color: #ff9800;
+  background: rgba(255,152,0,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="template"] .stat-label { color: #e65100; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="template"] .stat-value { color: #f57c00; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="unavailable"] {
+  border-color: #f44336;
+  background: rgba(244,67,54,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="unavailable"] .stat-label { color: #c62828; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="cleanup"] {
+  border-color: #ff9800;
+  background: rgba(255,152,0,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="cleanup"] .stat-label { color: #e65100; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="config-health"] {
+  border-color: #f44336;
+  background: rgba(244,67,54,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="config-health"] .stat-label { color: #c62828; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="hacs"] {
+  border-color: #4caf50;
+  background: rgba(76,175,80,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="hacs"] .stat-label { color: #2e7d32; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="hacs"] .stat-value { color: #388e3c; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="lovelace"] {
+  border-color: #03a9f4;
+  background: rgba(3,169,244,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="lovelace"] .stat-label { color: #0277bd; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="lovelace"] .stat-value { color: #0288d1; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="suggestions"] {
+  border-color: #ffc107;
+  background: rgba(255,193,7,0.07);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="suggestions"] .stat-label { color: #f57f17; }
+
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] {
+  border-color: #00bcd4;
+  background: rgba(0,188,212,0.06);
+}
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] .stat-label { color: #00838f; }
+entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] .stat-value { color: #0097a7; }
 
 .integration-group {
   background: var(--em-bg-primary);

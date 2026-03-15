@@ -6549,7 +6549,7 @@ class EntityManagerPanel extends HTMLElement {
 
     // Render stats
     statsEl.innerHTML = `
-      <div class="stat-card">
+      <div class="stat-card" data-stat-type="integrations">
         <div class="stat-label">Integrations</div>
         <div class="stat-value">${totalIntegrations}</div>
       </div>
@@ -6558,35 +6558,35 @@ class EntityManagerPanel extends HTMLElement {
           const typeMeta = this._deviceTypeMeta();
           const m = typeMeta[this.deviceTypeFilter] || typeMeta.unknown;
           const typeCount = Object.keys(this.deviceInfo).filter(id => this.getDeviceType(id) === this.deviceTypeFilter).length;
-          return `<div class="stat-card">
+          return `<div class="stat-card" data-stat-type="devices">
             <div class="stat-label">Devices · <span style="color:${m.color}">${m.label}</span></div>
             <div class="stat-value">${typeCount}</div>
           </div>`;
         }
-        return `<div class="stat-card">
+        return `<div class="stat-card" data-stat-type="devices">
           <div class="stat-label">Devices</div>
           <div class="stat-value">${totalDevices}</div>
         </div>`;
       })()}
-      <div class="stat-card">
+      <div class="stat-card" data-stat-type="entities">
         <div class="stat-label">Total Entities</div>
         <div class="stat-value">${totalEntities}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="automation" title="Click to view automations">
         <div class="stat-label">Automations</div>
-        <div class="stat-value" style="color:var(--em-primary) !important;">${this.automationCount}</div>
+        <div class="stat-value">${this.automationCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="script" title="Click to view scripts">
         <div class="stat-label">Scripts</div>
-        <div class="stat-value" style="color:var(--em-primary) !important;">${this.scriptCount}</div>
+        <div class="stat-value">${this.scriptCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="helper" title="Click to view helpers">
         <div class="stat-label">Helpers</div>
-        <div class="stat-value" style="color:var(--em-primary) !important;">${this.helperCount}</div>
+        <div class="stat-value">${this.helperCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="template" title="Click to view templates">
         <div class="stat-label">Templates</div>
-        <div class="stat-value" style="color:var(--em-warning) !important;">${this.templateCount}</div>
+        <div class="stat-value">${this.templateCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="unavailable" title="Click to view unavailable entities">
         <div class="stat-label">Unavailable</div>
@@ -6602,7 +6602,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>
       <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
         <div class="stat-label">HACS Store</div>
-        <div class="stat-value" style="color:var(--em-success) !important;">${this.hacsCount}</div>
+        <div class="stat-value">${this.hacsCount}</div>
       </div>
       <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
         <div class="stat-label">Card Types</div>
@@ -6633,7 +6633,7 @@ class EntityManagerPanel extends HTMLElement {
         return `
           <div class="stat-card clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
             <div class="stat-label">Browsers${hasStale ? ' ⚠' : ''}</div>
-            <div class="stat-value" style="color:var(--em-primary) !important;">${browserCount}</div>
+            <div class="stat-value">${browserCount}</div>
             ${activeLabel}
           </div>`;
       })()}
