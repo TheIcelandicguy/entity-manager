@@ -428,7 +428,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.13.0
+- **Current Version**: 2.13.1
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
@@ -494,5 +494,22 @@ For adding new features:
 - Handle errors per-item in bulk loops — don't abort the whole batch on a single failure
 - Use HA entity/device registries directly; never cache stale data beyond a single request
 - In JS, always call `saveToUndo()` before any mutating operation
-- Use HA CSS variables (`var(--primary-color)`, `var(--card-background-color)`, etc.) for all colors
+- Never reference HA theme variables (e.g. `var(--secondary-background-color)`, `var(--card-background-color)`) directly in component CSS — always use `--em-*` equivalents so EM light/dark mode overrides take effect correctly
 - Prefer `this.hass.callWS()` over `this.hass.callService()` for entity manager operations
+
+### CSS Cascade Traps
+
+Several base rules are defined late in `entity-manager-panel.css` (after the `@media` blocks), so their mobile overrides **must** be placed at the end of the file, after the base rules:
+
+| Rule | Location | Notes |
+|------|----------|-------|
+| `.device-entity-list` grid columns | Late in file | 1-col override at end in `@media (max-width: 600px)` |
+| `.btn`, `.btn-secondary` | Line ~1316 | Font-size 18px; mobile overrides at end of file |
+| `.device-enable-all`, `.device-disable-all` | Line ~4660 | Font-size 18px; mobile overrides at end of file |
+| `.device-assign-area-btn` | Line ~4583 | Same cascade issue; end-of-file overrides |
+
+**Rule**: When a base CSS rule comes after existing `@media` blocks, add the mobile override in the `/* ===== MOBILE OVERRIDES ===== */` section at the bottom of the CSS file.
+
+### Dialog Content Wrapper Rule
+
+`createDialog()` applies `flex: 1; overflow-y: auto` to **every direct child** of `.confirm-dialog-box` that is not the header or actions. Always wrap `contentHtml` content in a single `<div>` — never pass multiple sibling elements as top-level content — or each element becomes its own independent scroll box.

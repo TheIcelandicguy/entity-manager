@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, compare, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.13.0-blue)
+![Version](https://img.shields.io/badge/version-2.13.1-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -205,6 +205,10 @@ Entity Manager ships with a comprehensive theming engine:
 - Detects Home Assistant light/dark mode
 - Respects system color scheme preferences
 - Manual override available per theme
+**Stat Card Color Accents:**
+- Every stat card has a unique colored **top-border accent** and **subtle tinted background** — both in light and dark mode
+- Text colors automatically compensate so labels and values are always readable against their tinted background
+- Works correctly in mixed-mode setups (e.g. HA dark + EM light or EM dark + HA light)
 ### Context Menu
 Right-click any entity (or multi-selection) for a full context menu:
 **Single entity:**
@@ -352,13 +356,13 @@ Three-breakpoint responsive layout designed and tested on real Android phones:
 
 | Breakpoint | Target | Key changes |
 |---|---|---|
-| ≤768px | Tablets | Sidebar becomes overlay, stat cards 3-per-row, device headers wrap |
+| ≤768px | Tablets | Sidebar becomes overlay, stat cards 3-per-row, device headers wrap; action buttons scale to 13px |
 | ≤600px | Medium phones (~540px) | Entity list 1-column, action buttons wrap with 36px touch targets |
-| ≤480px | Small phones | Further font/padding reductions, mini cards stack to 1-column |
+| ≤480px | Small phones | Further font/padding reductions (11px), mini cards stack to 1-column |
 
 - Collapsible sidebar with dedicated mobile toggle button; tap outside to close
 - Stat cards always show **3 per row** on mobile — labels never truncated
-- Device card headers wrap bulk actions and area button to a second line on narrow screens
+- Device card headers wrap bulk actions and area button to a second line on narrow screens; buttons compact to fit without overflowing or truncating
 - Dialog padding scales down at each breakpoint so dialogs use screen space efficiently
 - All touch targets minimum 36×36px on mobile
 ---

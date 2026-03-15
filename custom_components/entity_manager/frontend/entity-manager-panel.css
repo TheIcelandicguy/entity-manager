@@ -1539,6 +1539,105 @@ entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] {
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] .stat-label { color: #00838f; }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] .stat-value { color: #0097a7; }
 
+/* ── Dark mode stat card accents ──────────────────────────────────────────── */
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="integrations"] {
+  border-color: #2196f3;
+  background: rgba(33,150,243,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="integrations"] .stat-label { color: #90caf9; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="integrations"] .stat-value { color: #64b5f6; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="devices"] {
+  border-color: #7986cb;
+  background: rgba(92,107,192,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="devices"] .stat-label { color: #9fa8da; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="devices"] .stat-value { color: #7986cb; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="entities"] {
+  border-color: #4db6ac;
+  background: rgba(38,166,154,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="entities"] .stat-label { color: #80cbc4; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="entities"] .stat-value { color: #4db6ac; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="automation"] {
+  border-color: #2196f3;
+  background: rgba(33,150,243,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="automation"] .stat-label { color: #90caf9; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="automation"] .stat-value { color: #64b5f6; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="script"] {
+  border-color: #66bb6a;
+  background: rgba(76,175,80,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="script"] .stat-label { color: #a5d6a7; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="script"] .stat-value { color: #66bb6a; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="helper"] {
+  border-color: #ba68c8;
+  background: rgba(156,39,176,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="helper"] .stat-label { color: #ce93d8; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="helper"] .stat-value { color: #ba68c8; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="template"] {
+  border-color: #ffa726;
+  background: rgba(255,152,0,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="template"] .stat-label { color: #ffcc80; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="template"] .stat-value { color: #ffa726; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="unavailable"] {
+  border-color: #ef5350;
+  background: rgba(244,67,54,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="unavailable"] .stat-label { color: #ef9a9a; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="unavailable"] .stat-value { color: #ef5350; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="cleanup"] {
+  border-color: #ffa726;
+  background: rgba(255,152,0,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="cleanup"] .stat-label { color: #ffcc80; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="cleanup"] .stat-value { color: #ffa726; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="config-health"] {
+  border-color: #ef5350;
+  background: rgba(244,67,54,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="config-health"] .stat-label { color: #ef9a9a; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="config-health"] .stat-value { color: #ef5350; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="hacs"] {
+  border-color: #66bb6a;
+  background: rgba(76,175,80,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="hacs"] .stat-label { color: #a5d6a7; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="hacs"] .stat-value { color: #66bb6a; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="lovelace"] {
+  border-color: #29b6f6;
+  background: rgba(3,169,244,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="lovelace"] .stat-label { color: #81d4fa; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="lovelace"] .stat-value { color: #29b6f6; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="suggestions"] {
+  border-color: #ffd54f;
+  background: rgba(255,193,7,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="suggestions"] .stat-label { color: #fff176; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="suggestions"] .stat-value { color: #ffd54f; }
+
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="browsers"] {
+  border-color: #26c6da;
+  background: rgba(0,188,212,0.10);
+}
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="browsers"] .stat-label { color: #80deea; }
+entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="browsers"] .stat-value { color: #26c6da; }
+
 .integration-group {
   background: var(--em-bg-primary);
   border-radius: 12px;
@@ -5115,5 +5214,40 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 @media (max-width: 600px) {
   .device-entity-list {
     grid-template-columns: 1fr;
+  }
+}
+
+/* btn / device-header button sizes — base rules are defined after the earlier
+   media queries so overrides must live here, after the base rules */
+@media (max-width: 768px) {
+  .btn-secondary,
+  .device-enable-all,
+  .device-disable-all,
+  .device-assign-area-btn {
+    font-size: 13px;
+    padding: 7px 12px;
+  }
+  .device-bulk-actions {
+    order: 10;
+    flex-basis: 100%;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .device-assign-area-btn {
+    order: 11;
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .btn-secondary,
+  .device-enable-all,
+  .device-disable-all,
+  .device-assign-area-btn {
+    font-size: 11px;
+    padding: 6px 10px;
   }
 }

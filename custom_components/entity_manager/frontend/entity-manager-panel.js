@@ -10624,17 +10624,19 @@ class EntityManagerPanel extends HTMLElement {
       color: '#ff9800',
       searchPlaceholder: 'Search cleanup items…',
       contentHtml: `
-        <div class="em-sug-section em-sug-area">
-          ${this._collGroup(`Orphaned Entities (${orphanedEntities.length})`, orphanedHtml)}
-        </div>
-        <div class="em-sug-section em-sug-disable">
-          ${this._collGroup(`Stale Entities — 30d+ (${staleEntities.length})`, staleHtml)}
-        </div>
-        <div class="em-sug-section em-sug-health">
-          ${this._collGroup(`Ghost Devices (${ghostDevices.length})`, ghostHtml)}
-        </div>
-        <div class="em-sug-section em-sug-naming">
-          ${this._collGroup(`Never Triggered (${neverTriggered.length})`, neverHtml)}
+        <div style="padding:8px 8px 4px">
+          <div class="em-sug-section em-sug-area">
+            ${this._collGroup(`Orphaned Entities (${orphanedEntities.length})`, orphanedHtml)}
+          </div>
+          <div class="em-sug-section em-sug-disable">
+            ${this._collGroup(`Stale Entities — 30d+ (${staleEntities.length})`, staleHtml)}
+          </div>
+          <div class="em-sug-section em-sug-health">
+            ${this._collGroup(`Ghost Devices (${ghostDevices.length})`, ghostHtml)}
+          </div>
+          <div class="em-sug-section em-sug-naming">
+            ${this._collGroup(`Never Triggered (${neverTriggered.length})`, neverHtml)}
+          </div>
         </div>
       `,
       actionsHtml: `<button class="btn btn-secondary" id="em-cleanup-close">Close</button>`,
@@ -10642,23 +10644,7 @@ class EntityManagerPanel extends HTMLElement {
 
     overlay.querySelector('#em-cleanup-close')?.addEventListener('click', closeDialog);
 
-    // Attach collapsible listeners then expand all 4 top-level sections and the
-    // first integration sub-group inside Orphaned — users need to see all categories at once
     this._reAttachCollapsibles(overlay);
-    overlay.querySelectorAll('.em-sug-section > .em-collapsible').forEach(header => {
-      const body = header.nextElementSibling;
-      const arrow = header.querySelector('.em-collapse-arrow, .em-collapsible-icon');
-      if (body) body.style.display = '';
-      if (arrow) arrow.style.transform = '';
-    });
-    // Also expand first integration sub-group inside the orphaned section
-    const _cfBody = overlay.querySelector('.em-group-body');
-    if (_cfBody) {
-      const _firstSubBody = _cfBody.querySelector('.em-group-body');
-      const _firstSubArrow = _cfBody.querySelector('.em-collapse-arrow, .em-collapsible-icon');
-      if (_firstSubBody) _firstSubBody.style.display = '';
-      if (_firstSubArrow) _firstSubArrow.style.transform = '';
-    }
     this._attachDialogSearch(overlay);
 
     // ── Listeners ─────────────────────────────────────────────────────

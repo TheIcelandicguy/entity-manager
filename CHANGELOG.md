@@ -1,5 +1,26 @@
 # Changelog
 
+## Version 2.13.1 - Light/Dark Theme Polish & Mobile Device Header Fix
+
+### 🐛 Bug Fixes
+
+- **Cleanup dialog sections in separate scroll boxes** — the four sections (Orphaned, Stale, Ghost Devices, Never Triggered) were each getting their own independent scroll container due to a CSS rule that targets direct children of `.confirm-dialog-box`; wrapped all sections in a single div (matching the Suggestions dialog pattern) so they share one scrollable area
+- **Cleanup dialog sections collapsed on open** — sections now correctly default to collapsed with working collapsible toggle
+
+### 🎨 Visual
+
+- **Dark mode stat card color accents** — every stat card now has a colored top-border accent and subtle tinted background in dark mode, matching the light mode treatment introduced in v2.13.0; uses lighter/brighter text colors appropriate for dark backgrounds
+- **Light mode theme consistency** — fixed entity card hover turning black when HA dark mode + EM light mode are combined; root cause was `.integration-header` and dialog elements referencing HA CSS variables directly instead of `--em-*` variables; all replaced with `--em-*` equivalents
+- **Dialog theming in mixed mode** — `createDialog()` now copies all `--em-*` inline styles from the panel onto the overlay element so dialogs appended to `document.body` inherit the correct EM theme regardless of HA's own theme
+- **Banner text color** — health/update banners now use `var(--em-text-primary)` so text is readable in all theme combinations
+
+### 📱 Mobile
+
+- **Device header buttons overflow fixed** — "View Enabled", "View Disabled", "Enable All", "Disable All", and "Assign Area" buttons were rendering at full desktop size (`font-size: 18px; padding: 10px 20px`) on mobile because the base rules are defined after the earlier media query blocks in the CSS file; added end-of-file media query overrides (768px → 13px/7px·12px, 480px → 11px/6px·10px) that correctly cascade after the base rules
+- **Assign Area button wraps to full width** on small screens so it is never truncated
+
+---
+
 ## Version 2.13.0 - Dialog Search Header, Floor Assignment & UI Consistency
 
 ### ✨ New Features
