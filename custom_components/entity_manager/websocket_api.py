@@ -677,7 +677,9 @@ async def handle_get_automations(
         )
         results: list[dict[str, Any]] = []
         for state, trig in zip(states, trigger_results):
-            triggered_by, triggered_by_name = trig if not isinstance(trig, Exception) else (None, None)
+            triggered_by, triggered_by_name = (
+                trig if not isinstance(trig, Exception) else (None, None)
+            )
             attrs = dict(state.attributes)
             results.append(
                 {
@@ -788,8 +790,16 @@ async def handle_get_template_sensors(
         )
         results: list[dict[str, Any]] = []
         for partial, trig in zip(partials, trigger_results):
-            triggered_by, triggered_by_name = trig if not isinstance(trig, Exception) else (None, None)
-            results.append({**partial, "triggered_by": triggered_by, "triggered_by_name": triggered_by_name})
+            triggered_by, triggered_by_name = (
+                trig if not isinstance(trig, Exception) else (None, None)
+            )
+            results.append(
+                {
+                    **partial,
+                    "triggered_by": triggered_by,
+                    "triggered_by_name": triggered_by_name,
+                }
+            )
 
         results.sort(key=lambda e: e["entity_id"])
         connection.send_result(msg["id"], results)
@@ -1104,8 +1114,14 @@ async def handle_get_areas_and_floors(
 
 
 _YAML_SKIP = {
-    "custom_components", ".storage", "deps", "tts",
-    "__pycache__", "backups", "www", ".git",
+    "custom_components",
+    ".storage",
+    "deps",
+    "tts",
+    "__pycache__",
+    "backups",
+    "www",
+    ".git",
 }
 
 
@@ -1133,8 +1149,9 @@ async def handle_register_template(
 
     if entity.unique_id:
         connection.send_error(
-            msg["id"], "already_registered",
-            "This template already has a unique_id — use Edit to open it in HA."
+            msg["id"],
+            "already_registered",
+            "This template already has a unique_id — use Edit to open it in HA.",
         )
         return
 
@@ -1154,7 +1171,9 @@ async def handle_register_template(
                 # Strategy 1 — new-style template block: find `name: <entity_name>`
                 if entity_name:
                     name_pat = re.compile(
-                        r'^(\s*)(name\s*:\s*["\']?)' + re.escape(entity_name) + r'(["\']?\s*)$',
+                        r'^(\s*)(name\s*:\s*["\']?)'
+                        + re.escape(entity_name)
+                        + r'(["\']?\s*)$',
                         re.MULTILINE,
                     )
                     m = name_pat.search(content)
@@ -1163,7 +1182,7 @@ async def handle_register_template(
                         new_content = (
                             content[: m.end()]
                             + f"\n{indent}unique_id: {new_uuid}"
-                            + content[m.end():]
+                            + content[m.end() :]
                         )
                         filepath.write_text(new_content, encoding="utf-8")
                         return {
@@ -1174,7 +1193,7 @@ async def handle_register_template(
 
                 # Strategy 2 — old-style platform template: `<object_id>:` as a YAML key
                 old_pat = re.compile(
-                    r'^(\s+)(' + re.escape(object_id) + r')\s*:\s*$',
+                    r"^(\s+)(" + re.escape(object_id) + r")\s*:\s*$",
                     re.MULTILINE,
                 )
                 m = old_pat.search(content)
@@ -1183,7 +1202,7 @@ async def handle_register_template(
                     new_content = (
                         content[: m.end()]
                         + f"\n{indent}  unique_id: {new_uuid}"
-                        + content[m.end():]
+                        + content[m.end() :]
                     )
                     filepath.write_text(new_content, encoding="utf-8")
                     return {
@@ -1220,7 +1239,9 @@ async def handle_register_template(
                 pass
         _LOGGER.info(
             "Registered template %s with unique_id %s in %s",
-            entity_id, new_uuid, result.get("file"),
+            entity_id,
+            new_uuid,
+            result.get("file"),
         )
 
     connection.send_result(msg["id"], result)

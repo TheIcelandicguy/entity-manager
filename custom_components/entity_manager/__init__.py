@@ -26,6 +26,7 @@ SERVICE_SCHEMA = vol.Schema(
     }
 )
 
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up the Entity Manager component."""
     return True
@@ -56,7 +57,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except ValueError as err:
                 _LOGGER.error("Failed to %s entity %s: %s", action, entity_id, err)
             except Exception as err:
-                _LOGGER.error("Unexpected error %sing entity %s: %s", action, entity_id, err)
+                _LOGGER.error(
+                    "Unexpected error %sing entity %s: %s", action, entity_id, err
+                )
+
         return _handler
 
     hass.services.async_register(
