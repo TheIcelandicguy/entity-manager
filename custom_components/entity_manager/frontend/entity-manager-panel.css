@@ -56,8 +56,8 @@ entity-manager-panel *::after {
   --dialog-gap: 12px;
 }
 
-/* Dark mode via data-theme on parent */
-[data-theme="dark"] entity-manager-panel {
+/* Dark mode — scoped to panel's own data-theme so EM light mode overrides HA dark */
+entity-manager-panel[data-theme="dark"] {
   --em-text-primary: #e0e0e0;
   --em-text-secondary: #b0b0b0;
   --em-text-disabled: #757575;
@@ -803,17 +803,17 @@ entity-manager-panel.has-bg-image .app-header {
   font-weight: 600;
 }
 
-[data-theme="dark"] .domain-menu {
+entity-manager-panel[data-theme="dark"] .domain-menu {
   background: var(--em-bg-primary) !important;
   color: var(--em-text-primary);
   border-color: var(--em-primary) !important;
 }
 
-[data-theme="dark"] .domain-option {
+entity-manager-panel[data-theme="dark"] .domain-option {
   color: var(--em-text-primary);
 }
 
-[data-theme="dark"] .domain-option:hover {
+entity-manager-panel[data-theme="dark"] .domain-option:hover {
   background: var(--em-bg-hover);
 }
 
@@ -1133,12 +1133,12 @@ body.em-dialog-open {
   color: white;
 }
 
-[data-theme="dark"] .confirm-no {
+entity-manager-panel[data-theme="dark"] .confirm-no {
   background: var(--em-bg-secondary) !important;
   color: var(--em-text-primary) !important;
 }
 
-[data-theme="dark"] .confirm-no:hover {
+entity-manager-panel[data-theme="dark"] .confirm-no:hover {
   background: var(--em-bg-hover) !important;
 }
 
@@ -1235,7 +1235,7 @@ body.em-dialog-open {
   box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
 }
 
-[data-theme="dark"] .rename-input {
+entity-manager-panel[data-theme="dark"] .rename-input {
   background: var(--em-bg-secondary);
   color: var(--em-text-primary);
   border-color: var(--em-primary);
@@ -1492,7 +1492,7 @@ body.em-dialog-open {
   color-scheme: light;
   flex-shrink: 0;
 }
-[data-theme="dark"] .integration-select-checkbox {
+entity-manager-panel[data-theme="dark"] .integration-select-checkbox {
   color-scheme: dark;
 }
 
@@ -1518,7 +1518,7 @@ body.em-dialog-open {
   color-scheme: light;
   flex-shrink: 0;
 }
-[data-theme="dark"] .device-select-checkbox {
+entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   color-scheme: dark;
 }
 
