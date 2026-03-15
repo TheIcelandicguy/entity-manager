@@ -10642,13 +10642,17 @@ class EntityManagerPanel extends HTMLElement {
 
     overlay.querySelector('#em-cleanup-close')?.addEventListener('click', closeDialog);
 
-    // Attach collapsible listeners and dialog search — expand first section by default
+    // Attach collapsible listeners then expand all 4 top-level sections and the
+    // first integration sub-group inside Orphaned — users need to see all categories at once
     this._reAttachCollapsibles(overlay);
-    const _cfBody = overlay.querySelector('.em-group-body');
-    const _cfArrow = overlay.querySelector('.em-collapse-arrow, .em-collapsible-icon');
-    if (_cfBody) _cfBody.style.display = '';
-    if (_cfArrow) _cfArrow.style.transform = '';
+    overlay.querySelectorAll('.em-sug-section > .em-collapsible').forEach(header => {
+      const body = header.nextElementSibling;
+      const arrow = header.querySelector('.em-collapse-arrow, .em-collapsible-icon');
+      if (body) body.style.display = '';
+      if (arrow) arrow.style.transform = '';
+    });
     // Also expand first integration sub-group inside the orphaned section
+    const _cfBody = overlay.querySelector('.em-group-body');
     if (_cfBody) {
       const _firstSubBody = _cfBody.querySelector('.em-group-body');
       const _firstSubArrow = _cfBody.querySelector('.em-collapse-arrow, .em-collapsible-icon');
