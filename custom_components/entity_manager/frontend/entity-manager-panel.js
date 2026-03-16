@@ -5667,15 +5667,24 @@ class EntityManagerPanel extends HTMLElement {
 
   async loadDeviceInfo() {
     try {
-      const result = await this._hass.callWS({
-        type: 'config/device_registry/list',
-      });
-      
-      this.deviceInfo = result.reduce((acc, device) => {
+      const [deviceResult, floorsResult] = await Promise.all([
+        this._hass.callWS({ type: 'config/device_registry/list' }),
+        this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' }),
+      ]);
+
+      this.deviceInfo = deviceResult.reduce((acc, device) => {
         acc[device.id] = device;
         return acc;
       }, {});
-      
+
+      // Cache floors data and build area lookup: area_id → { areaName, floorName }
+      this.floorsData = floorsResult;
+      const floorNameMap = new Map((floorsResult.floors || []).map(f => [f.floor_id, f.name]));
+      this.areaLookup = new Map((floorsResult.areas || []).map(a => [
+        a.area_id,
+        { areaName: a.name, floorName: a.floor_id ? (floorNameMap.get(a.floor_id) || '') : '' }
+      ]));
+
       this.loadCounts();
     } catch (error) {
       console.error('Entity Manager - Error loading device info:', error);
@@ -7573,20 +7582,27 @@ class EntityManagerPanel extends HTMLElement {
     const isOn = state?.state === 'on' || state?.state === 'open' || state?.state === 'unlocked'
       || state?.state === 'playing' || state?.state === 'cleaning';
 
-    // Header band: device name, state chip, time chip
+    // Area / floor lookup via device registry area_id
+    const deviceAreaId = entity.device_id ? (this.deviceInfo?.[entity.device_id]?.area_id || null) : null;
+    const areaInfo = deviceAreaId ? (this.areaLookup?.get(deviceAreaId) || null) : null;
+
+    // Header band: device name, area+floor chip, state chip, time chip
     const deviceChip = col('device') && entity.deviceName
       ? `<span class="entity-header-device">📱 ${this._escapeHtml(entity.deviceName)}</span>` : '';
+    const areaChip = areaInfo
+      ? `<span class="entity-header-area" title="${areaInfo.floorName ? this._escapeAttr(areaInfo.floorName) + ' › ' : ''}${this._escapeAttr(areaInfo.areaName)}">📍 ${this._escapeHtml(areaInfo.areaName)}${areaInfo.floorName ? `<span class="entity-header-floor"> · ${this._escapeHtml(areaInfo.floorName)}</span>` : ''}</span>`
+      : '';
     const stateChip = col('state') && state
       ? `<span class="entity-header-state">⚡ ${this._escapeHtml(state.state)}${state.attributes?.unit_of_measurement ? ' ' + this._escapeHtml(state.attributes.unit_of_measurement) : ''}</span>` : '';
     const timeChip = col('lastChanged') && state?.last_changed
       ? `<span class="entity-header-time">🕐 ${this._escapeHtml(this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime()))} ago</span>` : '';
-    const hasHeader = deviceChip || stateChip || timeChip;
+    const hasHeader = deviceChip || areaChip || stateChip || timeChip;
 
     const hasBottom = col('checkbox') || col('favorite') || col('actions');
 
     return `
       <div class="entity-item${isToggleable && isOn ? ' entity-is-on' : ''}" data-entity-id="${eid}" data-disabled="${entity.is_disabled ? 'true' : 'false'}">
-        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${stateChip}${timeChip}</div>` : ''}
+        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
           ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}

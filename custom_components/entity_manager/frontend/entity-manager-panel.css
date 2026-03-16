@@ -2092,6 +2092,25 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   flex-shrink: 0;
 }
 
+.entity-header-area {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  background: var(--em-bg-secondary);
+  border: 1px solid var(--em-border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.entity-header-floor {
+  opacity: 0.6;
+  font-size: 10px;
+}
+
 /* Body: entity ID + name */
 .entity-card-body {
   flex: 1;
