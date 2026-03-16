@@ -9906,12 +9906,14 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   /**
-   * Floor-first assignment dialog.
-   * Shows floors as top-level options; clicking a floor with one area auto-selects it,
-   * clicking a floor with multiple areas shows a second area picker for that floor.
-   * Ultimately calls onAreaSelect(areaId) — same signature as _showAreaPickerDialog.
+   * Floor assignment dialog — shows ONLY floors.
+   * Picking a floor auto-resolves to an area on that floor behind the scenes:
+   *   0 areas → creates a new area named after the floor, then assigns
+   *   1 area  → assigns directly to it
+   *   2+ areas → assigns to the area whose name matches the floor, else first alphabetically
+   * The user never sees or chooses an area — floor assignment is a single click.
    */
-  async _showFloorPickerDialog(title, onAreaSelect) {
+  async _showFloorPickerDialog(title, onFloorSelect) {
     if (!this.floorsData) {
       try {
         this.floorsData = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
@@ -9923,7 +9925,7 @@ class EntityManagerPanel extends HTMLElement {
     const floors = this.floorsData.floors || [];
     const areas  = this.floorsData.areas  || [];
 
-    // Group areas by floor_id for sub-selection when a floor has multiple areas
+    // Group areas by floor_id
     const byFloor = {};
     for (const area of areas) {
       if (area.floor_id) {
@@ -9932,32 +9934,20 @@ class EntityManagerPanel extends HTMLElement {
       }
     }
 
-    const buildFloorList = (floorList) => floorList.map(f => {
+    const floorRowsHtml = floors.map(f => {
       const fAreas = byFloor[f.floor_id] || [];
-      const hasMulti = fAreas.length > 1;
+      const sub = fAreas.length === 0
+        ? `<span style="font-size:11px;opacity:0.4;font-style:italic">no areas yet</span>`
+        : `<span style="font-size:11px;opacity:0.5">${fAreas.length} area${fAreas.length !== 1 ? 's' : ''}</span>`;
       return `
         <div class="em-floor-pick-row" data-floor-id="${this._escapeAttr(f.floor_id)}"
-             style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;
+             style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:8px;
                     border:1px solid var(--em-border);margin-bottom:5px;cursor:pointer;
                     transition:background 0.15s,border-color 0.15s">
           <span style="font-size:1.3em">🏢</span>
           <span style="font-size:14px;font-weight:600;flex:1">${this._escapeHtml(f.name)}</span>
-          ${hasMulti
-            ? `<span style="font-size:11px;opacity:0.55">${fAreas.length} areas ▶</span>`
-            : (fAreas.length === 1 ? `<span style="font-size:11px;opacity:0.45">${this._escapeHtml(fAreas[0].name)}</span>` : `<span style="font-size:11px;opacity:0.4;font-style:italic">no areas</span>`)
-          }
-        </div>
-        ${hasMulti ? `
-        <div class="em-floor-area-sub" data-floor-id="${this._escapeAttr(f.floor_id)}"
-             style="display:none;padding:2px 0 6px 18px">
-          ${fAreas.map(a => `
-            <div class="em-floor-area-opt" data-area-id="${this._escapeAttr(a.area_id)}"
-                 style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:6px;
-                        cursor:pointer;font-size:13px;transition:background 0.12s">
-              <span style="opacity:0.5">📍</span>
-              <span>${this._escapeHtml(a.name)}</span>
-            </div>`).join('')}
-        </div>` : ''}`;
+          ${sub}
+        </div>`;
     }).join('');
 
     const { overlay, closeDialog } = this.createDialog({
@@ -9965,15 +9955,15 @@ class EntityManagerPanel extends HTMLElement {
       contentHtml: `
         <div style="padding:0 4px 4px">
           <div class="em-floor-pick-list" style="max-height:60vh;overflow-y:auto">
-            <div class="em-area-option em-area-clear"
+            <div class="em-floor-clear-row"
                  style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;
                         border:1px solid var(--em-border);margin-bottom:10px;cursor:pointer;
                         opacity:0.65;font-style:italic;transition:background 0.15s">
               <span style="font-size:16px">🚫</span>
-              <span style="font-size:13px">— Remove floor assignment —</span>
+              <span style="font-size:13px">— Remove floor/area assignment —</span>
             </div>
             ${floors.length
-              ? buildFloorList(floors)
+              ? floorRowsHtml
               : '<div style="padding:16px;text-align:center;opacity:0.55;font-style:italic">No floors defined yet.</div>'}
           </div>
         </div>`,
@@ -9984,113 +9974,66 @@ class EntityManagerPanel extends HTMLElement {
 
     const list = overlay.querySelector('.em-floor-pick-list');
 
-    // Hover effects
     const addHover = (el) => {
       el.addEventListener('mouseenter', () => el.style.background = 'var(--em-bg-hover)');
       el.addEventListener('mouseleave', () => el.style.background = '');
     };
+    list.querySelectorAll('.em-floor-pick-row, .em-floor-clear-row').forEach(addHover);
 
-    list.querySelectorAll('.em-floor-pick-row, .em-area-option').forEach(addHover);
-    list.querySelectorAll('.em-floor-area-opt').forEach(addHover);
-
-    // Clear / remove floor assignment
-    list.querySelector('.em-area-clear').addEventListener('click', () => {
+    // Clear assignment
+    list.querySelector('.em-floor-clear-row').addEventListener('click', () => {
       closeDialog();
-      onAreaSelect(null);
+      onFloorSelect(null);
     });
 
-    // Floor row click
-    list.querySelectorAll('.em-floor-pick-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const floorId = row.dataset.floorId;
-        const fAreas = byFloor[floorId] || [];
+    // Auto-resolve area for a floor and call onFloorSelect
+    const resolveAndAssign = async (floorId) => {
+      let fAreas = byFloor[floorId] || [];
+      const floor = floors.find(f => f.floor_id === floorId);
 
-        if (fAreas.length === 0) {
-          // No areas on this floor — offer to create one
-          this._showPromptDialog(
-            `Create area on "${floors.find(f => f.floor_id === floorId)?.name}"`,
-            'Enter a name for the new area:',
-            '',
-            async (name) => {
-              if (!name?.trim()) return;
-              try {
-                const newArea = await this._hass.callWS({
-                  type: 'config/area_registry/create',
-                  name: name.trim(),
-                  floor_id: floorId,
-                });
-                this.floorsData = null;
-                closeDialog();
-                onAreaSelect(newArea.area_id);
-              } catch (e) {
-                this._showToast('Failed to create area: ' + (e.message || e), 'error');
-              }
-            }
-          );
-          return;
-        }
-
-        if (fAreas.length === 1) {
-          // Auto-select the single area
+      if (fAreas.length === 0) {
+        // Create a default area named after the floor
+        try {
+          const newArea = await this._hass.callWS({
+            type: 'config/area_registry/create',
+            name: floor.name,
+            floor_id: floorId,
+          });
+          this.floorsData = null;
           closeDialog();
-          onAreaSelect(fAreas[0].area_id);
-          return;
+          onFloorSelect(newArea.area_id);
+        } catch (e) {
+          this._showToast('Failed to create area: ' + (e.message || e), 'error');
         }
+        return;
+      }
 
-        // Multiple areas — toggle sub-list
-        const sub = list.querySelector(`.em-floor-area-sub[data-floor-id="${CSS.escape(floorId)}"]`);
-        const isOpen = sub.style.display !== 'none';
-        // Collapse all subs, reset row borders
-        list.querySelectorAll('.em-floor-area-sub').forEach(s => { s.style.display = 'none'; });
-        list.querySelectorAll('.em-floor-pick-row').forEach(r => {
-          r.style.borderColor = '';
-          r.style.background = '';
-        });
-        if (!isOpen) {
-          sub.style.display = '';
-          row.style.borderColor = 'var(--em-primary)';
-          row.style.background = 'var(--em-bg-hover)';
-        }
-      });
+      // Pick best area: name matches floor name, else first alphabetically
+      const sorted = [...fAreas].sort((a, b) => a.name.localeCompare(b.name));
+      const match = sorted.find(a => a.name.toLowerCase() === floor.name.toLowerCase()) || sorted[0];
+      closeDialog();
+      onFloorSelect(match.area_id);
+    };
+
+    list.querySelectorAll('.em-floor-pick-row').forEach(row => {
+      row.addEventListener('click', () => resolveAndAssign(row.dataset.floorId));
     });
 
-    // Area click inside expanded sub-list
-    list.querySelectorAll('.em-floor-area-opt').forEach(opt => {
-      opt.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeDialog();
-        onAreaSelect(opt.dataset.areaId);
-      });
-    });
-
-    // Create new floor
+    // Create new floor (also creates a default area with the same name)
     overlay.querySelector('.em-floor-create-btn').addEventListener('click', () => {
       this._showPromptDialog('Create new floor', 'Enter a name for the new floor:', '', async (name) => {
         if (!name?.trim()) return;
         try {
           const newFloor = await this._hass.callWS({ type: 'config/floor_registry/create', name: name.trim() });
+          // Auto-create a matching area on the new floor
+          const newArea = await this._hass.callWS({
+            type: 'config/area_registry/create',
+            name: newFloor.name,
+            floor_id: newFloor.floor_id,
+          });
           this.floorsData = null;
-          // Offer to create an area on the new floor
-          this._showPromptDialog(
-            `Add area to "${newFloor.name}"`,
-            'Enter a name for the first area on this floor (or leave blank to skip):',
-            newFloor.name,
-            async (areaName) => {
-              if (!areaName?.trim()) { closeDialog(); return; }
-              try {
-                const newArea = await this._hass.callWS({
-                  type: 'config/area_registry/create',
-                  name: areaName.trim(),
-                  floor_id: newFloor.floor_id,
-                });
-                this.floorsData = null;
-                closeDialog();
-                onAreaSelect(newArea.area_id);
-              } catch (e) {
-                this._showToast('Failed to create area: ' + (e.message || e), 'error');
-              }
-            }
-          );
+          closeDialog();
+          onFloorSelect(newArea.area_id);
         } catch (e) {
           this._showToast('Failed to create floor: ' + (e.message || e), 'error');
         }
