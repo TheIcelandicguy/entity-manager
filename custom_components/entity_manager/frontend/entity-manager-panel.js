@@ -1667,6 +1667,41 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * Bulk-assign an area to a list of entity objects.
+   * Entities with a device → update device_registry (deduped, affects all device entities).
+   * Orphan entities (no device) → update entity_registry directly.
+   */
+  async _assignAreaToEntities(entities, areaId) {
+    const seenDevices = new Set();
+    for (const ent of entities) {
+      if (ent.device_id) {
+        if (!seenDevices.has(ent.device_id)) {
+          seenDevices.add(ent.device_id);
+          await this._hass.callWS({ type: 'config/device_registry/update', device_id: ent.device_id, area_id: areaId });
+        }
+      } else {
+        await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+      }
+    }
+  }
+
+  /**
+   * Resolve a set/array of entity ID strings to entity objects from this.data.
+   */
+  _resolveEntitiesById(entityIds) {
+    const ids = new Set(entityIds);
+    const result = [];
+    for (const integration of (this.data || [])) {
+      for (const dev of Object.values(integration.devices || {})) {
+        for (const ent of (dev.entities || [])) {
+          if (ids.has(ent.entity_id)) result.push(ent);
+        }
+      }
+    }
+    return result;
+  }
+
   _closeAllDropdowns() {
     this.querySelectorAll('.theme-dropdown-menu.active, .domain-menu.open').forEach(el => {
       el.classList.remove('active', 'open');
@@ -6594,10 +6629,9 @@ class EntityManagerPanel extends HTMLElement {
     } else if (action === 'assign-area-selected') {
       if (!this.selectedEntities.size) return;
       const entityIds = [...this.selectedEntities];
+      const entities = this._resolveEntitiesById(entityIds);
       this._showAreaPickerDialog(`Assign area to ${entityIds.length} selected entit${entityIds.length !== 1 ? 'ies' : 'y'}`, async areaId => {
-        await Promise.all(entityIds.map(eid =>
-          this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, area_id: areaId || null })
-        ));
+        await this._assignAreaToEntities(entities, areaId);
         this.floorsData = null;
         this._showToast(`Area updated for ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
         await this.loadData();
@@ -6605,10 +6639,9 @@ class EntityManagerPanel extends HTMLElement {
     } else if (action === 'assign-floor-selected') {
       if (!this.selectedEntities.size) return;
       const entityIds = [...this.selectedEntities];
+      const entities = this._resolveEntitiesById(entityIds);
       this._showFloorPickerDialog(`Assign floor to ${entityIds.length} selected entit${entityIds.length !== 1 ? 'ies' : 'y'}`, async areaId => {
-        await Promise.all(entityIds.map(eid =>
-          this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, area_id: areaId || null })
-        ));
+        await this._assignAreaToEntities(entities, areaId);
         this.floorsData = null;
         this._showToast(`Floor updated for ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
         await this.loadData();
@@ -7827,22 +7860,6 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Helper: bulk-assign area to a set of entities — devices get device_registry/update,
-    // orphan entities (no device) get entity_registry/update.
-    const _assignAreaToEntities = async (entities, areaId) => {
-      const seenDevices = new Set();
-      for (const ent of entities) {
-        if (ent.device_id) {
-          if (!seenDevices.has(ent.device_id)) {
-            seenDevices.add(ent.device_id);
-            await this._hass.callWS({ type: 'config/device_registry/update', device_id: ent.device_id, area_id: areaId });
-          }
-        } else {
-          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
-        }
-      }
-    };
-
     // Smart group Assign Area buttons
     this.content.querySelectorAll('.smart-group-assign-area-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
@@ -7852,7 +7869,7 @@ class EntityManagerPanel extends HTMLElement {
         const entities = groups[groupKey] || [];
         if (!entities.length) return;
         this._showAreaPickerDialog(`Assign ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'} to area`, async areaId => {
-          await _assignAreaToEntities(entities, areaId);
+          await this._assignAreaToEntities(entities, areaId);
           this.floorsData = null;
           await this.loadData();
         });
@@ -7868,7 +7885,7 @@ class EntityManagerPanel extends HTMLElement {
         const entities = groups[groupKey] || [];
         if (!entities.length) return;
         this._showFloorPickerDialog(`Assign ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'} to floor`, async areaId => {
-          await _assignAreaToEntities(entities, areaId);
+          await this._assignAreaToEntities(entities, areaId);
           this.floorsData = null;
           await this.loadData();
         });
