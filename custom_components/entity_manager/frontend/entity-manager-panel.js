@@ -234,9 +234,10 @@ class EntityManagerPanel extends HTMLElement {
     this.entityAliases = this._loadEntityAliases();
     
     // Groups state
-    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name
+    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name, custom
     this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
     this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
+    this.customGroups = JSON.parse(localStorage.getItem('em-custom-groups') || '[]'); // [{id, name, entityIds[]}]
     this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
     
     // Lazy loading state
@@ -4614,6 +4615,12 @@ class EntityManagerPanel extends HTMLElement {
               groupKey = this.getDeviceName(deviceId) || 'Unknown Device';
               break;
             }
+            case 'custom': {
+              // Find the first custom group that contains this entity
+              const cg = (this.customGroups || []).find(g => g.entityIds.includes(entity.entity_id));
+              groupKey = cg ? cg.name : '📦 Ungrouped';
+              break;
+            }
             default: // integration
               groupKey = integration.integration;
           }
@@ -5192,6 +5199,34 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">🔍</span>
             <span class="label">By Device Name</span>
           </div>
+          <div class="sidebar-item ${this.smartGroupMode === 'custom' ? 'active' : ''}" data-group-mode="custom">
+            <span class="icon">⊞</span>
+            <span class="label">Custom Groups</span>
+          </div>
+          ${this.smartGroupMode === 'custom' ? `
+            <div style="padding:4px 8px 6px">
+              ${(this.customGroups || []).length === 0
+                ? `<div style="font-size:11px;color:var(--em-text-secondary);padding:4px 0 6px;font-style:italic">No groups yet. Create one below.</div>`
+                : (this.customGroups || []).map(cg => `
+                  <div style="display:flex;align-items:center;gap:4px;padding:3px 0">
+                    <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                          title="${this._escapeAttr(cg.name)}">${this._escapeHtml(cg.name)}
+                      <span style="opacity:0.5;font-size:10px">(${cg.entityIds.length})</span>
+                    </span>
+                    <button class="em-custom-group-add-btn" data-cg-id="${this._escapeAttr(cg.id)}"
+                      title="Add selected entities to this group"
+                      style="background:none;border:1px solid var(--em-border);border-radius:4px;padding:1px 5px;font-size:11px;cursor:pointer;color:var(--em-success)">＋</button>
+                    <button class="em-custom-group-delete-btn" data-cg-id="${this._escapeAttr(cg.id)}"
+                      title="Delete this group"
+                      style="background:none;border:1px solid var(--em-border);border-radius:4px;padding:1px 5px;font-size:11px;cursor:pointer;color:var(--em-danger)">✕</button>
+                  </div>`).join('')
+              }
+              <button class="sidebar-item em-new-custom-group-btn" data-action="new-custom-group"
+                style="width:100%;margin-top:4px;justify-content:flex-start;border:1px dashed var(--em-border);border-radius:6px">
+                <span class="icon">＋</span><span class="label">New Group</span>
+              </button>
+            </div>
+          ` : ''}
             ${this.smartGroupMode === 'device-name' ? `
               <div style="padding:6px 8px 4px">
                 <div style="display:flex;gap:4px">
@@ -6409,6 +6444,39 @@ class EntityManagerPanel extends HTMLElement {
         this._deleteFilterPreset(parseInt(deleteBtn.dataset.delete));
         return;
       }
+      // Custom group — add selected entities
+      const cgAddBtn = e.target.closest('.em-custom-group-add-btn');
+      if (cgAddBtn) {
+        e.stopPropagation();
+        const cgId = cgAddBtn.dataset.cgId;
+        const toAdd = [...(this.selectedEntities || new Set())];
+        if (!toAdd.length) { this._showToast('Select entities first', 'info'); return; }
+        this.customGroups = (this.customGroups || []).map(g => {
+          if (g.id !== cgId) return g;
+          const merged = [...new Set([...g.entityIds, ...toAdd])];
+          return { ...g, entityIds: merged };
+        });
+        localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+        this._reRenderSidebar();
+        this.updateView();
+        this._showToast(`Added ${toAdd.length} entit${toAdd.length !== 1 ? 'ies' : 'y'} to group`, 'success');
+        return;
+      }
+      // Custom group — delete
+      const cgDelBtn = e.target.closest('.em-custom-group-delete-btn');
+      if (cgDelBtn) {
+        e.stopPropagation();
+        const cgId = cgDelBtn.dataset.cgId;
+        const grp = (this.customGroups || []).find(g => g.id === cgId);
+        if (!grp) return;
+        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+          this.customGroups = (this.customGroups || []).filter(g => g.id !== cgId);
+          localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+          this._reRenderSidebar();
+          this.updateView();
+        });
+        return;
+      }
       // Label edit button
       const editLabelBtn = e.target.closest('[data-edit-label]');
       if (editLabelBtn) {
@@ -6544,6 +6612,16 @@ class EntityManagerPanel extends HTMLElement {
         this.floorsData = null;
         this._showToast(`Floor updated for ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
         await this.loadData();
+      });
+    } else if (action === 'new-custom-group') {
+      this._showPromptDialog('New Custom Group', 'Enter a name for this group:', '', name => {
+        if (!name?.trim()) return;
+        const id = `cg-${Date.now()}`;
+        this.customGroups = [...(this.customGroups || []), { id, name: name.trim(), entityIds: [] }];
+        localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+        this._setSmartGroupMode('custom');
+        this._reRenderSidebar();
+        this.updateView();
       });
     } else if (action === 'save-preset') {
       this._saveCurrentFilterPreset();
@@ -7099,6 +7177,9 @@ class EntityManagerPanel extends HTMLElement {
       return `
         <div class="smart-group ${isExpanded ? 'expanded' : ''}" data-smart-group="${this._escapeAttr(groupKey)}">
           <div class="smart-group-header" data-smart-group-toggle="${this._escapeAttr(groupKey)}">
+            <label class="smart-group-select-wrap" title="Select all in this group">
+              <input type="checkbox" class="smart-group-select-checkbox" data-group-key="${this._escapeAttr(groupKey)}">
+            </label>
             <span class="smart-group-icon">${modeIcons[this.smartGroupMode] || '📁'}</span>
             <span class="smart-group-name">${this._escapeHtml(displayName)}</span>
             <span class="smart-group-count">${entities.length} entities</span>
@@ -7106,15 +7187,15 @@ class EntityManagerPanel extends HTMLElement {
               <span style="color:var(--em-success)">${enabledCount}</span> /
               <span style="color:var(--em-danger)">${disabledCount}</span>
             </span>
-            <label class="smart-group-select-wrap" title="Select all in this group">
-              <input type="checkbox" class="smart-group-select-checkbox" data-group-key="${this._escapeAttr(groupKey)}">
-            </label>
             <div class="smart-group-actions">
               <button class="btn btn-secondary smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
               <button class="btn btn-secondary smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
               ${this.smartGroupMode !== 'type' ? `
                 <button class="em-assign-btn smart-group-assign-area-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to area">📍 Area</button>
                 <button class="em-assign-btn smart-group-assign-floor-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to floor">🏢 Floor</button>
+              ` : ''}
+              ${this.smartGroupMode === 'custom' && groupKey !== '📦 Ungrouped' ? `
+                <button class="btn btn-secondary smart-group-delete-custom" data-group-key="${this._escapeAttr(groupKey)}" title="Delete this custom group" style="color:var(--em-danger);border-color:var(--em-danger)">🗑 Delete</button>
               ` : ''}
             </div>
             <span class="smart-group-expand"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
@@ -7786,6 +7867,22 @@ class EntityManagerPanel extends HTMLElement {
           }
           this.floorsData = null;
           await this.loadData();
+        });
+      });
+    });
+
+    // Custom group delete buttons on group headers
+    this.content.querySelectorAll('.smart-group-delete-custom').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const groupName = btn.dataset.groupKey;
+        const grp = (this.customGroups || []).find(g => g.name === groupName);
+        if (!grp) return;
+        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+          this.customGroups = (this.customGroups || []).filter(g => g.id !== grp.id);
+          localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+          this._reRenderSidebar();
+          this.updateView();
         });
       });
     });
