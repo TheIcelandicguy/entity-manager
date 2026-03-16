@@ -5062,7 +5062,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   cursor: pointer;
   flex-shrink: 0;
-  margin-left: auto;
 }
 .smart-group-select-wrap input[type="checkbox"] {
   width: 16px;
@@ -5074,6 +5073,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  margin-left: auto;
   margin-right: 8px;
 }
 .smart-group-actions .btn {
