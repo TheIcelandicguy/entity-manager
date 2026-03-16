@@ -1645,6 +1645,27 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  _updateSmartGroupCheckboxState(groupKey) {
+    if (!groupKey || !this.content) return;
+    const cb = this.content.querySelector(`.smart-group-select-checkbox[data-group-key="${CSS.escape(groupKey)}"]`);
+    if (!cb) return;
+    const entityCbs = Array.from(
+      this.content.querySelectorAll(`.smart-group[data-smart-group="${CSS.escape(groupKey)}"] .entity-checkbox`)
+    );
+    if (entityCbs.length === 0) return;
+    const n = entityCbs.filter(c => c.checked).length;
+    if (n === 0) {
+      cb.checked = false;
+      cb.indeterminate = false;
+    } else if (n === entityCbs.length) {
+      cb.checked = true;
+      cb.indeterminate = false;
+    } else {
+      cb.checked = false;
+      cb.indeterminate = true;
+    }
+  }
+
   _closeAllDropdowns() {
     this.querySelectorAll('.theme-dropdown-menu.active, .domain-menu.open').forEach(el => {
       el.classList.remove('active', 'open');
@@ -7085,7 +7106,17 @@ class EntityManagerPanel extends HTMLElement {
               <span style="color:var(--em-success)">${enabledCount}</span> /
               <span style="color:var(--em-danger)">${disabledCount}</span>
             </span>
-            ${isUnassigned ? `<button class="em-assign-btn smart-group-assign-all-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to an area">📍 Assign all</button>` : ''}
+            <label class="smart-group-select-wrap" title="Select all in this group">
+              <input type="checkbox" class="smart-group-select-checkbox" data-group-key="${this._escapeAttr(groupKey)}">
+            </label>
+            <div class="smart-group-actions">
+              <button class="btn btn-secondary smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
+              <button class="btn btn-secondary smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
+              ${this.smartGroupMode !== 'type' ? `
+                <button class="em-assign-btn smart-group-assign-area-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to area">📍 Area</button>
+                <button class="em-assign-btn smart-group-assign-floor-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to floor">🏢 Floor</button>
+              ` : ''}
+            </div>
             <span class="smart-group-expand"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
           </div>
           ${isExpanded ? `
@@ -7369,6 +7400,8 @@ class EntityManagerPanel extends HTMLElement {
             <button class="btn view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities" style="${_ivf === 'disabled' ? '' : 'color:var(--em-danger);border-color:var(--em-danger)'}">View Disabled</button>
             <button class="btn btn-secondary enable-integration" data-integration="${intName}">Enable All</button>
             <button class="btn btn-secondary disable-integration" data-integration="${intName}">Disable All</button>
+            <button class="em-assign-btn integration-assign-area-btn" data-integration="${intName}" title="Assign all devices to area">📍 Area</button>
+            <button class="em-assign-btn integration-assign-floor-btn" data-integration="${intName}" title="Assign all devices to floor">🏢 Floor</button>
           </div>
         </div>
         ${isExpanded ? `
@@ -7553,6 +7586,7 @@ class EntityManagerPanel extends HTMLElement {
             <button class="device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
           </div>
           <button class="em-assign-btn device-assign-area-btn${areaName ? ' has-area' : ' no-area'}" data-device-id="${deviceIdEsc}" title="Assign device to area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>
+          <button class="em-assign-btn device-assign-floor-btn" data-device-id="${deviceIdEsc}" title="Assign device to floor">🏢 Floor</button>
         </div>
         ${isExpanded ? `<div class="device-name-group-body">${catCardsHtml}</div>` : ''}
       </div>
@@ -7642,7 +7676,8 @@ class EntityManagerPanel extends HTMLElement {
     // Smart group headers
     this.content.querySelectorAll('.smart-group-header').forEach(header => {
       header.addEventListener('click', (e) => {
-        if (e.target.closest('.smart-group-assign-all-btn')) return;
+        if (e.target.closest('.smart-group-select-wrap')) return;
+        if (e.target.closest('.smart-group-actions')) return;
         const groupKey = header.dataset.smartGroupToggle;
         const expandKey = `smart_${groupKey}`;
         if (this.expandedIntegrations.has(expandKey)) {
@@ -7654,8 +7689,65 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Smart group assign-all buttons (Unassigned / No Floor / No Area)
-    this.content.querySelectorAll('.smart-group-assign-all-btn').forEach(btn => {
+    // Smart group select-all checkboxes
+    this.content.querySelectorAll('.smart-group-select-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', e => {
+        e.stopPropagation();
+        const groupKey = checkbox.dataset.groupKey;
+        const groups = this._getSmartGroups();
+        const entities = groups[groupKey] || [];
+        for (const entity of entities) {
+          const eid = entity.entity_id;
+          if (this.viewState === 'disabled' && !entity.is_disabled) continue;
+          if (this.viewState === 'enabled' && entity.is_disabled) continue;
+          if (this.selectedDomain && entity.entity_id.split('.')[0] !== this.selectedDomain) continue;
+          if (checkbox.checked) {
+            this.selectedEntities.add(eid);
+          } else {
+            this.selectedEntities.delete(eid);
+          }
+        }
+        // Sync visible entity checkboxes in the expanded group
+        const groupEl = this.content.querySelector(`.smart-group[data-smart-group="${CSS.escape(groupKey)}"]`);
+        if (groupEl) {
+          groupEl.querySelectorAll('.entity-checkbox').forEach(cb => {
+            cb.checked = checkbox.checked;
+          });
+        }
+        this.updateSelectedCount();
+        this._updateDeviceSelectionIndicators();
+      });
+    });
+
+    // Smart group Enable All / Disable All
+    this.content.querySelectorAll('.smart-group-enable-all, .smart-group-disable-all').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const isEnable = btn.classList.contains('smart-group-enable-all');
+        const groupKey = btn.dataset.groupKey;
+        const groups = this._getSmartGroups();
+        const entities = groups[groupKey] || [];
+        const entityIds = entities.map(en => en.entity_id);
+        if (!entityIds.length) return;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+          const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+          const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
+          const n = res?.succeeded?.length ?? entityIds.length;
+          this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
+          this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+          await this.loadData();
+        } catch (err) {
+          this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ${err.message || err}`, 'error');
+          btn.disabled = false;
+          btn.textContent = isEnable ? 'Enable All' : 'Disable All';
+        }
+      });
+    });
+
+    // Smart group Assign Area buttons
+    this.content.querySelectorAll('.smart-group-assign-area-btn').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         const groupKey = btn.dataset.groupKey;
@@ -7663,7 +7755,29 @@ class EntityManagerPanel extends HTMLElement {
         const entities = groups[groupKey] || [];
         const deviceIds = [...new Set(entities.map(en => en.device_id).filter(Boolean))];
         const noDeviceEntities = entities.filter(en => !en.device_id);
-        this._showAreaPickerDialog(`Assign ${entities.length} entities to area`, async areaId => {
+        this._showAreaPickerDialog(`Assign ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'} to area`, async areaId => {
+          for (const did of deviceIds) {
+            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
+          }
+          for (const ent of noDeviceEntities) {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+          }
+          this.floorsData = null;
+          await this.loadData();
+        });
+      });
+    });
+
+    // Smart group Assign Floor buttons
+    this.content.querySelectorAll('.smart-group-assign-floor-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const groupKey = btn.dataset.groupKey;
+        const groups = this._getSmartGroups();
+        const entities = groups[groupKey] || [];
+        const deviceIds = [...new Set(entities.map(en => en.device_id).filter(Boolean))];
+        const noDeviceEntities = entities.filter(en => !en.device_id);
+        this._showFloorPickerDialog(`Assign ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'} to floor`, async areaId => {
           for (const did of deviceIds) {
             await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
           }
@@ -7680,6 +7794,8 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.integration-header').forEach(header => {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.integration-select-wrapper')) return;
+        if (e.target.closest('.integration-assign-area-btn')) return;
+        if (e.target.closest('.integration-assign-floor-btn')) return;
         const integration = header.dataset.integration;
         if (this.expandedIntegrations.has(integration)) {
           this.expandedIntegrations.delete(integration);
@@ -7751,6 +7867,7 @@ class EntityManagerPanel extends HTMLElement {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.device-bulk-actions')) return;
         if (e.target.closest('.device-assign-area-btn')) return;
+        if (e.target.closest('.device-assign-floor-btn')) return;
         if (e.target.closest('.device-select-label')) return;
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
@@ -7769,6 +7886,21 @@ class EntityManagerPanel extends HTMLElement {
         const deviceId = btn.dataset.deviceId;
         const oldAreaId = this.deviceInfo[deviceId]?.area_id || null;
         this._showAreaPickerDialog('Assign device to area', async areaId => {
+          await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
+          this._pushUndoAction({ type: 'assign_device_area', deviceId, oldAreaId, newAreaId: areaId });
+          this.floorsData = null;
+          await this.loadData();
+        });
+      });
+    });
+
+    // Device assign-floor buttons
+    this.content.querySelectorAll('.device-assign-floor-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const deviceId = btn.dataset.deviceId;
+        const oldAreaId = this.deviceInfo[deviceId]?.area_id || null;
+        this._showFloorPickerDialog('Assign device to floor', async areaId => {
           await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
           this._pushUndoAction({ type: 'assign_device_area', deviceId, oldAreaId, newAreaId: areaId });
           this.floorsData = null;
@@ -7864,6 +7996,8 @@ class EntityManagerPanel extends HTMLElement {
         }
         this.updateSelectedCount();
         this._updateIntegrationCheckboxState(checkbox.dataset.integration);
+        const sg = checkbox.closest('.smart-group');
+        if (sg) this._updateSmartGroupCheckboxState(sg.dataset.smartGroup);
         this._updateDeviceSelectionIndicators();
       });
     });
@@ -7962,6 +8096,56 @@ class EntityManagerPanel extends HTMLElement {
           `Are you sure you want to disable all entities in the ${integration} integration? This may affect automations and dashboards.`,
           () => this.disableIntegration(integration)
         );
+      });
+    });
+
+    // Integration assign-area buttons
+    this.content.querySelectorAll('.integration-assign-area-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const integrationId = btn.dataset.integration;
+        const intData = (this.data || []).find(i => i.integration === integrationId);
+        if (!intData) return;
+        const deviceIds = Object.keys(intData.devices);
+        const noDeviceEntities = Object.values(intData.devices)
+          .flatMap(d => d.entities)
+          .filter(en => !en.device_id);
+        this._showAreaPickerDialog(`Assign all ${integrationId} devices to area`, async areaId => {
+          for (const did of deviceIds) {
+            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
+          }
+          for (const ent of noDeviceEntities) {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+          }
+          this.floorsData = null;
+          this._showToast(`Area assigned to all ${integrationId} devices`, 'success');
+          await this.loadData();
+        });
+      });
+    });
+
+    // Integration assign-floor buttons
+    this.content.querySelectorAll('.integration-assign-floor-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const integrationId = btn.dataset.integration;
+        const intData = (this.data || []).find(i => i.integration === integrationId);
+        if (!intData) return;
+        const deviceIds = Object.keys(intData.devices);
+        const noDeviceEntities = Object.values(intData.devices)
+          .flatMap(d => d.entities)
+          .filter(en => !en.device_id);
+        this._showFloorPickerDialog(`Assign all ${integrationId} devices to floor`, async areaId => {
+          for (const did of deviceIds) {
+            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
+          }
+          for (const ent of noDeviceEntities) {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+          }
+          this.floorsData = null;
+          this._showToast(`Floor assigned to all ${integrationId} devices`, 'success');
+          await this.loadData();
+        });
       });
     });
 

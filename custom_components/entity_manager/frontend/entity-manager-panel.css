@@ -5056,8 +5056,36 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-style: italic;
 }
 
+/* Smart group header controls */
+.smart-group-select-wrap {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.smart-group-select-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.smart-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+.smart-group-actions .btn {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.integration-actions .em-assign-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
 /* Layout-specific placement */
-.smart-group-assign-all-btn { margin-left: auto; margin-right: 8px; }
 .device-assign-area-btn {
   margin-left: 8px;
   padding: 10px 20px;
@@ -5084,6 +5112,24 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   background: var(--em-primary) !important;
   color: white !important;
   border-color: var(--em-primary) !important;
+}
+.device-assign-floor-btn {
+  margin-left: 4px;
+  padding: 10px 16px;
+  font-size: 18px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: var(--em-bg-primary);
+  color: var(--em-primary);
+  border-color: var(--em-primary);
+  box-shadow: var(--em-shadow);
+  font-style: normal;
+  opacity: 1;
+}
+.device-assign-floor-btn:hover {
+  background: var(--em-primary) !important;
+  color: white !important;
+  box-shadow: 0 6px 16px rgba(33, 150, 243, 0.3);
 }
 .em-sug-action.em-assign-btn { margin-top: 8px; display: inline-block; }
 
@@ -5758,6 +5804,31 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .device-enable-all,
   .device-disable-all,
   .device-assign-area-btn {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+}
+
+/* ===== MOBILE OVERRIDES — new group controls ===== */
+@media (max-width: 768px) {
+  .integration-actions {
+    flex-wrap: wrap;
+  }
+  .smart-group-actions {
+    flex-wrap: wrap;
+  }
+  .smart-group-actions .btn {
+    font-size: 11px;
+    padding: 3px 7px;
+  }
+  .device-assign-floor-btn {
+    font-size: 13px;
+    padding: 7px 12px;
+  }
+}
+@media (max-width: 480px) {
+  .smart-group-actions .btn,
+  .device-assign-floor-btn {
     font-size: 11px;
     padding: 6px 10px;
   }
