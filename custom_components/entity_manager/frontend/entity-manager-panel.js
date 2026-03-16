@@ -5667,30 +5667,31 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   async loadDeviceInfo() {
+    // Device registry is critical — must succeed for device names to show correctly.
     try {
-      const [deviceResult, floorsResult] = await Promise.all([
-        this._hass.callWS({ type: 'config/device_registry/list' }),
-        this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' }),
-      ]);
-
+      const deviceResult = await this._hass.callWS({ type: 'config/device_registry/list' });
       this.deviceInfo = deviceResult.reduce((acc, device) => {
         acc[device.id] = device;
         return acc;
       }, {});
+    } catch (error) {
+      console.error('Entity Manager - Error loading device info:', error);
+    }
 
-      // Cache floors data and build area lookup: area_id → { areaName, floorName }
+    // Floor/area data is supplementary — failure should not block device name display.
+    try {
+      const floorsResult = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
       this.floorsData = floorsResult;
       const floorNameMap = new Map((floorsResult.floors || []).map(f => [f.floor_id, f.name]));
       this.areaLookup = new Map((floorsResult.areas || []).map(a => [
         a.area_id,
         { areaName: a.name, floorName: a.floor_id ? (floorNameMap.get(a.floor_id) || '') : '' }
       ]));
-
-      this.loadCounts();
     } catch (error) {
-      console.error('Entity Manager - Error loading device info:', error);
-      this.loadCounts();
+      console.error('Entity Manager - Error loading floor/area data:', error);
     }
+
+    this.loadCounts();
   }
 
   async loadCounts() {
