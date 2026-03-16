@@ -1825,13 +1825,12 @@ class EntityManagerPanel extends HTMLElement {
 
         <!-- Banner with action buttons -->
         <div class="em-bulk-rename-banner">
-          <span class="brv-title">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:middle;margin-right:6px">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>Bulk Rename Entities
-          </span>
-          <div class="brv-banner-actions">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Bulk Rename Entities
+          <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
             <button id="brp-deselect-all-top" class="btn" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Deselect all</button>
             <button id="brq-rename-btn-top" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.9);border:1.5px solid rgba(255,255,255,0.9);color:var(--em-primary);font-weight:700;border-radius:6px;cursor:pointer;" disabled>Rename 0</button>
             <button id="brv-exit" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">✕ Exit</button>
@@ -1864,35 +1863,40 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
 
-        <!-- RENAME QUEUE -->
-        <div class="bulk-rename-bottom-box">
-          <div class="brv-queue-header">
-            <span style="font-size:12px;font-weight:700;color:var(--em-text-primary)">Rename queue</span>
-            <span id="brq-count" style="font-size:11px;color:var(--em-primary);font-weight:600;margin-left:auto;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">0 queued</span>
-          </div>
-          <div class="bulk-rename-queue-inner" id="brq-rows">
-            ${queueEmptyHtml}
-          </div>
-        </div>
+        <!-- SPLIT: left = entity picker, right = rename queue -->
+        <div class="brv-split">
 
-        <!-- ENTITY PICKER -->
-        <div class="bulk-rename-top-box">
-          <div class="bulk-rename-top-bar">
-            <div style="position:relative;flex:1;min-width:180px;">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                   style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--em-text-secondary);pointer-events:none">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input id="brp-search" type="text" placeholder="Search by entity ID or name…"
-                     style="width:100%;box-sizing:border-box;padding:6px 8px 6px 28px;border:1.5px solid var(--em-border);border-radius:6px;background:var(--em-bg-secondary);color:var(--em-text-primary);font-size:12px;">
+          <!-- LEFT: search bar + entity list -->
+          <div class="bulk-rename-top-box">
+            <div class="bulk-rename-top-bar">
+              <div style="position:relative;flex:1;min-width:180px;">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                     style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--em-text-secondary);pointer-events:none">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="brp-search" type="text" placeholder="Search by entity ID or name…"
+                       style="width:100%;box-sizing:border-box;padding:6px 8px 6px 28px;border:1.5px solid var(--em-border);border-radius:6px;background:var(--em-bg-secondary);color:var(--em-text-primary);font-size:12px;">
+              </div>
+              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
+              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+              <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
             </div>
-            <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
-            <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
-            <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
+            <div class="bulk-rename-picker-list" id="brp-list">
+              ${pickerRowsHtml}
+            </div>
           </div>
-          <div class="bulk-rename-picker-list" id="brp-list">
-            ${pickerRowsHtml}
+
+          <!-- RIGHT: rename queue -->
+          <div class="bulk-rename-bottom-box">
+            <div class="brv-queue-header">
+              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary)">Rename queue</span>
+              <span id="brq-count" style="font-size:11px;color:var(--em-primary);font-weight:600;margin-left:auto;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">0 queued</span>
+            </div>
+            <div class="bulk-rename-queue-inner" id="brq-rows">
+              ${queueEmptyHtml}
+            </div>
           </div>
+
         </div>
 
         <!-- Hidden anchor elements for bottom button wiring (no UI) -->
