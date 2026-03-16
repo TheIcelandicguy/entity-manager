@@ -239,6 +239,7 @@ class EntityManagerPanel extends HTMLElement {
     this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
     this.customGroups = JSON.parse(localStorage.getItem('em-custom-groups') || '[]'); // [{id, name, entityIds[]}]
     this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
+    this.areaLookup = new Map(); // area_id → { areaName, floorName }
     
     // Lazy loading state
     this.visibleEntityCounts = {}; // Track visible entities per integration
@@ -8248,17 +8249,10 @@ class EntityManagerPanel extends HTMLElement {
         const integrationId = btn.dataset.integration;
         const intData = (this.data || []).find(i => i.integration === integrationId);
         if (!intData) return;
-        const deviceIds = Object.keys(intData.devices);
-        const noDeviceEntities = Object.values(intData.devices)
-          .flatMap(d => d.entities)
-          .filter(en => !en.device_id);
+        // Collect all entities across all real devices + no_device orphans
+        const entities = Object.values(intData.devices).flatMap(d => d.entities);
         this._showAreaPickerDialog(`Assign all ${integrationId} devices to area`, async areaId => {
-          for (const did of deviceIds) {
-            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
-          }
-          for (const ent of noDeviceEntities) {
-            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
-          }
+          await this._assignAreaToEntities(entities, areaId);
           this.floorsData = null;
           this._showToast(`Area assigned to all ${integrationId} devices`, 'success');
           await this.loadData();
@@ -8273,17 +8267,9 @@ class EntityManagerPanel extends HTMLElement {
         const integrationId = btn.dataset.integration;
         const intData = (this.data || []).find(i => i.integration === integrationId);
         if (!intData) return;
-        const deviceIds = Object.keys(intData.devices);
-        const noDeviceEntities = Object.values(intData.devices)
-          .flatMap(d => d.entities)
-          .filter(en => !en.device_id);
+        const entities = Object.values(intData.devices).flatMap(d => d.entities);
         this._showFloorPickerDialog(`Assign all ${integrationId} devices to floor`, async areaId => {
-          for (const did of deviceIds) {
-            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
-          }
-          for (const ent of noDeviceEntities) {
-            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
-          }
+          await this._assignAreaToEntities(entities, areaId);
           this.floorsData = null;
           this._showToast(`Floor assigned to all ${integrationId} devices`, 'success');
           await this.loadData();
