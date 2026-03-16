@@ -3403,6 +3403,19 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-size: 14px;
 }
 
+.brv-title {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.brv-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* Actions row at bottom */
 .em-bulk-rename-actions {
   display: flex;
@@ -5688,5 +5701,33 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .device-assign-area-btn {
     font-size: 11px;
     padding: 6px 10px;
+  }
+}
+
+/* ===== BULK RENAME MOBILE ===== */
+@media (max-width: 768px) {
+  /* Stack split vertically: picker on top, queue below */
+  .brv-split {
+    flex-direction: column;
+  }
+  .bulk-rename-bottom-box {
+    min-width: 0;
+    min-height: 220px;
+    max-height: 340px;
+  }
+  /* Banner: title on first line, buttons on second */
+  .em-bulk-rename-banner {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .brv-title {
+    flex: 1 1 100%;
+  }
+  .brv-banner-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
   }
 }
