@@ -5817,7 +5817,15 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   getDeviceName(deviceId) {
-    return (this.deviceInfo[deviceId]?.name_by_user || this.deviceInfo[deviceId]?.name) || deviceId;
+    const dev = this.deviceInfo?.[deviceId];
+    if (!dev) return deviceId;
+    const name = dev.name_by_user || dev.name;
+    if (name) return name;
+    // Fallback: model or manufacturer to avoid showing raw UUID
+    if (dev.model && dev.manufacturer) return `${dev.manufacturer} ${dev.model}`;
+    if (dev.model) return dev.model;
+    if (dev.manufacturer) return dev.manufacturer;
+    return 'Unknown Device';
   }
 
   getDeviceType(deviceId) {
@@ -5839,7 +5847,7 @@ class EntityManagerPanel extends HTMLElement {
       mobile:   { label: 'Mobile',   color: '#9c27b0' },
       system:   { label: 'System',   color: 'var(--em-warning)' },
       cloud:    { label: 'Cloud',    color: '#00bcd4' },
-      unknown:  { label: '?',        color: 'var(--em-text-secondary)' },
+      unknown:  { label: 'Unknown',   color: 'var(--em-text-secondary)' },
     };
   }
 
