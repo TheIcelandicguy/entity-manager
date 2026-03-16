@@ -3424,15 +3424,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 4px 0;
 }
 
-/* Two-column split: entity picker | rename queue */
-.brv-split {
-  display: flex;
-  gap: 10px;
-  flex: 1;
-  min-height: 0;
-}
-
-/* Left column: search bar + entity list */
+/* Entity picker (full-width, below rename queue) */
 .bulk-rename-top-box {
   border: 1px solid var(--em-border);
   border-radius: 10px;
@@ -3541,15 +3533,14 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   cursor: pointer;
 }
 
-/* Right column: rename queue */
+/* Rename queue (full-width, below Find & Replace) */
 .bulk-rename-bottom-box {
   border: 1px solid var(--em-border);
   border-radius: 10px;
   overflow: hidden;
-  flex: 1;
   display: flex;
   flex-direction: column;
-  min-width: 280px;
+  max-height: 320px;
   min-height: 0;
 }
 
@@ -5706,15 +5697,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* ===== BULK RENAME MOBILE ===== */
 @media (max-width: 768px) {
-  /* Stack split vertically: picker on top, queue below */
-  .brv-split {
-    flex-direction: column;
-  }
-  .bulk-rename-bottom-box {
-    min-width: 0;
-    min-height: 220px;
-    max-height: 340px;
-  }
   /* Banner: title on first line, buttons on second */
   .em-bulk-rename-banner {
     flex-wrap: wrap;

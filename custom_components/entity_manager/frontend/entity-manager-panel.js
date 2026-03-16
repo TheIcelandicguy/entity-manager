@@ -1864,40 +1864,35 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
 
-        <!-- SPLIT: left = entity picker, right = rename queue -->
-        <div class="brv-split">
-
-          <!-- LEFT: search bar + entity list -->
-          <div class="bulk-rename-top-box">
-            <div class="bulk-rename-top-bar">
-              <div style="position:relative;flex:1;min-width:180px;">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-                     style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--em-text-secondary);pointer-events:none">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input id="brp-search" type="text" placeholder="Search by entity ID or name…"
-                       style="width:100%;box-sizing:border-box;padding:6px 8px 6px 28px;border:1.5px solid var(--em-border);border-radius:6px;background:var(--em-bg-secondary);color:var(--em-text-primary);font-size:12px;">
-              </div>
-              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
-              <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
-              <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
-            </div>
-            <div class="bulk-rename-picker-list" id="brp-list">
-              ${pickerRowsHtml}
-            </div>
+        <!-- RENAME QUEUE -->
+        <div class="bulk-rename-bottom-box">
+          <div class="brv-queue-header">
+            <span style="font-size:12px;font-weight:700;color:var(--em-text-primary)">Rename queue</span>
+            <span id="brq-count" style="font-size:11px;color:var(--em-primary);font-weight:600;margin-left:auto;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">0 queued</span>
           </div>
-
-          <!-- RIGHT: rename queue -->
-          <div class="bulk-rename-bottom-box">
-            <div class="brv-queue-header">
-              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary)">Rename queue</span>
-              <span id="brq-count" style="font-size:11px;color:var(--em-primary);font-weight:600;margin-left:auto;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">0 queued</span>
-            </div>
-            <div class="bulk-rename-queue-inner" id="brq-rows">
-              ${queueEmptyHtml}
-            </div>
+          <div class="bulk-rename-queue-inner" id="brq-rows">
+            ${queueEmptyHtml}
           </div>
+        </div>
 
+        <!-- ENTITY PICKER -->
+        <div class="bulk-rename-top-box">
+          <div class="bulk-rename-top-bar">
+            <div style="position:relative;flex:1;min-width:180px;">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                   style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--em-text-secondary);pointer-events:none">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input id="brp-search" type="text" placeholder="Search by entity ID or name…"
+                     style="width:100%;box-sizing:border-box;padding:6px 8px 6px 28px;border:1.5px solid var(--em-border);border-radius:6px;background:var(--em-bg-secondary);color:var(--em-text-primary);font-size:12px;">
+            </div>
+            <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
+            <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+            <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
+          </div>
+          <div class="bulk-rename-picker-list" id="brp-list">
+            ${pickerRowsHtml}
+          </div>
         </div>
 
         <!-- Hidden anchor elements for bottom button wiring (no UI) -->
