@@ -9157,10 +9157,16 @@ class EntityManagerPanel extends HTMLElement {
             // Truncate long numeric states so the name isn't squashed
             const stateVal = rawState && rawState.length > 14 ? rawState.slice(0, 12) + '…' : rawState;
             const infoLine = meta?.integration || eid.split('.')[0];
-            // Use bar chart for known numeric sensor types; fallback to text rows
+            // Use bar chart for known numeric sensor types; fallback to text rows (capped at 15)
             const chartColor = CHART_UNIT_COLORS[unit] || null;
             const chartResult = chartColor ? renderSensorChart(sorted, unit, chartColor) : null;
-            const contentHtml = chartResult ? chartResult.contentHtml : sorted.map(e => renderEventRow(e, today)).join('');
+            const ROW_CAP = 15;
+            const overflow = !chartResult && sorted.length > ROW_CAP ? sorted.length - ROW_CAP : 0;
+            const visibleRows = !chartResult ? sorted.slice(0, ROW_CAP) : sorted;
+            const moreNote = overflow > 0
+              ? `<div style="font-size:11px;text-align:center;padding:4px 0;opacity:0.55">… and ${overflow} more change${overflow !== 1 ? 's' : ''}</div>`
+              : '';
+            const contentHtml = chartResult ? chartResult.contentHtml : visibleRows.map(e => renderEventRow(e, today)).join('') + moreNote;
             entitiesHtml += this._renderMiniEntityCard({
               entity_id: eid,
               name: friendlyName,
@@ -9202,15 +9208,10 @@ class EntityManagerPanel extends HTMLElement {
 
     const renderFilterPanel = () => {
       const panel = overlay.querySelector('#act-filter-panel');
-      if (!allEvents.length) { panel.innerHTML = ''; return; }
 
-      // Extract unique rooms from allEvents
-      const roomSet = new Set();
-      for (const evt of allEvents) {
-        if (!evt.entity_id) continue;
-        const info = entityMap[evt.entity_id] || { area_name: 'No Room' };
-        roomSet.add(info.area_name);
-      }
+      // Rooms come from entityMap (available immediately — no history fetch needed)
+      const roomSet = new Set(Object.values(entityMap).map(info => info.area_name));
+      if (!roomSet.size) { panel.innerHTML = ''; return; }
       const rooms = [...roomSet].sort((a,b) =>
         a === 'No Room' ? 1 : b === 'No Room' ? -1 : a.localeCompare(b));
 
@@ -9237,7 +9238,7 @@ class EntityManagerPanel extends HTMLElement {
         </div>`;
 
       panel.querySelectorAll('.act-room-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
+        chip.addEventListener('click', async () => {
           const val = chip.dataset.room;
           if (val === '__all__')  { checkedRooms = null; }
           else if (val === '__none__') { checkedRooms = new Set(); }
@@ -9248,7 +9249,7 @@ class EntityManagerPanel extends HTMLElement {
           }
           saveWatch();
           renderFilterPanel();
-          renderBody();
+          await loadLog(currentHours);
         });
       });
     };
@@ -9256,26 +9257,47 @@ class EntityManagerPanel extends HTMLElement {
     const loadLog = async (hours) => {
       currentHours = hours;
       const body = overlay.querySelector('#act-log-body');
+
+      // If no rooms selected, show prompt without fetching
+      if (checkedRooms instanceof Set && checkedRooms.size === 0) {
+        body.style.cssText = 'max-height:65vh;overflow-y:auto;min-height:80px';
+        body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--em-text-secondary);font-size:13px">☝️ Select rooms above to view activity</div>`;
+        allEvents = [];
+        return;
+      }
+
       body.style.cssText = 'max-height:65vh;overflow-y:auto;min-height:80px;display:flex;align-items:center;justify-content:center';
       body.innerHTML = `<span style="color:var(--em-text-secondary);font-size:13px">Loading…</span>`;
+
+      // Scope entity IDs to the selected rooms (fetch only what we need)
+      const ENTITY_FETCH_CAP = 400;
+      let entityIdsToFetch;
+      if (checkedRooms === null) {
+        // "All" — fetch all known entities from our registry, capped
+        entityIdsToFetch = Object.keys(entityMap).slice(0, ENTITY_FETCH_CAP);
+      } else {
+        entityIdsToFetch = Object.entries(entityMap)
+          .filter(([, info]) => checkedRooms.has(info.area_name))
+          .map(([eid]) => eid)
+          .slice(0, ENTITY_FETCH_CAP);
+      }
+
+      if (!entityIdsToFetch.length) {
+        body.style.cssText = 'max-height:65vh;overflow-y:auto;min-height:80px';
+        body.innerHTML = `<div style="text-align:center;padding:32px;color:var(--em-text-secondary);font-size:13px">No entities found for selected rooms.</div>`;
+        allEvents = [];
+        return;
+      }
 
       const endTime   = new Date().toISOString();
       const startTime = new Date(Date.now() - hours * 3600000).toISOString();
       try {
-        const allEntityIds = Object.keys(this._hass?.states || {});
-        if (allEntityIds.length > 150) {
-          console.warn(`[EM] Skipping activity log history fetch: ${allEntityIds.length} entities exceeds limit of 150`);
-          body.style.cssText = '';
-          body.innerHTML = `<p style="padding:16px;color:var(--em-text-secondary);text-align:center">History unavailable — too many entities (${allEntityIds.length}). Use the search filter to narrow results.</p>`;
-          allEvents = [];
-          return;
-        }
         {
           const history = await this._hass.callWS({
             type: 'history/history_during_period',
             start_time: startTime,
             end_time: endTime,
-            entity_ids: allEntityIds,
+            entity_ids: entityIdsToFetch,
             significant_changes_only: true,
             minimal_response: true,
             no_attributes: true,
@@ -9436,7 +9458,6 @@ class EntityManagerPanel extends HTMLElement {
         return;
       }
 
-      renderFilterPanel();
       renderBody();
     };
 
@@ -9460,6 +9481,9 @@ class EntityManagerPanel extends HTMLElement {
       await loadLog(hours);
     });
 
+    // Render room chips immediately (from entityMap, no fetch needed)
+    // then load history only for the already-selected rooms
+    renderFilterPanel();
     await loadLog(1); // default: 1 hour
   }
 
