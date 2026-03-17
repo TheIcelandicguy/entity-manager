@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '2.14.0';
+const EM_VERSION = '2.15.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -234,10 +234,14 @@ class EntityManagerPanel extends HTMLElement {
     this.entityAliases = this._loadEntityAliases();
     
     // Groups state
-    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name
+    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name, custom
     this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
     this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
+    this.customGroups = JSON.parse(localStorage.getItem('em-custom-groups') || '[]'); // [{id, name, entityIds[]}]
     this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
+    this._renderedSmartGroups = null; // Cached filtered groups from last smart-group render
+    this.entityAreaMap = null;        // entity_id → area_id for orphan entities (no device)
+    this.areaLookup = new Map(); // area_id → { areaName, floorName }
     
     // Lazy loading state
     this.visibleEntityCounts = {}; // Track visible entities per integration
@@ -1645,6 +1649,94 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  _updateSmartGroupCheckboxState(groupKey) {
+    if (!groupKey || !this.content) return;
+    const cb = this.content.querySelector(`.smart-group-select-checkbox[data-group-key="${CSS.escape(groupKey)}"]`);
+    if (!cb) return;
+    const entityCbs = Array.from(
+      this.content.querySelectorAll(`.smart-group[data-smart-group="${CSS.escape(groupKey)}"] .entity-checkbox`)
+    );
+    if (entityCbs.length === 0) return;
+    const n = entityCbs.filter(c => c.checked).length;
+    if (n === 0) {
+      cb.checked = false;
+      cb.indeterminate = false;
+    } else if (n === entityCbs.length) {
+      cb.checked = true;
+      cb.indeterminate = false;
+    } else {
+      cb.checked = false;
+      cb.indeterminate = true;
+    }
+  }
+
+  /**
+   * Bulk-assign an area to a list of entity objects.
+   * Entities with a device → update device_registry (deduped, affects all device entities).
+   * Orphan entities (no device) → update entity_registry directly.
+   */
+  async _assignAreaToEntities(entities, areaId) {
+    const seenDevices = new Set();
+    for (const ent of entities) {
+      // Prefer device-id from entity object; fall back to entityDeviceMap for filtered views
+      const deviceId = ent.device_id || this.entityDeviceMap?.get(ent.entity_id) || null;
+      if (deviceId) {
+        if (!seenDevices.has(deviceId)) {
+          seenDevices.add(deviceId);
+          const oldAreaId = this.deviceInfo?.[deviceId]?.area_id || null;
+          try {
+            await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
+          } catch (e) {
+            throw e;
+          }
+          this._pushUndoAction({ type: 'assign_device_area', deviceId, oldAreaId, newAreaId: areaId });
+        }
+        const oldEntityAreaId = this.entityAreaMap?.get(ent.entity_id) || null;
+        try {
+          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+        } catch (e) {
+          throw e;
+        }
+        if (oldEntityAreaId !== areaId) {
+          this._pushUndoAction({ type: 'assign_entity_area', entityId: ent.entity_id, oldAreaId: oldEntityAreaId, newAreaId: areaId });
+        }
+      } else {
+        const oldAreaId = this.entityAreaMap?.get(ent.entity_id) || null;
+        try {
+          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
+        } catch (e) {
+          throw e;
+        }
+        this._pushUndoAction({ type: 'assign_entity_area', entityId: ent.entity_id, oldAreaId, newAreaId: areaId });
+      }
+    }
+  }
+
+  /**
+   * Resolve a set/array of entity ID strings to entity objects from this.data.
+   */
+  _resolveEntitiesById(entityIds) {
+    const ids = new Set(entityIds);
+    const result = [];
+    const found = new Set();
+    for (const integration of (this.data || [])) {
+      for (const dev of Object.values(integration.devices || {})) {
+        for (const ent of (dev.entities || [])) {
+          if (ids.has(ent.entity_id)) { result.push(ent); found.add(ent.entity_id); }
+        }
+      }
+    }
+    // Fallback: for entities not in this.data (filtered view), create minimal objects
+    // using the entity registry map loaded in loadDeviceInfo().
+    for (const eid of ids) {
+      if (!found.has(eid)) {
+        const device_id = this.entityDeviceMap?.get(eid) || null;
+        result.push({ entity_id: eid, device_id, deviceName: device_id ? (this.deviceInfo?.[device_id]?.name_by_user || this.deviceInfo?.[device_id]?.name || null) : null });
+      }
+    }
+    return result;
+  }
+
   _closeAllDropdowns() {
     this.querySelectorAll('.theme-dropdown-menu.active, .domain-menu.open').forEach(el => {
       el.classList.remove('active', 'open');
@@ -2199,7 +2291,6 @@ class EntityManagerPanel extends HTMLElement {
       </div>
 <div class="em-context-item" data-action="labels"><span class="icon">🔖</span> Manage Labels</div>
       <div class="em-context-item" data-action="assign-area"><span class="icon">📍</span> Assign to area</div>
-      <div class="em-context-item" data-action="assign-floor"><span class="icon">🏢</span> Assign to floor</div>
       <div class="em-context-item" data-action="alias"><span class="icon">📝</span> Set Alias</div>
       <div class="em-context-item" data-action="compare"><span class="icon">⇔</span> Add to Comparison</div>
       <div class="em-context-divider"></div>
@@ -2215,32 +2306,18 @@ class EntityManagerPanel extends HTMLElement {
       case 'disable':       await this.disableEntity(entityId); break;
       case 'favorite':      this._toggleFavorite(entityId); break;
       case 'labels':        this._showLabelEditor(entityId); break;
-      case 'assign-area':
-        this._showAreaPickerDialog('Assign entity to area', async areaId => {
-          let oldAreaId = null;
-          try {
-            const reg = await this._hass.callWS({ type: 'config/entity_registry/get', entity_id: entityId });
-            oldAreaId = reg.area_id || null;
-          } catch (_) {}
-          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: areaId });
-          this._pushUndoAction({ type: 'assign_entity_area', entityId, oldAreaId, newAreaId: areaId });
-          this.floorsData = null;
-          await this.loadData();
-        });
+      case 'assign-area': {
+        // If the right-clicked entity is part of a multi-selection, assign all selected
+        const ids = (this.selectedEntities.size > 1 && this.selectedEntities.has(entityId))
+          ? [...this.selectedEntities]
+          : [entityId];
+        const entities = this._resolveEntitiesById(ids);
+        const title = ids.length > 1
+          ? `Assign area to ${ids.length} selected entit${ids.length !== 1 ? 'ies' : 'y'}`
+          : 'Assign entity to area';
+        await this._showAreaFloorDialog(title, entities);
         break;
-      case 'assign-floor':
-        this._showFloorPickerDialog('Assign entity to floor', async areaId => {
-          let oldAreaId = null;
-          try {
-            const reg = await this._hass.callWS({ type: 'config/entity_registry/get', entity_id: entityId });
-            oldAreaId = reg.area_id || null;
-          } catch (_) {}
-          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: areaId });
-          this._pushUndoAction({ type: 'assign_entity_area', entityId, oldAreaId, newAreaId: areaId });
-          this.floorsData = null;
-          await this.loadData();
-        });
-        break;
+      }
       case 'alias':         this._showAliasEditor(entityId); break;
       case 'compare':       this._addToComparison(entityId); break;
       case 'copy-id':
@@ -4593,6 +4670,12 @@ class EntityManagerPanel extends HTMLElement {
               groupKey = this.getDeviceName(deviceId) || 'Unknown Device';
               break;
             }
+            case 'custom': {
+              // Find the first custom group that contains this entity
+              const cg = (this.customGroups || []).find(g => g.entityIds.includes(entity.entity_id));
+              groupKey = cg ? cg.name : '📦 Ungrouped';
+              break;
+            }
             default: // integration
               groupKey = integration.integration;
           }
@@ -5085,11 +5168,7 @@ class EntityManagerPanel extends HTMLElement {
             </div>
             <div class="sidebar-item" data-action="assign-area-selected" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
               <span class="icon">📍</span>
-              <span class="label">Assign Area</span>
-            </div>
-            <div class="sidebar-item" data-action="assign-floor-selected" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
-              <span class="icon">🏢</span>
-              <span class="label">Assign Floor</span>
+              <span class="label">Area Assignments</span>
             </div>
             <div class="sidebar-item" data-action="view-selected" style="${this.selectedEntities.size === 0 ? 'opacity:0.4;pointer-events:none' : ''}">
               <span class="icon">👁</span>
@@ -5118,6 +5197,14 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">↪</span>
             <span class="label">Redo</span>
             <span class="count">${this.redoStack.length}</span>
+          </div>
+          <div class="sidebar-item" data-action="naming-improvements">
+            <span class="icon">✏️</span>
+            <span class="label">Naming Improvements</span>
+          </div>
+          <div class="sidebar-item" data-action="label-suggestions">
+            <span class="icon">🏷️</span>
+            <span class="label">Label Suggestions</span>
           </div>
           <div class="sidebar-item" data-action="refresh">
             <span class="icon">↺</span>
@@ -5157,7 +5244,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>
           <div class="sidebar-item ${this.smartGroupMode === 'room' ? 'active' : ''}" data-group-mode="room">
             <span class="icon">🏠</span>
-            <span class="label">By Room</span>
+            <span class="label">By Area</span>
           </div>
           <div class="sidebar-item ${this.smartGroupMode === 'type' ? 'active' : ''}" data-group-mode="type">
             <span class="icon">📂</span>
@@ -5170,6 +5257,26 @@ class EntityManagerPanel extends HTMLElement {
           <div class="sidebar-item ${this.smartGroupMode === 'device-name' ? 'active' : ''}" data-group-mode="device-name">
             <span class="icon">🔍</span>
             <span class="label">By Device Name</span>
+          </div>
+          ${(this.customGroups || []).map(cg => `
+            <div class="sidebar-item em-custom-group-sidebar-item ${this.smartGroupMode === 'custom' ? 'active' : ''}"
+                 data-group-mode="custom" data-cg-id="${this._escapeAttr(cg.id)}" style="padding-left:14px">
+              <span class="icon" style="font-size:13px">⊞</span>
+              <span class="label" style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                    title="${this._escapeAttr(cg.name)}">${this._escapeHtml(cg.name)}
+                <span style="opacity:0.5;font-size:10px;margin-left:3px">(${cg.entityIds.length})</span>
+              </span>
+              <button class="em-custom-group-edit-btn" data-cg-id="${this._escapeAttr(cg.id)}"
+                title="Edit group" style="background:none;border:none;cursor:pointer;color:var(--em-text-secondary);font-size:14px;padding:2px 4px;line-height:1">✎</button>
+              <button class="em-custom-group-delete-btn" data-cg-id="${this._escapeAttr(cg.id)}"
+                title="Delete group" style="background:none;border:none;cursor:pointer;color:var(--em-danger);font-size:14px;padding:2px 4px;line-height:1">✕</button>
+            </div>`).join('')}
+          <div style="padding:4px 8px 6px">
+            <button class="em-new-custom-group-btn" data-action="new-custom-group"
+              style="background:var(--em-primary);color:#fff;border:none;border-radius:6px;
+                     padding:5px 12px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px">
+              ＋ New Group
+            </button>
           </div>
             ${this.smartGroupMode === 'device-name' ? `
               <div style="padding:6px 8px 4px">
@@ -5565,7 +5672,7 @@ class EntityManagerPanel extends HTMLElement {
       // Only fetch when in initial '' state; null means already tried and failed (old HA)
       if (this._brandsToken === '') this._fetchBrandsToken();
 
-      this.loadDeviceInfo();
+      await this.loadDeviceInfo();
     } catch (error) {
       console.error('Entity Manager Error:', error);
       this.showErrorDialog(`Error loading entities: ${error.message}`);
@@ -5575,21 +5682,50 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   async loadDeviceInfo() {
+    // Device registry is critical — must succeed for device names to show correctly.
     try {
-      const result = await this._hass.callWS({
-        type: 'config/device_registry/list',
-      });
-      
-      this.deviceInfo = result.reduce((acc, device) => {
+      const deviceResult = await this._hass.callWS({ type: 'config/device_registry/list' });
+      this.deviceInfo = deviceResult.reduce((acc, device) => {
         acc[device.id] = device;
         return acc;
       }, {});
-      
-      this.loadCounts();
     } catch (error) {
       console.error('Entity Manager - Error loading device info:', error);
-      this.loadCounts();
     }
+
+    // Entity registry → entity_id→{device_id, area_id} map (supplementary).
+    try {
+      const entityList = await this._hass.callWS({ type: 'config/entity_registry/list' });
+      this.entityDeviceMap = new Map(
+        entityList.filter(e => e.device_id).map(e => [e.entity_id, e.device_id])
+      );
+      // entity-level area override — for ALL entities that have area_id set on the entity itself.
+      // In HA, entity-level area takes precedence over device-level area.
+      this.entityAreaMap = new Map(
+        entityList.filter(e => e.area_id).map(e => [e.entity_id, e.area_id])
+      );
+    } catch (error) {
+      console.error('Entity Manager - Error loading entity registry map:', error);
+    }
+
+    // Floor/area data — use native HA registries directly (more reliable than custom WS handler).
+    try {
+      const [areaList, floorList] = await Promise.all([
+        this._hass.callWS({ type: 'config/area_registry/list' }).catch(() => []),
+        this._hass.callWS({ type: 'config/floor_registry/list' }).catch(() => []),
+      ]);
+      const floorNameMap = new Map((floorList || []).map(f => [f.floor_id, f.name]));
+      this.areaLookup = new Map((areaList || []).map(a => [
+        a.area_id,
+        { areaName: a.name, floorName: a.floor_id ? (floorNameMap.get(a.floor_id) || '') : '' }
+      ]));
+      // Keep floorsData in sync for dialogs that use it
+      this.floorsData = { areas: areaList || [], floors: floorList || [] };
+    } catch (error) {
+      console.error('Entity Manager - Error loading floor/area data:', error);
+    }
+
+    this.loadCounts();
   }
 
   async loadCounts() {
@@ -5717,7 +5853,15 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   getDeviceName(deviceId) {
-    return (this.deviceInfo[deviceId]?.name_by_user || this.deviceInfo[deviceId]?.name) || deviceId;
+    const dev = this.deviceInfo?.[deviceId];
+    if (!dev) return deviceId;
+    const name = dev.name_by_user || dev.name;
+    if (name) return name;
+    // Fallback: model or manufacturer to avoid showing raw UUID
+    if (dev.model && dev.manufacturer) return `${dev.manufacturer} ${dev.model}`;
+    if (dev.model) return dev.model;
+    if (dev.manufacturer) return dev.manufacturer;
+    return 'Unknown Device';
   }
 
   getDeviceType(deviceId) {
@@ -5739,7 +5883,7 @@ class EntityManagerPanel extends HTMLElement {
       mobile:   { label: 'Mobile',   color: '#9c27b0' },
       system:   { label: 'System',   color: 'var(--em-warning)' },
       cloud:    { label: 'Cloud',    color: '#00bcd4' },
-      unknown:  { label: '?',        color: 'var(--em-text-secondary)' },
+      unknown:  { label: 'Unknown',   color: 'var(--em-text-secondary)' },
     };
   }
 
@@ -6388,6 +6532,30 @@ class EntityManagerPanel extends HTMLElement {
         this._deleteFilterPreset(parseInt(deleteBtn.dataset.delete));
         return;
       }
+      // Custom group — edit
+      const cgEditBtn = e.target.closest('.em-custom-group-edit-btn');
+      if (cgEditBtn) {
+        e.stopPropagation();
+        const cgId = cgEditBtn.dataset.cgId;
+        const grp = (this.customGroups || []).find(g => g.id === cgId);
+        if (grp) this._showGroupEditorDialog(grp);
+        return;
+      }
+      // Custom group — delete
+      const cgDelBtn = e.target.closest('.em-custom-group-delete-btn');
+      if (cgDelBtn) {
+        e.stopPropagation();
+        const cgId = cgDelBtn.dataset.cgId;
+        const grp = (this.customGroups || []).find(g => g.id === cgId);
+        if (!grp) return;
+        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+          this.customGroups = (this.customGroups || []).filter(g => g.id !== cgId);
+          localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+          this._reRenderSidebar();
+          this.updateView();
+        });
+        return;
+      }
       // Label edit button
       const editLabelBtn = e.target.closest('[data-edit-label]');
       if (editLabelBtn) {
@@ -6431,7 +6599,9 @@ class EntityManagerPanel extends HTMLElement {
         return;
       }
       const item = e.target.closest('.sidebar-item');
-      if (item) this._handleSidebarItemAction(item);
+      if (item) { this._handleSidebarItemAction(item); return; }
+      const btn = e.target.closest('[data-action]');
+      if (btn) this._handleSidebarItemAction(btn);
     });
 
     // Device name filter: live input filtering
@@ -6470,7 +6640,7 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
-  _handleSidebarItemAction(item) {
+  async _handleSidebarItemAction(item) {
     const action = item.dataset.action;
     const integration = item.dataset.integration;
     const filter = item.dataset.filter;
@@ -6504,26 +6674,19 @@ class EntityManagerPanel extends HTMLElement {
       this._importEntityConfig();
     } else if (action === 'assign-area-selected') {
       if (!this.selectedEntities.size) return;
-      const entityIds = [...this.selectedEntities];
-      this._showAreaPickerDialog(`Assign area to ${entityIds.length} selected entit${entityIds.length !== 1 ? 'ies' : 'y'}`, async areaId => {
-        await Promise.all(entityIds.map(eid =>
-          this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, area_id: areaId || null })
-        ));
-        this.floorsData = null;
-        this._showToast(`Area updated for ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
-        await this.loadData();
-      });
-    } else if (action === 'assign-floor-selected') {
-      if (!this.selectedEntities.size) return;
-      const entityIds = [...this.selectedEntities];
-      this._showFloorPickerDialog(`Assign floor to ${entityIds.length} selected entit${entityIds.length !== 1 ? 'ies' : 'y'}`, async areaId => {
-        await Promise.all(entityIds.map(eid =>
-          this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, area_id: areaId || null })
-        ));
-        this.floorsData = null;
-        this._showToast(`Floor updated for ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
-        await this.loadData();
-      });
+      const entities = this._resolveEntitiesById([...this.selectedEntities]);
+      try {
+        await this._showAreaFloorDialog(`Assign area to ${entities.length} selected entit${entities.length !== 1 ? 'ies' : 'y'}`, entities);
+      } catch (e) {
+        console.error('[EM] Area assignment failed:', e);
+        this._showToast('Failed to open area assignment: ' + (e.message || e), 'error');
+      }
+    } else if (action === 'naming-improvements') {
+      this._showSuggestionsDialog('naming');
+    } else if (action === 'label-suggestions') {
+      this._showSuggestionsDialog('labels');
+    } else if (action === 'new-custom-group') {
+      this._showGroupEditorDialog(null);
     } else if (action === 'save-preset') {
       this._saveCurrentFilterPreset();
     } else if (action === 'save-entity-preset') {
@@ -6996,6 +7159,7 @@ class EntityManagerPanel extends HTMLElement {
           }
         });
         
+        this._renderedSmartGroups = filteredGroups;
         contentEl.innerHTML = this._renderSmartGroups(filteredGroups);
         this.attachIntegrationListeners();
         if (this._playAnimations) {
@@ -7078,6 +7242,9 @@ class EntityManagerPanel extends HTMLElement {
       return `
         <div class="smart-group ${isExpanded ? 'expanded' : ''}" data-smart-group="${this._escapeAttr(groupKey)}">
           <div class="smart-group-header" data-smart-group-toggle="${this._escapeAttr(groupKey)}">
+            <label class="smart-group-select-wrap" title="Select all in this group">
+              <input type="checkbox" class="smart-group-select-checkbox" data-group-key="${this._escapeAttr(groupKey)}">
+            </label>
             <span class="smart-group-icon">${modeIcons[this.smartGroupMode] || '📁'}</span>
             <span class="smart-group-name">${this._escapeHtml(displayName)}</span>
             <span class="smart-group-count">${entities.length} entities</span>
@@ -7085,7 +7252,14 @@ class EntityManagerPanel extends HTMLElement {
               <span style="color:var(--em-success)">${enabledCount}</span> /
               <span style="color:var(--em-danger)">${disabledCount}</span>
             </span>
-            ${isUnassigned ? `<button class="em-assign-btn smart-group-assign-all-btn" data-group-key="${this._escapeAttr(groupKey)}" title="Assign all to an area">📍 Assign all</button>` : ''}
+            <div class="smart-group-actions">
+              <button class="btn btn-secondary smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
+              <button class="btn btn-secondary smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
+              <button class="btn btn-secondary smart-group-assign-area" data-group-key="${this._escapeAttr(groupKey)}" title="Assign area to all entities in this group" style="color:var(--em-primary);border-color:var(--em-primary)">📍 Assign Area</button>
+              ${this.smartGroupMode === 'custom' && groupKey !== '📦 Ungrouped' ? `
+                <button class="btn btn-secondary smart-group-delete-custom" data-group-key="${this._escapeAttr(groupKey)}" title="Delete this custom group" style="color:var(--em-danger);border-color:var(--em-danger)">🗑 Delete</button>
+              ` : ''}
+            </div>
             <span class="smart-group-expand"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
           </div>
           ${isExpanded ? `
@@ -7426,20 +7600,40 @@ class EntityManagerPanel extends HTMLElement {
     const isOn = state?.state === 'on' || state?.state === 'open' || state?.state === 'unlocked'
       || state?.state === 'playing' || state?.state === 'cleaning';
 
-    // Header band: device name, state chip, time chip
+    // Area / floor lookup — entity-level area takes precedence over device-level (HA behaviour)
+    const entityAreaId  = this.entityAreaMap?.get(entity.entity_id) || null;
+    const deviceAreaId  = entity.device_id ? (this.deviceInfo?.[entity.device_id]?.area_id || null) : null;
+    const effectiveAreaId = entityAreaId || deviceAreaId;
+    const areaInfo = effectiveAreaId ? (this.areaLookup?.get(effectiveAreaId) || null) : null;
+
+    // Header band: device name, area+floor chip, state chip, time chip
     const deviceChip = col('device') && entity.deviceName
       ? `<span class="entity-header-device">📱 ${this._escapeHtml(entity.deviceName)}</span>` : '';
+    const canAssignArea = !!entity.device_id || !!entityAreaId;
+    const areaChip = canAssignArea
+      ? `<span class="entity-header-area${areaInfo ? '' : ' em-area-unset'}"
+             title="${areaInfo ? this._escapeAttr(areaInfo.areaName) : 'No area assigned'}">📍 ${areaInfo ? this._escapeHtml(areaInfo.areaName) : '<span class="em-area-placeholder">No area</span>'}</span>`
+      : '';
+    const floorChip = canAssignArea
+      ? `<span class="entity-header-floor-chip${(areaInfo && areaInfo.floorName) ? '' : ' em-area-unset'}"
+             title="${(areaInfo && areaInfo.floorName) ? this._escapeAttr(areaInfo.floorName) : 'No floor assigned'}">🏢 ${(areaInfo && areaInfo.floorName) ? this._escapeHtml(areaInfo.floorName) : '<span class="em-area-placeholder">No floor</span>'}</span>`
+      : '';
+    const isIsoDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s);
+    const rawState = state?.state ?? '';
+    const stateDisplay = isIsoDate(rawState)
+      ? this._fmtAgo(rawState)
+      : rawState + (state?.attributes?.unit_of_measurement ? ' ' + state.attributes.unit_of_measurement : '');
     const stateChip = col('state') && state
-      ? `<span class="entity-header-state">⚡ ${this._escapeHtml(state.state)}${state.attributes?.unit_of_measurement ? ' ' + this._escapeHtml(state.attributes.unit_of_measurement) : ''}</span>` : '';
+      ? `<span class="entity-header-chip-label">State</span><span class="entity-header-state">⚡ ${this._escapeHtml(stateDisplay)}</span>` : '';
     const timeChip = col('lastChanged') && state?.last_changed
-      ? `<span class="entity-header-time">🕐 ${this._escapeHtml(this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime()))} ago</span>` : '';
-    const hasHeader = deviceChip || stateChip || timeChip;
+      ? `<span class="entity-header-chip-label">Last active</span><span class="entity-header-time">🕐 ${this._escapeHtml(this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime()))} ago</span>` : '';
+    const hasHeader = deviceChip || areaChip || floorChip || stateChip || timeChip;
 
     const hasBottom = col('checkbox') || col('favorite') || col('actions');
 
     return `
       <div class="entity-item${isToggleable && isOn ? ' entity-is-on' : ''}" data-entity-id="${eid}" data-disabled="${entity.is_disabled ? 'true' : 'false'}">
-        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${stateChip}${timeChip}</div>` : ''}
+        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${floorChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
           ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
@@ -7552,7 +7746,6 @@ class EntityManagerPanel extends HTMLElement {
             <button class="device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
             <button class="device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
           </div>
-          <button class="em-assign-btn device-assign-area-btn${areaName ? ' has-area' : ' no-area'}" data-device-id="${deviceIdEsc}" title="Assign device to area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>
         </div>
         ${isExpanded ? `<div class="device-name-group-body">${catCardsHtml}</div>` : ''}
       </div>
@@ -7582,7 +7775,6 @@ class EntityManagerPanel extends HTMLElement {
             <button class="device-enable-all" data-entity-ids="${entityIds}" title="Enable all">Enable All</button>
             <button class="device-disable-all" data-entity-ids="${entityIds}" title="Disable all">Disable All</button>
           </div>
-          <button class="em-assign-btn device-assign-area-btn${areaName ? ' has-area' : ' no-area'}" data-device-id="${this._escapeAttr(primaryDeviceId)}" title="Assign area">📍 ${areaName ? this._escapeHtml(areaName) : 'Assign area'}</button>
         </div>
         <div class="device-entity-list" style="${preExpanded ? '' : 'display:none'}">${entitiesHtml}</div>
       </div>`;
@@ -7613,7 +7805,6 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.em-cat-card-toggle').forEach(header => {
       header.addEventListener('click', e => {
         if (e.target.closest('.device-bulk-actions')) return;
-        if (e.target.closest('.device-assign-area-btn')) return;
         const body = header.nextElementSibling;
         const icon = header.querySelector('.device-icon');
         if (!body) return;
@@ -7642,7 +7833,8 @@ class EntityManagerPanel extends HTMLElement {
     // Smart group headers
     this.content.querySelectorAll('.smart-group-header').forEach(header => {
       header.addEventListener('click', (e) => {
-        if (e.target.closest('.smart-group-assign-all-btn')) return;
+        if (e.target.closest('.smart-group-select-wrap')) return;
+        if (e.target.closest('.smart-group-actions')) return;
         const groupKey = header.dataset.smartGroupToggle;
         const expandKey = `smart_${groupKey}`;
         if (this.expandedIntegrations.has(expandKey)) {
@@ -7654,24 +7846,87 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Smart group assign-all buttons (Unassigned / No Floor / No Area)
-    this.content.querySelectorAll('.smart-group-assign-all-btn').forEach(btn => {
+    // Smart group select-all checkboxes
+    this.content.querySelectorAll('.smart-group-select-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', e => {
+        e.stopPropagation();
+        const groupKey = checkbox.dataset.groupKey;
+        // Use the cached groups from the last render — same data the user sees.
+        // Fall back to _getSmartGroups() if cache is stale/missing.
+        const groups = this._renderedSmartGroups || this._getSmartGroups();
+        const entities = groups[groupKey] || [];
+        // _renderedSmartGroups entities are already filtered by viewState/domain/search —
+        // no secondary filter needed here. Directly add/remove from selection.
+        for (const entity of entities) {
+          if (checkbox.checked) {
+            this.selectedEntities.add(entity.entity_id);
+          } else {
+            this.selectedEntities.delete(entity.entity_id);
+          }
+        }
+        // Sync visible entity checkboxes in the expanded group
+        const groupEl = this.content.querySelector(`.smart-group[data-smart-group="${CSS.escape(groupKey)}"]`);
+        if (groupEl) {
+          groupEl.querySelectorAll('.entity-checkbox').forEach(cb => {
+            cb.checked = checkbox.checked;
+          });
+        }
+        this.updateSelectedCount();
+        this._updateDeviceSelectionIndicators();
+      });
+    });
+
+    // Smart group Enable All / Disable All
+    this.content.querySelectorAll('.smart-group-enable-all, .smart-group-disable-all').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const isEnable = btn.classList.contains('smart-group-enable-all');
+        const groupKey = btn.dataset.groupKey;
+        const groups = this._renderedSmartGroups || this._getSmartGroups();
+        const entities = groups[groupKey] || [];
+        const entityIds = entities.map(en => en.entity_id);
+        if (!entityIds.length) return;
+        btn.disabled = true;
+        btn.textContent = '…';
+        try {
+          const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+          const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
+          const n = res?.succeeded?.length ?? entityIds.length;
+          this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
+          this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+          await this.loadData();
+        } catch (err) {
+          this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ${err.message || err}`, 'error');
+          btn.disabled = false;
+          btn.textContent = isEnable ? 'Enable All' : 'Disable All';
+        }
+      });
+    });
+
+    // Smart group "Assign Area" buttons
+    this.content.querySelectorAll('.smart-group-assign-area').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         const groupKey = btn.dataset.groupKey;
-        const groups = this._getSmartGroups();
-        const entities = groups[groupKey] || [];
-        const deviceIds = [...new Set(entities.map(en => en.device_id).filter(Boolean))];
-        const noDeviceEntities = entities.filter(en => !en.device_id);
-        this._showAreaPickerDialog(`Assign ${entities.length} entities to area`, async areaId => {
-          for (const did of deviceIds) {
-            await this._hass.callWS({ type: 'config/device_registry/update', device_id: did, area_id: areaId });
-          }
-          for (const ent of noDeviceEntities) {
-            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
-          }
-          this.floorsData = null;
-          await this.loadData();
+        const groups = this._renderedSmartGroups || this._getSmartGroups();
+        const entities = this._resolveEntitiesById((groups[groupKey] || []).map(en => en.entity_id));
+        if (!entities.length) return;
+        await this._showAreaFloorDialog(`Assign area to ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'}`, entities);
+      });
+    });
+
+    // Custom group delete buttons on group headers
+    this.content.querySelectorAll('.smart-group-delete-custom').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const groupName = btn.dataset.groupKey;
+        const grp = (this.customGroups || []).find(g => g.name === groupName);
+        if (!grp) return;
+        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+          this.customGroups = (this.customGroups || []).filter(g => g.id !== grp.id);
+          localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+          this._reRenderSidebar();
+          this.updateView();
         });
       });
     });
@@ -7750,7 +8005,6 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.device-header:not(.em-cat-card-toggle)').forEach(header => {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.device-bulk-actions')) return;
-        if (e.target.closest('.device-assign-area-btn')) return;
         if (e.target.closest('.device-select-label')) return;
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
@@ -7759,21 +8013,6 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedDevices.add(deviceId);
         }
         this.updateView();
-      });
-    });
-
-    // Device assign-area buttons
-    this.content.querySelectorAll('.device-assign-area-btn').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        const deviceId = btn.dataset.deviceId;
-        const oldAreaId = this.deviceInfo[deviceId]?.area_id || null;
-        this._showAreaPickerDialog('Assign device to area', async areaId => {
-          await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
-          this._pushUndoAction({ type: 'assign_device_area', deviceId, oldAreaId, newAreaId: areaId });
-          this.floorsData = null;
-          await this.loadData();
-        });
       });
     });
 
@@ -7864,6 +8103,8 @@ class EntityManagerPanel extends HTMLElement {
         }
         this.updateSelectedCount();
         this._updateIntegrationCheckboxState(checkbox.dataset.integration);
+        const sg = checkbox.closest('.smart-group');
+        if (sg) this._updateSmartGroupCheckboxState(sg.dataset.smartGroup);
         this._updateDeviceSelectionIndicators();
       });
     });
@@ -8091,13 +8332,30 @@ class EntityManagerPanel extends HTMLElement {
     if (selGroup) selGroup.classList.toggle('has-selection', selectedCount > 0);
 
     // Dim/enable selection-dependent sidebar actions
-    ['enable-selected', 'disable-selected', 'assign-area-selected', 'assign-floor-selected', 'deselect-all', 'view-selected'].forEach(a => {
+    ['enable-selected', 'disable-selected', 'assign-area-selected', 'deselect-all', 'view-selected'].forEach(a => {
       const el = this.querySelector(`.em-sidebar [data-action="${a}"]`);
       if (el) {
         el.style.opacity = selectedCount === 0 ? '0.4' : '';
         el.style.pointerEvents = selectedCount === 0 ? 'none' : '';
       }
     });
+
+    // Auto-expand the Actions section when entities are selected so the selection
+    // group is visible (it lives inside the collapsible Actions section)
+    if (selectedCount > 0) {
+      const sg = this.querySelector('#em-selection-group');
+      if (sg) {
+        const section = sg.closest('.sidebar-section');
+        if (section && section.classList.contains('section-collapsed')) {
+          const id = section.querySelector('[data-section-id]')?.dataset.sectionId;
+          section.classList.remove('section-collapsed');
+          if (id) {
+            this.sidebarOpenSections.add(id);
+            localStorage.setItem('em-sidebar-sections', JSON.stringify([...this.sidebarOpenSections]));
+          }
+        }
+      }
+    }
 
     // Enable/disable bulk action buttons on entity cards
     const bulkActive = selectedCount >= 2;
@@ -9487,46 +9745,309 @@ class EntityManagerPanel extends HTMLElement {
     await loadLog(1); // default: 1 hour
   }
 
-  async _showAreaPickerDialog(title, onSelect) {
-    const buildContent = (floors, areas) => {
-      // Group areas by floor
-      const byFloor = {};
-      const noFloor = [];
-      for (const area of areas) {
-        if (area.floor_id) {
-          if (!byFloor[area.floor_id]) {
-            const f = floors.find(f => f.floor_id === area.floor_id);
-            byFloor[area.floor_id] = { name: f?.name || area.floor_id, areas: [] };
-          }
-          byFloor[area.floor_id].areas.push(area);
-        } else {
-          noFloor.push(area);
-        }
-      }
+  /**
+   * Combined area + floor assignment dialog.
+   * Left panel: scrollable area list (filtered by floor) + floor filter list.
+   * Right panel: entity/device info + live assignment preview.
+   * Clicking Apply calls _assignAreaToEntities(entities, selectedAreaId).
+   */
+  async _showAreaFloorDialog(title, entities) {
+    // Load directly from native HA registries — more reliable than the EM custom WS handler
+    let floors = [];
+    let areas  = [];
+    try {
+      floors = (await this._hass.callWS({ type: 'config/floor_registry/list' }) || [])
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) { console.warn('EM: floor_registry/list failed', e); }
+    try {
+      areas = (await this._hass.callWS({ type: 'config/area_registry/list' }) || [])
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) { console.warn('EM: area_registry/list failed', e); }
 
-      const areaRows = (areaList) => areaList.map(a => `
-        <div class="em-area-option" data-area-id="${this._escapeAttr(a.area_id)}">
-          <span class="em-area-dot">●</span>${this._escapeHtml(a.name)}
-        </div>`).join('');
+    const floorName = new Map(floors.map(f => [f.floor_id, f.name]));
 
-      const floorGroupsHtml = Object.values(byFloor).map(f =>
-        this._collGroup(`🏢 ${this._escapeHtml(f.name)}`, areaRows(f.areas))
-      ).join('');
-
-      const noFloorHtml = noFloor.length
-        ? this._collGroup('📂 No Floor', areaRows(noFloor))
-        : '';
-
-      return `
-        <div class="em-area-picker">
-          <div class="em-area-option em-area-clear" data-area-id="">
-            <span class="em-area-dot" style="opacity:0.4">○</span>— No Area —
-          </div>
-          ${floorGroupsHtml}${noFloorHtml}
-          ${!areas.length ? `<div style="padding:12px;color:var(--secondary-text-color);font-style:italic">No areas defined yet.</div>` : ''}
-        </div>`;
+    // Helper to refresh both lists after create operations
+    const refreshRegistries = async () => {
+      try {
+        floors = (await this._hass.callWS({ type: 'config/floor_registry/list' }) || [])
+          .sort((a, b) => a.name.localeCompare(b.name));
+      } catch (e) { /* keep current */ }
+      try {
+        areas = (await this._hass.callWS({ type: 'config/area_registry/list' }) || [])
+          .sort((a, b) => a.name.localeCompare(b.name));
+      } catch (e) { /* keep current */ }
+      floors.forEach(f => floorName.set(f.floor_id, f.name));
     };
 
+    // Dialog state
+    let selectedAreaId  = undefined; // undefined = nothing chosen, null = "No Area"
+    let selectedFloorId = null;      // null = no floor filter
+
+    // Build entity info HTML — all entities as 2-col grid cards
+    const buildInfoHtml = () => {
+      return entities.map(e => {
+        const friendlyName = this._hass?.states?.[e.entity_id]?.attributes?.friendly_name || e.original_name || null;
+        const name = this._escapeHtml(e.deviceName || friendlyName || e.entity_id);
+        const subName = (e.deviceName && friendlyName && friendlyName !== e.deviceName)
+          ? `<div style="font-size:10px;color:var(--em-text-secondary);margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(friendlyName)}</div>` : '';
+        const currentAreaId = e.device_id
+          ? (this.deviceInfo?.[e.device_id]?.area_id || null)
+          : (this.entityAreaMap?.get(e.entity_id) || null);
+        const info = currentAreaId ? (this.areaLookup?.get(currentAreaId) || null) : null;
+        const curArea  = info?.areaName  ? `<span style="color:var(--em-success)">📍 ${this._escapeHtml(info.areaName)}</span>`  : `<span style="opacity:0.45;font-style:italic">No area</span>`;
+        const curFloor = info?.floorName ? `<span style="color:var(--em-text-secondary)">🏢 ${this._escapeHtml(info.floorName)}</span>` : '';
+        return `<div class="em-afd-entity-card">
+          <div class="em-afd-entity-name">${name}</div>
+          ${subName}
+          <div style="font-size:10px;font-family:monospace;color:var(--em-text-secondary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(e.entity_id)}</div>
+          <div class="em-afd-meta">${curArea}${curFloor ? ` &nbsp;${curFloor}` : ''}</div>
+        </div>`;
+      }).join('');
+    };
+
+    // Build a friendly subject name from the entity/device being assigned
+    const _afdSubject = (() => {
+      if (entities.length === 1) {
+        const e = entities[0];
+        return e.deviceName
+          || this._hass?.states?.[e.entity_id]?.attributes?.friendly_name
+          || e.original_name
+          || e.entity_id;
+      }
+      const deviceIds = [...new Set(entities.map(e => e.device_id || this.entityDeviceMap?.get(e.entity_id)).filter(Boolean))];
+      if (deviceIds.length === 1) {
+        const dev = this.deviceInfo?.[deviceIds[0]];
+        return dev?.name_by_user || dev?.name || entities[0].deviceName || `${entities.length} entities`;
+      }
+      return `${entities.length} entities`;
+    })();
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: `Assigning ${_afdSubject} to area`,
+      extraClass: 'em-afd-dialog',
+      contentHtml: `
+        <div class="em-afd-wrap">
+          <div class="em-afd-top">
+            <div class="em-afd-left">
+              <div class="em-afd-section">
+                <div class="em-afd-section-toggle" data-section="floor">
+                  <span class="em-afd-section-arrow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+                  <span class="em-afd-dropdown-label">1. Select floor</span>
+                </div>
+                <div class="em-afd-section-body" data-body="floor">
+                  <div class="em-afd-floor-list"></div>
+                  <button class="em-afd-create-btn em-afd-create-floor">＋ Create a new floor</button>
+                </div>
+              </div>
+            </div>
+            <div class="em-afd-right">
+              <div class="em-afd-section">
+                <div class="em-afd-section-toggle" data-section="area">
+                  <span class="em-afd-section-arrow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+                  <span class="em-afd-dropdown-label em-afd-area-label">2. Select area</span>
+                </div>
+                <div class="em-afd-section-body" data-body="area">
+                  <div class="em-afd-area-list"></div>
+                  <button class="em-afd-create-btn em-afd-create-area">＋ Create an area</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <hr class="em-afd-divider">
+          <div class="em-afd-info-box">${buildInfoHtml()}</div>
+        </div>`,
+      actionsHtml: `
+        <button class="btn em-afd-apply-btn" disabled>Select an area first</button>
+        <button class="btn btn-secondary em-afd-cancel-btn">Cancel</button>`,
+    });
+
+    const areaListEl  = overlay.querySelector('.em-afd-area-list');
+    const floorListEl = overlay.querySelector('.em-afd-floor-list');
+    const areaLabelEl = overlay.querySelector('.em-afd-area-label');
+    const infoBoxEl   = overlay.querySelector('.em-afd-info-box');
+    const applyBtn    = overlay.querySelector('.em-afd-apply-btn');
+
+    const updateAreaLabel = () => {
+      if (selectedFloorId) {
+        const fName = floors.find(f => f.floor_id === selectedFloorId)?.name || selectedFloorId;
+        areaLabelEl.textContent = `2. Select area (new areas placed on ${fName})`;
+      } else {
+        areaLabelEl.textContent = '2. Select area';
+      }
+    };
+
+    const updateApplyBtn = () => {
+      const hasSelection = selectedAreaId !== undefined && selectedAreaId !== null && selectedFloorId !== null;
+      infoBoxEl.classList.toggle('em-afd-info-selected', hasSelection);
+      if (selectedAreaId === undefined) {
+        applyBtn.disabled = true;
+        applyBtn.innerHTML = 'Select an area first';
+      } else if (selectedAreaId === null) {
+        applyBtn.disabled = false;
+        applyBtn.innerHTML = 'Remove area &amp; floor assignment';
+      } else {
+        const area  = areas.find(a => a.area_id === selectedAreaId);
+        const aName = area?.name || selectedAreaId;
+        const fName = area?.floor_id ? (floorName.get(area.floor_id) || '') : '';
+        applyBtn.disabled = false;
+        const floorPart = fName
+          ? ` <span style="font-size:11px;opacity:0.75;font-weight:400">· ${this._escapeHtml(fName)}</span>`
+          : '';
+        applyBtn.innerHTML = `Assign to <strong style="text-decoration:underline">${this._escapeHtml(aName)}</strong>${floorPart}`;
+      }
+    };
+
+    const updatePreview = () => {
+      updateAreaLabel();
+      updateApplyBtn();
+    };
+
+    const renderAreaList = () => {
+      // Always show all areas — floor selection only affects new area creation and preview,
+      // not which areas are visible. Users should always be able to find their area.
+      const isClearSel = selectedAreaId === null;
+      let html = `<div class="em-afd-row em-afd-clear${isClearSel ? ' em-afd-selected' : ''}" data-area-id="__clear__">
+        <span>🚫</span>
+        <span style="flex:1">No area</span>
+        ${isClearSel ? '<span style="color:var(--em-primary);font-weight:700">✓</span>' : ''}
+      </div>`;
+
+      if (areas.length) {
+        html += areas.map(a => {
+          const isSel = selectedAreaId === a.area_id;
+          const fName = a.floor_id ? floorName.get(a.floor_id) : null;
+          return `<div class="em-afd-row${isSel ? ' em-afd-selected' : ''}" data-area-id="${this._escapeAttr(a.area_id)}">
+            <span>📍</span>
+            <div style="flex:1;min-width:0">
+              <div>${this._escapeHtml(a.name)}</div>
+              ${fName ? `<div style="font-size:11px;color:var(--em-text-secondary);margin-top:1px">🏢 ${this._escapeHtml(fName)}</div>` : ''}
+            </div>
+            ${isSel ? '<span style="color:var(--em-primary);font-weight:700">✓</span>' : ''}
+          </div>`;
+        }).join('');
+      } else {
+        html += `<div style="padding:8px 10px;font-size:12px;opacity:0.55;font-style:italic">No areas defined yet</div>`;
+      }
+
+      areaListEl.innerHTML = html;
+      areaListEl.querySelectorAll('.em-afd-row').forEach(row => {
+        row.addEventListener('click', () => {
+          selectedAreaId = row.dataset.areaId === '__clear__' ? null : row.dataset.areaId;
+          // If user picks an area on a different floor, update selectedFloorId to match
+          if (selectedAreaId) {
+            const pickedArea = areas.find(a => a.area_id === selectedAreaId);
+            if (pickedArea?.floor_id) selectedFloorId = pickedArea.floor_id;
+          }
+          renderAreaList();
+          renderFloorList();
+          updatePreview();
+        });
+      });
+    };
+
+    const renderFloorList = () => {
+      if (!floors.length) {
+        floorListEl.innerHTML = `<div style="padding:8px 10px;font-size:12px;opacity:0.55;font-style:italic">No floors defined</div>`;
+        return;
+      }
+      floorListEl.innerHTML = floors.map(f => {
+        const isSel = selectedFloorId === f.floor_id;
+        return `<div class="em-afd-row${isSel ? ' em-afd-selected' : ''}" data-floor-id="${this._escapeAttr(f.floor_id)}">
+          <span>🏢</span>
+          <span style="flex:1">${this._escapeHtml(f.name)}</span>
+          ${isSel ? '<span style="color:var(--em-primary);font-weight:700">✓</span>' : ''}
+        </div>`;
+      }).join('');
+
+      floorListEl.querySelectorAll('.em-afd-row').forEach(row => {
+        row.addEventListener('click', () => {
+          // Toggle floor selection — only affects new area creation and area label
+          selectedFloorId = selectedFloorId === row.dataset.floorId ? null : row.dataset.floorId;
+          updateAreaLabel();
+          renderFloorList();
+          updatePreview();
+        });
+      });
+    };
+
+    // Create area (attached to selected floor if one is active)
+    overlay.querySelector('.em-afd-create-area').addEventListener('click', () => {
+      this._showPromptDialog('Create new area', 'Enter area name:', '', async (name) => {
+        if (!name?.trim()) return;
+        try {
+          const opts = { name: name.trim() };
+          if (selectedFloorId) opts.floor_id = selectedFloorId;
+          const newArea = await this._hass.callWS({ type: 'config/area_registry/create', ...opts });
+          await refreshRegistries();
+          selectedAreaId = newArea.area_id;
+          renderFloorList();
+          renderAreaList();
+          updatePreview();
+        } catch (e) {
+          this._showToast('Failed to create area: ' + (e.message || e), 'error');
+        }
+      });
+    });
+
+    // Create floor
+    overlay.querySelector('.em-afd-create-floor').addEventListener('click', () => {
+      this._showPromptDialog('Create new floor', 'Enter floor name:', '', async (name) => {
+        if (!name?.trim()) return;
+        try {
+          const newFloor = await this._hass.callWS({ type: 'config/floor_registry/create', name: name.trim() });
+          await refreshRegistries();
+          selectedFloorId = newFloor.floor_id;
+          updateAreaLabel();
+          renderFloorList();
+          renderAreaList();
+        } catch (e) {
+          this._showToast('Failed to create floor: ' + (e.message || e), 'error');
+        }
+      });
+    });
+
+    // Apply
+    applyBtn.addEventListener('click', async () => {
+      const areaId = selectedAreaId === undefined ? undefined : (selectedAreaId || null);
+      if (areaId === undefined) return;
+      try {
+        await this._assignAreaToEntities(entities, areaId);
+        this.floorsData = null;
+        const n = entities.length;
+        const areaName = areaId ? (areas.find(a => a.area_id === areaId)?.name || areaId) : 'None';
+        entities.forEach(e => {
+          this._logActivity('area', { entity: e.deviceName || e.entity_id, area: areaName });
+        });
+        this._showToast(`Area updated for ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+        closeDialog();
+        await this.loadData();
+      } catch (e) {
+        this._showToast('Failed to assign area: ' + (e.message || e), 'error');
+      }
+    });
+
+    overlay.querySelector('.em-afd-cancel-btn').addEventListener('click', closeDialog);
+
+    renderFloorList();
+    renderAreaList();
+
+    // Collapsible section toggles (SVG chevron rotates when collapsed)
+    overlay.querySelectorAll('.em-afd-section-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const key     = toggle.dataset.section;
+        const body    = overlay.querySelector(`.em-afd-section-body[data-body="${key}"]`);
+        const arrow   = toggle.querySelector('.em-afd-section-arrow');
+        const section = toggle.closest('.em-afd-section');
+        const isOpen  = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : '';
+        arrow.style.transform = isOpen ? 'rotate(-90deg)' : '';
+        section.classList.toggle('em-afd-collapsed', isOpen);
+      });
+    });
+  }
+
+  // Kept for backward compatibility — legacy callers should migrate to _showAreaFloorDialog
+  async _showAreaPickerDialog(title, onSelect) {
     // Ensure floor/area data is loaded
     if (!this.floorsData) {
       try {
@@ -9536,38 +10057,85 @@ class EntityManagerPanel extends HTMLElement {
       }
     }
 
+    const floors = this.floorsData.floors || [];
+    const areas  = this.floorsData.areas  || [];
+
+    // Build floor name lookup
+    const floorName = new Map(floors.map(f => [f.floor_id, f.name]));
+
     const { overlay, closeDialog } = this.createDialog({
       title,
-      contentHtml: buildContent(this.floorsData.floors || [], this.floorsData.areas || []),
+      contentHtml: `
+        <div style="padding:0 4px 4px">
+          <input id="em-area-search" type="text" placeholder="Search areas…" autocomplete="off"
+            style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:8px;
+                   border:2px solid var(--em-primary);background:var(--em-bg-secondary);
+                   color:var(--em-text-primary);font-size:13px;outline:none;margin-bottom:8px">
+          <div id="em-area-list" style="max-height:55vh;overflow-y:auto"></div>
+        </div>`,
       actionsHtml: `
-        <button class="btn btn-secondary em-area-create-btn">＋ New area</button>
+        <button class="btn btn-secondary em-area-create-btn">＋ New Area</button>
         <button class="btn btn-secondary em-area-cancel-btn">Cancel</button>`,
     });
 
-    const wireUp = () => {
-      // Open all collapsible groups by default and attach toggle listeners
-      this._reAttachCollapsibles(overlay, { expand: true });
+    const renderList = (filter = '') => {
+      const list = overlay.querySelector('#em-area-list');
+      const term = filter.toLowerCase();
 
-      // Area selection
-      overlay.querySelectorAll('.em-area-option').forEach(opt => {
-        opt.addEventListener('click', () => {
-          closeDialog();
-          onSelect(opt.dataset.areaId || null);
-        });
+      // "No Area" clear option
+      const clearRow = `
+        <div class="em-area-option em-area-clear" data-area-id=""
+          style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+                 cursor:pointer;border:1px solid var(--em-border);margin-bottom:6px;
+                 opacity:0.7;font-style:italic">
+          <span style="font-size:18px">🚫</span>
+          <span style="font-size:13px">— No Area —</span>
+        </div>`;
+
+      const sorted = areas
+        .filter(a => !term || a.name.toLowerCase().includes(term))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      if (!sorted.length && !term) {
+        list.innerHTML = clearRow + `<p style="padding:12px;opacity:0.6;font-style:italic;text-align:center">No areas defined yet.</p>`;
+        return;
+      }
+
+      const rows = sorted.map(a => {
+        const floor = a.floor_id ? floorName.get(a.floor_id) : null;
+        return `
+          <div class="em-area-option" data-area-id="${this._escapeAttr(a.area_id)}"
+            style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+                   cursor:pointer;border:1px solid var(--em-border);margin-bottom:4px;
+                   transition:background 0.15s">
+            <span style="font-size:18px">📍</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600">${this._escapeHtml(a.name)}</div>
+              ${floor ? `<div style="font-size:11px;color:var(--em-text-secondary)">🏢 ${this._escapeHtml(floor)}</div>` : `<div style="font-size:11px;color:var(--em-text-secondary);opacity:0.5">No floor</div>`}
+            </div>
+          </div>`;
+      }).join('');
+
+      list.innerHTML = (term ? '' : clearRow) + (rows || `<p style="padding:12px;opacity:0.6;text-align:center">No areas match "${this._escapeHtml(filter)}"</p>`);
+
+      list.querySelectorAll('.em-area-option').forEach(opt => {
+        opt.addEventListener('mouseenter', () => opt.style.background = 'var(--em-bg-hover)');
+        opt.addEventListener('mouseleave', () => opt.style.background = '');
+        opt.addEventListener('click', () => { closeDialog(); onSelect(opt.dataset.areaId || null); });
       });
     };
 
-    wireUp();
+    renderList();
 
-    // Create new area
+    overlay.querySelector('#em-area-search').addEventListener('input', e => renderList(e.target.value.trim()));
+    overlay.querySelector('#em-area-search').focus();
+
     overlay.querySelector('.em-area-create-btn').addEventListener('click', () => {
       this._showPromptDialog('Create new area', 'Enter area name:', '', async (name) => {
         if (!name.trim()) return;
         try {
           const newArea = await this._hass.callWS({ type: 'config/area_registry/create', name: name.trim() });
-          // Rebuild floorsData with the new area included
           this.floorsData = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
-          // Auto-select the newly created area
           closeDialog();
           onSelect(newArea.area_id);
         } catch (e) {
@@ -9580,12 +10148,14 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   /**
-   * Floor-first assignment dialog.
-   * Shows floors as top-level options; clicking a floor with one area auto-selects it,
-   * clicking a floor with multiple areas shows a second area picker for that floor.
-   * Ultimately calls onAreaSelect(areaId) — same signature as _showAreaPickerDialog.
+   * Floor assignment dialog — shows ONLY floors.
+   * Picking a floor auto-resolves to an area on that floor behind the scenes:
+   *   0 areas → creates a new area named after the floor, then assigns
+   *   1 area  → assigns directly to it
+   *   2+ areas → assigns to the area whose name matches the floor, else first alphabetically
+   * The user never sees or chooses an area — floor assignment is a single click.
    */
-  async _showFloorPickerDialog(title, onAreaSelect) {
+  async _showFloorPickerDialog(title, onFloorSelect) {
     if (!this.floorsData) {
       try {
         this.floorsData = await this._hass.callWS({ type: 'entity_manager/get_areas_and_floors' });
@@ -9597,98 +10167,122 @@ class EntityManagerPanel extends HTMLElement {
     const floors = this.floorsData.floors || [];
     const areas  = this.floorsData.areas  || [];
 
-    // Group areas by floor
+    // Group areas by floor_id
     const byFloor = {};
-    const noFloor = [];
     for (const area of areas) {
       if (area.floor_id) {
         if (!byFloor[area.floor_id]) byFloor[area.floor_id] = [];
         byFloor[area.floor_id].push(area);
-      } else {
-        noFloor.push(area);
       }
     }
 
-    const renderAreaList = (areaList) => areaList.map(a => `
-      <div class="em-area-option em-floor-area-opt" data-area-id="${this._escapeAttr(a.area_id)}" style="padding-left:28px">
-        <span class="em-area-dot">●</span>${this._escapeHtml(a.name)}
-      </div>`).join('');
-
-    const floorRows = floors.map(f => {
+    const floorRowsHtml = floors.map(f => {
       const fAreas = byFloor[f.floor_id] || [];
-      const areaCount = fAreas.length;
+      const sub = fAreas.length === 0
+        ? `<span style="font-size:11px;opacity:0.4;font-style:italic">no areas yet</span>`
+        : `<span style="font-size:11px;opacity:0.5">${fAreas.length} area${fAreas.length !== 1 ? 's' : ''}</span>`;
       return `
-        <div class="em-floor-row" data-floor-id="${this._escapeAttr(f.floor_id)}"
-             style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;border-radius:8px;
-                    border:2px solid var(--em-border);margin-bottom:6px;transition:background 0.15s"
-             title="${areaCount} area${areaCount !== 1 ? 's' : ''}">
+        <div class="em-floor-pick-row" data-floor-id="${this._escapeAttr(f.floor_id)}"
+             style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:8px;
+                    border:1px solid var(--em-border);margin-bottom:5px;cursor:pointer;
+                    transition:background 0.15s,border-color 0.15s">
           <span style="font-size:1.3em">🏢</span>
-          <span style="font-weight:600;flex:1">${this._escapeHtml(f.name)}</span>
-          <span style="font-size:0.8em;opacity:0.6">${areaCount} area${areaCount !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="em-floor-areas" data-floor-id="${this._escapeAttr(f.floor_id)}" style="display:none;padding:0 0 8px 8px">
-          ${areaCount ? renderAreaList(fAreas) : '<div style="padding:8px;opacity:0.5;font-style:italic;font-size:0.85em">No areas in this floor</div>'}
+          <span style="font-size:14px;font-weight:600;flex:1">${this._escapeHtml(f.name)}</span>
+          ${sub}
         </div>`;
     }).join('');
-
-    const noFloorHtml = noFloor.length ? `
-      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--em-border)">
-        <div style="font-size:0.78em;text-transform:uppercase;opacity:0.5;letter-spacing:0.5px;padding:4px 0 6px">No Floor</div>
-        ${renderAreaList(noFloor)}
-      </div>` : '';
 
     const { overlay, closeDialog } = this.createDialog({
       title,
       contentHtml: `
-        <div class="em-area-picker">
-          <div class="em-area-option em-area-clear" data-area-id="" style="margin-bottom:10px">
-            <span class="em-area-dot" style="opacity:0.4">○</span>— No Area —
+        <div style="padding:0 4px 4px">
+          <div class="em-floor-pick-list" style="max-height:60vh;overflow-y:auto">
+            <div class="em-floor-clear-row"
+                 style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;
+                        border:1px solid var(--em-border);margin-bottom:10px;cursor:pointer;
+                        opacity:0.65;font-style:italic;transition:background 0.15s">
+              <span style="font-size:16px">🚫</span>
+              <span style="font-size:13px">— Remove floor/area assignment —</span>
+            </div>
+            ${floors.length
+              ? floorRowsHtml
+              : '<div style="padding:16px;text-align:center;opacity:0.55;font-style:italic">No floors defined yet.</div>'}
           </div>
-          ${floors.length ? floorRows : '<div style="padding:12px;opacity:0.6;font-style:italic">No floors defined.</div>'}
-          ${noFloorHtml}
         </div>`,
-      actionsHtml: `<button class="btn btn-secondary em-floor-cancel-btn">Cancel</button>`,
+      actionsHtml: `
+        <button class="btn btn-secondary em-floor-create-btn">＋ New Floor</button>
+        <button class="btn btn-secondary em-floor-cancel-btn">Cancel</button>`,
+    });
+
+    const list = overlay.querySelector('.em-floor-pick-list');
+
+    const addHover = (el) => {
+      el.addEventListener('mouseenter', () => el.style.background = 'var(--em-bg-hover)');
+      el.addEventListener('mouseleave', () => el.style.background = '');
+    };
+    list.querySelectorAll('.em-floor-pick-row, .em-floor-clear-row').forEach(addHover);
+
+    // Clear assignment
+    list.querySelector('.em-floor-clear-row').addEventListener('click', () => {
+      closeDialog();
+      onFloorSelect(null);
+    });
+
+    // Auto-resolve area for a floor and call onFloorSelect
+    const resolveAndAssign = async (floorId) => {
+      let fAreas = byFloor[floorId] || [];
+      const floor = floors.find(f => f.floor_id === floorId);
+
+      if (fAreas.length === 0) {
+        // Create a default area named after the floor
+        try {
+          const newArea = await this._hass.callWS({
+            type: 'config/area_registry/create',
+            name: floor.name,
+            floor_id: floorId,
+          });
+          this.floorsData = null;
+          closeDialog();
+          onFloorSelect(newArea.area_id);
+        } catch (e) {
+          this._showToast('Failed to create area: ' + (e.message || e), 'error');
+        }
+        return;
+      }
+
+      // Pick best area: name matches floor name, else first alphabetically
+      const sorted = [...fAreas].sort((a, b) => a.name.localeCompare(b.name));
+      const match = sorted.find(a => a.name.toLowerCase() === floor.name.toLowerCase()) || sorted[0];
+      closeDialog();
+      onFloorSelect(match.area_id);
+    };
+
+    list.querySelectorAll('.em-floor-pick-row').forEach(row => {
+      row.addEventListener('click', () => resolveAndAssign(row.dataset.floorId));
+    });
+
+    // Create new floor (also creates a default area with the same name)
+    overlay.querySelector('.em-floor-create-btn').addEventListener('click', () => {
+      this._showPromptDialog('Create new floor', 'Enter a name for the new floor:', '', async (name) => {
+        if (!name?.trim()) return;
+        try {
+          const newFloor = await this._hass.callWS({ type: 'config/floor_registry/create', name: name.trim() });
+          // Auto-create a matching area on the new floor
+          const newArea = await this._hass.callWS({
+            type: 'config/area_registry/create',
+            name: newFloor.name,
+            floor_id: newFloor.floor_id,
+          });
+          this.floorsData = null;
+          closeDialog();
+          onFloorSelect(newArea.area_id);
+        } catch (e) {
+          this._showToast('Failed to create floor: ' + (e.message || e), 'error');
+        }
+      });
     });
 
     overlay.querySelector('.em-floor-cancel-btn').addEventListener('click', closeDialog);
-
-    // Clear area selection
-    overlay.querySelector('.em-area-clear').addEventListener('click', () => {
-      closeDialog();
-      onAreaSelect(null);
-    });
-
-    // Floor row click — expand/collapse areas, auto-select if only 1 area
-    overlay.querySelectorAll('.em-floor-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const floorId = row.dataset.floorId;
-        const areaPanel = overlay.querySelector(`.em-floor-areas[data-floor-id="${CSS.escape(floorId)}"]`);
-        const fAreas = byFloor[floorId] || [];
-        if (fAreas.length === 1) {
-          // Auto-assign to the single area in this floor
-          closeDialog();
-          onAreaSelect(fAreas[0].area_id);
-          return;
-        }
-        // Toggle area panel visibility
-        const isOpen = areaPanel.style.display !== 'none';
-        // Collapse all first
-        overlay.querySelectorAll('.em-floor-areas').forEach(p => { p.style.display = 'none'; });
-        overlay.querySelectorAll('.em-floor-row').forEach(r => { r.style.background = ''; });
-        if (!isOpen) {
-          areaPanel.style.display = '';
-          row.style.background = 'var(--em-bg-hover)';
-        }
-      });
-    });
-
-    // Area click inside expanded floor
-    overlay.querySelectorAll('.em-floor-area-opt').forEach(opt => {
-      opt.addEventListener('click', () => {
-        closeDialog();
-        onAreaSelect(opt.dataset.areaId);
-      });
-    });
   }
 
   _showDevicePickerDialog(entityId, onSelect) {
@@ -9748,7 +10342,7 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-device-picker-cancel').addEventListener('click', closeDialog);
   }
 
-  async _showSuggestionsDialog() {
+  async _showSuggestionsDialog(section = null) {
     const { overlay, closeDialog } = this.createDialog({
       title: '💡 Entity Suggestions',
       extraClass: 'em-suggestions',
@@ -9871,6 +10465,12 @@ class EntityManagerPanel extends HTMLElement {
       });
       if (untagged.length > 0) labelGroups.push({ ...def, entities: untagged, existingLabel: existingLabel || null });
     }
+
+    health.sort((a, b) => a.entity.entity_id.localeCompare(b.entity.entity_id));
+    disable.sort((a, b) => a.entity.entity_id.localeCompare(b.entity.entity_id));
+    naming.sort((a, b) => a.entity.entity_id.localeCompare(b.entity.entity_id));
+    area.sort((a, b) => a.entity.entity_id.localeCompare(b.entity.entity_id));
+    labelGroups.sort((a, b) => (a.deviceName || a.label || '').localeCompare(b.deviceName || b.label || ''));
 
     const total = health.length + disable.length + naming.length + area.length + labelGroups.length;
 
@@ -10064,6 +10664,22 @@ class EntityManagerPanel extends HTMLElement {
 
     this._reAttachCollapsibles(dialogBody);
 
+    if (section) {
+      const sectionMap = { naming: 'Naming Improvements', labels: 'Label Suggestions' };
+      const heading = sectionMap[section];
+      if (heading) {
+        requestAnimationFrame(() => {
+          dialogBody.querySelectorAll('.em-collapsible').forEach(h => {
+            if (h.textContent.includes(heading)) {
+              const body = h.nextElementSibling;
+              if (body && body.style.display === 'none') h.click();
+              h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          });
+        });
+      }
+    }
+
     dialogBody.querySelectorAll('.em-naming-device-toggle').forEach(toggle => {
       toggle.addEventListener('click', () => {
         const group = toggle.closest('.em-naming-device-group');
@@ -10255,11 +10871,9 @@ class EntityManagerPanel extends HTMLElement {
           closeDialog();
           this.showRenameDialog(entityId);
         } else if (action === 'assign-area') {
-          this._showAreaPickerDialog('Assign device to area', async areaId => {
-            await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
-            this.floorsData = null;
-            btn.closest('.em-naming-device-group')?.remove();
-          });
+          const entityObj = this._resolveEntitiesById([entityId])[0] || { entity_id: entityId, device_id: deviceId };
+          closeDialog();
+          await this._showAreaFloorDialog('Assign device to area', [entityObj]);
         }
       });
     });
@@ -12024,12 +12638,8 @@ class EntityManagerPanel extends HTMLElement {
         this.selectedEntities = saved;
       };
       const _bulkAreaHandler = (entityIds) => {
-        this._showAreaPickerDialog('Assign area to selected', async (areaId) => {
-          await Promise.all(entityIds.map(eid =>
-            this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, area_id: areaId || null })
-          ));
-          this._showToast(`Area updated for ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
-        });
+        const entities = this._resolveEntitiesById(entityIds);
+        this._showAreaFloorDialog('Assign area to selected', entities);
       };
       const bulkActions = {
         automation: [
@@ -12717,6 +13327,200 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     noBtn.addEventListener('click', closeDialog);
+  }
+
+  _showGroupEditorDialog(existingGroup = null) {
+    const isEdit = !!existingGroup;
+    // Live selection set — synced from checkboxes, persists across search re-renders
+    const selected = new Set(existingGroup?.entityIds || []);
+
+    const buildTree = (filterText = '') => {
+      const ft = filterText.toLowerCase();
+      let html = '';
+      const sortedIntegrations = [...(this.data || [])].sort((a, b) => a.integration.localeCompare(b.integration));
+      for (const integration of sortedIntegrations) {
+        const intName = integration.integration;
+        let devHtml = '';
+        let intTotal = 0;
+        const sortedDevices = Object.entries(integration.devices || {}).sort(([keyA], [keyB]) =>
+          this.getDeviceName(keyA).localeCompare(this.getDeviceName(keyB)));
+        for (const [devKey, dev] of sortedDevices) {
+          const devName = devKey === 'no_device' ? 'Orphan Entities' : this.getDeviceName(devKey);
+          let entHtml = '';
+          let devTotal = 0;
+          const sortedEntities = [...(dev.entities || [])].sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+          for (const ent of sortedEntities) {
+            const eid = ent.entity_id;
+            const dispName = ent.original_name || '';
+            if (ft && !eid.toLowerCase().includes(ft) && !dispName.toLowerCase().includes(ft) &&
+                !devName.toLowerCase().includes(ft) && !intName.toLowerCase().includes(ft)) continue;
+            const chk = selected.has(eid) ? 'checked' : '';
+            entHtml += `<label class="cgd-ent-row">
+              <input type="checkbox" class="cgd-ent-cb" data-eid="${this._escapeAttr(eid)}" ${chk}>
+              <span class="cgd-ent-id">${this._escapeHtml(eid)}</span>
+              ${dispName ? `<span class="cgd-ent-name">${this._escapeHtml(dispName)}</span>` : ''}
+            </label>`;
+            devTotal++;
+          }
+          if (!entHtml) continue;
+          intTotal += devTotal;
+          devHtml += `<div class="cgd-dev-block">
+            <div class="cgd-dev-hdr">
+              <input type="checkbox" class="cgd-dev-cb">
+              <span class="cgd-arrow">▶</span>
+              <span class="cgd-dev-name">${this._escapeHtml(devName)}</span>
+              <span class="cgd-cnt">${devTotal}</span>
+            </div>
+            <div class="cgd-dev-body" style="display:none">${entHtml}</div>
+          </div>`;
+        }
+        if (!devHtml) continue;
+        html += `<div class="cgd-int-block">
+          <div class="cgd-int-hdr">
+            <input type="checkbox" class="cgd-int-cb">
+            <span class="cgd-arrow">▶</span>
+            <span class="cgd-int-name">${this._escapeHtml(intName)}</span>
+            <span class="cgd-cnt">${intTotal}</span>
+          </div>
+          <div class="cgd-int-body" style="display:none">${devHtml}</div>
+        </div>`;
+      }
+      return html || `<div style="padding:16px;text-align:center;color:var(--em-text-secondary);font-style:italic">No entities found</div>`;
+    };
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: isEdit ? `Edit: ${existingGroup.name}` : 'New Group',
+      color: 'var(--em-primary)',
+      contentHtml: `<div class="cgd-wrap">
+        <input type="text" class="cgd-name-input" id="cgd-name" placeholder="Group name…"
+          value="${isEdit ? this._escapeAttr(existingGroup.name) : ''}">
+        <input type="text" class="cgd-search-input" id="cgd-search" placeholder="🔍 Filter integrations, devices, entities…">
+        <div class="cgd-tree" id="cgd-tree">${buildTree()}</div>
+      </div>`,
+      actionsHtml: `
+        <button class="btn btn-secondary" id="cgd-cancel">Cancel</button>
+        <span id="cgd-sel-count" style="font-size:12px;color:var(--em-text-secondary);margin:0 8px;white-space:nowrap"></span>
+        <button class="btn" id="cgd-save" style="background:var(--em-primary);color:#fff;border:none">
+          ${isEdit ? 'Save Changes' : 'Create Group'}
+        </button>
+      `
+    });
+
+    const treeEl = overlay.querySelector('#cgd-tree');
+    const searchInput = overlay.querySelector('#cgd-search');
+    const nameInput = overlay.querySelector('#cgd-name');
+    const selCountEl = overlay.querySelector('#cgd-sel-count');
+
+    const updateCount = () => { selCountEl.textContent = `${selected.size} selected`; };
+
+    const syncDevCb = devBlock => {
+      const cb = devBlock.querySelector('.cgd-dev-cb');
+      const ents = devBlock.querySelectorAll('.cgd-ent-cb');
+      const n = [...ents].filter(c => c.checked).length;
+      cb.indeterminate = n > 0 && n < ents.length;
+      cb.checked = ents.length > 0 && n === ents.length;
+    };
+
+    const syncIntCb = intBlock => {
+      const cb = intBlock.querySelector('.cgd-int-cb');
+      const ents = intBlock.querySelectorAll('.cgd-ent-cb');
+      const n = [...ents].filter(c => c.checked).length;
+      cb.indeterminate = n > 0 && n < ents.length;
+      cb.checked = ents.length > 0 && n === ents.length;
+    };
+
+    const initState = () => {
+      treeEl.querySelectorAll('.cgd-dev-block').forEach(syncDevCb);
+      treeEl.querySelectorAll('.cgd-int-block').forEach(syncIntCb);
+      updateCount();
+    };
+    initState();
+
+    treeEl.addEventListener('click', e => {
+      const intHdr = e.target.closest('.cgd-int-hdr');
+      const devHdr = e.target.closest('.cgd-dev-hdr');
+      if (intHdr && e.target.tagName !== 'INPUT') {
+        const body = intHdr.nextElementSibling;
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        intHdr.querySelector('.cgd-arrow').textContent = open ? '▶' : '▼';
+      }
+      if (devHdr && e.target.tagName !== 'INPUT') {
+        const body = devHdr.nextElementSibling;
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : '';
+        devHdr.querySelector('.cgd-arrow').textContent = open ? '▶' : '▼';
+      }
+    });
+
+    treeEl.addEventListener('change', e => {
+      const t = e.target;
+      if (t.classList.contains('cgd-int-cb')) {
+        const intBlock = t.closest('.cgd-int-block');
+        intBlock.querySelectorAll('.cgd-ent-cb').forEach(cb => {
+          cb.checked = t.checked;
+          if (t.checked) selected.add(cb.dataset.eid); else selected.delete(cb.dataset.eid);
+        });
+        intBlock.querySelectorAll('.cgd-dev-cb').forEach(cb => { cb.checked = t.checked; cb.indeterminate = false; });
+        t.indeterminate = false;
+      } else if (t.classList.contains('cgd-dev-cb')) {
+        const devBlock = t.closest('.cgd-dev-block');
+        devBlock.querySelectorAll('.cgd-ent-cb').forEach(cb => {
+          cb.checked = t.checked;
+          if (t.checked) selected.add(cb.dataset.eid); else selected.delete(cb.dataset.eid);
+        });
+        t.indeterminate = false;
+        syncIntCb(t.closest('.cgd-int-block'));
+      } else if (t.classList.contains('cgd-ent-cb')) {
+        if (t.checked) selected.add(t.dataset.eid); else selected.delete(t.dataset.eid);
+        syncDevCb(t.closest('.cgd-dev-block'));
+        syncIntCb(t.closest('.cgd-int-block'));
+      }
+      updateCount();
+    });
+
+    let debounce;
+    searchInput.addEventListener('input', () => {
+      // Persist visible checkbox state into `selected` before re-render
+      treeEl.querySelectorAll('.cgd-ent-cb').forEach(cb => {
+        if (cb.checked) selected.add(cb.dataset.eid); else selected.delete(cb.dataset.eid);
+      });
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        treeEl.innerHTML = buildTree(searchInput.value);
+        if (searchInput.value.trim()) {
+          treeEl.querySelectorAll('.cgd-int-body,.cgd-dev-body').forEach(b => { b.style.display = ''; });
+          treeEl.querySelectorAll('.cgd-arrow').forEach(a => { a.textContent = '▼'; });
+        }
+        initState();
+      }, 200);
+    });
+
+    overlay.querySelector('#cgd-save').addEventListener('click', () => {
+      // Sync final visible state
+      treeEl.querySelectorAll('.cgd-ent-cb').forEach(cb => {
+        if (cb.checked) selected.add(cb.dataset.eid); else selected.delete(cb.dataset.eid);
+      });
+      const name = nameInput.value.trim();
+      if (!name) { this._showToast('Enter a group name', 'warning'); nameInput.focus(); return; }
+      const entityIds = [...selected];
+      if (!entityIds.length) { this._showToast('Select at least one entity', 'warning'); return; }
+
+      if (isEdit) {
+        this.customGroups = this.customGroups.map(g => g.id === existingGroup.id ? { ...g, name, entityIds } : g);
+      } else {
+        this.customGroups = [...(this.customGroups || []), { id: `cg-${Date.now()}`, name, entityIds }];
+      }
+      localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+      this._setSmartGroupMode('custom');
+      closeDialog();
+      this._reRenderSidebar();
+      this.updateView();
+      this._showToast(isEdit ? `Group "${name}" updated` : `Group "${name}" created with ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
+    });
+
+    overlay.querySelector('#cgd-cancel').addEventListener('click', closeDialog);
+    nameInput.focus();
   }
 
   _showPromptDialog(title, message, defaultValue, onSubmit) {

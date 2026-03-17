@@ -5,7 +5,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration (v2.10.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration (v2.15.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
@@ -24,7 +24,7 @@ entity-manager/
 │   ├── __init__.py                     # Entry point, service registration, panel setup
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID)
-│   ├── manifest.json                   # Integration metadata (v2.10.0)
+│   ├── manifest.json                   # Integration metadata (v2.15.0)
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
@@ -359,7 +359,7 @@ const result = await this.hass.callWS({
 - State: `data`, `deviceInfo`, `expandedIntegrations`, `expandedDevices`, `selectedEntities`, `searchTerm`, `viewState`, `labeledEntitiesCache`, `labeledDevicesCache`, `labeledAreasCache`
 - Key methods: `loadData()`, `updateView()`, `render()`, `bulkEnable()`, `bulkDisable()`, `updateSelectedCount()`
 - Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderManagedItem()`, `_renderMiniEntityCard()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()`
-- Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAreaPickerDialog()`, `_showFloorPickerDialog()`
+- Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAreaFloorDialog()` (replaces `_showAreaPickerDialog` + `_showFloorPickerDialog`)
 - Bulk rename methods: `_openBulkRenameDialog()` (async mode-switcher), `_renderBulkRenameView()` (full inline panel)
 
 ### Entity Card Action Row (`icon-btn` pattern)
@@ -441,6 +441,25 @@ await this.loadData();
 - Commit messages should be descriptive and reference the feature/fix
 - Push changes to the designated feature branch (`claude/` prefix)
 - Version bumps live in `manifest.json` and `package.json`
+
+### Area & Floor Assignment Dialog (`_showAreaFloorDialog`)
+
+Two-panel dialog for assigning devices/entities to HA areas (floor comes with area via `area.floor_id`).
+
+**Key architecture points:**
+- Uses native HA APIs only: `config/area_registry/list`, `config/floor_registry/list`, `config/device_registry/update`, `config/entity_registry/update`
+- Does NOT use `entity_manager/get_areas_and_floors` (that handler was silently failing; native APIs are more reliable)
+- Sets area at BOTH device level AND entity level so both registry layers stay in sync
+- `selectedAreaId = undefined` → nothing chosen (Apply disabled); `= null` → clear assignment; `= string` → assign
+- `selectedFloorId` → only affects new area creation label (does NOT filter area list — all areas always shown)
+- `_afdSubject`: dialog title uses friendly name → device name → original name → entity_id
+
+**`areaLookup` map** (built in `loadDeviceInfo`):
+- Built from `config/area_registry/list` + `config/floor_registry/list` (NOT the custom WS handler)
+- Maps `area_id → { areaName, floorName }`
+- `entityAreaMap` maps `entity_id → area_id` for ALL entities with entity-level area set
+
+**Common trap:** `entity_manager/get_areas_and_floors` was used to build `areaLookup` but silently failed on every load, leaving all area chips blank. Always use native HA registry APIs for this data.
 
 ## Troubleshooting
 

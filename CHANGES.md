@@ -1,5 +1,33 @@
 # Entity Manager UI Changes
 
+## Version 2.15.0 - Area & Floor Assignment Dialog Redesign
+
+### New Features
+
+#### Area & Floor Assignment Dialog (complete redesign)
+- Two-panel dialog replaces the old flat area picker
+- **Left panel**: Step 1 — select floor (filters new area creation only; all areas always visible); Step 2 — select area with floor subtitle on each row
+- **Right panel top**: entity info box showing device name, friendly name, entity ID, and current area/floor assignment
+- **Right panel bottom**: live preview box — border turns green when area is selected, shows new area + floor
+- Apply button fills solid blue with white text when an area is chosen; disabled/faded when nothing selected
+- Dialog title dynamically shows "Assigning [friendly name] to area"
+- "+ Create an area" / "+ Create a new floor" inline create buttons with auto-selection after creation
+- "No area" option to clear existing assignment
+- Sidebar "Area Assignments" and context menu "Assign to area" both use the new dialog
+- Removed "Assign to floor" from context menu (floor is a property of area in HA's data model)
+
+#### Entity Card Area/Floor Chips
+- Entity cards now show 📍 area and 🏢 floor chips in the header band
+- Fixed: chips were always empty because `entity_manager/get_areas_and_floors` was silently failing on every load; switched to native `config/area_registry/list` + `config/floor_registry/list` APIs
+- Entity-level area assignment takes precedence over device-level area (matching HA behaviour)
+- `entityAreaMap` now covers ALL entities with entity-level area (not just orphans)
+- `loadDeviceInfo()` is now properly awaited in `loadData()` so cards always render with fresh data after assignment
+
+#### Suggestions Dialog
+- Fixed: "Naming Improvements" and "Label Suggestions" sidebar links now correctly expand the relevant section in the dialog (was querying `.em-coll-group-header` which does not exist; fixed to `.em-collapsible`)
+
+---
+
 ## Version 2.0.6 - UI Overhaul, Theme Consistency & Firmware Update Manager
 
 ### Overview
