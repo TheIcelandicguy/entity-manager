@@ -9783,42 +9783,26 @@ class EntityManagerPanel extends HTMLElement {
     let selectedAreaId  = undefined; // undefined = nothing chosen, null = "No Area"
     let selectedFloorId = null;      // null = no floor filter
 
-    // Build entity info HTML for right panel top
+    // Build entity info HTML — all entities as 2-col grid cards
     const buildInfoHtml = () => {
-      const shown = entities.slice(0, 2);
-      const extra = entities.length > 2 ? entities.length - 2 : 0;
-      const rows = shown.map(e => {
+      return entities.map(e => {
         const friendlyName = this._hass?.states?.[e.entity_id]?.attributes?.friendly_name || e.original_name || null;
         const name = this._escapeHtml(e.deviceName || friendlyName || e.entity_id);
         const subName = (e.deviceName && friendlyName && friendlyName !== e.deviceName)
-          ? `<div style="font-size:11px;color:var(--em-text-secondary);margin-bottom:2px">${this._escapeHtml(friendlyName)}</div>` : '';
-        // areaLookup is keyed by area_id — get the device's current area_id first
+          ? `<div style="font-size:10px;color:var(--em-text-secondary);margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(friendlyName)}</div>` : '';
         const currentAreaId = e.device_id
           ? (this.deviceInfo?.[e.device_id]?.area_id || null)
           : (this.entityAreaMap?.get(e.entity_id) || null);
         const info = currentAreaId ? (this.areaLookup?.get(currentAreaId) || null) : null;
         const curArea  = info?.areaName  ? `<span style="color:var(--em-success)">📍 ${this._escapeHtml(info.areaName)}</span>`  : `<span style="opacity:0.45;font-style:italic">No area</span>`;
-        const curFloor = info?.floorName ? `<span style="color:var(--em-text-secondary)">🏢 ${this._escapeHtml(info.floorName)}</span>` : `<span style="opacity:0.45;font-style:italic">No floor</span>`;
-        return `<div class="em-afd-entity-name">${name}</div>
-                ${subName}<div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(e.entity_id)}</div>
-                <div class="em-afd-meta">${curArea} &nbsp;${curFloor}</div>`;
-      }).join('<hr style="border:none;border-top:1px solid var(--em-border);margin:6px 0">');
-      return rows + (extra ? `<div style="font-size:11px;opacity:0.55;margin-top:4px">…and ${extra} more</div>` : '');
-    };
-
-    // Build preview HTML for right panel bottom
-    const buildPreviewHtml = () => {
-      if (selectedAreaId === undefined) {
-        return `<div style="font-size:12px;opacity:0.5;font-style:italic">Select an area to preview</div>`;
-      }
-      if (selectedAreaId === null) {
-        return `<div class="em-afd-preview-area">🚫 No area</div>
-                <div class="em-afd-preview-floor" style="opacity:0.5;font-style:italic">No floor</div>`;
-      }
-      const area  = areas.find(a => a.area_id === selectedAreaId);
-      const fName = area?.floor_id ? floorName.get(area.floor_id) : null;
-      return `<div class="em-afd-preview-area">📍 ${this._escapeHtml(area?.name || selectedAreaId)}</div>
-              <div class="em-afd-preview-floor">${fName ? `🏢 ${this._escapeHtml(fName)}` : '<span style="opacity:0.45;font-style:italic">No floor</span>'}</div>`;
+        const curFloor = info?.floorName ? `<span style="color:var(--em-text-secondary)">🏢 ${this._escapeHtml(info.floorName)}</span>` : '';
+        return `<div class="em-afd-entity-card">
+          <div class="em-afd-entity-name">${name}</div>
+          ${subName}
+          <div style="font-size:10px;font-family:monospace;color:var(--em-text-secondary);margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(e.entity_id)}</div>
+          <div class="em-afd-meta">${curArea}${curFloor ? ` &nbsp;${curFloor}` : ''}</div>
+        </div>`;
+      }).join('');
     };
 
     // Build a friendly subject name from the entity/device being assigned
@@ -9843,22 +9827,34 @@ class EntityManagerPanel extends HTMLElement {
       extraClass: 'em-afd-dialog',
       contentHtml: `
         <div class="em-afd-wrap">
-          <div class="em-afd-left">
-            <div class="em-afd-dropdown-section">
-              <div class="em-afd-dropdown-label">1. Select floor</div>
-              <div class="em-afd-floor-list"></div>
-              <button class="em-afd-create-btn em-afd-create-floor">＋ Create a new floor</button>
+          <div class="em-afd-top">
+            <div class="em-afd-left">
+              <div class="em-afd-section">
+                <div class="em-afd-section-toggle" data-section="floor">
+                  <span class="em-afd-section-arrow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+                  <span class="em-afd-dropdown-label">1. Select floor</span>
+                </div>
+                <div class="em-afd-section-body" data-body="floor">
+                  <div class="em-afd-floor-list"></div>
+                  <button class="em-afd-create-btn em-afd-create-floor">＋ Create a new floor</button>
+                </div>
+              </div>
             </div>
-            <div class="em-afd-dropdown-section">
-              <div class="em-afd-dropdown-label em-afd-area-label">2. Select area</div>
-              <div class="em-afd-area-list"></div>
-              <button class="em-afd-create-btn em-afd-create-area">＋ Create an area</button>
+            <div class="em-afd-right">
+              <div class="em-afd-section">
+                <div class="em-afd-section-toggle" data-section="area">
+                  <span class="em-afd-section-arrow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+                  <span class="em-afd-dropdown-label em-afd-area-label">2. Select area</span>
+                </div>
+                <div class="em-afd-section-body" data-body="area">
+                  <div class="em-afd-area-list"></div>
+                  <button class="em-afd-create-btn em-afd-create-area">＋ Create an area</button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="em-afd-right">
-            <div class="em-afd-info-box">${buildInfoHtml()}</div>
-            <div class="em-afd-preview-box" id="em-afd-preview">${buildPreviewHtml()}</div>
-          </div>
+          <hr class="em-afd-divider">
+          <div class="em-afd-info-box">${buildInfoHtml()}</div>
         </div>`,
       actionsHtml: `
         <button class="btn em-afd-apply-btn" disabled>Select an area first</button>
@@ -9868,7 +9864,7 @@ class EntityManagerPanel extends HTMLElement {
     const areaListEl  = overlay.querySelector('.em-afd-area-list');
     const floorListEl = overlay.querySelector('.em-afd-floor-list');
     const areaLabelEl = overlay.querySelector('.em-afd-area-label');
-    const previewEl   = overlay.querySelector('#em-afd-preview');
+    const infoBoxEl   = overlay.querySelector('.em-afd-info-box');
     const applyBtn    = overlay.querySelector('.em-afd-apply-btn');
 
     const updateAreaLabel = () => {
@@ -9881,24 +9877,27 @@ class EntityManagerPanel extends HTMLElement {
     };
 
     const updateApplyBtn = () => {
+      const hasSelection = selectedAreaId !== undefined && selectedAreaId !== null && selectedFloorId !== null;
+      infoBoxEl.classList.toggle('em-afd-info-selected', hasSelection);
       if (selectedAreaId === undefined) {
         applyBtn.disabled = true;
-        applyBtn.textContent = 'Select an area first';
+        applyBtn.innerHTML = 'Select an area first';
       } else if (selectedAreaId === null) {
         applyBtn.disabled = false;
-        applyBtn.textContent = 'Remove area & floor assignment';
+        applyBtn.innerHTML = 'Remove area &amp; floor assignment';
       } else {
         const area  = areas.find(a => a.area_id === selectedAreaId);
         const aName = area?.name || selectedAreaId;
         const fName = area?.floor_id ? (floorName.get(area.floor_id) || '') : '';
         applyBtn.disabled = false;
-        applyBtn.textContent = fName ? `Assign to ${aName} on ${fName}` : `Assign to ${aName}`;
+        const floorPart = fName
+          ? ` <span style="font-size:11px;opacity:0.75;font-weight:400">· ${this._escapeHtml(fName)}</span>`
+          : '';
+        applyBtn.innerHTML = `Assign to <strong style="text-decoration:underline">${this._escapeHtml(aName)}</strong>${floorPart}`;
       }
     };
 
     const updatePreview = () => {
-      previewEl.innerHTML = buildPreviewHtml();
-      previewEl.classList.toggle('em-afd-has-selection', selectedAreaId !== undefined);
       updateAreaLabel();
       updateApplyBtn();
     };
@@ -10031,6 +10030,20 @@ class EntityManagerPanel extends HTMLElement {
 
     renderFloorList();
     renderAreaList();
+
+    // Collapsible section toggles (SVG chevron rotates when collapsed)
+    overlay.querySelectorAll('.em-afd-section-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const key     = toggle.dataset.section;
+        const body    = overlay.querySelector(`.em-afd-section-body[data-body="${key}"]`);
+        const arrow   = toggle.querySelector('.em-afd-section-arrow');
+        const section = toggle.closest('.em-afd-section');
+        const isOpen  = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : '';
+        arrow.style.transform = isOpen ? 'rotate(-90deg)' : '';
+        section.classList.toggle('em-afd-collapsed', isOpen);
+      });
+    });
   }
 
   // Kept for backward compatibility — legacy callers should migrate to _showAreaFloorDialog

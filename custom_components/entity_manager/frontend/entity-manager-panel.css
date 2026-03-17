@@ -5122,15 +5122,26 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* ===== Area / Floor Assignment Dialog ===== */
 .confirm-dialog-box.em-afd-dialog { max-width: 680px; }
+.confirm-dialog-box.em-afd-dialog .confirm-dialog-header {
+  border-bottom: 2px solid var(--em-primary);
+}
 
 .em-afd-wrap {
   display: flex;
-  gap: 0;
-  min-height: 360px;
+  flex-direction: column;
+  gap: 10px;
   flex: 1;
-  /* Override the generic dialog scroll rule — each panel scrolls independently */
   overflow: hidden !important;
 }
+
+.em-afd-top {
+  display: flex;
+  gap: 0;
+  min-height: 240px;
+  flex: 1;
+  overflow: hidden;
+}
+
 .em-afd-left {
   flex: 0 0 260px;
   min-width: 220px;
@@ -5141,6 +5152,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 12px 14px;
   overflow-y: auto;
 }
+
 .em-afd-right {
   flex: 1;
   min-width: 0;
@@ -5151,22 +5163,57 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   overflow-y: auto;
 }
 
-/* Dropdown section (area and floor panels) */
-.em-afd-dropdown-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* Collapsible section wrapper — matches .em-naming-device-group pattern */
+.em-afd-section {
+  border: 2px solid var(--em-primary);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 2px 0;
 }
+
+.em-afd-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  padding: 7px 10px;
+  background: var(--em-bg-secondary);
+  border-bottom: 2px solid var(--em-primary);
+}
+.em-afd-section.em-afd-collapsed .em-afd-section-toggle { border-bottom: none; }
+
+.em-afd-section-toggle:hover .em-afd-section-arrow {
+  background: var(--em-primary);
+  border-color: var(--em-primary);
+  color: #fff;
+}
+
+.em-afd-section-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--em-bg-hover);
+  border: 1.5px solid var(--em-border);
+  color: var(--em-primary);
+  flex-shrink: 0;
+  transition: transform 0.15s, background 0.2s, border-color 0.2s;
+}
+
+.em-afd-section-body { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+
 .em-afd-dropdown-label {
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--em-text-secondary);
-  padding: 2px 2px 4px;
-  border-bottom: 1px solid var(--em-border);
-  margin-bottom: 2px;
+  color: var(--em-text-primary);
+  flex: 1;
 }
+
 .em-afd-area-list, .em-afd-floor-list {
   display: flex;
   flex-direction: column;
@@ -5181,15 +5228,14 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--em-border);
+  border-radius: 6px;
+  border: 2px solid var(--em-primary);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
   font-size: 13px;
 }
 .em-afd-row:hover { background: var(--em-bg-hover); }
 .em-afd-row.em-afd-selected {
-  border-color: var(--em-primary);
   background: color-mix(in srgb, var(--em-primary) 12%, transparent);
   font-weight: 600;
 }
@@ -5217,40 +5263,51 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   background: color-mix(in srgb, var(--em-primary) 85%, #000);
   border-color: color-mix(in srgb, var(--em-primary) 85%, #000);
 }
-.em-afd-apply-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.em-afd-apply-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Separator line between top selectors and entity info box */
+.em-afd-divider {
+  border: none;
+  border-top: 2px solid var(--em-primary);
+  margin: 0;
+  flex-shrink: 0;
+  opacity: 0.4;
 }
 
+/* Entity info box — full-width bottom row, 2-col grid, scrollable */
 .em-afd-info-box {
-  border: 2px solid var(--em-primary);
+  border: none;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: var(--em-bg-secondary);
-  flex: 1;
+  overflow-y: auto;
+  max-height: 180px;
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  align-content: start;
 }
-.em-afd-entity-name { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
-.em-afd-meta { font-size: 11px; color: var(--em-text-secondary); }
-.em-afd-preview-box {
-  border: 2px solid var(--em-border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: var(--em-bg-secondary);
-  transition: border-color 0.25s, box-shadow 0.25s;
-  flex: 1;
+.em-afd-entity-card {
+  border: 2px solid var(--em-danger);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-width: 0;
+  transition: border-color 0.25s, background 0.25s;
 }
-.em-afd-preview-box.em-afd-has-selection {
+.em-afd-info-box.em-afd-info-selected .em-afd-entity-card {
   border-color: var(--em-success);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--em-success) 18%, transparent);
+  background: color-mix(in srgb, var(--em-success) 5%, transparent);
 }
-.em-afd-preview-area { font-size: 14px; font-weight: 700; color: var(--em-success); }
-.em-afd-preview-floor { font-size: 12px; color: var(--em-text-secondary); margin-top: 2px; }
+.em-afd-entity-name { font-size: 12px; font-weight: 600; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.em-afd-meta { font-size: 10px; color: var(--em-text-secondary); }
 
 @media (max-width: 600px) {
-  .em-afd-wrap { flex-direction: column; min-height: auto; }
-  .em-afd-left { border-right: none; border-bottom: 1px solid var(--em-border); }
+  .em-afd-top { flex-direction: column; min-height: auto; }
+  .em-afd-left { border-right: none; border-bottom: 1px solid var(--em-border); flex: 0 0 auto; }
   .em-afd-area-list { max-height: 120px; }
   .em-afd-floor-list { max-height: 80px; }
+  .em-afd-info-box { max-height: 130px; grid-template-columns: 1fr; }
 }
 
 /* Entity health alert banner */
