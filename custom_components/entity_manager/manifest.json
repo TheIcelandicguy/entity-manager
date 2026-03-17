@@ -7,7 +7,7 @@
   "codeowners": ["@TheIcelandicguy"],
   "config_flow": true,
   "dependencies": ["frontend"],
-  "version": "2.14.0",
+  "version": "2.15.0",
   "integration_type": "service",
   "iot_class": "calculated"
 }

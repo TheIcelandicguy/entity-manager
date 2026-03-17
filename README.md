@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.14.0-blue)
+![Version](https://img.shields.io/badge/version-2.15.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -75,7 +75,7 @@ Entity Manager provides multiple ways to find exactly what you need:
 All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
 ### Sidebar Navigation
 A collapsible sidebar provides quick access to every feature:
-- **Actions** -- Undo, Redo, Export, Import, Favorites, Activity Log, Comparison View, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area**, **Assign Floor**, View Selected, Deselect All
+- **Actions** -- Undo, Redo, Export, Import, Favorites, Activity Log, Comparison View, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area** (includes floor), View Selected, Deselect All
 - **Labels** -- Browse and filter by Home Assistant labels grouped by **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, and **Entities**
 - **Groups** -- Switch between grouping modes: Integration (default), Room, Type, Floor, Device Name
 - **Domains** -- Filter by entity domain
@@ -219,8 +219,7 @@ Right-click any entity (or multi-selection) for a full context menu:
 - Rename / Enable / Disable
 - Add to Favorites
 - Manage Labels / Alias
-- **Assign to area** — pick from HA areas grouped by floor
-- **Assign to floor** — two-step floor picker; auto-selects area when a floor has only one
+- **Assign to area** — two-panel dialog: select floor (step 1) to label new area creation, then pick from all areas (step 2); live preview shows new area + floor; "No area" option clears assignment
 - Add to Comparison
 - View Statistics / State History
 - Show Dependencies / Analyze Impact
