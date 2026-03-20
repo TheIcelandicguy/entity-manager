@@ -555,11 +555,7 @@ Entity Manager stores user preferences in the browser:
 |:---:|:---:|
 | ![Assign to a device](screenshots/Assign%20to%20a%20device.png) | ![Assign to a device confirm](screenshots/Assign%20to%20a%20device%20confirm.png) |
 
-### Stat Dialogs
-
-| Unavailable | Updates | HACS Store | Lovelace Cards |
-|:---:|:---:|:---:|:---:|
-| ![Unavailable](screenshots/unavailable-dialog.png) | ![Updates](screenshots/updates-view.png) | ![HACS Store](screenshots/HACS%20Store.png) | ![Cards](screenshots/cards-dialog.png) |
+### Card Types
 
 | Card Types | Card Types (expanded) |
 |:---:|:---:|
@@ -575,8 +571,7 @@ Entity Manager stores user preferences in the browser:
 
 | Overview | Area Suggestions | Naming Suggestions |
 |:---:|:---:|:---:|
-| ![Suggestions](screenshots/Entity%20Sugestions.png) | ![Area](screenshots/suggestions-area.png) | ![Naming](screenshots/suggestions-naming.png) |
-
+| ![Suggestions](screenshots/Entity%20Sugestions.png) |
 ---
 ## Use Cases
 - **Cleaning up after integrations** -- disable the dozens of unused entities that some integrations create
