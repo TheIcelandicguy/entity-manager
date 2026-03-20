@@ -1314,7 +1314,7 @@ async def handle_get_last_activity(
                         params = {f"e{j}": eid for j, eid in enumerate(chunk)}
                         in_clause = ", ".join(f":e{j}" for j in range(len(chunk)))
                         rows = session.execute(
-                            sa_text(
+                            sa_text(  # nosec B608 – in_clause contains only :eN placeholders, not user data
                                 f"""
                                 SELECT sm.entity_id, MAX(s.last_changed_ts)
                                 FROM states s

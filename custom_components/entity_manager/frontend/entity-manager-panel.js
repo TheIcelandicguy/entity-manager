@@ -2520,7 +2520,7 @@ class EntityManagerPanel extends HTMLElement {
         await this._showAreaFloorDialog(title, entities);
         break;
       }
-      case 'assign-device':
+      case 'assign-device': {
         this._showDevicePickerDialog(entityId, async (deviceId, deviceName) => {
           try {
             await this._hass.callWS({ type: 'entity_manager/assign_entity_device', entity_id: entityId, device_id: deviceId });
