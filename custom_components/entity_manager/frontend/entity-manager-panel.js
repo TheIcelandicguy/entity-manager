@@ -2532,6 +2532,7 @@ class EntityManagerPanel extends HTMLElement {
           }
         });
         break;
+      }
       case 'alias':         this._showAliasEditor(entityId); break;
       case 'copy-id':
         navigator.clipboard.writeText(entityId);
@@ -5565,6 +5566,14 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">↺</span>
             <span class="label">History</span>
             ${this.undoStack.length > 0 ? `<span class="count">${this.undoStack.length}</span>` : ''}
+          </div>
+          <div class="sidebar-item" data-action="naming-improvements">
+            <span class="icon">✏️</span>
+            <span class="label">Naming Improvements</span>
+          </div>
+          <div class="sidebar-item" data-action="label-suggestions">
+            <span class="icon">🏷️</span>
+            <span class="label">Label Suggestions</span>
           </div>
           <div class="sidebar-item" data-action="naming-improvements">
             <span class="icon">✏️</span>
@@ -10414,7 +10423,18 @@ class EntityManagerPanel extends HTMLElement {
         } catch (e) {
           this._showToast('Failed to create floor: ' + (e.message || e), 'error');
         }
-      });
+        return;
+      }
+
+      // Pick best area: name matches floor name, else first alphabetically
+      const sorted = [...fAreas].sort((a, b) => a.name.localeCompare(b.name));
+      const match = sorted.find(a => a.name.toLowerCase() === floor.name.toLowerCase()) || sorted[0];
+      closeDialog();
+      onFloorSelect(match.area_id);
+    };
+
+    list.querySelectorAll('.em-floor-pick-row').forEach(row => {
+      row.addEventListener('click', () => resolveAndAssign(row.dataset.floorId));
     });
 
     // Apply
@@ -10455,6 +10475,8 @@ class EntityManagerPanel extends HTMLElement {
         section.classList.toggle('em-afd-collapsed', isOpen);
       });
     });
+
+    overlay.querySelector('.em-floor-cancel-btn').addEventListener('click', closeDialog);
   }
 
   _showDevicePickerDialog(entityId, onSelect) {
