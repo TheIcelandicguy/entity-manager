@@ -1313,19 +1313,16 @@ async def handle_get_last_activity(
                         chunk = entity_ids[i : i + CHUNK]
                         params = {f"e{j}": eid for j, eid in enumerate(chunk)}
                         in_clause = ", ".join(f":e{j}" for j in range(len(chunk)))
-                        rows = session.execute(
-                            sa_text(  # nosec B608 – in_clause contains only :eN placeholders, not user data
-                                f"""
-                                SELECT sm.entity_id, MAX(s.last_changed_ts)
-                                FROM states s
-                                JOIN states_meta sm ON sm.metadata_id = s.metadata_id
-                                WHERE sm.entity_id IN ({in_clause})
-                                  AND s.state NOT IN ('unavailable', 'unknown')
-                                GROUP BY sm.entity_id
-                                """
-                            ),
-                            params,
-                        ).fetchall()
+                        # in_clause contains only :eN parameter placeholders — not user input
+                        _q = (
+                            "SELECT sm.entity_id, MAX(s.last_changed_ts)"
+                            " FROM states s"
+                            " JOIN states_meta sm ON sm.metadata_id = s.metadata_id"
+                            " WHERE sm.entity_id IN (" + in_clause + ")"
+                            " AND s.state NOT IN ('unavailable', 'unknown')"
+                            " GROUP BY sm.entity_id"
+                        )
+                        rows = session.execute(sa_text(_q), params).fetchall()
                         for row in rows:
                             if row[1] is not None:
                                 result[row[0]] = float(row[1]) * 1000  # s → ms

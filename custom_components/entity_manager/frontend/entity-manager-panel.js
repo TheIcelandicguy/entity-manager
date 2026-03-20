@@ -10424,14 +10424,8 @@ class EntityManagerPanel extends HTMLElement {
           this._showToast('Failed to create floor: ' + (e.message || e), 'error');
         }
         return;
-      }
-
-      // Pick best area: name matches floor name, else first alphabetically
-      const sorted = [...fAreas].sort((a, b) => a.name.localeCompare(b.name));
-      const match = sorted.find(a => a.name.toLowerCase() === floor.name.toLowerCase()) || sorted[0];
-      closeDialog();
-      onFloorSelect(match.area_id);
-    };
+      });
+    });
 
     list.querySelectorAll('.em-floor-pick-row').forEach(row => {
       row.addEventListener('click', () => resolveAndAssign(row.dataset.floorId));
