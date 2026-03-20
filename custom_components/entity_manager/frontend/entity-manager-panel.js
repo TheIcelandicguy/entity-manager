@@ -10427,10 +10427,6 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    list.querySelectorAll('.em-floor-pick-row').forEach(row => {
-      row.addEventListener('click', () => resolveAndAssign(row.dataset.floorId));
-    });
-
     // Apply
     applyBtn.addEventListener('click', async () => {
       const areaId = selectedAreaId === undefined ? undefined : (selectedAreaId || null);

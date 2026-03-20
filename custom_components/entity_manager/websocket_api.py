@@ -1315,7 +1315,7 @@ async def handle_get_last_activity(
                         in_clause = ", ".join(f":e{j}" for j in range(len(chunk)))
                         # in_clause contains only :eN parameter placeholders — not user input
                         _q = (
-                            "SELECT sm.entity_id, MAX(s.last_changed_ts)"
+                            "SELECT sm.entity_id, MAX(s.last_changed_ts)"  # nosec B608
                             " FROM states s"
                             " JOIN states_meta sm ON sm.metadata_id = s.metadata_id"
                             " WHERE sm.entity_id IN (" + in_clause + ")"
