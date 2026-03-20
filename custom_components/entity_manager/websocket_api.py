@@ -613,7 +613,13 @@ async def handle_remove_entity(
             return
 
     # YAML-defined or other entities: remove from registry only.
-    entity_reg.async_remove(entity_id)
+    try:
+        entity_reg.async_remove(entity_id)
+    except Exception as err:
+        _LOGGER.error("Error removing entity %s: %s", entity_id, err)
+        connection.send_error(msg["id"], "remove_failed", str(err))
+        return
+
     yaml_warning = (
         "This entity is defined in YAML and will return after the next HA restart."
         if not config_entry_id and platform == "template"
@@ -652,6 +658,30 @@ async def handle_assign_entity_device(
         connection.send_error(msg["id"], "not_found", f"Device {device_id} not found")
         return
     entity_reg.async_update_entity(entity_id, device_id=device_id)
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/unassign_entity_device",
+        vol.Required("entity_id"): cv.entity_id,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_unassign_entity_device(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Remove a device assignment from an entity in the entity registry."""
+    entity_id = msg["entity_id"]
+    entity_reg = er.async_get(hass)
+    entry = entity_reg.async_get(entity_id)
+    if not entry:
+        connection.send_error(msg["id"], "not_found", f"Entity {entity_id} not found")
+        return
+    entity_reg.async_update_entity(entity_id, device_id=None)
     connection.send_result(msg["id"], {"success": True})
 
 
@@ -1243,6 +1273,89 @@ async def handle_register_template(
     connection.send_result(msg["id"], result)
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_last_activity",
+        vol.Optional("entity_ids"): [str],
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_last_activity(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return last non-unavailable/unknown state timestamp per entity from the recorder DB.
+
+    Returns a dict mapping entity_id → timestamp_ms (Unix milliseconds).
+    """
+    entity_ids: list[str] | None = msg.get("entity_ids") or None
+
+    def _run_query() -> dict[str, float]:
+        try:
+            from homeassistant.components.recorder import get_instance  # noqa: PLC0415
+            from sqlalchemy import text as sa_text  # noqa: PLC0415
+        except ImportError:
+            return {}
+
+        try:
+            recorder = get_instance(hass)
+        except Exception:  # noqa: BLE001
+            return {}
+
+        result: dict[str, float] = {}
+        CHUNK = 500
+        try:
+            with recorder.get_session() as session:
+                if entity_ids:
+                    for i in range(0, len(entity_ids), CHUNK):
+                        chunk = entity_ids[i : i + CHUNK]
+                        params = {f"e{j}": eid for j, eid in enumerate(chunk)}
+                        in_clause = ", ".join(f":e{j}" for j in range(len(chunk)))
+                        rows = session.execute(
+                            sa_text(
+                                f"""
+                                SELECT sm.entity_id, MAX(s.last_changed_ts)
+                                FROM states s
+                                JOIN states_meta sm ON sm.metadata_id = s.metadata_id
+                                WHERE sm.entity_id IN ({in_clause})
+                                  AND s.state NOT IN ('unavailable', 'unknown')
+                                GROUP BY sm.entity_id
+                                """
+                            ),
+                            params,
+                        ).fetchall()
+                        for row in rows:
+                            if row[1] is not None:
+                                result[row[0]] = float(row[1]) * 1000  # s → ms
+                else:
+                    rows = session.execute(
+                        sa_text(
+                            """
+                            SELECT sm.entity_id, MAX(s.last_changed_ts)
+                            FROM states s
+                            JOIN states_meta sm ON sm.metadata_id = s.metadata_id
+                            WHERE s.state NOT IN ('unavailable', 'unknown')
+                            GROUP BY sm.entity_id
+                            """
+                        )
+                    ).fetchall()
+                    for row in rows:
+                        if row[1] is not None:
+                            result[row[0]] = float(row[1]) * 1000
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.warning("Last activity recorder query failed: %s", exc)
+        return result
+
+    try:
+        result = await hass.async_add_executor_job(_run_query)
+        connection.send_result(msg["id"], result)
+    except Exception as err:
+        _LOGGER.error("Error in get_last_activity: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "query_failed", str(err))
+
+
 @callback
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
@@ -1260,9 +1373,11 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_update_entity_display_name)
     websocket_api.async_register_command(hass, handle_remove_entity)
     websocket_api.async_register_command(hass, handle_assign_entity_device)
+    websocket_api.async_register_command(hass, handle_unassign_entity_device)
     websocket_api.async_register_command(hass, handle_update_yaml_references)
     websocket_api.async_register_command(hass, handle_get_entity_details)
     websocket_api.async_register_command(hass, handle_get_config_entry_health)
     websocket_api.async_register_command(hass, handle_get_areas_and_floors)
     websocket_api.async_register_command(hass, handle_register_template)
+    websocket_api.async_register_command(hass, handle_get_last_activity)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")

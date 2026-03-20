@@ -1,6 +1,6 @@
 {
   "name": "entity-manager",
-  "version": "2.15.0",
+  "version": "2.17.0",
   "private": true,
   "type": "module",
   "description": "Entity Manager - Home Assistant custom integration",

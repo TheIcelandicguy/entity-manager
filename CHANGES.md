@@ -1,5 +1,70 @@
 # Entity Manager UI Changes
 
+## Version 2.17.0 - Last Activity Timeline View & Persistent Timestamps
+
+### New Features
+
+#### Last Activity Timeline Inline View
+- New **🕐 Last Activity** sidebar button (Actions section) opens a full inline view showing when every entity, automation, script, helper, template, sensor, switch, light, etc. was last active
+- Entities grouped into **15 domain-based sections**: 🤖 Automations, ⚡ Scripts, 🎛️ Helpers, 🧩 Templates, 💡 Lights, 🔌 Switches, 🌡️ Sensors, 🔍 Binary Sensors, 📺 Media Players, ❄️ Climate & Environment, 🔒 Security, 📷 Cameras, 📍 People & Tracking, 🔘 Controls, ⬆️ Updates, ⚙️ Other (sub-grouped by integration)
+- **9 time-range filter pills**: All · Today · This Week · 1 Month · 3 Months · 6 Months · 1 Year · Older · Never
+- **Live search** across entity ID, friendly name, device name, and integration (debounced 200ms)
+- **Live count badge** in the header updates as filter/search changes
+- Refresh button invalidates the recorder timestamp cache and re-fetches fresh data
+- Clicking any row opens the entity details dialog
+- Filter pill selection persisted to `localStorage['em-at-filter']`
+
+#### Persistent "Last Active" Timestamps (Recorder-backed)
+- New `entity_manager/get_last_activity` WebSocket endpoint queries the recorder SQLite DB for the most recent non-`unavailable`/`unknown` state change per entity — timestamps survive HA restarts
+- Returns `{ entity_id: timestamp_ms }` — chunked SQL queries (500 per batch) to avoid DB limits
+- Frontend caches results in `localStorage` (`em_lastActivityCache`) with a 1-hour TTL
+- Entity card "Last active" chip now uses recorder-backed timestamps; falls back to `state.last_changed` on cache miss
+- `_loadLastActivityCache()` fires non-blocking from `loadData()`; calls `updateView()` after cache loads
+
+---
+
+## Version 2.16.0 - History Dialog, Delete Fixes & Open in HA
+
+### New Features
+
+#### Combined Undo/Redo History Dialog
+- Replaced two separate "Undo (N)" / "Redo (N)" sidebar buttons with a single **↺ History** button
+- Clicking opens a dialog showing the full action timeline: redo actions (muted, top) → "▶ Current state" divider → undo actions (bottom)
+- Each row shows a human-readable description (e.g. "Assigned sensor.shelly_power to Shelly Plug S")
+- Clicking any row executes all steps needed to reach that point in history; list refreshes in-place
+- Section labels explain each half: "These are actions you have taken — click Undo to reverse them"
+- **Clear History** button wipes both stacks and persists to localStorage
+- History survives hard refresh (localStorage persistence carried over from undo/redo system)
+- New `_describeAction(action)` helper covers: enable, disable, bulk_enable, bulk_disable, rename, display_name_change, labels_change, assign_entity_device, assign_entity_area, assign_device_area
+- Device name stored in `assign_entity_device` undo action so history shows the actual device name
+
+#### "Open in HA" Button on Entity Cards
+- New house+HA SVG icon button added to every entity card action row
+- Navigates to the entity's settings page in HA (`/config/entities/entity/{id}`)
+- Mini-cards in all views (dialogs and inline) updated: `↗` replaced with matching house+HA icon; opens entity more-info panel
+- Context menu "Open in HA" fixed: `location-changed` event now dispatched with `bubbles: true, composed: true` so HA picks it up
+- Persistent delegated listener on `this.content` ensures the button works in async-loaded inline sections (Automations & Helpers, Health & Cleanup, etc.)
+
+#### Assign to Device from Context Menu
+- Right-click any entity card → new "🔌 Assign to device" option
+- Opens the same device picker dialog (integration-grouped, confirmation warning, undo tracked)
+- Stored in undo history with device name shown in history dialog
+
+### Bug Fixes
+
+#### Delete Button on Entity Cards
+- Fixed missing click listener for the `🗑` bulk-delete button — button was rendered but had no handler wired up
+- Switched WS call from `config/entity_registry/remove` (fails for entities without `unique_id`) to `entity_manager/remove_entity` (handles all entity types)
+- Python handler now has proper `try/except` around `entity_reg.async_remove()` — unhandled exceptions no longer cause silent WS failures
+- Toast now shows the actual error message instead of just "N failed"
+
+#### Bulk Delete Performance (Large Batches)
+- Batches > 10 entities now skip per-entity WS scans (was firing 2× N parallel calls — e.g. 198 simultaneous WS requests for 99 entities)
+- Large batches show count warning immediately and list entity IDs
+- Deletion runs in parallel chunks of 10 instead of sequentially one-by-one
+
+---
+
 ## Version 2.15.0 - Area & Floor Assignment Dialog Redesign
 
 ### New Features

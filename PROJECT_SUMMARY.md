@@ -14,11 +14,11 @@ Solves the common problem of managing hundreds of disabled diagnostic entities (
 
 ## Project Stats
 
-- **Version**: 2.10.0
+- **Version**: 2.16.0
 - **License**: MIT
 - **Language**: Python (backend), JavaScript (frontend)
 - **HA Minimum**: 2024.1.0
-- **Lines of Code**: ~3800+ (including comments)
+- **Lines of Code**: ~13,500+ JS / ~6,100 CSS / ~1,050 Python
 
 ## File Structure
 
@@ -53,29 +53,38 @@ entity-manager/
 ## Key Features
 
 ### Backend (Python)
-✅ WebSocket API with 5 commands
-✅ Entity registry integration
-✅ Device registry caching
-✅ Bulk operations support
-✅ Error handling
+✅ WebSocket API with 18 commands
+✅ Entity registry integration (enable, disable, rename, remove, assign device)
+✅ Device + area + label registry access
+✅ Bulk operations (up to 500 entities)
+✅ YAML reference finder/replacer
+✅ HACS integration listing
+✅ Config entry health reporting
+✅ Voice assistant intent handlers
+✅ Proper error handling with per-item failure reporting
 
 ### Frontend (JavaScript)
-✅ Vanilla JS web component (no framework dependencies)
-✅ Tree view with expand/collapse
-✅ Search/filter functionality
-✅ Checkbox selection
-✅ Real-time statistics
-✅ Responsive design
-✅ HA theme integration
+✅ Vanilla JS web component (~13,500 lines, no framework)
+✅ Tree view: Integration → Device → Entity with expand/collapse
+✅ 5 smart grouping modes (Integration, Room/Area, Type, Floor, Device Name)
+✅ Inline views: Automations & Helpers, Health & Cleanup, Templates, HACS, Lovelace, Browser Mod, Activity Log
+✅ Bulk rename inline panel with find & replace and live preview
+✅ Undo/Redo with combined History dialog (full timeline, clear history)
+✅ Area & Floor assignment dialog (two-panel, native HA APIs)
+✅ Device assignment dialog (integration-grouped picker, confirmation warning)
+✅ Theme system: 4 built-in + custom themes; CSS variable architecture
+✅ Context menu (right-click) with full action set
+✅ Favorites, aliases, custom tags, filter presets
+✅ Activity log with HA history integration
+✅ Updates view with sequential queue and live SVG progress ring
 
 ### User Experience
-✅ Integration grouping
-✅ Device grouping
-✅ Entity details (disabled_by, category)
-✅ Bulk enable/disable
-✅ Search across all fields
-✅ One-click enable for integration/device
-✅ Progress feedback
+✅ "Open in HA" house button on every entity card and mini-card
+✅ Bulk delete with YAML reference scan and large-batch optimisation
+✅ Right-click → Assign to device / area / labels
+✅ History dialog shows human-readable action descriptions
+✅ Responsive design (768px / 600px / 480px breakpoints)
+✅ All operations tracked in undo history with localStorage persistence
 
 ## Technical Highlights
 
@@ -216,6 +225,6 @@ MIT License - Free to use, modify, and distribute
 
 ---
 
-**Version**: 2.9.2
+**Version**: 2.16.0
 **Created**: January 2025
 **Maintainer**: @TheIcelandicguy
