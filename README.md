@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.15.0-blue)
+![Version](https://img.shields.io/badge/version-2.17.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -19,6 +19,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Entity Comparison](#entity-comparison)
   - [Entity Analysis](#entity-analysis)
   - [Activity Log](#activity-log)
+  - [Last Activity Timeline](#last-activity-timeline)
   - [Undo / Redo](#undo--redo)
   - [Filter Presets](#filter-presets)
   - [Column Customization](#column-customization)
@@ -75,7 +76,7 @@ Entity Manager provides multiple ways to find exactly what you need:
 All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
 ### Sidebar Navigation
 A collapsible sidebar provides quick access to every feature:
-- **Actions** -- Undo, Redo, Export, Import, Favorites, Activity Log, Comparison View, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area** (includes floor), View Selected, Deselect All
+- **Actions** -- **↺ History** (combined undo/redo timeline dialog), Export, Import, Favorites, **🕐 Last Activity** (recorder-backed timeline view), Activity Log, Comparison View, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area** (includes floor), View Selected, Deselect All
 - **Labels** -- Browse and filter by Home Assistant labels grouped by **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, and **Entities**
 - **Groups** -- Switch between grouping modes: Integration (default), Room, Type, Floor, Device Name
 - **Domains** -- Filter by entity domain
@@ -127,12 +128,26 @@ Right-click any entity to access deep analysis tools:
 - **Search bar** filters by entity ID, device, room, or state value
 - **Room filter chips** with All / None buttons — select specific rooms to focus on; selection persisted between sessions
 - Accessible from the Actions sidebar section
+### Last Activity Timeline
+A dedicated inline view showing **recorder-backed "last active" timestamps** for every entity, automation, script, helper, template, and more — in one consolidated, searchable, filterable list:
+- **🕐 Last Activity** button in the Actions sidebar section opens the full inline view
+- Entities split into **15 domain-based sections**: 🤖 Automations, ⚡ Scripts, 🎛️ Helpers, 🧩 Templates, 💡 Lights, 🔌 Switches, 🌡️ Sensors, 🔍 Binary Sensors, 📺 Media Players, ❄️ Climate & Environment, 🔒 Security, 📷 Cameras, 📍 People & Tracking, 🔘 Controls, ⬆️ Updates, ⚙️ Other (sub-grouped by integration)
+- **9 time-range filter pills**: All · Today · This Week · 1 Month · 3 Months · 6 Months · 1 Year · Older · Never — filter selection persisted between sessions
+- **Live search** across entity ID, friendly name, device name, and integration with 200ms debounce
+- **Live count badge** in the header updates as you filter/search
+- Timestamps come from the **HA recorder database** — survive HA restarts (unlike in-memory `last_changed` which resets when entities briefly go unavailable)
+- Automations and scripts use `last_triggered` from HA state attributes
+- Refresh button invalidates the 1-hour localStorage cache and fetches fresh recorder data
+- Clicking any row opens the full entity detail dialog
 ### Undo / Redo
-Full operation history with unlimited undo/redo:
-- **Ctrl+Z** to undo the last operation
-- **Ctrl+Shift+Z** or **Ctrl+Y** to redo
-- Supports: enable, disable, rename, and all bulk operations
-- Undo/Redo buttons also available in the sidebar
+Full operation history with combined timeline dialog:
+- **↺ History** button in the sidebar opens a combined undo/redo timeline dialog
+- Shows the full action history: redo actions (top, muted) → current state divider → undo actions (bottom)
+- Click any row in the dialog to jump to that point in history; the list refreshes in-place
+- **Clear History** button wipes both stacks
+- **Ctrl+Z** to undo the last operation; **Ctrl+Shift+Z** or **Ctrl+Y** to redo
+- Supports: enable, disable, rename, display name change, label changes, device/area assignment, and all bulk operations
+- History survives page refresh (localStorage persistence)
 ### Filter Presets
 - Save your current filter configuration (domain, search term, state) as a named preset
 - Load any saved preset to instantly restore a filter combination
@@ -220,6 +235,7 @@ Right-click any entity (or multi-selection) for a full context menu:
 - Add to Favorites
 - Manage Labels / Alias
 - **Assign to area** — two-panel dialog: select floor (step 1) to label new area creation, then pick from all areas (step 2); live preview shows new area + floor; "No area" option clears assignment
+- **🔌 Assign to device** — opens an integration-grouped device picker with confirmation; stored in undo history with device name
 - Add to Comparison
 - View Statistics / State History
 - Show Dependencies / Analyze Impact
@@ -430,21 +446,35 @@ Home Assistant Entity & Device Registries
 | Component | Description |
 |---|---|
 | `__init__.py` | Integration setup, service registration, sidebar panel |
-| `websocket_api.py` | 7 WebSocket command handlers |
+| `websocket_api.py` | 19 WebSocket command handlers |
 | `voice_assistant.py` | Voice intent handlers |
 | `config_flow.py` | UI-based configuration flow |
 | `entity-manager-panel.js` | Full frontend as a single web component |
 | `entity-manager-panel.css` | Extracted stylesheet |
 ### WebSocket API
+All commands require admin privileges.
+
 | Command | Parameters | Description |
 |---|---|---|
-| `entity_manager/get_disabled_entities` | `state`: disabled, enabled, or all | Fetch entities grouped by integration/device |
+| `entity_manager/get_disabled_entities` | `state`: disabled, enabled, or all | Entities grouped by integration/device |
+| `entity_manager/export_states` | — | Export all entity states to JSON |
+| `entity_manager/get_automations` | — | Automations with last-triggered and trigger context |
+| `entity_manager/get_template_sensors` | — | Template entities with state + connections |
+| `entity_manager/get_entity_details` | `entity_id` | Full entity metadata (registry, device, area, labels) |
+| `entity_manager/get_config_entry_health` | — | Failed/unhealthy config entries |
+| `entity_manager/get_areas_and_floors` | — | Area + floor hierarchy |
+| `entity_manager/list_hacs_items` | — | Installed HACS items + store items |
+| `entity_manager/get_last_activity` | `entity_ids` (optional) | Recorder-backed last-active timestamps per entity |
 | `entity_manager/enable_entity` | `entity_id` | Enable a single entity |
 | `entity_manager/disable_entity` | `entity_id` | Disable a single entity |
 | `entity_manager/bulk_enable` | `entity_ids` (max 500) | Enable multiple entities |
 | `entity_manager/bulk_disable` | `entity_ids` (max 500) | Disable multiple entities |
-| `entity_manager/rename_entity` | `entity_id`, `new_entity_id` | Rename an entity |
-| `entity_manager/export_states` | -- | Export all entity states to JSON |
+| `entity_manager/rename_entity` | `entity_id`, `new_name` | Rename entity (domain preserved) |
+| `entity_manager/update_entity_display_name` | `entity_id`, `display_name` | Set or clear user display name |
+| `entity_manager/remove_entity` | `entity_id` | Remove entity (handles templates, YAML, integration-managed) |
+| `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Find/replace entity ID across YAML config files |
+| `entity_manager/assign_entity_device` | `entity_id`, `device_id` | Assign entity to a device |
+| `entity_manager/unassign_entity_device` | `entity_id` | Remove device assignment from entity |
 ### Home Assistant Services
 - `entity_manager.enable_entity`
 - `entity_manager.disable_entity`
@@ -457,7 +487,9 @@ Entity Manager stores user preferences in the browser:
 | Key | Data |
 |---|---|
 | `em-favorites` | Starred entities |
-| `em-activity-log` | Recent operation history |
+| `em_activityLog` | Last 100 operation log entries |
+| `em_undoStack` | Up to 50 undo steps (survives page refresh) |
+| `em_redoStack` | Redo steps |
 | `em-custom-themes` | User-created themes |
 | `em-active-theme` | Currently selected theme |
 | `em-entity-aliases` | Entity display aliases |
@@ -468,6 +500,8 @@ Entity Manager stores user preferences in the browser:
 | `em-sidebar-collapsed` | Sidebar state |
 | `em-smart-group-mode` | Active grouping mode |
 | `em-entity-order` | Custom entity ordering |
+| `em_lastActivityCache` | Recorder-backed timestamps (1-hour TTL) |
+| `em-at-filter` | Last Activity Timeline active filter pill |
 ---
 ## Screenshots
 
@@ -476,6 +510,18 @@ Entity Manager stores user preferences in the browser:
 | Light Theme | Dark Theme |
 |:---:|:---:|
 | ![Light Theme](screenshots/main-panel-light.png) | ![Dark Theme](screenshots/main-panel-dark.png) |
+
+| Front View |
+|:---:|
+| ![Front View](screenshots/Front%20wiew.png) |
+
+### Last Activity Timeline
+
+![Last Activity](screenshots/Last%20Activity.png)
+
+### Undo / Redo History
+
+![Undo Redo History](screenshots/Undo%20redo%20history.png)
 
 ### Themes
 
@@ -493,31 +539,43 @@ Entity Manager stores user preferences in the browser:
 
 ![Bulk Rename](screenshots/bulk-rename.png)
 
-### Stat Dialogs
+### Automations, Scripts & Helpers
 
-| Automations | Scripts | Helpers | Templates |
-|:---:|:---:|:---:|:---:|
-| ![Automations](screenshots/automations-dialog.png) | ![Scripts](screenshots/scripts-dialog.png) | ![Helpers](screenshots/helpers-dialog.png) | ![Templates](screenshots/templates-dialog.png) |
+| Overview | Open |
+|:---:|:---:|
+| ![Automations Scripts Helpers](screenshots/Automations%20scripts%20helpers.png) | ![Automations Scripts Helpers Open](screenshots/Automations%20scripts%20helpers%20open.png) |
+
+### Templates
+
+![Templates](screenshots/Templates.png)
+
+### Assign to Device
+
+| Picker | Confirmation |
+|:---:|:---:|
+| ![Assign to a device](screenshots/Assign%20to%20a%20device.png) | ![Assign to a device confirm](screenshots/Assign%20to%20a%20device%20confirm.png) |
+
+### Stat Dialogs
 
 | Unavailable | Updates | HACS Store | Lovelace Cards |
 |:---:|:---:|:---:|:---:|
-| ![Unavailable](screenshots/unavailable-dialog.png) | ![Updates](screenshots/updates-view.png) | ![HACS Store](screenshots/hacs-store-dialog.png) | ![Cards](screenshots/cards-dialog.png) |
+| ![Unavailable](screenshots/unavailable-dialog.png) | ![Updates](screenshots/updates-view.png) | ![HACS Store](screenshots/HACS%20Store.png) | ![Cards](screenshots/cards-dialog.png) |
+
+| Card Types | Card Types (expanded) |
+|:---:|:---:|
+| ![Card Types](screenshots/Card%20types.png) | ![Card Types 2](screenshots/Card%20types%202.png) |
 
 ### Cleanup & Health
 
-| Cleanup | Cleanup (expanded) | Card Types | Config Health |
-|:---:|:---:|:---:|:---:|
-| ![Cleanup](screenshots/cleanup-dialog.png) | ![Cleanup Expanded](screenshots/cleanup-dialog-expanded.png) | ![Card Types](screenshots/card-types-dialog.png) | ![Config Health](screenshots/config-health-dialog.png) |
-
-### Devices View
-
-![Devices View](screenshots/devices-view.png)
+| Cleanup | Cleanup & Health | Cleanup & Health (expanded) |
+|:---:|:---:|:---:|
+| ![Cleanup](screenshots/Cleanup.png) | ![Cleanup and health](screenshots/Cleanup%20and%20health.png) | ![Cleanup and health 2](screenshots/Cleanup%20and%20health%202.png) |
 
 ### Suggestions
 
 | Overview | Area Suggestions | Naming Suggestions |
 |:---:|:---:|:---:|
-| ![Suggestions](screenshots/suggestions-dialog.png) | ![Area](screenshots/suggestions-area.png) | ![Naming](screenshots/suggestions-naming.png) |
+| ![Suggestions](screenshots/Entity%20Sugestions.png) | ![Area](screenshots/suggestions-area.png) | ![Naming](screenshots/suggestions-naming.png) |
 
 ---
 ## Use Cases

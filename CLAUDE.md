@@ -5,7 +5,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration (v2.15.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration (v2.17.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
@@ -24,7 +24,7 @@ entity-manager/
 │   ├── __init__.py                     # Entry point, service registration, panel setup
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID)
-│   ├── manifest.json                   # Integration metadata (v2.15.0)
+│   ├── manifest.json                   # Integration metadata (v2.17.0)
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
@@ -70,7 +70,7 @@ Entity Registry / Device Registry / Area Registry / Label Registry
 | `__init__.py` | Integration setup, service registration, sidebar panel + frontend resource registration |
 | `config_flow.py` | Handle UI-based integration setup (single-step, no config options) |
 | `const.py` | Domain, bulk operation limits, entity ID validation regex |
-| `websocket_api.py` | 16 WebSocket handlers covering entity ops, registry access, YAML management |
+| `websocket_api.py` | 18 WebSocket handlers covering entity ops, registry access, YAML management |
 | `voice_assistant.py` | Intent handlers for enable/disable voice commands |
 | `entity-manager-panel.js` | Complete frontend UI as a custom element |
 | `entity-manager-panel.css` | External stylesheet loaded at startup |
@@ -119,7 +119,7 @@ VALID_ENTITY_ID = re.compile(    # Use for entity_id validation
 
 ## WebSocket API Reference
 
-All 16 commands require admin privileges via `@websocket_api.require_admin`.
+All 18 commands require admin privileges via `@websocket_api.require_admin`.
 
 ### Data Retrieval Commands
 
@@ -144,7 +144,9 @@ All 16 commands require admin privileges via `@websocket_api.require_admin`.
 | `entity_manager/bulk_disable` | `entity_ids: string[]` | Disable multiple entities (max 500) |
 | `entity_manager/rename_entity` | `entity_id: string, new_name: string` | Rename entity (domain preserved) |
 | `entity_manager/update_entity_display_name` | `entity_id: string, display_name: string\|null` | Set or clear user display name |
-| `entity_manager/remove_entity` | `entity_id: string` | Remove entity from registry |
+| `entity_manager/remove_entity` | `entity_id: string` | Remove entity (handles templates, YAML, integration-managed) |
+| `entity_manager/assign_entity_device` | `entity_id: string, device_id: string` | Assign entity to a device |
+| `entity_manager/unassign_entity_device` | `entity_id: string` | Remove device assignment from entity |
 
 ### YAML Management Commands
 
@@ -429,7 +431,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.14.0
+- **Current Version**: 2.16.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
