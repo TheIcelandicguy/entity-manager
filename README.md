@@ -509,7 +509,7 @@ Entity Manager stores user preferences in the browser:
 
 | Light Theme | Dark Theme |
 |:---:|:---:|
-| ![Light Theme](screenshots/main-panel-light.png) | ![Dark Theme](screenshots/main-panel-dark.png) |
+| ![Light Theme](screenshots/EM%20Front%20Light%20Theme.png) | ![Dark Theme](screenshots/EM%20Front%20Dark%20view.png) |
 
 | Front View |
 |:---:|
@@ -527,17 +527,21 @@ Entity Manager stores user preferences in the browser:
 
 | HA Default | High Contrast | OLED | Theme Editor |
 |:---:|:---:|:---:|:---:|
-| ![HA Default](screenshots/theme-ha-default.png) | ![High Contrast](screenshots/theme-high-contrast.png) | ![OLED](screenshots/theme-oled.png) | ![Theme Editor](screenshots/theme-editor.png) |
+| ![HA Default](screenshots/EM%20Front%20HA%20Defult%20Theme.png) | ![High Contrast](screenshots/EM%20Front%20High%20Contrast%20Theme.png) | ![OLED](screenshots/EM%20Front%20OLED%20Theme.png) | ![Theme Editor](screenshots/EM%20Front%20Theme%20Edit.png) |
 
 ### Entity Cards
 
 | Integration View | Devices View |
 |:---:|:---:|
-| ![Integration View](screenshots/entity-card-integration.png) | ![Devices View](screenshots/entity-card-devices.png) |
+| ![Integration View](screenshots/Entity%20card%20Integration.png) | ![Devices View](screenshots/Entity%20card%20devices.png) |
 
 ### Bulk Rename
 
-![Bulk Rename](screenshots/bulk-rename.png)
+![Bulk Rename](screenshots/Bulk%20rename.png)
+
+### Devices View
+
+![Devices All Types expanded](screenshots/Devices%20All%20Types%20expanded.png)
 
 ### Automations, Scripts & Helpers
 
@@ -555,11 +559,15 @@ Entity Manager stores user preferences in the browser:
 |:---:|:---:|
 | ![Assign to a device](screenshots/Assign%20to%20a%20device.png) | ![Assign to a device confirm](screenshots/Assign%20to%20a%20device%20confirm.png) |
 
-### Stat Dialogs
+### Updates
 
-| Unavailable | Updates | HACS Store | Lovelace Cards |
-|:---:|:---:|:---:|:---:|
-| ![Unavailable](screenshots/unavailable-dialog.png) | ![Updates](screenshots/updates-view.png) | ![HACS Store](screenshots/HACS%20Store.png) | ![Cards](screenshots/cards-dialog.png) |
+![Updates](screenshots/Updates%20view.png)
+
+### HACS Store
+
+![HACS Store](screenshots/HACS%20Store.png)
+
+### Card Types
 
 | Card Types | Card Types (expanded) |
 |:---:|:---:|
@@ -573,9 +581,7 @@ Entity Manager stores user preferences in the browser:
 
 ### Suggestions
 
-| Overview | Area Suggestions | Naming Suggestions |
-|:---:|:---:|:---:|
-| ![Suggestions](screenshots/Entity%20Sugestions.png) | ![Area](screenshots/suggestions-area.png) | ![Naming](screenshots/suggestions-naming.png) |
+![Suggestions](screenshots/Entity%20Sugestions.png)
 
 ---
 ## Use Cases
