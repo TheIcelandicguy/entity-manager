@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.17.0-blue)
+![Version](https://img.shields.io/badge/version-2.18.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -509,7 +509,19 @@ Entity Manager stores user preferences in the browser:
 
 | Light Theme | Dark Theme |
 |:---:|:---:|
-| ![Light Theme](screenshots/main-panel-light.png) | ![Dark Theme](screenshots/main-panel-dark.png) |
+| ![Light Theme](screenshots/EM%20Front%20Light%20Theme.png) | ![Dark Theme](screenshots/EM%20Front%20Dark%20view.png) |
+
+| Front View |
+|:---:|
+| ![Front View](screenshots/Front%20wiew.png) |
+
+### Last Activity Timeline
+
+![Last Activity](screenshots/Last%20Activity.png)
+
+### Undo / Redo History
+
+![Undo Redo History](screenshots/Undo%20redo%20history.png)
 
 | Front View |
 |:---:|
@@ -527,17 +539,21 @@ Entity Manager stores user preferences in the browser:
 
 | HA Default | High Contrast | OLED | Theme Editor |
 |:---:|:---:|:---:|:---:|
-| ![HA Default](screenshots/theme-ha-default.png) | ![High Contrast](screenshots/theme-high-contrast.png) | ![OLED](screenshots/theme-oled.png) | ![Theme Editor](screenshots/theme-editor.png) |
+| ![HA Default](screenshots/EM%20Front%20HA%20Defult%20Theme.png) | ![High Contrast](screenshots/EM%20Front%20High%20Contrast%20Theme.png) | ![OLED](screenshots/EM%20Front%20OLED%20Theme.png) | ![Theme Editor](screenshots/EM%20Front%20Theme%20Edit.png) |
 
 ### Entity Cards
 
 | Integration View | Devices View |
 |:---:|:---:|
-| ![Integration View](screenshots/entity-card-integration.png) | ![Devices View](screenshots/entity-card-devices.png) |
+| ![Integration View](screenshots/Entity%20card%20Integration.png) | ![Devices View](screenshots/Entity%20card%20devices.png) |
 
 ### Bulk Rename
 
-![Bulk Rename](screenshots/bulk-rename.png)
+![Bulk Rename](screenshots/Bulk%20rename.png)
+
+### Devices View
+
+![Devices All Types expanded](screenshots/Devices%20All%20Types%20expanded.png)
 
 ### Automations, Scripts & Helpers
 
@@ -555,6 +571,14 @@ Entity Manager stores user preferences in the browser:
 |:---:|:---:|
 | ![Assign to a device](screenshots/Assign%20to%20a%20device.png) | ![Assign to a device confirm](screenshots/Assign%20to%20a%20device%20confirm.png) |
 
+### Updates
+
+![Updates](screenshots/Updates%20view.png)
+
+### HACS Store
+
+![HACS Store](screenshots/HACS%20Store.png)
+
 ### Card Types
 
 | Card Types | Card Types (expanded) |
@@ -569,9 +593,8 @@ Entity Manager stores user preferences in the browser:
 
 ### Suggestions
 
-| Overview | Area Suggestions | Naming Suggestions |
-|:---:|:---:|:---:|
-| ![Suggestions](screenshots/Entity%20Sugestions.png) |
+![Suggestions](screenshots/Entity%20Sugestions.png)
+
 ---
 ## Use Cases
 - **Cleaning up after integrations** -- disable the dozens of unused entities that some integrations create
