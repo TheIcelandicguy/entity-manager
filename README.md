@@ -523,6 +523,18 @@ Entity Manager stores user preferences in the browser:
 
 ![Undo Redo History](screenshots/Undo%20redo%20history.png)
 
+| Front View |
+|:---:|
+| ![Front View](screenshots/Front%20wiew.png) |
+
+### Last Activity Timeline
+
+![Last Activity](screenshots/Last%20Activity.png)
+
+### Undo / Redo History
+
+![Undo Redo History](screenshots/Undo%20redo%20history.png)
+
 ### Themes
 
 | HA Default | High Contrast | OLED | Theme Editor |
