@@ -1,5 +1,18 @@
 # Entity Manager UI Changes
 
+## Version 2.18.0 - HA Native Icons
+
+### Changes
+
+#### Replaced All Emoji with HA Native Icons
+- Replaced every emoji and Unicode symbol character throughout the UI with `<ha-icon icon="mdi:...">` elements — the same icon system Home Assistant itself uses
+- Added `EM_ICONS` top-level constant mapping semantic names to MDI icon strings for centralised management (single place to change any icon)
+- Added `_icon(icon, size)` helper method that returns a properly sized `<ha-icon>` element, or passes raw SVG/HTML through unchanged for flexibility
+- Added CSS sizing rules for `ha-icon` in all contexts: sidebar items, icon buttons, toast, entity card chips, inline view titles, dialog headers, area picker rows, stat cards
+- Icons now render identically on all operating systems — no more OS-level emoji variation between Windows, macOS, iOS, and Android
+
+---
+
 ## Version 2.17.0 - Last Activity Timeline View & Persistent Timestamps
 
 ### New Features

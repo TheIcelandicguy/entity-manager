@@ -5,7 +5,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration (v2.17.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration (v2.18.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
@@ -24,7 +24,7 @@ entity-manager/
 │   ├── __init__.py                     # Entry point, service registration, panel setup
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID)
-│   ├── manifest.json                   # Integration metadata (v2.17.0)
+│   ├── manifest.json                   # Integration metadata (v2.18.0)
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
@@ -431,7 +431,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.16.0
+- **Current Version**: 2.18.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
