@@ -12748,6 +12748,7 @@ class EntityManagerPanel extends HTMLElement {
           let _uvFilter = this._loadFromStorage('em-unavail-time-filter', 'all');
           let _uvShowIgnored = false;
           let _uvLastSeen = {};
+          let _uvWentUnavailAt = {}; // recorder-backed: when the entity last transitioned TO unavailable
 
           const allUnavailEntities = states.filter(s => s.state === 'unavailable');
 
@@ -12765,7 +12766,8 @@ class EntityManagerPanel extends HTMLElement {
             return allUnavailEntities.filter(s => {
               if (!inclIgnored && _uvIgnoredSet.has(s.entity_id)) return false;
               if (!threshold) return true;
-              return (now - new Date(s.last_changed).getTime()) >= threshold;
+              const unavailSince = _uvWentUnavailAt[s.entity_id] ?? new Date(s.last_changed).getTime();
+              return (now - unavailSince) >= threshold;
             });
           };
 
@@ -12777,7 +12779,7 @@ class EntityManagerPanel extends HTMLElement {
               name: s.attributes.friendly_name || s.entity_id,
               state: 'unavailable',
               stateColor: 'var(--em-danger)',
-              timeAgo: `Down ${this._fmtAgo(s.last_changed, 'Unknown')}`,
+              timeAgo: `Down ${this._fmtAgo(_uvWentUnavailAt[s.entity_id] ? new Date(_uvWentUnavailAt[s.entity_id]).toISOString() : s.last_changed, 'Unknown')}`,
               infoLine: lsTs
                 ? `Last seen: ${this._fmtAgo(new Date(lsTs).toISOString())}`
                 : 'Last seen: unknown (>1y)',
@@ -12855,14 +12857,29 @@ class EntityManagerPanel extends HTMLElement {
                   no_attributes: true,
                 });
                 for (const [eid, records] of Object.entries(hist || {})) {
+                  let foundGood = false;
                   for (let i = records.length - 1; i >= 0; i--) {
                     const r = records[i];
                     const st = r.state ?? r.s;
                     if (st && st !== 'unavailable' && st !== 'unknown') {
+                      foundGood = true;
                       const tsRaw = r.last_changed ?? r.lu;
                       _uvLastSeen[eid] = typeof tsRaw === 'number' ? tsRaw * 1000 : new Date(tsRaw).getTime();
+                      // The record at i+1 is the first unavailable state after the last good state
+                      if (i + 1 < records.length) {
+                        const nr = records[i + 1];
+                        const nts = nr.last_changed ?? nr.lu;
+                        _uvWentUnavailAt[eid] = typeof nts === 'number' ? nts * 1000 : new Date(nts).getTime();
+                      }
                       break;
                     }
+                  }
+                  // Entity was unavailable for the entire history window — use the oldest record so
+                  // "Down X" shows ">1y" instead of resetting to restart time on every HA restart.
+                  if (!foundGood && records.length > 0) {
+                    const fr = records[0];
+                    const fts = fr.last_changed ?? fr.lu;
+                    _uvWentUnavailAt[eid] = typeof fts === 'number' ? fts * 1000 : new Date(fts).getTime();
                   }
                 }
                 if (overlay?.isConnected) {
