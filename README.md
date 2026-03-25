@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.18.0-blue)
+![Version](https://img.shields.io/badge/version-2.19.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -31,6 +31,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
   - [Template Sensors](#template-sensors)
+  - [Health & Cleanup View](#health--cleanup-view)
   - [Statistics Dashboard](#statistics-dashboard)
   - [Mobile & Responsive Design](#mobile--responsive-design)
 - [Installation](#installation)
@@ -353,12 +354,17 @@ Each card has a **↗ button** that takes you directly to the right place in HA:
 
 Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in the main view.
 
-### Cleanup View
-The **Cleanup** stat card surfaces housekeeping tasks in four sections:
-- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration with collapsible sections; Remove or Assign to device; "Remove All" bulk button
+### Health & Cleanup View
+The **Health & Cleanup** inline view surfaces housekeeping tasks across five sections:
+- **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore** (with snooze), **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog; **Show ignored (N)** toggle in the section header
+- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration; per-row actions: **Ignore** (with snooze), **Assign to device**, **Add to Group**, **Remove**; **Show ignored (N)** toggle
 - **Stale entities** — entities with no state change in 30+ days; grouped by domain; Keep (hide for 30 d), Disable, or Remove per entity
 - **Ghost devices** — devices registered in HA but with zero entities; Remove
 - **Never triggered** — automations and scripts that have never been triggered
+
+**Ignore with Snooze**: clicking Ignore opens a duration picker — 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent. Snoozed entities are hidden until the snooze expires; permanently ignored entities stay hidden until you click Unignore. The ignored state is shared between the inline view and the individual stat card dialogs.
+
+**Add to Group**: opens a dialog with all five grouping modes from the sidebar — By Area, By Floor, By Device Name, By Integration, By Type — plus any custom groups you've created. By Area and By Floor open the two-panel area assignment dialog; By Device Name opens the device picker.
 
 ### Suggestions Dialog
 Five colour-coded sections help you improve your entity setup:
@@ -510,18 +516,6 @@ Entity Manager stores user preferences in the browser:
 | Light Theme | Dark Theme |
 |:---:|:---:|
 | ![Light Theme](screenshots/EM%20Front%20Light%20Theme.png) | ![Dark Theme](screenshots/EM%20Front%20Dark%20view.png) |
-
-| Front View |
-|:---:|
-| ![Front View](screenshots/Front%20wiew.png) |
-
-### Last Activity Timeline
-
-![Last Activity](screenshots/Last%20Activity.png)
-
-### Undo / Redo History
-
-![Undo Redo History](screenshots/Undo%20redo%20history.png)
 
 | Front View |
 |:---:|

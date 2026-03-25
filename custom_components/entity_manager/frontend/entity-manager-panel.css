@@ -1387,6 +1387,16 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
   opacity: 0.8;
 }
 
+.btn-danger {
+  background: var(--em-danger);
+  color: white;
+  border: 2px solid var(--em-danger);
+}
+
+.btn-danger:hover {
+  opacity: 0.8;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -4203,47 +4213,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   animation: em-sel-pulse 2.5s ease-in-out infinite;
 }
 
-@keyframes em-sel-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--em-primary) 0%, transparent); }
-  50% { box-shadow: 0 0 8px 2px color-mix(in srgb, var(--em-primary) 35%, transparent); }
-}
-
-.sidebar-item .count.em-sel-active {
-  background: var(--em-primary) !important;
-  color: #fff !important;
-  font-weight: 700;
-}
-
-.em-view-selected-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  margin-bottom: 12px;
-  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
-  border: 2px solid color-mix(in srgb, var(--em-primary) 40%, transparent);
-  border-radius: 10px;
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.em-view-selected-exit {
-  padding: 4px 12px;
-  border: 2px solid var(--em-primary);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--em-primary);
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.em-view-selected-exit:hover {
-  background: var(--em-primary);
-  color: #fff;
-}
-
 .sidebar-item.more {
   color: var(--em-text-secondary);
   font-style: italic;
@@ -5402,6 +5371,15 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-dialog-btn-primary { background: var(--em-primary); color: #fff; border: none; }
 .em-dialog-btn-danger  { background: var(--em-danger);  color: #fff; border: none; }
 .em-dialog-btn-warning { background: var(--em-warning); color: #fff; border: none; }
+.em-dialog-btn-outline-primary {
+  background: var(--em-bg-primary);
+  color: var(--em-primary);
+  border: 2px solid var(--em-primary);
+}
+.em-dialog-btn-outline-primary:hover {
+  background: var(--em-primary);
+  color: #fff;
+}
 
 /* Entity health alert banner */
 .em-health-banner {
@@ -5563,10 +5541,10 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   gap: 12px;
   z-index: 10000;
-  animation: slideUp 0.3s ease;
+  animation: toastSlideUp 0.3s ease;
 }
 
-@keyframes slideUp {
+@keyframes toastSlideUp {
   from {
     opacity: 0;
     transform: translateX(-50%) translateY(20px);

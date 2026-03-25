@@ -1,5 +1,51 @@
 # Entity Manager UI Changes
 
+## Version 2.19.0 - Health & Cleanup Inline View Improvements
+
+### New Features
+
+#### Unavailable Entities — Full Per-Row Actions
+- Entity cards in the Unavailable Entities section now show per-row action buttons: **Ignore**, **Disable**, **Add to Group**, **Remove**
+- Disable and Remove show a confirmation dialog before acting to prevent accidental destructive changes
+
+#### Ignore with Snooze (Unavailable & Orphaned)
+- The **Ignore** button now opens a duration picker instead of silently hiding the entity: 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent
+- Snoozed entities disappear from the list until their snooze expires; permanently ignored entities stay hidden until manually unignored
+- **Unignore** is instant — no dialog
+- A **Show ignored (N)** toggle appears in the section header once any entities are ignored
+- Ignore state is stored as `{ entity_id: expiry_ms }` (0 = permanent) — old array format migrated automatically
+- `em-unavail-ignored` and `em-orphan-ignored` storage keys shared between the inline Health & Cleanup view and the standalone stat card dialogs
+
+#### Cleanup → Orphaned — New Actions
+- Orphaned entity cards now have the same action row as Unavailable: **Ignore** (with snooze), **Assign to device**, **Add to Group**, **Remove**
+- **Show ignored (N)** toggle in the Orphaned section header
+- Checkboxes added to all orphaned entity cards
+
+#### Add to Group Dialog — Redesigned
+- "Add to Group" button now opens a dialog listing the same grouping modes as the sidebar Groups section: **By Area**, **By Floor**, **By Device Name** (actionable), **By Integration**, **By Type** (automatic / informational)
+- **By Area / By Floor** → opens the area assignment dialog
+- **By Device Name** → opens the device picker (single entity only)
+- **Custom Groups** section below shows any groups created via "+ New Group"; click to add instantly
+- **+ New Custom Group** button at the bottom to create a new group with the entity pre-selected
+- Button has blue outline border (`em-dialog-btn-outline-primary` style)
+
+### Help Guide Updates
+- New **Unavailable Entities** section added to the help guide covering ignore snooze, per-row actions, and Show Ignored
+- **Cleanup** section updated with new per-row actions, ignore snooze, Show Ignored toggle, and Never Triggered category
+- **Groups** section completely rewritten to describe all 5 grouping modes, custom groups, and the Add to Group dialog
+
+### Bug Fixes
+
+#### Ignore Button Not Responding in Health & Cleanup Inline View
+- **Root cause 1 — event delegation lost**: The `'unavailable'` section in `_renderMergedEntitySections` was using the temp+move DOM pattern (nodes moved from a detached `temp` element into `groupBody`), so all delegated click listeners were registered on the now-detached `temp` rather than on any live DOM ancestor. Fixed by passing `groupBody` directly as `container` (same pattern already used for `cleanup` and `config-health`).
+- **Root cause 2 — block-scope ReferenceError**: `_uvIgnoredSet` and `_orIgnoredSet` are declared with `let` inside their respective `if (type === 'unavailable')` / `if (type === 'orphaned')` blocks inside `showEntityListDialog`. The delegated click handlers at the outer try-block level referenced these variables directly, causing a silent `ReferenceError` on every click. Fixed by adding `getIgnoredSet: () => _uvIgnoredSet` / `getIgnoredSet: () => _orIgnoredSet` getters to `unavailCtx` / `orphanCtx`, and updating the handlers to call `unavailCtx.getIgnoredSet().has(eid)` / `orphanCtx.getIgnoredSet().has(eid)`.
+
+### Code Quality
+- Extracted `_attachRowHover(el)` helper in `_showAddToGroupDialog` — eliminates duplicate mouseenter/mouseleave listener blocks
+- Removed `!important` declarations from `.btn-danger` CSS rule
+
+---
+
 ## Version 2.18.0 - HA Native Icons
 
 ### Changes

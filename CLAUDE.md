@@ -5,7 +5,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration (v2.18.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration (v2.19.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
@@ -24,7 +24,7 @@ entity-manager/
 │   ├── __init__.py                     # Entry point, service registration, panel setup
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID)
-│   ├── manifest.json                   # Integration metadata (v2.18.0)
+│   ├── manifest.json                   # Integration metadata (v2.19.0)
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
@@ -431,7 +431,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.18.0
+- **Current Version**: 2.19.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
@@ -518,6 +518,28 @@ For adding new features:
 - In JS, always call `saveToUndo()` before any mutating operation
 - Never reference HA theme variables (e.g. `var(--secondary-background-color)`, `var(--card-background-color)`) directly in component CSS — always use `--em-*` equivalents so EM light/dark mode overrides take effect correctly
 - Prefer `this.hass.callWS()` over `this.hass.callService()` for entity manager operations
+
+### `showEntityListDialog` — Block-Scope Trap
+
+`showEntityListDialog` dispatches to type-specific `else if (type === '...')` branches inside a `try` block. Variables declared with `let`/`const` inside a branch are **block-scoped** to that branch and are NOT accessible after the branch closes — including in the delegated click handlers that are registered at the outer try-block level.
+
+**Pattern to follow**: Never reference a branch-local variable directly in the post-render handler section. Instead expose it via a getter on the context object:
+
+```javascript
+// Inside if (type === 'unavailable') { ... }
+unavailCtx = {
+  getIgnoredSet: () => _uvIgnoredSet,   // ← getter; closes over the let variable
+  rebuildSet:    () => { _uvIgnoredSet = _uvBuildSet(); },
+};
+
+// In the outer click handler (outside the if block):
+if (unavailCtx.getIgnoredSet().has(eid)) { ... }  // ✓
+// NOT: if (_uvIgnoredSet.has(eid)) { ... }        // ✗ ReferenceError
+```
+
+The same pattern applies to `orphanCtx` and any future type-specific context objects.
+
+**Delegation pattern**: All three section types in `_renderMergedEntitySections` (`config-health`, `cleanup`, `unavailable`) must use direct-container delegation — pass `groupBody` as `container` so `overlay = groupBody` and click listeners remain on a live DOM ancestor. Never use the temp+move pattern for sections that rely on delegated event handlers.
 
 ### CSS Cascade Traps
 

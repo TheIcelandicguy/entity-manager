@@ -179,7 +179,7 @@ const EM_ICONS = {
   warning:      'mdi:alert',
   // Entity card buttons
   rename:       'mdi:pencil',
-  bulkRename:   'mdi:pencil-multiple',
+  bulkRename:   '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle;flex-shrink:0"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
   bulkLabels:   'mdi:tag-multiple',
   delete:       'mdi:delete',
   link:         'mdi:open-in-new',
@@ -202,6 +202,7 @@ const EM_ICONS = {
   helper:       'mdi:wrench',
   configHealth: 'mdi:alert-circle',
   cleanup:      'mdi:broom',
+  backup:       'mdi:shield-check',
   // Domain categories (stale view, help guide)
   robot:        'mdi:robot',
   template:     'mdi:code-braces',
@@ -669,7 +670,7 @@ class EntityManagerPanel extends HTMLElement {
 
     const { overlay, closeDialog } = this.createDialog({
       title: 'Create New Helper',
-      color: '#9c27b0',
+      color: 'var(--em-primary)',
       contentHtml: `
         <div style="display:flex;flex-direction:column;gap:14px;padding:4px 0">
           <div>
@@ -688,7 +689,7 @@ class EntityManagerPanel extends HTMLElement {
       `,
       actionsHtml: `
         <button class="btn btn-secondary" id="em-ch-cancel">Cancel</button>
-        <button class="em-dialog-btn" id="em-ch-create" style="background:var(--em-primary);color:#fff;border:none">Create</button>
+        <button class="btn btn-primary" id="em-ch-create">Create</button>
       `,
     });
 
@@ -1230,7 +1231,7 @@ class EntityManagerPanel extends HTMLElement {
           <div class="theme-dropdown-item ${this.activeTheme === name ? 'active' : ''}" data-theme="${safeAttrName}">
             <svg viewBox="0 0 24 24"><path d="M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z" fill="currentColor"/></svg>
             <span style="flex:1">${safeName}</span>
-            <span class="edit-theme-btn" data-edit="${safeAttrName}" style="color: inherit; font-size: 14px; padding: 2px 4px; opacity: 0.7;" title="Edit theme">✎</span>
+            <span class="edit-theme-btn" data-edit="${safeAttrName}" style="color: inherit; padding: 2px 4px; opacity: 0.7;" title="Edit theme">${this._icon(EM_ICONS.rename, '14px')}</span>
             <span class="delete-theme-btn" data-delete="${safeAttrName}" style="color: var(--em-danger); font-size: 16px;" title="Delete theme">&times;</span>
           </div>
         `;
@@ -2011,14 +2012,16 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners remain live; skip the temp+move pattern.
           groupBody.innerHTML = '';
           if (t === 'config-health') {
             await this._showConfigEntryHealthDialog({ inline: true, container: groupBody });
-          } else {
+          } else if (t === 'cleanup') {
             await this._showCleanupDialog({ inline: true, container: groupBody });
+          } else {
+            await this.showEntityListDialog(t, { inline: true, container: groupBody });
           }
         } else {
           // Load into a temporary detached container, then move nodes (preserving listeners).
@@ -2216,7 +2219,7 @@ class EntityManagerPanel extends HTMLElement {
           <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
             <button id="brp-deselect-all-top" class="btn" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Deselect all</button>
             <button id="brq-rename-btn-top" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.9);border:1.5px solid rgba(255,255,255,0.9);color:var(--em-primary);font-weight:700;border-radius:6px;cursor:pointer;" disabled>Rename 0</button>
-            <button id="brv-exit" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">✕ Exit</button>
+            <button id="brv-exit" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">${this._icon(EM_ICONS.close, '14px')} Exit</button>
           </div>
         </div>
 
@@ -2663,8 +2666,8 @@ class EntityManagerPanel extends HTMLElement {
       color: 'var(--em-danger)',
       contentHtml: `<div id="bulk-del-body" style="padding:16px;text-align:center;color:var(--em-text-secondary)">${isLarge ? 'Preparing…' : 'Checking references…'}</div>`,
       actionsHtml: `
-        <button id="bulk-del-cancel" style="padding:8px 20px;border:2px solid var(--em-border);background:transparent;color:var(--em-text-primary);border-radius:8px;cursor:pointer">Cancel</button>
-        <button id="bulk-del-confirm" style="padding:8px 20px;border:2px solid var(--em-danger);background:var(--em-danger);color:#fff;border-radius:8px;cursor:pointer;font-weight:600" disabled>Delete</button>
+        <button class="btn btn-secondary" id="bulk-del-cancel">Cancel</button>
+        <button class="btn btn-danger" id="bulk-del-confirm" disabled>Delete</button>
       `,
     });
 
@@ -2772,7 +2775,7 @@ class EntityManagerPanel extends HTMLElement {
       title: entityId,
       color: 'var(--em-primary)',
       contentHtml: `<div id="em-edd-body" style="padding:40px;text-align:center;color:var(--em-text-secondary)">Loading entity details…</div>`,
-      actionsHtml: `<button id="em-edd-close" style="padding:8px 20px;border:2px solid var(--em-primary);background:transparent;color:var(--em-text-primary);border-radius:8px;cursor:pointer">Close</button>`,
+      actionsHtml: `<button id="em-edd-close" class="btn btn-secondary">Close</button>`,
       extraClass: 'em-entity-detail',
     });
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
@@ -3201,6 +3204,7 @@ class EntityManagerPanel extends HTMLElement {
       { id: 'suggestions', icon: EM_ICONS.suggestions, title: 'Suggestions' },
       { id: 'smartgroups', icon: EM_ICONS.type,        title: 'Groups' },
       { id: 'statcards',   icon: EM_ICONS.dashboard,   title: 'Stat Card Dialogs' },
+      { id: 'unavailable', icon: EM_ICONS.warning,      title: 'Unavailable Entities' },
       { id: 'cleanup',     icon: EM_ICONS.cleanup,     title: 'Cleanup' },
       { id: 'updates',     icon: EM_ICONS.update,      title: 'Updates' },
       { id: 'undo',        icon: EM_ICONS.undo,        title: 'Undo / Redo' },
@@ -3266,7 +3270,7 @@ class EntityManagerPanel extends HTMLElement {
             <div class="help-section" id="help-rename">
               <h3>${this._icon(EM_ICONS.rename, '16px')} Rename Entities</h3>
               <ul>
-                <li>Click <strong>✎</strong> on any entity card to rename it</li>
+                <li>Click the <strong>pencil icon</strong> on any entity card to rename it</li>
                 <li>Lowercase letters, numbers, and underscores only</li>
                 <li>References in automations and scripts update automatically</li>
                 <li>Right-click → Rename for the same dialog</li>
@@ -3310,7 +3314,7 @@ class EntityManagerPanel extends HTMLElement {
                 <li>Click a label in the sidebar to filter the main view</li>
                 <li>Right-click an entity → <strong>Manage Labels</strong> to add/remove labels</li>
                 <li>Create new labels from the Manage Labels dialog</li>
-                <li>Click <strong>✎</strong> next to a label in the sidebar to edit name/color</li>
+                <li>Click the <strong>pencil icon</strong> next to a label in the sidebar to edit name/color</li>
               </ul>
             </div>
 
@@ -3330,10 +3334,14 @@ class EntityManagerPanel extends HTMLElement {
             <div class="help-section" id="help-smartgroups">
               <h3>${this._icon(EM_ICONS.type, '16px')} Groups</h3>
               <ul>
-                <li>Sidebar → Groups to group entities by area, domain, or status</li>
-                <li><strong>No Area:</strong> entities/devices not assigned to any room</li>
-                <li><strong>By Domain:</strong> all lights together, all sensors together, etc.</li>
-                <li>Each group shows entity count and bulk-assign area button</li>
+                <li>Sidebar → <strong>Groups</strong> — five built-in grouping modes for the main entity list</li>
+                <li><strong>By Integration:</strong> default view — Integration → Device → Entity tree</li>
+                <li><strong>By Area:</strong> group entities by their HA area assignment; unassigned entities appear under <em>No Area</em></li>
+                <li><strong>By Type:</strong> group by entity domain (lights, sensors, switches, etc.)</li>
+                <li><strong>By Floor:</strong> group areas by their HA floor; areas without a floor appear under <em>No Floor</em></li>
+                <li><strong>By Device Name:</strong> enter a keyword to show only matching devices across all integrations</li>
+                <li><strong>Custom Groups:</strong> click <strong>+ New Group</strong> in the sidebar to create a named collection of any entities — they appear as a new grouping mode you can switch to</li>
+                <li><strong>Add to Group button</strong> on entity cards opens a picker showing all 5 grouping modes — By Area and By Floor open the area assignment dialog; By Device Name opens the device picker; custom groups let you add instantly or create a new one</li>
               </ul>
             </div>
 
@@ -3347,13 +3355,28 @@ class EntityManagerPanel extends HTMLElement {
               </ul>
             </div>
 
+            <div class="help-section" id="help-unavailable">
+              <h3>${this._icon(EM_ICONS.warning, '16px')} Unavailable Entities</h3>
+              <ul>
+                <li>Click the <strong>Unavailable</strong> stat card to see all entities currently in an unavailable state</li>
+                <li>Filter by time range: All / Last 24 h / Last 7 days / Last 30 days</li>
+                <li>Per-row actions: <strong>Ignore</strong> (hide with snooze), <strong>Disable</strong>, <strong>Add to Group</strong>, <strong>Remove</strong></li>
+                <li><strong>Ignore</strong> opens a snooze picker — 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent — entity is hidden until the snooze expires</li>
+                <li>Click <strong>Unignore</strong> on a hidden entity to restore it instantly; use <strong>Show ignored (N)</strong> to reveal all snoozed entities</li>
+                <li>Disable / Remove show a confirmation prompt before acting</li>
+              </ul>
+            </div>
+
             <div class="help-section" id="help-cleanup">
               <h3>${this._icon(EM_ICONS.cleanup, '16px')} Cleanup</h3>
               <ul>
                 <li>Click the <strong>Cleanup</strong> stat card to open the housekeeping view</li>
-                <li><strong>Orphaned entities</strong> — entities with no parent device (YAML remnants or integration leftovers) — Remove or Assign to device</li>
-                <li><strong>Stale entities</strong> — no state change in 30+ days — Keep (hide for 30 d), Disable, or Remove</li>
-                <li><strong>Ghost devices</strong> — devices registered in HA but with zero entities — Remove</li>
+                <li><strong>Orphaned entities</strong> — entities with no parent device (YAML remnants or integration leftovers)</li>
+                <li>Orphaned per-row actions: <strong>Ignore</strong> (snooze picker, same as Unavailable), <strong>Assign to device</strong>, <strong>Add to Group</strong>, <strong>Remove</strong></li>
+                <li><strong>Show ignored (N)</strong> toggle appears in the Orphaned header once any are ignored</li>
+                <li><strong>Stale entities</strong> — no state change in 30+ days — Keep (hide for 30 d), Disable (with confirm), or Remove (with confirm)</li>
+                <li><strong>Ghost devices</strong> — devices registered in HA but with zero entities — Open in HA to manage</li>
+                <li><strong>Never Triggered</strong> — automations and scripts that have never run — click ↗ to open the editor</li>
               </ul>
             </div>
 
@@ -4872,7 +4895,7 @@ class EntityManagerPanel extends HTMLElement {
 
     const { overlay, closeDialog } = this.createDialog({
       title: 'Remove Labels from Selected',
-      color: '#f44336',
+      color: 'var(--em-danger)',
       contentHtml: `
         <div class="bulk-label-editor">
           <p style="color:var(--em-text-secondary);margin-bottom:8px">Remove labels from ${entityIds.length} selected ${entityIds.length === 1 ? 'entity' : 'entities'}</p>
@@ -4891,7 +4914,7 @@ class EntityManagerPanel extends HTMLElement {
         </div>`,
       actionsHtml: `
         <button class="btn btn-secondary confirm-no">Cancel</button>
-        <button class="btn" style="background:var(--em-danger);color:#fff;border:none" id="apply-remove-labels-btn"${presentLabels.length === 0 ? ' disabled' : ''}>Remove Labels</button>`,
+        <button class="btn btn-danger" id="apply-remove-labels-btn"${presentLabels.length === 0 ? ' disabled' : ''}>Remove Labels</button>`,
     });
 
     overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
@@ -5757,7 +5780,7 @@ class EntityManagerPanel extends HTMLElement {
                                color:${this.deviceNameFilter === f.pattern ? 'white' : 'var(--em-text-primary)'}">
                         ${this._escapeHtml(f.label)}
                         <button data-filter-remove="${i}"
-                          style="background:none;border:none;cursor:pointer;color:inherit;padding:0;font-size:11px;line-height:1;opacity:0.7">✕</button>
+                          style="background:none;border:none;cursor:pointer;color:inherit;padding:0;line-height:1;opacity:0.7">${this._icon(EM_ICONS.close, '11px')}</button>
                       </span>`).join('')}
                   </div>` : ''}
               </div>` : ''}
@@ -5773,7 +5796,7 @@ class EntityManagerPanel extends HTMLElement {
             <div class="sidebar-item" data-preset-id="${p.id}" title="Apply: ${this._escapeHtml(p.name)}">
               <span class="icon">${this._icon(EM_ICONS.bookmark)}</span>
               <span class="label">${this._escapeHtml(p.name)}</span>
-              <button class="preset-delete" data-delete="${p.id}" title="Delete view" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:2px 4px;font-size:13px">✕</button>
+              <button class="preset-delete" data-delete="${p.id}" title="Delete view" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--em-text-secondary);padding:2px 4px">${this._icon(EM_ICONS.close, '11px')}</button>
             </div>`).join('')}
         </div>
 
@@ -5795,8 +5818,8 @@ class EntityManagerPanel extends HTMLElement {
                 <div style="display:flex;gap:3px;flex-basis:100%">
                   <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-success);color:#fff;border:none;border-radius:3px">Enable</button>
                   <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-danger);color:#fff;border:none;border-radius:3px">Disable</button>
-                  <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">✎</button>
-                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="font-size:10px;padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:var(--em-danger)" title="Delete">✕</button>
+                  <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">${this._icon(EM_ICONS.rename, '10px')}</button>
+                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:var(--em-danger)" title="Delete">${this._icon(EM_ICONS.close, '10px')}</button>
                 </div>
               </div>`).join('');
             return saveBtn + rows;
@@ -6247,9 +6270,9 @@ class EntityManagerPanel extends HTMLElement {
         this.lovelaceDashboardList = [];
         try {
           const config = await this._hass.callWS({ type: 'lovelace/config' });
-          const types = new Set();
-          _llCollectTypes(config?.views?.flatMap(v => v.cards || []) || [], types);
-          this.lovelaceCardCount = types.size;
+          const fallbackTypes = new Set();
+          _llCollectTypes(config?.views?.flatMap(v => v.cards || []) || [], fallbackTypes);
+          this.lovelaceCardCount = fallbackTypes.size;
         } catch (e2) {
           this.lovelaceCardCount = 0;
         }
@@ -7950,7 +7973,12 @@ class EntityManagerPanel extends HTMLElement {
         <div class="integration-header" data-integration="${intName}">
           <div class="integration-select-wrapper" title="Select all in this integration">
             <label class="integration-select-label">
-              <input type="checkbox" class="integration-select-checkbox" data-integration="${intName}">
+              ${(() => {
+                const selCount = allEntities.filter(e => this.selectedEntities.has(e.entity_id)).length;
+                const checkedAttr = selCount === allEntities.length && allEntities.length > 0 ? 'checked' : '';
+                const indetermAttr = selCount > 0 && selCount < allEntities.length ? 'data-indeterminate="true"' : '';
+                return `<input type="checkbox" class="integration-select-checkbox" data-integration="${intName}" ${checkedAttr} ${indetermAttr}>`;
+              })()}
               <span class="integration-select-text">Select all</span>
             </label>
           </div>
@@ -8769,7 +8797,12 @@ class EntityManagerPanel extends HTMLElement {
     
     // Drag and drop
     this._attachDragDropListeners();
-    
+
+    // Sync integration checkbox indeterminate states — this DOM property can't be set via HTML attribute
+    this.content.querySelectorAll('.integration-select-checkbox[data-indeterminate="true"]').forEach(cb => {
+      cb.indeterminate = true;
+    });
+
   }
 
   updateSelectedCount() {
@@ -9351,17 +9384,17 @@ class EntityManagerPanel extends HTMLElement {
     if (!actionsEl) return;
 
     if (state === 'queued') {
-      actionsEl.innerHTML = `<span style="font-size:12px;color:var(--em-text-secondary);padding:8px 12px">⏳ Queued</span>`;
+      actionsEl.innerHTML = `<span style="font-size:12px;color:var(--em-text-secondary);padding:8px 12px">${this._icon(EM_ICONS.loading, '12px')} Queued</span>`;
     } else if (state === 'active') {
       actionsEl.innerHTML = `
         <div class="em-update-spinner"></div>
         <span style="font-size:13px;color:var(--em-primary);font-weight:500">
-          ${backup ? '🛡 Backing up…' : 'Updating…'}
+          ${backup ? `${this._icon(EM_ICONS.backup, '13px')} Backing up…` : 'Updating…'}
         </span>`;
     } else if (state === 'done') {
-      actionsEl.innerHTML = `<span style="font-size:14px;color:var(--em-success);font-weight:700">✓ Updated</span>`;
+      actionsEl.innerHTML = `<span style="font-size:14px;color:var(--em-success);font-weight:700">${this._icon(EM_ICONS.success, '14px')} Updated</span>`;
     } else if (state === 'failed') {
-      actionsEl.innerHTML = `<span style="font-size:14px;color:var(--em-danger);font-weight:700">✕ Failed</span>`;
+      actionsEl.innerHTML = `<span style="font-size:14px;color:var(--em-danger);font-weight:700">${this._icon(EM_ICONS.error, '14px')} Failed</span>`;
     }
   }
 
@@ -10363,7 +10396,7 @@ class EntityManagerPanel extends HTMLElement {
           <div class="em-afd-info-box">${buildInfoHtml()}</div>
         </div>`,
       actionsHtml: `
-        <button class="btn em-afd-apply-btn" disabled>Select an area first</button>
+        <button class="btn btn-primary em-afd-apply-btn" disabled>Select an area first</button>
         <button class="btn btn-secondary em-afd-cancel-btn">Cancel</button>`,
     });
 
@@ -10787,24 +10820,31 @@ class EntityManagerPanel extends HTMLElement {
     }
 
     const LABEL_DEFS = [
-      { label: 'Lights',               emoji: '💡', match: (e, st) => e.entity_id.split('.')[0] === 'light' },
-      { label: 'Dimmable Lights',      emoji: '🔆', match: (e, st) => e.entity_id.split('.')[0] === 'light' && (st?.attributes?.supported_color_modes || []).some(m => !['onoff','unknown'].includes(m)) },
-      { label: 'Switches',             emoji: '🔌', match: (e, st) => e.entity_id.split('.')[0] === 'switch' },
-      { label: 'Temperature Sensors',  emoji: '🌡️', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'temperature' },
-      { label: 'Humidity Sensors',     emoji: '💧', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'humidity' },
-      { label: 'Motion Sensors',       emoji: '🚶', match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'motion' },
-      { label: 'Door Sensors',         emoji: '🚪', match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'door' },
-      { label: 'Window Sensors',       emoji: '🪟', match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'window' },
-      { label: 'Vibration Sensors',    emoji: '📳', match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'vibration' },
-      { label: 'Energy Monitoring',    emoji: '⚡', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && (st?.attributes?.device_class === 'energy' || st?.attributes?.device_class === 'power') },
-      { label: 'Covers',               emoji: '🟫', match: (e, st) => e.entity_id.split('.')[0] === 'cover' },
-      { label: 'Climate',              emoji: '❄️', match: (e, st) => e.entity_id.split('.')[0] === 'climate' },
-      { label: 'Media Players',        emoji: '🎵', match: (e, st) => e.entity_id.split('.')[0] === 'media_player' },
-      { label: 'Cameras',              emoji: '📷', match: (e, st) => e.entity_id.split('.')[0] === 'camera' },
-      { label: 'Locks',                emoji: '🔒', match: (e, st) => e.entity_id.split('.')[0] === 'lock' },
-      { label: 'Fans',                 emoji: '🌀', match: (e, st) => e.entity_id.split('.')[0] === 'fan' },
-      { label: 'Vacuums',              emoji: '🧹', match: (e, st) => e.entity_id.split('.')[0] === 'vacuum' },
-      { label: 'Presence Detection',   emoji: '👤', match: (e, st) => ['device_tracker','person'].includes(e.entity_id.split('.')[0]) },
+      { label: 'Lights',               emoji: 'mdi:lightbulb',          match: (e, st) => e.entity_id.split('.')[0] === 'light' },
+      { label: 'Dimmable Lights',      emoji: 'mdi:lightbulb-on',       match: (e, st) => e.entity_id.split('.')[0] === 'light' && (st?.attributes?.supported_color_modes || []).some(m => !['onoff','unknown'].includes(m)) },
+      { label: 'Switches',             emoji: 'mdi:toggle-switch',      match: (e, st) => e.entity_id.split('.')[0] === 'switch' },
+      { label: 'Temperature Sensors',  emoji: 'mdi:thermometer',        match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'temperature' },
+      { label: 'Humidity Sensors',     emoji: 'mdi:water-percent',      match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'humidity' },
+      { label: 'Motion Sensors',       emoji: 'mdi:motion-sensor',      match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'motion' },
+      { label: 'Door Sensors',         emoji: 'mdi:door',               match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'door' },
+      { label: 'Window Sensors',       emoji: 'mdi:window-closed',      match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'window' },
+      { label: 'Vibration Sensors',    emoji: 'mdi:vibrate',            match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'vibration' },
+      { label: 'Energy Monitoring',    emoji: 'mdi:lightning-bolt',
+        match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','power','energy_return','energy_storage'].includes(st?.attributes?.device_class),
+        subGroups: [
+          { label: 'Power Sensors',  match: (e, st) => st?.attributes?.device_class === 'power' },
+          { label: 'Energy Sensors', match: (e, st) => ['energy','energy_storage'].includes(st?.attributes?.device_class) },
+          { label: 'Energy Return',  match: (e, st) => st?.attributes?.device_class === 'energy_return' },
+        ]
+      },
+      { label: 'Covers',               emoji: 'mdi:window-shutter',     match: (e, st) => e.entity_id.split('.')[0] === 'cover' },
+      { label: 'Climate',              emoji: 'mdi:snowflake',          match: (e, st) => e.entity_id.split('.')[0] === 'climate' },
+      { label: 'Media Players',        emoji: 'mdi:speaker',            match: (e, st) => e.entity_id.split('.')[0] === 'media_player' },
+      { label: 'Cameras',              emoji: 'mdi:camera',             match: (e, st) => e.entity_id.split('.')[0] === 'camera' },
+      { label: 'Locks',                emoji: 'mdi:lock',               match: (e, st) => e.entity_id.split('.')[0] === 'lock' },
+      { label: 'Fans',                 emoji: 'mdi:fan',                match: (e, st) => e.entity_id.split('.')[0] === 'fan' },
+      { label: 'Vacuums',              emoji: 'mdi:robot-vacuum',       match: (e, st) => e.entity_id.split('.')[0] === 'vacuum' },
+      { label: 'Presence Detection',   emoji: 'mdi:account',            match: (e, st) => ['device_tracker','person'].includes(e.entity_id.split('.')[0]) },
     ];
 
     const labelGroups = [];
@@ -10838,6 +10878,7 @@ class EntityManagerPanel extends HTMLElement {
                style="flex-shrink:0;cursor:pointer;width:15px;height:15px;accent-color:var(--em-primary)">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+          ${item.entity.deviceName && item.entity.deviceName !== item.name ? `<div style="font-size:11px;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.deviceName)}</div>` : ''}
           <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
           <div style="font-size:11px;color:var(--em-text-secondary);margin-top:2px">${this._escapeHtml(item.reason)}</div>
         </div>
@@ -10849,29 +10890,27 @@ class EntityManagerPanel extends HTMLElement {
 
     const renderSection = (emoji, title, items, sectionKey) => {
       const groups = new Map();
-      const noDevice = [];
       for (const item of items) {
-        const did = item.entity.device_id;
-        if (!did) { noDevice.push(item); continue; }
-        if (!groups.has(did)) groups.set(did, { deviceName: item.entity.deviceName || did, items: [] });
-        groups.get(did).items.push(item);
+        const key = item.entity.integration || 'other';
+        if (!groups.has(key)) groups.set(key, { intName: key.charAt(0).toUpperCase() + key.slice(1), items: [] });
+        groups.get(key).items.push(item);
       }
       let rows = '';
-      for (const group of groups.values()) {
+      for (const group of [...groups.values()].sort((a, b) => a.intName.localeCompare(b.intName, undefined, { sensitivity: 'base' }))) {
         const entityRows = group.items.map(i => renderRow(i, sectionKey)).join('');
         rows += `
           <div class="em-naming-device-group" style="border-bottom:1px solid var(--em-border)">
             <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
               <span class="em-naming-arrow em-collapsible-icon" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
-              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.deviceName)}</span>
-              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
               <input type="checkbox" class="em-sug-section-select-all" data-section="${sectionKey}" title="Select all in group"
                      style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary);flex-shrink:0">
+              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.intName)}</span>
+              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
             </div>
             <div class="em-naming-device-body" style="display:none">${entityRows}</div>
           </div>`;
       }
-      rows += noDevice.map(i => renderRow(i, sectionKey)).join('');
+      rows = rows || '';
       const bulkLabel = items[0]?.actionLabel || 'Apply';
       const body = `<div style="padding:2px 0">
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
@@ -10890,6 +10929,7 @@ class EntityManagerPanel extends HTMLElement {
                style="flex-shrink:0;cursor:pointer;width:15px;height:15px;accent-color:var(--em-primary)">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+          ${item.entity.deviceName && item.entity.deviceName !== item.name ? `<div style="font-size:11px;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.deviceName)}</div>` : ''}
           <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
           <div style="font-size:11px;color:var(--em-text-secondary);margin-top:2px">${this._escapeHtml(item.reason)}</div>
         </div>
@@ -10899,29 +10939,27 @@ class EntityManagerPanel extends HTMLElement {
 
     const renderNamingSection = (emoji, title, items) => {
       const groups = new Map();
-      const noDevice = [];
       for (const item of items) {
-        const did = item.entity.device_id;
-        if (!did) { noDevice.push(item); continue; }
-        if (!groups.has(did)) groups.set(did, { deviceName: item.entity.deviceName || did, items: [] });
-        groups.get(did).items.push(item);
+        const key = item.entity.integration || 'other';
+        if (!groups.has(key)) groups.set(key, { intName: key.charAt(0).toUpperCase() + key.slice(1), items: [] });
+        groups.get(key).items.push(item);
       }
       let rows = '';
-      for (const group of groups.values()) {
+      for (const group of [...groups.values()].sort((a, b) => a.intName.localeCompare(b.intName, undefined, { sensitivity: 'base' }))) {
         const entityRows = group.items.map(renderNamingRow).join('');
         rows += `
           <div class="em-naming-device-group" style="border-bottom:1px solid var(--em-border)">
             <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
               <span class="em-naming-arrow em-collapsible-icon" style="transition:transform 0.15s;transform:rotate(-90deg)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
-              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.deviceName)}</span>
-              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
               <input type="checkbox" class="em-naming-group-select-all" title="Select all in group"
                      style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary);flex-shrink:0">
+              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.intName)}</span>
+              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
             </div>
             <div class="em-naming-device-body" style="display:none">${entityRows}</div>
           </div>`;
       }
-      rows += noDevice.map(renderNamingRow).join('');
+      rows = rows || '';
       const body = `<div style="padding:2px 0">
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
           <button class="btn btn-primary btn-sm em-naming-rename-btn" disabled style="opacity:0.4;pointer-events:none">Rename Selected (0)</button>
@@ -10934,11 +10972,18 @@ class EntityManagerPanel extends HTMLElement {
 
     const renderAreaSection = (emoji, title, items) => {
       const svgChev = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-      const rows = items.map(item => {
+      // Group devices by integration
+      const intGroups = new Map();
+      for (const item of items) {
+        const key = item.entity.integration || 'other';
+        if (!intGroups.has(key)) intGroups.set(key, { intName: key.charAt(0).toUpperCase() + key.slice(1), items: [] });
+        intGroups.get(key).items.push(item);
+      }
+      const renderDeviceCard = (item) => {
         // Show all entities belonging to this device as context rows
         const deviceEntities = allEntities.filter(e => e.device_id === item.deviceId);
         const entityRows = deviceEntities.map(e => `
-          <div class="em-sug-row" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
+          <div style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(e.original_name || e.entity_id)}</div>
               <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(e.entity_id)}</div>
@@ -10946,9 +10991,11 @@ class EntityManagerPanel extends HTMLElement {
           </div>`).join('');
         return `
           <div class="em-naming-device-group em-sug-area-card" data-device-id="${this._escapeAttr(item.deviceId)}" style="border-bottom:1px solid var(--em-border)">
-            <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
-              <span class="em-naming-arrow em-collapsible-icon" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
-              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</span>
+            <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
+              <span class="em-naming-arrow" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
+              <input type="checkbox" class="em-area-device-cb" data-device-id="${this._escapeAttr(item.deviceId)}" data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+                     style="flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)" title="Select device">
+              <span style="font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</span>
               <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${deviceEntities.length || item.entity.deviceEntityCount || ''} entit${(deviceEntities.length || 1) !== 1 ? 'ies' : 'y'}</span>
               <button class="em-sug-action em-assign-btn btn btn-sm" data-action="assign-area"
                   data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
@@ -10957,8 +11004,27 @@ class EntityManagerPanel extends HTMLElement {
             </div>
             <div class="em-naming-device-body" style="display:none">${entityRows || '<div style="padding:8px 12px;font-size:12px;opacity:0.6">No entity details available</div>'}</div>
           </div>`;
-      }).join('');
+      };
+      let rows = '';
+      for (const group of [...intGroups.values()].sort((a, b) => a.intName.localeCompare(b.intName, undefined, { sensitivity: 'base' }))) {
+        const deviceCards = group.items.map(renderDeviceCard).join('');
+        rows += `
+          <div class="em-naming-device-group" style="border-bottom:1px solid var(--em-border)">
+            <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
+              <span class="em-naming-arrow em-collapsible-icon" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
+              <input type="checkbox" class="em-area-int-select-all" title="Select all devices in group"
+                     style="flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)">
+              <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.intName)}</span>
+              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} device${group.items.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div class="em-naming-device-body" style="display:none">${deviceCards}</div>
+          </div>`;
+      }
       const body = `<div style="padding:2px 0">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
+          <button class="btn btn-primary btn-sm em-area-bulk-btn" disabled style="opacity:0.4;pointer-events:none">Assign Area to Selected (0)</button>
+          <span style="font-size:11px;color:var(--em-text-secondary)">Select devices to bulk assign area</span>
+        </div>
         ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
       </div>`;
       return this._collGroup(`${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
@@ -10967,25 +11033,74 @@ class EntityManagerPanel extends HTMLElement {
     const renderLabelSuggestionsSection = (groups) => {
       if (!groups.length) return '';
       const svgChev = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-      const rows = groups.map(g => {
-        const labelKey = this._escapeAttr(g.label);
-        const entityRows = g.entities.map(e => {
-          const name = this._hass?.states?.[e.entity_id]?.attributes?.friendly_name || e.original_name || e.entity_id;
-          return `
+
+      const renderLabelEntityRow = (e, labelKey) => {
+        const name = this._hass?.states?.[e.entity_id]?.attributes?.friendly_name || e.original_name || e.entity_id;
+        const devName = e.deviceName && e.deviceName !== name ? e.deviceName : '';
+        return `
           <div class="em-sug-row em-sug-naming-row" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
             <input type="checkbox" class="em-label-sug-cb" data-entity-id="${this._escapeAttr(e.entity_id)}" data-label-key="${labelKey}"
                    checked style="flex-shrink:0;cursor:pointer;width:15px;height:15px;accent-color:var(--em-primary)">
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(name)}</div>
+              ${devName ? `<div style="font-size:11px;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(devName)}</div>` : ''}
               <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(e.entity_id)}</div>
             </div>
           </div>`;
-        }).join('');
+      };
+
+      const renderDevGroupCard = (group, labelKey) => `
+        <div class="em-label-dev-group" style="border-bottom:1px solid var(--em-border)">
+          <div class="em-label-dev-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
+            <span class="em-label-dev-arrow" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
+            <input type="checkbox" class="em-label-int-select-all" checked style="flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)" title="Select all in group">
+            <span style="font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.name)}</span>
+            <span style="font-size:11px;color:var(--em-text-secondary)">${group.entities.length} entit${group.entities.length !== 1 ? 'ies' : 'y'}</span>
+          </div>
+          <div class="em-label-dev-body" style="display:none">${group.entities.map(e => renderLabelEntityRow(e, labelKey)).join('')}</div>
+        </div>`;
+
+      const renderDeviceGroups = (entities, labelKey) => {
+        const intMap = new Map();
+        for (const e of entities) {
+          const key = e.integration || 'other';
+          if (!intMap.has(key)) intMap.set(key, { name: key.charAt(0).toUpperCase() + key.slice(1), entities: [] });
+          intMap.get(key).entities.push(e);
+        }
+        const allGroups = [...intMap.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        if (!allGroups.length) return entities.map(e => renderLabelEntityRow(e, labelKey)).join('');
+        return allGroups.map(g => renderDevGroupCard(g, labelKey)).join('');
+      };
+
+      const renderLabelBody = (entities, labelKey, subGroups) => {
+        if (subGroups?.length) {
+          const states = this._hass?.states || {};
+          let html = '';
+          for (const sg of subGroups) {
+            const sgEntities = entities.filter(e => sg.match(e, states[e.entity_id]));
+            if (!sgEntities.length) continue;
+            html += `
+              <div class="em-label-type-group" style="border-bottom:1px solid var(--em-border)">
+                <div class="em-label-type-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none;background:var(--em-bg-primary);border-bottom:1px solid var(--em-border-light)">
+                  <span class="em-label-type-arrow" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
+                  <span style="font-size:12px;font-weight:700;flex:1;text-transform:uppercase;letter-spacing:0.04em">${this._escapeHtml(sg.label)}</span>
+                  <span style="font-size:11px;color:var(--em-text-secondary)">${sgEntities.length} entit${sgEntities.length !== 1 ? 'ies' : 'y'}</span>
+                </div>
+                <div class="em-label-type-body" style="display:none">${renderDeviceGroups(sgEntities, labelKey)}</div>
+              </div>`;
+          }
+          return html;
+        }
+        return renderDeviceGroups(entities, labelKey);
+      };
+
+      const rows = groups.map(g => {
+        const labelKey = this._escapeAttr(g.label);
         return `
           <div class="em-naming-device-group em-label-sug-card" data-label-name="${labelKey}" style="border-bottom:1px solid var(--em-border)">
             <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
               <span class="em-naming-arrow em-collapsible-icon" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
-              <span style="font-size:16px;flex-shrink:0">${g.emoji}</span>
+              <span style="flex-shrink:0">${this._icon(g.emoji, '16px')}</span>
               <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(g.label)}</span>
               <span style="font-size:11px;color:var(--em-text-secondary);margin-right:2px">${g.entities.length} entit${g.entities.length !== 1 ? 'ies' : 'y'}</span>
               <span style="font-size:11px;color:${g.existingLabel ? 'var(--em-primary)' : 'var(--em-warning)'};margin-right:4px">${g.existingLabel ? 'exists' : 'new'}</span>
@@ -10996,7 +11111,7 @@ class EntityManagerPanel extends HTMLElement {
                       data-entity-ids="${this._escapeAttr(g.entities.map(e => e.entity_id).join(','))}"
                       style="margin-left:4px">Apply to <span class="em-label-apply-count">${g.entities.length}</span></button>
             </div>
-            <div class="em-naming-device-body" style="display:none">${entityRows}</div>
+            <div class="em-naming-device-body" style="display:none">${renderLabelBody(g.entities, labelKey, g.subGroups)}</div>
           </div>`;
       }).join('');
       const body = `<div style="padding:2px 0">${rows}</div>`;
@@ -11052,6 +11167,65 @@ class EntityManagerPanel extends HTMLElement {
         const collapsed = body.style.display === 'none';
         body.style.display = collapsed ? '' : 'none';
         arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+
+    // Device sub-group toggles inside label suggestion cards (use distinct classes to avoid nesting conflict)
+    dialogBody.querySelectorAll('.em-label-dev-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const group = toggle.closest('.em-label-dev-group');
+        const body = group?.querySelector('.em-label-dev-body');
+        const arrow = toggle.querySelector('.em-label-dev-arrow');
+        if (!body) return;
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
+      });
+    });
+
+    // Integration group checkboxes — select/deselect all entities in that integration
+    dialogBody.querySelectorAll('.em-label-int-select-all').forEach(intCb => {
+      intCb.addEventListener('click', e => e.stopPropagation());
+      intCb.addEventListener('change', () => {
+        const devGroup = intCb.closest('.em-label-dev-group');
+        const body = devGroup?.querySelector('.em-label-dev-body');
+        if (!body) return;
+        // Open the group so the user sees what changed
+        body.style.display = '';
+        const arrow = devGroup.querySelector('.em-label-dev-arrow');
+        if (arrow) arrow.style.transform = '';
+        // Set all entity checkboxes
+        body.querySelectorAll('.em-label-sug-cb').forEach(cb => { cb.checked = intCb.checked; });
+        // Update label-card select-all and apply button
+        const labelCard = intCb.closest('.em-label-sug-card');
+        if (!labelCard) return;
+        const allCbs = [...labelCard.querySelectorAll('.em-label-sug-cb')];
+        const checkedCbs = allCbs.filter(c => c.checked);
+        const groupSelectAll = labelCard.querySelector('.em-label-group-select-all');
+        if (groupSelectAll) {
+          groupSelectAll.checked = checkedCbs.length === allCbs.length;
+          groupSelectAll.indeterminate = checkedCbs.length > 0 && checkedCbs.length < allCbs.length;
+        }
+        const applyBtn = labelCard.querySelector('.em-label-apply-btn');
+        if (applyBtn) {
+          const countEl = applyBtn.querySelector('.em-label-apply-count');
+          if (countEl) countEl.textContent = checkedCbs.length;
+          applyBtn.disabled = checkedCbs.length === 0;
+          applyBtn.dataset.entityIds = checkedCbs.map(c => c.dataset.entityId).join(',');
+        }
+      });
+    });
+
+    // Type sub-group toggles (Energy Monitoring: Power / Energy / Energy Return)
+    dialogBody.querySelectorAll('.em-label-type-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const group = toggle.closest('.em-label-type-group');
+        const body = group?.querySelector('.em-label-type-body');
+        const arrow = toggle.querySelector('.em-label-type-arrow');
+        if (!body) return;
+        const collapsed = body.style.display === 'none';
+        body.style.display = collapsed ? '' : 'none';
+        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
       });
     });
 
@@ -11180,6 +11354,16 @@ class EntityManagerPanel extends HTMLElement {
     dialogBody.querySelectorAll('.em-label-sug-cb').forEach(cb => {
       cb.addEventListener('click', e => e.stopPropagation());
       cb.addEventListener('change', () => {
+        // Update integration-group checkbox state
+        const devGroup = cb.closest('.em-label-dev-group');
+        const intCb = devGroup?.querySelector('.em-label-int-select-all');
+        if (intCb) {
+          const devCbs = [...(devGroup.querySelector('.em-label-dev-body')?.querySelectorAll('.em-label-sug-cb') || [])];
+          const devChecked = devCbs.filter(c => c.checked).length;
+          intCb.checked = devChecked === devCbs.length && devCbs.length > 0;
+          intCb.indeterminate = devChecked > 0 && devChecked < devCbs.length;
+        }
+        // Update label-card select-all and apply button
         const group = cb.closest('.em-label-sug-card');
         const labelKey = group?.dataset.labelName;
         if (!group || !labelKey) return;
@@ -11232,15 +11416,68 @@ class EntityManagerPanel extends HTMLElement {
           await this.disableEntity(entityId);
           card?.remove();
         } else if (action === 'rename') {
-          closeDialog();
           this.showRenameDialog(entityId);
         } else if (action === 'assign-area') {
           const entityObj = this._resolveEntitiesById([entityId])[0] || { entity_id: entityId, device_id: deviceId };
-          closeDialog();
           await this._showAreaFloorDialog('Assign device to area', [entityObj]);
+          this._refreshView();
         }
       });
     });
+
+    // Area section — device checkboxes and bulk assign bar
+    const updateAreaBulkBar = () => {
+      const checked = [...dialogBody.querySelectorAll('.em-area-device-cb:checked')];
+      const btn = dialogBody.querySelector('.em-area-bulk-btn');
+      if (!btn) return;
+      if (checked.length > 0) {
+        btn.textContent = `Assign Area to Selected (${checked.length})`;
+        btn.disabled = false; btn.style.opacity = '1'; btn.style.pointerEvents = '';
+      } else {
+        btn.textContent = 'Assign Area to Selected (0)';
+        btn.disabled = true; btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+      }
+    };
+    dialogBody.querySelectorAll('.em-area-device-cb').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => {
+        const intGroup = cb.closest('.em-naming-device-group:not(.em-sug-area-card)');
+        const intCb = intGroup?.querySelector('.em-area-int-select-all');
+        if (intCb) {
+          const devCbs = [...(intGroup.querySelector('.em-naming-device-body')?.querySelectorAll('.em-area-device-cb') || [])];
+          const devChecked = devCbs.filter(c => c.checked).length;
+          intCb.checked = devChecked === devCbs.length && devCbs.length > 0;
+          intCb.indeterminate = devChecked > 0 && devChecked < devCbs.length;
+        }
+        updateAreaBulkBar();
+      });
+    });
+    dialogBody.querySelectorAll('.em-area-int-select-all').forEach(intCb => {
+      intCb.addEventListener('click', e => e.stopPropagation());
+      intCb.addEventListener('change', () => {
+        const group = intCb.closest('.em-naming-device-group');
+        const body = group?.querySelector('.em-naming-device-body');
+        if (!body) return;
+        body.style.display = '';
+        const arrow = group.querySelector('.em-naming-arrow');
+        if (arrow) arrow.style.transform = '';
+        body.querySelectorAll('.em-area-device-cb').forEach(cb => { cb.checked = intCb.checked; });
+        updateAreaBulkBar();
+      });
+    });
+    const areaBulkBtn = dialogBody.querySelector('.em-area-bulk-btn');
+    if (areaBulkBtn) {
+      areaBulkBtn.addEventListener('click', async () => {
+        const checked = [...dialogBody.querySelectorAll('.em-area-device-cb:checked')];
+        if (!checked.length) return;
+        const entityObjects = checked.map(cb => {
+          const eid = cb.dataset.entityId;
+          return this._resolveEntitiesById([eid])[0] || { entity_id: eid, device_id: cb.dataset.deviceId };
+        });
+        await this._showAreaFloorDialog(`Assign area to ${entityObjects.length} device${entityObjects.length !== 1 ? 's' : ''}`, entityObjects);
+        this._refreshView();
+      });
+    }
 
     // Label suggestion apply — preview dialog with checkboxes before confirming
     const applyLabel = async (labelName, entityIds, triggerBtn) => {
@@ -11248,10 +11485,12 @@ class EntityManagerPanel extends HTMLElement {
 
       const entityListHtml = entityIds.map(eid => {
         const name = this._hass?.states?.[eid]?.attributes?.friendly_name || eid;
-        return `<label class="entity-list-item em-label-entity-row" style="padding:8px 12px;display:flex;gap:10px;align-items:center;cursor:pointer">
-          <input type="checkbox" class="em-label-entity-cb" data-entity-id="${this._escapeAttr(eid)}" checked style="flex-shrink:0;width:16px;height:16px;cursor:pointer">
-          <span style="font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(name)}</span>
-          <span style="font-size:11px;opacity:0.6;font-family:monospace;flex-shrink:0">${this._escapeHtml(eid)}</span>
+        return `<label class="em-label-entity-row" style="padding:6px 12px;display:flex;gap:10px;align-items:center;cursor:pointer;border-bottom:1px solid var(--em-border-light)">
+          <input type="checkbox" class="em-label-entity-cb" data-entity-id="${this._escapeAttr(eid)}" checked style="flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--em-primary)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(name)}</div>
+            <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(eid)}</div>
+          </div>
         </label>`;
       }).join('');
 
@@ -11352,7 +11591,7 @@ class EntityManagerPanel extends HTMLElement {
     } else {
       const result = this.createDialog({
         title: 'Integration Config Errors',
-        color: '#f44336',
+        color: 'var(--em-danger)',
         searchPlaceholder: 'Search integrations…',
         contentHtml: `<div style="padding:16px;text-align:center;color:var(--secondary-text-color)">Loading…</div>`,
         actionsHtml: `<button class="btn btn-secondary em-health-close">Close</button>`,
@@ -11643,14 +11882,14 @@ class EntityManagerPanel extends HTMLElement {
     } else {
       const result = this.createDialog({
         title: `browser_mod Browsers (${browsers.length}${activitySuffix})`,
-        color: '#2196f3',
+        color: 'var(--em-primary)',
         extraClass: 'entity-list-dialog',
         contentHtml: bmBodyHtml,
         actionsHtml: `
           <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%;align-items:center">
             <div style="display:flex;gap:8px;margin-right:auto;flex-wrap:wrap">
               ${staleIds.length > 0
-                ? `<button class="btn em-dialog-btn em-dialog-btn-warning" id="em-bm-cleanup-stale">
+                ? `<button class="btn btn-secondary" id="em-bm-cleanup-stale">
                      Clean up stale (${staleIds.length})
                    </button>`
                 : ''}
@@ -11658,7 +11897,7 @@ class EntityManagerPanel extends HTMLElement {
                 const activeBrowser = browsers.find(b => b.isActive && b.browserId);
                 const othersWithId = browsers.filter(b => !b.isActive && b.browserId);
                 return activeBrowser && othersWithId.length > 0
-                  ? `<button class="btn em-dialog-btn-danger" id="em-bm-deregister-others">
+                  ? `<button class="btn btn-danger" id="em-bm-deregister-others">
                        Deregister all but active (${othersWithId.length})
                      </button>`
                   : '';
@@ -11820,6 +12059,16 @@ class EntityManagerPanel extends HTMLElement {
       if (noDevice) noDevice.entities.forEach(e => orphanedEntities.push({ ...e, integration: integration.integration }));
     });
 
+    // Ignore state — shared storage key with showEntityListDialog('orphaned')
+    const _clnIgnoredRaw = this._loadFromStorage('em-orphan-ignored', {});
+    const _clnIgnoredMap = Array.isArray(_clnIgnoredRaw)
+      ? Object.fromEntries(_clnIgnoredRaw.map(e => [e, 0]))
+      : (typeof _clnIgnoredRaw === 'object' && _clnIgnoredRaw ? _clnIgnoredRaw : {});
+    const _clnIsIgnored = eid => eid in _clnIgnoredMap && (!_clnIgnoredMap[eid] || _clnIgnoredMap[eid] > Date.now());
+    const _clnBuildSet  = () => new Set(Object.keys(_clnIgnoredMap).filter(_clnIsIgnored));
+    let _clnIgnoredSet  = _clnBuildSet();
+    let _clnShowIgnored = false;
+
     // Split: YAML-defined (no config_entry_id) vs integration-backed
     const yamlOrphaned = orphanedEntities.filter(e => !e.config_entry_id);
     const integOrphaned = orphanedEntities.filter(e => e.config_entry_id);
@@ -11834,6 +12083,7 @@ class EntityManagerPanel extends HTMLElement {
       const stateObj = this._hass?.states?.[e.entity_id];
       const currentState = stateObj ? String(stateObj.state) : null;
       const lastUpdated = stateObj?.last_updated ? this._fmtAgo(stateObj.last_updated, 'Never') : 'Never seen';
+      const eid = this._escapeAttr(e.entity_id);
       return this._renderMiniEntityCard({
         entity_id: e.entity_id,
         name: e.original_name || e.entity_id,
@@ -11842,36 +12092,60 @@ class EntityManagerPanel extends HTMLElement {
         timeAgo: lastUpdated,
         infoLine: isYaml ? `${this._icon('mdi:file-document', '14px')} YAML · ${this._escapeHtml(e.integration)}` : `${this._icon(EM_ICONS.integration, '14px')} ${this._escapeHtml(e.integration)}`,
         extraClass: 'em-cleanup-orphaned-row',
+        checkboxHtml: `<input type="checkbox" class="em-dlg-sel" data-entity-id="${eid}" data-entity-name="${this._escapeAttr(e.original_name || e.entity_id)}" style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`,
         actionsHtml: `
-          <button class="em-assign-btn em-cleanup-assign-orphaned" data-entity-id="${this._escapeAttr(e.entity_id)}">Assign to device</button>
-          <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-orphaned" data-entity-id="${this._escapeAttr(e.entity_id)}"${isYaml ? ' title="YAML entity — will re-appear on restart"' : ''}>Remove</button>`,
+          <button class="em-dialog-btn ${_clnIgnoredSet.has(e.entity_id) ? 'em-dialog-btn-secondary' : 'em-dialog-btn-warning'} em-cleanup-orphan-ignore" data-entity-id="${eid}">${_clnIgnoredSet.has(e.entity_id) ? 'Unignore' : 'Ignore'}</button>
+          <button class="em-assign-btn em-cleanup-assign-orphaned" data-entity-id="${eid}">Assign to device</button>
+          <button class="em-dialog-btn em-dialog-btn-outline-primary em-cleanup-orphan-add-group" data-entity-id="${eid}">Add to Group</button>
+          <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-orphaned" data-entity-id="${eid}"${isYaml ? ' title="YAML entity — will re-appear on restart"' : ''}>Remove</button>`,
       });
     };
 
-    const yamlOrphanedHtml = yamlOrphaned.length === 0
-      ? '<p style="text-align:center;padding:16px;opacity:0.6">No YAML orphaned entities.</p>'
-      : `<p style="padding:6px 12px 2px;font-size:11px;opacity:0.6;margin:0">YAML entities will re-appear on restart if removed from the registry.</p>
-         ${yamlOrphaned.map(e => _renderOrphanCard(e, true)).join('')}`;
+    const _clnOrphanBodyHtml = (showIgnored) => {
+      const visible = orphanedEntities.filter(e => showIgnored || !_clnIgnoredSet.has(e.entity_id));
+      if (!visible.length) return '<p style="text-align:center;padding:24px;opacity:0.6">No orphaned entities found.</p>';
+      const visYaml = visible.filter(e => !e.config_entry_id);
+      const visInteg = visible.filter(e => e.config_entry_id);
+      const byInteg = {};
+      visInteg.forEach(e => { if (!byInteg[e.integration]) byInteg[e.integration] = []; byInteg[e.integration].push(e); });
+      const yHtml = visYaml.length === 0
+        ? '<p style="text-align:center;padding:16px;opacity:0.6">No YAML orphaned entities.</p>'
+        : `<p style="padding:6px 12px 2px;font-size:11px;opacity:0.6;margin:0">YAML entities will re-appear on restart if removed from the registry.</p>
+           ${visYaml.map(e => _renderOrphanCard(e, true)).join('')}`;
+      const iHtml = visInteg.length === 0
+        ? '<p style="text-align:center;padding:16px;opacity:0.6">No integration orphaned entities.</p>'
+        : Object.entries(byInteg).sort().map(([integ, items]) => {
+            const integLabel = integ.charAt(0).toUpperCase() + integ.slice(1);
+            return this._collGroup(`${integLabel} (${items.length})`, items.map(e => _renderOrphanCard(e, false)).join(''));
+          }).join('');
+      return `
+        <div class="em-sug-section em-sug-naming" style="margin:0 8px 8px">
+          ${this._collGroup(`${this._icon('mdi:file-document', '16px')} YAML Config Entities (${visYaml.length})`, yHtml)}
+        </div>
+        <div class="em-sug-section em-sug-area" style="margin:0 8px 8px">
+          ${this._collGroup(`${this._icon(EM_ICONS.integration, '16px')} Integration Orphans (${visInteg.length})`, iHtml)}
+        </div>`;
+    };
 
-    const integOrphanedHtml = integOrphaned.length === 0
-      ? '<p style="text-align:center;padding:16px;opacity:0.6">No integration orphaned entities.</p>'
-      : Object.entries(orphanedByInteg).sort().map(([integ, items]) => {
-          const integLabel = integ.charAt(0).toUpperCase() + integ.slice(1);
-          return this._collGroup(`${integLabel} (${items.length})`, items.map(e => _renderOrphanCard(e, false)).join(''));
-        }).join('');
+    const _clnOrphanHeaderHtml = (showIgnored) => {
+      const ignoredCount = orphanedEntities.filter(e => _clnIgnoredSet.has(e.entity_id)).length;
+      const showIgnBtn = ignoredCount > 0
+        ? `<button class="em-cleanup-orphan-show-ignored em-dialog-btn em-dialog-btn-secondary"
+             style="border-color:${showIgnored ? 'var(--em-warning)' : ''};color:${showIgnored ? 'var(--em-warning)' : ''}">
+             ${showIgnored ? 'Hide ignored' : `Show ignored (${ignoredCount})`}
+           </button>` : '';
+      return `<div class="em-cleanup-orphan-header" style="padding:6px 12px 4px;display:flex;justify-content:flex-end;gap:8px;align-items:center">
+        ${showIgnBtn}
+        <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-all-orphaned">Remove All (${orphanedEntities.length})</button>
+      </div>`;
+    };
 
     const orphanedHtml = orphanedEntities.length === 0
       ? '<p style="text-align:center;padding:24px;opacity:0.6">No orphaned entities found.</p>'
-      : `
-        <div style="padding:6px 12px 4px;display:flex;justify-content:flex-end">
-          <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-all-orphaned">Remove All (${orphanedEntities.length})</button>
-        </div>
-        <div class="em-sug-section em-sug-naming" style="margin:0 8px 8px">
-          ${this._collGroup(`${this._icon('mdi:file-document', '16px')} YAML Config Entities (${yamlOrphaned.length})`, yamlOrphanedHtml)}
-        </div>
-        <div class="em-sug-section em-sug-area" style="margin:0 8px 8px">
-          ${this._collGroup(`${this._icon(EM_ICONS.integration, '16px')} Integration Orphans (${integOrphaned.length})`, integOrphanedHtml)}
-        </div>`;
+      : `<div class="em-cleanup-orphaned-container">
+           ${_clnOrphanHeaderHtml(_clnShowIgnored)}
+           <div class="em-cleanup-orphaned-body">${_clnOrphanBodyHtml(_clnShowIgnored)}</div>
+         </div>`;
 
     // ── Section 2: Stale entities ─────────────────────────────────────
     const staleEntities = states.filter(s => {
@@ -11967,7 +12241,7 @@ class EntityManagerPanel extends HTMLElement {
     } else {
       const result = this.createDialog({
         title: 'Cleanup',
-        color: '#ff9800',
+        color: 'var(--em-warning)',
         searchPlaceholder: 'Search cleanup items…',
         contentHtml: cleanupContentHtml,
         actionsHtml: `<button class="btn btn-secondary" id="em-cleanup-close">Close</button>`,
@@ -12027,6 +12301,57 @@ class EntityManagerPanel extends HTMLElement {
 
     // Remove single orphaned
     overlay.addEventListener('click', async (e) => {
+      // Orphaned: Show/hide ignored toggle
+      const orphanShowIgn = e.target.closest('.em-cleanup-orphan-show-ignored');
+      if (orphanShowIgn) {
+        _clnShowIgnored = !_clnShowIgnored;
+        const container = overlay.querySelector('.em-cleanup-orphaned-container');
+        if (container) {
+          container.querySelector('.em-cleanup-orphan-header').outerHTML = _clnOrphanHeaderHtml(_clnShowIgnored);
+          const bodyEl = container.querySelector('.em-cleanup-orphaned-body');
+          if (bodyEl) { bodyEl.innerHTML = _clnOrphanBodyHtml(_clnShowIgnored); this._reAttachCollapsibles(bodyEl); }
+        }
+        return;
+      }
+
+      // Orphaned: Ignore / Unignore per-row
+      const orphanIgnBtn = e.target.closest('.em-cleanup-orphan-ignore');
+      if (orphanIgnBtn) {
+        const eid = orphanIgnBtn.dataset.entityId;
+        if (_clnIgnoredSet.has(eid)) {
+          delete _clnIgnoredMap[eid];
+          _clnIgnoredSet = _clnBuildSet();
+          this._saveToStorage('em-orphan-ignored', _clnIgnoredMap);
+          const card = overlay.querySelector(`.em-cleanup-orphaned-row[data-entity-id="${CSS.escape(eid)}"]`);
+          if (card) { orphanIgnBtn.textContent = 'Ignore'; }
+          const container = overlay.querySelector('.em-cleanup-orphaned-container');
+          if (container) container.querySelector('.em-cleanup-orphan-header').outerHTML = _clnOrphanHeaderHtml(_clnShowIgnored);
+        } else {
+          this._showIgnoreSnoozeDialog(eid, expiryMs => {
+            _clnIgnoredMap[eid] = expiryMs;
+            _clnIgnoredSet = _clnBuildSet();
+            this._saveToStorage('em-orphan-ignored', _clnIgnoredMap);
+            const container = overlay.querySelector('.em-cleanup-orphaned-container');
+            if (container) {
+              container.querySelector('.em-cleanup-orphan-header').outerHTML = _clnOrphanHeaderHtml(_clnShowIgnored);
+              if (!_clnShowIgnored) {
+                overlay.querySelector(`.em-cleanup-orphaned-row[data-entity-id="${CSS.escape(eid)}"]`)?.remove();
+              } else {
+                const bodyEl = container.querySelector('.em-cleanup-orphaned-body');
+                if (bodyEl) { bodyEl.innerHTML = _clnOrphanBodyHtml(_clnShowIgnored); this._reAttachCollapsibles(bodyEl); }
+              }
+            }
+          });
+        }
+        return;
+      }
+
+      const orphanAddGroup = e.target.closest('.em-cleanup-orphan-add-group');
+      if (orphanAddGroup) {
+        this._showAddToGroupDialog([orphanAddGroup.dataset.entityId]);
+        return;
+      }
+
       const removeOrphan = e.target.closest('.em-cleanup-remove-orphaned');
       if (removeOrphan) {
         const entityId = removeOrphan.dataset.entityId;
@@ -12062,6 +12387,7 @@ class EntityManagerPanel extends HTMLElement {
 
       if (disableBtn) {
         const entityId = disableBtn.dataset.entityId;
+        if (!confirm(`Disable "${entityId}"?\n\nThe entity will stop reporting until re-enabled.`)) return;
         disableBtn.disabled = true; disableBtn.textContent = '…';
         try {
           await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
@@ -12108,6 +12434,8 @@ class EntityManagerPanel extends HTMLElement {
     let allowToggle = false;
     let groupedHtml = '';
     let bulkBarHtml = '';
+    let unavailCtx = null; // populated when type === 'unavailable'; used by post-render handlers
+    let orphanCtx  = null; // populated when type === 'orphaned'
 
     try {
         const states = await this._hass.callWS({ type: 'get_states' });
@@ -12406,19 +12734,42 @@ class EntityManagerPanel extends HTMLElement {
 
         } else if (type === 'unavailable') {
           title = 'Unavailable Entities';
-          color = '#f44336';
+          color = 'var(--em-danger)';
           allowToggle = false;
 
-          const unavailEntities = states.filter(s => s.state === 'unavailable');
-          const unavailByDomain = {};
-          unavailEntities.forEach(s => {
-            const d = s.entity_id.split('.')[0];
-            if (!unavailByDomain[d]) unavailByDomain[d] = [];
-            unavailByDomain[d].push(s);
-          });
+          // Persisted UI state
+          const _uvIgnoredRaw = this._loadFromStorage('em-unavail-ignored', {});
+          const _uvIgnoredMap = Array.isArray(_uvIgnoredRaw)
+            ? Object.fromEntries(_uvIgnoredRaw.map(e => [e, 0]))  // migrate old array format
+            : (typeof _uvIgnoredRaw === 'object' && _uvIgnoredRaw ? _uvIgnoredRaw : {});
+          const _uvIsIgnored = eid => eid in _uvIgnoredMap && (!_uvIgnoredMap[eid] || _uvIgnoredMap[eid] > Date.now());
+          const _uvBuildSet  = () => new Set(Object.keys(_uvIgnoredMap).filter(_uvIsIgnored));
+          let _uvIgnoredSet  = _uvBuildSet();
+          let _uvFilter = this._loadFromStorage('em-unavail-time-filter', 'all');
+          let _uvShowIgnored = false;
+          let _uvLastSeen = {};
 
-          // Build entity rows; lastSeenMap filled in after async history fetch
-          const _unavailRows = (items, lastSeenMap) => items.map(s => {
+          const allUnavailEntities = states.filter(s => s.state === 'unavailable');
+
+          const UV_TIME_FILTERS = [
+            { id: 'all', label: 'All',  ms: 0 },
+            { id: '1h',  label: '1h+',  ms: 60 * 60 * 1000 },
+            { id: '24h', label: '24h+', ms: 24 * 60 * 60 * 1000 },
+            { id: '7d',  label: '7d+',  ms: 7 * 24 * 60 * 60 * 1000 },
+            { id: '30d', label: '30d+', ms: 30 * 24 * 60 * 60 * 1000 },
+          ];
+
+          const _uvFilterEntities = (filter, inclIgnored) => {
+            const threshold = UV_TIME_FILTERS.find(f => f.id === filter)?.ms || 0;
+            const now = Date.now();
+            return allUnavailEntities.filter(s => {
+              if (!inclIgnored && _uvIgnoredSet.has(s.entity_id)) return false;
+              if (!threshold) return true;
+              return (now - new Date(s.last_changed).getTime()) >= threshold;
+            });
+          };
+
+          const _uvRows = (items, lastSeenMap) => items.map(s => {
             const lsTs = lastSeenMap[s.entity_id];
             const eid = this._escapeAttr(s.entity_id);
             return this._renderMiniEntityCard({
@@ -12429,124 +12780,208 @@ class EntityManagerPanel extends HTMLElement {
               timeAgo: `Down ${this._fmtAgo(s.last_changed, 'Unknown')}`,
               infoLine: lsTs
                 ? `Last seen: ${this._fmtAgo(new Date(lsTs).toISOString())}`
-                : 'Last seen: unknown (>90d)',
+                : 'Last seen: unknown (>1y)',
+              checkboxHtml: `<input type="checkbox" class="em-dlg-sel" data-entity-id="${eid}" data-entity-name="${this._escapeAttr(s.attributes.friendly_name || s.entity_id)}" style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`,
               actionsHtml: `
-                <button class="em-unavail-disable em-dialog-btn em-dialog-btn-secondary" data-entity-id="${eid}">Disable</button>
+                <button class="em-unavail-ignore em-dialog-btn ${_uvIgnoredSet.has(s.entity_id) ? 'em-dialog-btn-secondary' : 'em-dialog-btn-warning'}" data-entity-id="${eid}">${_uvIgnoredSet.has(s.entity_id) ? 'Unignore' : 'Ignore'}</button>
+                <button class="em-unavail-disable em-dialog-btn em-dialog-btn-danger" data-entity-id="${eid}">Disable</button>
+                <button class="em-unavail-add-group em-dialog-btn em-dialog-btn-outline-primary" data-entity-id="${eid}">Add to Group</button>
                 <button class="em-unavail-remove em-dialog-btn em-dialog-btn-danger" data-entity-id="${eid}">Remove</button>`,
             });
           }).join('');
 
-          const _buildUnavailHtml = (lastSeenMap) =>
-            Object.entries(unavailByDomain).sort().map(([domain, items]) => {
-              const domainLabel = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-              return this._collGroup(`${domainLabel} (${items.length})`, _unavailRows(items, lastSeenMap));
+          const _uvBodyHtml = (lastSeenMap, filter, inclIgnored) => {
+            const filtered = _uvFilterEntities(filter, inclIgnored);
+            if (!filtered.length) {
+              return `<p style="text-align:center;padding:24px;opacity:0.6">${allUnavailEntities.length === 0 ? 'All entities are reachable!' : 'No entities match this filter.'}</p>`;
+            }
+            const byDomain = {};
+            filtered.forEach(s => { const d = s.entity_id.split('.')[0]; (byDomain[d] = byDomain[d] || []).push(s); });
+            return Object.entries(byDomain).sort().map(([domain, items]) => {
+              const label = domain.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              return this._collGroup(`${label} (${items.length})`, _uvRows(items, lastSeenMap));
             }).join('');
+          };
 
-          if (unavailEntities.length === 0) {
+          const _uvFilterBar = (filter, inclIgnored) => {
+            const ignoredCount = allUnavailEntities.filter(s => _uvIgnoredSet.has(s.entity_id)).length;
+            const pills = UV_TIME_FILTERS.map(f => {
+              const n = _uvFilterEntities(f.id, inclIgnored).length;
+              const active = filter === f.id;
+              return `<button class="em-unavail-pill${active ? ' is-active' : ''}" data-unavail-filter="${f.id}"
+                style="padding:3px 11px;border-radius:12px;border:2px solid ${active ? 'var(--em-danger)' : 'var(--em-border)'};
+                background:${active ? 'var(--em-danger)' : 'transparent'};color:${active ? '#fff' : 'var(--em-text-primary)'};
+                font-size:12px;cursor:pointer;white-space:nowrap;font-weight:${active ? '600' : '400'}">${this._escapeHtml(f.label)} (${n})</button>`;
+            }).join('');
+            const ignBtn = ignoredCount > 0
+              ? `<button class="em-unavail-ignore-toggle" data-showing="${inclIgnored ? '1' : '0'}"
+                  style="margin-left:auto;padding:3px 11px;border-radius:12px;
+                  border:2px solid ${inclIgnored ? 'var(--em-warning)' : 'var(--em-border)'};
+                  background:${inclIgnored ? 'var(--em-warning)' : 'transparent'};
+                  color:${inclIgnored ? '#fff' : 'var(--em-text-secondary)'};font-size:12px;cursor:pointer;white-space:nowrap">
+                  ${inclIgnored ? 'Hide ignored' : `Show ignored (${ignoredCount})`}
+                </button>`
+              : '';
+            return `<div class="em-unavail-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 4px;align-items:center;border-bottom:1px solid var(--em-border-light,rgba(128,128,128,0.15))">${pills}${ignBtn}</div>`;
+          };
+
+          // Expose to post-render event section via closure object
+          unavailCtx = {
+            allUnavailEntities, _uvIgnoredMap, _uvFilterEntities, _uvBodyHtml, _uvFilterBar,
+            getFilter:      () => _uvFilter,
+            setFilter:      v  => { _uvFilter = v; },
+            getShowIgnored: () => _uvShowIgnored,
+            setShowIgnored: v  => { _uvShowIgnored = v; },
+            getLastSeen:    () => _uvLastSeen,
+            getIgnoredSet:  () => _uvIgnoredSet,
+            rebuildSet:     () => { _uvIgnoredSet = _uvBuildSet(); },
+          };
+
+          if (allUnavailEntities.length === 0) {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reachable!</p>';
           } else {
-            // Render immediately; patch in last-seen after history arrives
-            groupedHtml = _buildUnavailHtml({});
+            groupedHtml = `
+              ${_uvFilterBar(_uvFilter, _uvShowIgnored)}
+              <div class="em-unavail-list">${_uvBodyHtml({}, _uvFilter, _uvShowIgnored)}</div>`;
+
             setTimeout(async () => {
               try {
                 const hist = await this._hass.callWS({
                   type: 'history/history_during_period',
-                  start_time: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+                  start_time: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
                   end_time: new Date().toISOString(),
-                  entity_ids: unavailEntities.map(s => s.entity_id),
+                  entity_ids: allUnavailEntities.map(s => s.entity_id),
                   minimal_response: true,
                   no_attributes: true,
                 });
-                const lastSeenMap = {};
                 for (const [eid, records] of Object.entries(hist || {})) {
                   for (let i = records.length - 1; i >= 0; i--) {
                     const r = records[i];
                     const st = r.state ?? r.s;
                     if (st && st !== 'unavailable' && st !== 'unknown') {
-                      lastSeenMap[eid] = r.last_changed ?? r.lu;
+                      const tsRaw = r.last_changed ?? r.lu;
+                      _uvLastSeen[eid] = typeof tsRaw === 'number' ? tsRaw * 1000 : new Date(tsRaw).getTime();
                       break;
                     }
                   }
                 }
                 if (overlay?.isConnected) {
-                  const contentEl = overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
-                  if (contentEl) {
-                    contentEl.innerHTML = `<div class="entity-list-body">${_buildUnavailHtml(lastSeenMap)}</div>`;
-                    this._reAttachCollapsibles(contentEl);
-                    const _uvBody = contentEl.querySelector('.em-group-body');
-                    const _uvArrow = contentEl.querySelector('.em-collapse-arrow, .em-collapsible-icon');
-                    if (_uvBody) _uvBody.style.display = '';
-                    if (_uvArrow) _uvArrow.style.transform = '';
+                  const listEl = overlay.querySelector('.em-unavail-list');
+                  if (listEl) {
+                    listEl.innerHTML = _uvBodyHtml(_uvLastSeen, _uvFilter, _uvShowIgnored);
+                    this._reAttachCollapsibles(listEl);
+                    const _b = listEl.querySelector('.em-group-body');
+                    const _a = listEl.querySelector('.em-collapse-arrow, .em-collapsible-icon');
+                    if (_b) _b.style.display = '';
+                    if (_a) _a.style.transform = '';
                   }
                 }
               } catch (e) { console.warn('[EM] history fetch unavailable', e); }
             }, 0);
           }
-          entities = unavailEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
+
+          bulkBarHtml = '';
+
+          entities = allUnavailEntities.map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id }));
 
         } else if (type === 'orphaned') {
           title = 'Orphaned Entities (No Device)';
           color = '#ff9800';
           allowToggle = false;
 
-          const orphanedByIntegration = {};
+          // Persisted ignore list
+          const _orIgnoredRaw = this._loadFromStorage('em-orphan-ignored', {});
+          const _orIgnoredMap = Array.isArray(_orIgnoredRaw)
+            ? Object.fromEntries(_orIgnoredRaw.map(e => [e, 0]))
+            : (typeof _orIgnoredRaw === 'object' && _orIgnoredRaw ? _orIgnoredRaw : {});
+          const _orIsIgnored = eid => eid in _orIgnoredMap && (!_orIgnoredMap[eid] || _orIgnoredMap[eid] > Date.now());
+          const _orBuildSet  = () => new Set(Object.keys(_orIgnoredMap).filter(_orIsIgnored));
+          let _orIgnoredSet  = _orBuildSet();
+          let _orShowIgnored = false;
+
+          // Flatten all orphaned entities with their integration label
+          const allOrphanedItems = [];
           (this.data || []).forEach(integration => {
             const noDevice = integration.devices['no_device'];
             if (noDevice && noDevice.entities.length > 0) {
-              orphanedByIntegration[integration.integration] = noDevice.entities;
+              noDevice.entities.forEach(e => allOrphanedItems.push({ entity: e, integ: integration.integration }));
             }
           });
 
-          if (Object.keys(orphanedByIntegration).length === 0) {
+          const _orFilterItems = inclIgnored => allOrphanedItems.filter(({ entity: e }) =>
+            inclIgnored || !_orIgnoredSet.has(e.entity_id)
+          );
+
+          const _orRenderCard = ({ entity: e, integ }) => {
+            const stateObj = this._hass?.states?.[e.entity_id];
+            const currentState = stateObj ? String(stateObj.state) : null;
+            const eid = this._escapeAttr(e.entity_id);
+            return this._renderMiniEntityCard({
+              entity_id: e.entity_id,
+              name: e.original_name || e.entity_id,
+              state: e.is_disabled ? 'Disabled' : (currentState ?? 'Orphaned'),
+              stateColor: e.is_disabled ? 'var(--em-warning)' : (currentState ? 'var(--em-primary)' : 'var(--em-danger)'),
+              timeAgo: stateObj?.last_updated ? this._fmtAgo(stateObj.last_updated, 'Never') : 'Never seen',
+              infoLine: `${this._icon(EM_ICONS.integration, '14px')} ${this._escapeHtml(integ)}`,
+              checkboxHtml: `<input type="checkbox" class="em-dlg-sel" data-entity-id="${eid}" data-entity-name="${this._escapeAttr(e.original_name || e.entity_id)}" style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`,
+              actionsHtml: `
+                <button class="em-orphan-ignore em-dialog-btn ${_orIgnoredSet.has(e.entity_id) ? 'em-dialog-btn-secondary' : 'em-dialog-btn-warning'}" data-entity-id="${eid}">${_orIgnoredSet.has(e.entity_id) ? 'Unignore' : 'Ignore'}</button>
+                <button class="em-dialog-btn em-dialog-btn-danger em-orphaned-remove" data-entity-id="${eid}">Remove</button>`,
+            });
+          };
+
+          const _orBuildHtml = inclIgnored => {
+            const filtered = _orFilterItems(inclIgnored);
+            if (!filtered.length) {
+              return `<p style="text-align:center;padding:24px;opacity:0.6">${allOrphanedItems.length === 0 ? 'No orphaned entities found.' : 'No entities match this filter.'}</p>`;
+            }
+            const byInteg = {};
+            filtered.forEach(item => { (byInteg[item.integ] = byInteg[item.integ] || []).push(item); });
+            return Object.entries(byInteg).sort().map(([integ, items]) => {
+              const integLabel = integ.charAt(0).toUpperCase() + integ.slice(1);
+              return this._collGroup(`${integLabel} (${items.length})`, items.map(_orRenderCard).join(''));
+            }).join('');
+          };
+
+          const _orIgnoreBar = inclIgnored => {
+            const ignoredCount = allOrphanedItems.filter(({ entity: e }) => _orIgnoredSet.has(e.entity_id)).length;
+            if (!ignoredCount) return '';
+            return `<button class="em-orphan-ignore-toggle" data-showing="${inclIgnored ? '1' : '0'}"
+              style="padding:3px 11px;border-radius:12px;border:2px solid ${inclIgnored ? 'var(--em-warning)' : 'var(--em-border)'};
+              background:${inclIgnored ? 'var(--em-warning)' : 'transparent'};
+              color:${inclIgnored ? '#fff' : 'var(--em-text-secondary)'};font-size:12px;cursor:pointer;white-space:nowrap">
+              ${inclIgnored ? 'Hide ignored' : `Show ignored (${ignoredCount})`}
+            </button>`;
+          };
+
+          // Expose to post-render section
+          orphanCtx = {
+            _orIgnoredMap, _orBuildHtml, _orIgnoreBar,
+            getShowIgnored: () => _orShowIgnored,
+            setShowIgnored: v => { _orShowIgnored = v; },
+            getIgnoredSet:  () => _orIgnoredSet,
+            rebuildSet:     () => { _orIgnoredSet = _orBuildSet(); },
+          };
+
+          if (allOrphanedItems.length === 0) {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">No orphaned entities found.</p>';
           } else {
-            groupedHtml = Object.entries(orphanedByIntegration).sort().map(([integ, items]) => {
-              const integLabel = integ.charAt(0).toUpperCase() + integ.slice(1);
-              const body = items.map(e => {
-                const stateObj = this._hass?.states?.[e.entity_id];
-                const currentState = stateObj ? String(stateObj.state) : null;
-                return this._renderMiniEntityCard({
-                  entity_id: e.entity_id,
-                  name: e.original_name || e.entity_id,
-                  state: e.is_disabled ? 'Disabled' : (currentState ?? 'Orphaned'),
-                  stateColor: e.is_disabled ? 'var(--em-warning)' : (currentState ? 'var(--em-primary)' : 'var(--em-danger)'),
-                  timeAgo: stateObj?.last_updated ? this._fmtAgo(stateObj.last_updated, 'Never') : 'Never seen',
-                  infoLine: `${this._icon(EM_ICONS.integration, '14px')} ${this._escapeHtml(integ)}`,
-                  actionsHtml: `<button class="em-dialog-btn em-dialog-btn-danger em-orphaned-remove" data-entity-id="${this._escapeAttr(e.entity_id)}">Remove</button>`,
-                });
-              }).join('');
-              return this._collGroup(`${integLabel} (${items.length})`, body);
-            }).join('');
+            const ignoreBarStr = _orIgnoreBar(_orShowIgnored);
+            groupedHtml = `
+              ${ignoreBarStr ? `<div class="em-orphan-ignore-bar" style="display:flex;justify-content:flex-end;padding:6px 4px;border-bottom:1px solid var(--em-border-light,rgba(128,128,128,0.15))">${ignoreBarStr}</div>` : '<div class="em-orphan-ignore-bar"></div>'}
+              <div class="em-orphan-list">${_orBuildHtml(_orShowIgnored)}</div>`;
           }
-          entities = Object.values(orphanedByIntegration).flat().map(e => ({ id: e.entity_id, name: e.original_name || e.entity_id }));
 
-          // Wire Remove button after dialog renders
-          setTimeout(() => {
-            if (!overlay?.isConnected) return;
-            overlay.addEventListener('click', async (e) => {
-              const btn = e.target.closest('.em-orphaned-remove');
-              if (!btn) return;
-              const entityId = btn.dataset.entityId;
-              if (!confirm(`Remove ${entityId} from the entity registry?\n\nThis cannot be undone.`)) return;
-              btn.disabled = true;
-              btn.textContent = '…';
-              try {
-                const res = await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: entityId });
-                overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityId)}"]`)?.remove();
-                this._showToast(`${entityId} removed${res.warning ? ' — ' + res.warning : ''}`, res.warning ? 'warning' : 'success');
-                overlay.querySelectorAll('.em-group-body').forEach(body => {
-                  if (!body.querySelector('.em-mini-card')) {
-                    body.previousElementSibling?.remove();
-                    body.remove();
-                  }
-                });
-              } catch (err) {
-                btn.disabled = false;
-                btn.textContent = 'Remove';
-                this._showToast('Remove failed: ' + (err.message || err), 'error');
-              }
-            });
-          }, 0);
+          bulkBarHtml = allOrphanedItems.length > 0
+            ? this._renderDialogBulkBar([
+                { id: 'bulk-orphan-disable', label: 'Disable…' },
+                { id: 'bulk-orphan-ignore',  label: 'Ignore…' },
+                { id: 'bulk-orphan-group',   label: 'Add to Group…' },
+                { id: 'bulk-orphan-remove',  label: 'Remove…', variant: 'danger' },
+              ])
+            : '';
+
+          entities = allOrphanedItems.map(({ entity: e }) => ({ id: e.entity_id, name: e.original_name || e.entity_id }));
 
         } else if (type === 'health') {
           title = 'Stale Entities (No update in 30+ days)';
@@ -13137,6 +13572,47 @@ class EntityManagerPanel extends HTMLElement {
         const entities = this._resolveEntitiesById(entityIds);
         this._showAreaFloorDialog('Assign area to selected', entities);
       };
+      const _bulkGroupHandler = (entityIds) => {
+        this._showAddToGroupDialog(entityIds);
+      };
+
+      // Orphaned: shared list rebuild
+      const _orRebuildList = orphanCtx ? () => {
+        const listEl = overlay.querySelector('.em-orphan-list');
+        if (listEl) {
+          listEl.innerHTML = orphanCtx._orBuildHtml(orphanCtx.getShowIgnored());
+          this._reAttachCollapsibles(listEl);
+          const _b = listEl.querySelector('.em-group-body');
+          const _a = listEl.querySelector('.em-collapse-arrow, .em-collapsible-icon');
+          if (_b) _b.style.display = '';
+          if (_a) _a.style.transform = '';
+        }
+        const barEl = overlay.querySelector('.em-orphan-ignore-bar');
+        if (barEl) {
+          const newBar = orphanCtx._orIgnoreBar(orphanCtx.getShowIgnored());
+          barEl.innerHTML = newBar;
+          barEl.style.display = newBar ? 'flex' : 'none';
+          barEl.style.justifyContent = 'flex-end';
+          barEl.style.padding = '6px 4px';
+          barEl.style.borderBottom = newBar ? '1px solid var(--em-border-light,rgba(128,128,128,0.15))' : 'none';
+        }
+      } : null;
+
+      // Unavailable: shared list rebuild (used by bulk handlers + event delegation)
+      const _uvRebuildList = unavailCtx ? () => {
+        const listEl = overlay.querySelector('.em-unavail-list');
+        if (listEl) {
+          listEl.innerHTML = unavailCtx._uvBodyHtml(unavailCtx.getLastSeen(), unavailCtx.getFilter(), unavailCtx.getShowIgnored());
+          this._reAttachCollapsibles(listEl);
+          const _b = listEl.querySelector('.em-group-body');
+          const _a = listEl.querySelector('.em-collapse-arrow, .em-collapsible-icon');
+          if (_b) _b.style.display = '';
+          if (_a) _a.style.transform = '';
+        }
+        const oldBar = overlay.querySelector('.em-unavail-filter-bar');
+        if (oldBar) oldBar.outerHTML = unavailCtx._uvFilterBar(unavailCtx.getFilter(), unavailCtx.getShowIgnored());
+      } : null;
+
       const bulkActions = {
         automation: [
           { id: 'bulk-rename', handler: _bulkRenameHandler },
@@ -13158,6 +13634,78 @@ class EntityManagerPanel extends HTMLElement {
         template: [
           { id: 'bulk-rename', handler: _bulkRenameHandler },
           { id: 'bulk-remove', handler: _bulkRemoveHandler },
+        ],
+        orphaned: [
+          { id: 'bulk-orphan-disable', handler: async (entityIds) => {
+            const results = await Promise.allSettled(
+              entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
+            );
+            let ok = 0, fail = 0;
+            results.forEach((r, i) => {
+              if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
+              else fail++;
+            });
+            if (ok) { this._showToast(`Disabled ${ok} entit${ok !== 1 ? 'ies' : 'y'}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success'); this.loadCounts(); }
+            if (fail) this._showToast(`${fail} could not be disabled`, 'error');
+          }},
+          { id: 'bulk-orphan-ignore', handler: (entityIds) => {
+            entityIds.forEach(eid => { orphanCtx._orIgnoredMap[eid] = 0; });
+            orphanCtx.rebuildSet();
+            this._saveToStorage('em-orphan-ignored', orphanCtx._orIgnoredMap);
+            _orRebuildList?.();
+            this._showToast(`Ignored ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
+          }},
+          { id: 'bulk-orphan-group', handler: _bulkGroupHandler },
+          { id: 'bulk-orphan-remove', handler: async (entityIds, entityNames) => {
+            const preview = entityNames.slice(0, 3).join(', ') + (entityNames.length > 3 ? ` and ${entityNames.length - 3} more` : '');
+            if (!confirm(`Remove ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} from the entity registry?\n\n${preview}\n\nThis cannot be undone.`)) return;
+            const results = await Promise.allSettled(
+              entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid }))
+            );
+            let ok = 0, fail = 0;
+            results.forEach((r, i) => {
+              if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
+              else fail++;
+            });
+            if (ok) { this._showToast(`Removed ${ok} entit${ok !== 1 ? 'ies' : 'y'}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success'); this.loadCounts(); }
+            if (fail) this._showToast(`${fail} could not be removed`, 'error');
+          }},
+        ],
+        unavailable: [
+          { id: 'bulk-unavail-disable', handler: async (entityIds) => {
+            const results = await Promise.allSettled(
+              entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
+            );
+            let ok = 0, fail = 0;
+            results.forEach((r, i) => {
+              if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
+              else fail++;
+            });
+            if (ok) { this._showToast(`Disabled ${ok} entit${ok !== 1 ? 'ies' : 'y'}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success'); this.loadCounts(); }
+            if (fail) this._showToast(`${fail} could not be disabled`, 'error');
+          }},
+          { id: 'bulk-unavail-ignore', handler: (entityIds) => {
+            entityIds.forEach(eid => { unavailCtx._uvIgnoredMap[eid] = 0; });
+            unavailCtx.rebuildSet();
+            this._saveToStorage('em-unavail-ignored', unavailCtx._uvIgnoredMap);
+            _uvRebuildList?.();
+            this._showToast(`Ignored ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'}`, 'success');
+          }},
+          { id: 'bulk-unavail-group', handler: _bulkGroupHandler },
+          { id: 'bulk-unavail-remove', handler: async (entityIds, entityNames) => {
+            const preview = entityNames.slice(0, 3).join(', ') + (entityNames.length > 3 ? ` and ${entityNames.length - 3} more` : '');
+            if (!confirm(`Remove ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} from the entity registry?\n\n${preview}\n\nThis cannot be undone.`)) return;
+            const results = await Promise.allSettled(
+              entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid }))
+            );
+            let ok = 0, fail = 0;
+            results.forEach((r, i) => {
+              if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
+              else fail++;
+            });
+            if (ok) { this._showToast(`Removed ${ok} entit${ok !== 1 ? 'ies' : 'y'}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success'); this.loadCounts(); }
+            if (fail) this._showToast(`${fail} could not be removed`, 'error');
+          }},
         ],
       };
       if (bulkActions[type]) {
@@ -13213,7 +13761,7 @@ class EntityManagerPanel extends HTMLElement {
               // Auto-inject failed — show manual snippet
               const { overlay: snippetOverlay } = this.createDialog({
                 title: 'Manual Registration Required',
-                color: '#ff9800',
+                color: 'var(--em-warning)',
                 contentHtml: `
                   <div style="display:flex;flex-direction:column;gap:12px;padding:4px 0">
                     <p style="margin:0">Could not locate the template automatically in your YAML files. Add this line inside your template definition, then reload your templates:</p>
@@ -13221,7 +13769,9 @@ class EntityManagerPanel extends HTMLElement {
                     <p style="margin:0;font-size:12px;color:var(--em-text-secondary)">After adding, restart HA or call <strong>template.reload</strong> from Developer Tools, then reopen this dialog — the Edit button will appear.</p>
                   </div>
                 `,
-                actions: [{ label: 'Copy', primary: true, id: 'copy-uid' }, { label: 'Close', id: 'close-uid' }],
+                actionsHtml: `
+                  <button class="btn btn-secondary" data-action="close-uid">Close</button>
+                  <button class="btn btn-primary" data-action="copy-uid">Copy</button>`,
               });
               snippetOverlay.querySelector('[data-action="copy-uid"]')?.addEventListener('click', () => {
                 navigator.clipboard.writeText(result.unique_id).catch(() => {});
@@ -13256,7 +13806,7 @@ class EntityManagerPanel extends HTMLElement {
 
           const { overlay: editOverlay, closeDialog: closeEdit } = this.createDialog({
             title: `Edit Template Entity`,
-            color: '#2196f3',
+            color: 'var(--em-primary)',
             contentHtml: `
               <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">
                 <div>
@@ -13687,40 +14237,134 @@ class EntityManagerPanel extends HTMLElement {
         });
       });
 
-      // Unavailable: Disable
-      overlay.querySelectorAll('.em-unavail-disable').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const entityId = btn.dataset.entityId;
-          btn.disabled = true;
+      // Orphaned: per-row and ignore actions via event delegation
+      if (orphanCtx) {
+        overlay.addEventListener('click', async e => {
+          // Show/hide ignored toggle
+          const ignToggle = e.target.closest('.em-orphan-ignore-toggle');
+          if (ignToggle) { orphanCtx.setShowIgnored(!orphanCtx.getShowIgnored()); _orRebuildList(); return; }
+          // Per-row: Ignore / Unignore
+          const ignBtn = e.target.closest('.em-orphan-ignore');
+          if (ignBtn) {
+            e.stopPropagation();
+            const eid = ignBtn.dataset.entityId;
+            if (orphanCtx.getIgnoredSet().has(eid)) {
+              delete orphanCtx._orIgnoredMap[eid];
+              orphanCtx.rebuildSet();
+              this._saveToStorage('em-orphan-ignored', orphanCtx._orIgnoredMap);
+              _orRebuildList();
+            } else {
+              this._showIgnoreSnoozeDialog(eid, expiryMs => {
+                orphanCtx._orIgnoredMap[eid] = expiryMs;
+                orphanCtx.rebuildSet();
+                this._saveToStorage('em-orphan-ignored', orphanCtx._orIgnoredMap);
+                _orRebuildList();
+              });
+            }
+            return;
+          }
+          // Per-row: Remove
+          const remBtn = e.target.closest('.em-orphaned-remove');
+          if (!remBtn) return;
+          const entityId = remBtn.dataset.entityId;
+          if (!confirm(`Remove ${entityId} from the entity registry?\n\nThis cannot be undone.`)) return;
+          remBtn.disabled = true;
+          remBtn.textContent = '…';
           try {
-            await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
-            btn.closest('.entity-list-item')?.remove();
-            this._showToast(`Disabled ${entityId}`, 'success');
-            this.loadCounts();
+            const res = await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: entityId });
+            overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityId)}"]`)?.remove();
+            this._showToast(`${entityId} removed${res.warning ? ' — ' + res.warning : ''}`, res.warning ? 'warning' : 'success');
+            overlay.querySelectorAll('.em-group-body').forEach(body => {
+              if (!body.querySelector('.em-mini-card')) { body.previousElementSibling?.remove(); body.remove(); }
+            });
           } catch (err) {
-            this._showToast(`Failed: ${err.message}`, 'error', 5000);
-          } finally { btn.disabled = false; }
+            remBtn.disabled = false;
+            remBtn.textContent = 'Remove';
+            this._showToast('Remove failed: ' + (err.message || err), 'error');
+          }
         });
-      });
+      }
 
-      // Unavailable: Remove
-      overlay.querySelectorAll('.em-unavail-remove').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const entityId = btn.dataset.entityId;
-          if (!confirm(`Remove "${entityId}" from the entity registry?\n\nThis cannot be undone.`)) return;
-          btn.disabled = true;
-          try {
-            await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: entityId });
-            btn.closest('.entity-list-item')?.remove();
-            this._showToast(`Removed ${entityId}`, 'success');
-            this.loadCounts();
-          } catch (err) {
-            this._showToast(`Failed: ${err.message}`, 'error', 5000);
-          } finally { btn.disabled = false; }
+      // Unavailable: all per-row and filter actions via event delegation (survive list re-renders)
+      if (unavailCtx) {
+        overlay.addEventListener('click', async e => {
+          // Time filter pill
+          const pill = e.target.closest('.em-unavail-pill');
+          if (pill) {
+            unavailCtx.setFilter(pill.dataset.unavailFilter);
+            this._saveToStorage('em-unavail-time-filter', pill.dataset.unavailFilter);
+            _uvRebuildList();
+            return;
+          }
+          // Show/hide ignored toggle
+          const ignToggle = e.target.closest('.em-unavail-ignore-toggle');
+          if (ignToggle) {
+            unavailCtx.setShowIgnored(!unavailCtx.getShowIgnored());
+            _uvRebuildList();
+            return;
+          }
+          // Per-row: Ignore / Unignore
+          const ignBtn = e.target.closest('.em-unavail-ignore');
+          if (ignBtn) {
+            e.stopPropagation();
+            const eid = ignBtn.dataset.entityId;
+            if (unavailCtx.getIgnoredSet().has(eid)) {
+              delete unavailCtx._uvIgnoredMap[eid];
+              unavailCtx.rebuildSet();
+              this._saveToStorage('em-unavail-ignored', unavailCtx._uvIgnoredMap);
+              _uvRebuildList();
+            } else {
+              this._showIgnoreSnoozeDialog(eid, expiryMs => {
+                unavailCtx._uvIgnoredMap[eid] = expiryMs;
+                unavailCtx.rebuildSet();
+                this._saveToStorage('em-unavail-ignored', unavailCtx._uvIgnoredMap);
+                _uvRebuildList();
+              });
+            }
+            return;
+          }
+          // Per-row: Disable
+          const disBtn = e.target.closest('.em-unavail-disable');
+          if (disBtn) {
+            e.stopPropagation();
+            const eid = disBtn.dataset.entityId;
+            if (!confirm(`Disable "${eid}"?\n\nThe entity will stop reporting until re-enabled.`)) return;
+            disBtn.disabled = true;
+            try {
+              await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid });
+              disBtn.closest('.entity-list-item')?.remove();
+              this._showToast(`Disabled ${eid}`, 'success');
+              this.loadCounts();
+            } catch (err) {
+              this._showToast(`Failed: ${err.message}`, 'error', 5000);
+            } finally { disBtn.disabled = false; }
+            return;
+          }
+          // Per-row: Add to Group
+          const grpBtn = e.target.closest('.em-unavail-add-group');
+          if (grpBtn) {
+            e.stopPropagation();
+            this._showAddToGroupDialog([grpBtn.dataset.entityId]);
+            return;
+          }
+          // Per-row: Remove
+          const remBtn = e.target.closest('.em-unavail-remove');
+          if (remBtn) {
+            e.stopPropagation();
+            const eid = remBtn.dataset.entityId;
+            if (!confirm(`Remove "${eid}" from the entity registry?\n\nThis cannot be undone.`)) return;
+            remBtn.disabled = true;
+            try {
+              await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid });
+              remBtn.closest('.entity-list-item')?.remove();
+              this._showToast(`Removed ${eid}`, 'success');
+              this.loadCounts();
+            } catch (err) {
+              this._showToast(`Failed: ${err.message}`, 'error', 5000);
+            } finally { remBtn.disabled = false; }
+          }
         });
-      });
+      }
 
     } catch (error) {
       console.error('Error loading entity list:', error);
@@ -13827,10 +14471,161 @@ class EntityManagerPanel extends HTMLElement {
     noBtn.addEventListener('click', closeDialog);
   }
 
-  _showGroupEditorDialog(existingGroup = null) {
+  _showIgnoreSnoozeDialog(entityId, onSnooze) {
+    const options = [
+      { label: '1 Day',    ms: 86400000 },
+      { label: '3 Days',   ms: 3 * 86400000 },
+      { label: '1 Week',   ms: 7 * 86400000 },
+      { label: '2 Weeks',  ms: 14 * 86400000 },
+      { label: '1 Month',  ms: 30 * 86400000 },
+      { label: '3 Months', ms: 90 * 86400000 },
+      { label: 'Permanent', ms: 0 },
+    ];
+    const { overlay, closeDialog } = this.createDialog({
+      title: `Ignore "${entityId}"`,
+      color: 'var(--em-warning)',
+      contentHtml: `<div style="padding:4px 0">
+        <p style="margin:0 0 12px;color:var(--em-text-secondary)">Hide this entity for how long?</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${options.map(o =>
+            `<button class="em-snooze-opt btn btn-secondary" data-ms="${o.ms}">${this._escapeHtml(o.label)}</button>`
+          ).join('')}
+        </div>
+      </div>`,
+      actionsHtml: `<button class="btn btn-secondary" data-action="cancel">Cancel</button>`,
+    });
+    overlay.querySelector('[data-action="cancel"]').addEventListener('click', closeDialog);
+    overlay.querySelectorAll('.em-snooze-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ms = Number(btn.dataset.ms);
+        closeDialog();
+        onSnooze(ms === 0 ? 0 : Date.now() + ms);
+      });
+    });
+  }
+
+  _showAddToGroupDialog(entityIds) {
+    // Re-read custom groups fresh from localStorage
+    this.customGroups = this._loadFromStorage('em-custom-groups', []);
+    const customGroups = this.customGroups || [];
+    const isSingle = entityIds.length === 1;
+
+    // ── Row builder ───────────────────────────────────────────────────
+    const _modeRow = ({ icon, label, desc, action, disabled = false }) => `
+      <div class="em-atg-mode-row${disabled ? ' em-atg-disabled' : ''}"
+           data-atg-action="${this._escapeAttr(action || '')}"
+           style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;
+                  border:2px solid var(--em-border);margin:4px 0;
+                  cursor:${disabled ? 'default' : 'pointer'};opacity:${disabled ? '0.45' : '1'};
+                  transition:border-color 0.15s,background 0.15s">
+        <span style="font-size:18px;line-height:1">${this._icon(icon, '20px')}</span>
+        <span style="flex:1;min-width:0">
+          <span style="font-weight:600;display:block">${this._escapeHtml(label)}</span>
+          <span style="font-size:11px;color:var(--em-text-secondary)">${this._escapeHtml(desc)}</span>
+        </span>
+        ${!disabled ? `<span style="font-size:11px;color:var(--em-primary);font-weight:600">→</span>` : `<span style="font-size:10px;opacity:0.6">auto</span>`}
+      </div>`;
+
+    const _customRow = (g) => {
+      const alreadyIn = entityIds.filter(eid => g.entityIds.includes(eid)).length;
+      const newCount = entityIds.length - alreadyIn;
+      return `<div class="em-atg-row" data-group-id="${this._escapeAttr(g.id)}"
+        style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;
+               border:2px solid var(--em-border);margin:4px 0;
+               cursor:${newCount > 0 ? 'pointer' : 'default'};transition:border-color 0.15s,background 0.15s">
+        <span style="font-size:16px">${this._icon(EM_ICONS.customGroup, '16px')}</span>
+        <span style="flex:1;font-weight:500">${this._escapeHtml(g.name)}</span>
+        <span style="font-size:11px;color:var(--em-text-secondary)">${g.entityIds.length} entities</span>
+        ${alreadyIn > 0 ? `<span style="font-size:11px;color:var(--em-warning)">${alreadyIn} already in</span>` : ''}
+        ${newCount > 0
+          ? `<span style="font-size:12px;padding:3px 10px;background:var(--em-primary);color:#fff;border-radius:6px;font-weight:600">+${newCount}</span>`
+          : `<span style="font-size:11px;opacity:0.45">nothing to add</span>`}
+      </div>`;
+    };
+
+    const sectionHead = (label) =>
+      `<p style="margin:12px 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--em-text-secondary)">${label}</p>`;
+
+    const modeRows =
+      _modeRow({ icon: EM_ICONS.home,       label: 'By Area',         desc: 'Assign entity to a Home Assistant area', action: 'area' }) +
+      _modeRow({ icon: EM_ICONS.floor,      label: 'By Floor',        desc: 'Assign entity to a floor via its area',  action: 'floor' }) +
+      _modeRow({ icon: EM_ICONS.deviceName, label: 'By Device Name',  desc: 'Assign entity to a device',             action: 'device', disabled: !isSingle }) +
+      _modeRow({ icon: EM_ICONS.integration,label: 'By Integration',  desc: 'Automatic — based on integration',      disabled: true }) +
+      _modeRow({ icon: EM_ICONS.type,       label: 'By Type',         desc: 'Automatic — based on entity domain',    disabled: true });
+
+    const customSection = customGroups.length > 0
+      ? sectionHead('Custom Groups') + customGroups.map(_customRow).join('')
+      : sectionHead('Custom Groups') + `<p style="font-size:12px;color:var(--em-text-secondary);padding:4px 0 8px">No custom groups yet.</p>`;
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: `Add to Group`,
+      color: 'var(--em-primary)',
+      contentHtml: `<div style="padding:4px 0">
+        ${sectionHead('Grouping Modes')}${modeRows}
+        ${customSection}
+      </div>`,
+      actionsHtml: `
+        <button class="btn btn-secondary" id="em-atg-cancel">Cancel</button>
+        <button class="btn btn-primary" id="em-atg-new">+ New Custom Group</button>`,
+    });
+
+    overlay.querySelector('#em-atg-cancel').addEventListener('click', closeDialog);
+    overlay.querySelector('#em-atg-new').addEventListener('click', () => {
+      closeDialog();
+      this._showGroupEditorDialog(null, entityIds);
+    });
+
+    const _attachRowHover = el => {
+      el.addEventListener('mouseenter', () => { el.style.borderColor = 'var(--em-primary)'; el.style.background = 'var(--em-bg-hover)'; });
+      el.addEventListener('mouseleave', () => { el.style.borderColor = 'var(--em-border)'; el.style.background = ''; });
+    };
+
+    // Mode rows: area, floor, device
+    overlay.querySelectorAll('.em-atg-mode-row:not(.em-atg-disabled)').forEach(row => {
+      _attachRowHover(row);
+      row.addEventListener('click', () => {
+        const action = row.dataset.atgAction;
+        closeDialog();
+        if (action === 'area' || action === 'floor') {
+          const entities = this._resolveEntitiesById(entityIds);
+          const fallback = entityIds.map(eid => ({ entity_id: eid }));
+          this._showAreaFloorDialog('Assign area', entities.length ? entities : fallback);
+        } else if (action === 'device' && isSingle) {
+          this._showDevicePickerDialog(entityIds[0], async (deviceId, deviceName) => {
+            try {
+              await this._hass.callWS({ type: 'entity_manager/assign_entity_device', entity_id: entityIds[0], device_id: deviceId });
+              this._showToast(`${entityIds[0]} assigned to ${deviceName}`, 'success');
+              this.loadData();
+            } catch (err) {
+              this._showToast('Assign failed: ' + (err.message || err), 'error');
+            }
+          });
+        }
+      });
+    });
+
+    // Custom group rows
+    overlay.querySelectorAll('.em-atg-row').forEach(row => {
+      const groupId = row.dataset.groupId;
+      const group = this.customGroups.find(g => g.id === groupId);
+      if (!group) return;
+      const newCount = entityIds.filter(eid => !group.entityIds.includes(eid)).length;
+      if (!newCount) return;
+      _attachRowHover(row);
+      row.addEventListener('click', () => {
+        group.entityIds = [...new Set([...group.entityIds, ...entityIds])];
+        localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
+        this._reRenderSidebar();
+        closeDialog();
+        this._showToast(`Added ${newCount} entit${newCount !== 1 ? 'ies' : 'y'} to "${group.name}"`, 'success');
+      });
+    });
+  }
+
+  _showGroupEditorDialog(existingGroup = null, preSelectedIds = []) {
     const isEdit = !!existingGroup;
     // Live selection set — synced from checkboxes, persists across search re-renders
-    const selected = new Set(existingGroup?.entityIds || []);
+    const selected = new Set([...(existingGroup?.entityIds || []), ...preSelectedIds]);
 
     const buildTree = (filterText = '') => {
       const ft = filterText.toLowerCase();
@@ -13898,7 +14693,7 @@ class EntityManagerPanel extends HTMLElement {
       actionsHtml: `
         <button class="btn btn-secondary" id="cgd-cancel">Cancel</button>
         <span id="cgd-sel-count" style="font-size:12px;color:var(--em-text-secondary);margin:0 8px;white-space:nowrap"></span>
-        <button class="btn" id="cgd-save" style="background:var(--em-primary);color:#fff;border:none">
+        <button class="btn btn-primary" id="cgd-save">
           ${isEdit ? 'Save Changes' : 'Create Group'}
         </button>
       `
