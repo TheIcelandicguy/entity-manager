@@ -13,8 +13,8 @@ entity-manager/
 │       ├── voice_assistant.py           # Voice intent handlers (enable/disable)
 │       ├── websocket_api.py             # 18 WebSocket command handlers
 │       ├── frontend/
-│       │   ├── entity-manager-panel.js  # Custom web component UI (~13,500 lines)
-│       │   └── entity-manager-panel.css # External stylesheet (~6,100 lines)
+│       │   ├── entity-manager-panel.js  # Custom web component UI (~15,000 lines)
+│       │   └── entity-manager-panel.css # External stylesheet (~6,300 lines)
 │       └── translations/
 │           └── en.json                  # English translations
 ├── sentences/en/
@@ -86,7 +86,7 @@ entity-manager/
 
 ### Frontend (JavaScript + CSS)
 
-**`frontend/entity-manager-panel.js`** (~13,500 lines)
+**`frontend/entity-manager-panel.js`** (~15,000 lines)
 
 Single `EntityManagerPanel` custom element (`extends HTMLElement`). Key areas:
 
@@ -126,7 +126,7 @@ Key methods:
 | `_escapeHtml(s)` / `_escapeAttr(s)` | XSS-safe HTML/attribute encoding |
 | `_loadFromStorage(key, default)` / `_saveToStorage(key, val)` | localStorage I/O |
 
-**`frontend/entity-manager-panel.css`** (~6,100 lines)
+**`frontend/entity-manager-panel.css`** (~6,300 lines)
 
 All colors via `--em-*` CSS variables (never HA theme variables directly):
 

@@ -1,6 +1,6 @@
 # DEVREF — Entity Manager Panel Internals
 
-Developer reference for `entity-manager-panel.js` (~13,400 lines) and `entity-manager-panel.css` (~6,100 lines). Companion to CLAUDE.md (which covers project overview, setup, git workflow, and contribution guide). This document covers internal architecture only.
+Developer reference for `entity-manager-panel.js` (~15,000 lines) and `entity-manager-panel.css` (~6,300 lines). Companion to CLAUDE.md (which covers project overview, setup, git workflow, and contribution guide). This document covers internal architecture only.
 
 ---
 
@@ -1308,12 +1308,31 @@ Can run as a modal or inline — injected into `container` when called from `_re
 
 | Sub-section | Content | Row actions |
 |-------------|---------|-------------|
-| Orphaned Entities | No device assigned; cards grouped by integration | Disable / Remove |
-| Stale Entities | Not updated in 30+ days | Keep (dismiss 30d) / Disable / Remove |
-| Ghost Devices | In device registry but has no entities | Remove |
-| Never Triggered | Automations/scripts with no `last_triggered` attribute | Disable / Remove |
+| Orphaned Entities | No device assigned; cards grouped by integration | Ignore (snooze) / Assign to device / Add to Group / Remove |
+| Stale Entities | Not updated in 30+ days | Keep (dismiss 30d) / Disable (confirm) / Remove (confirm) |
+| Ghost Devices | In device registry but has no entities | Open in HA |
+| Never Triggered | Automations/scripts with no `last_triggered` attribute | Open editor (↗) |
+
+**Orphaned ignore state** (`em-orphan-ignored`): stored as `{ entity_id: expiry_ms }` where `0` = permanent. Shared storage key with `showEntityListDialog('orphaned')`. Migration from old `string[]` format is automatic. `_clnIgnoredMap`, `_clnBuildSet()`, `_clnIsIgnored()`, `let _clnIgnoredSet` manage state locally in the function closure. `_clnOrphanBodyHtml(showIgnored)` and `_clnOrphanHeaderHtml(showIgnored)` rebuild the orphaned section independently.
 
 Rows are removed from the DOM immediately on successful action — no full re-render needed. `em-stale-dismissed` (localStorage) tracks dismissed stale entity IDs with expiry timestamps.
+
+### `_showIgnoreSnoozeDialog(entityId, onSnooze)`
+
+Opens a duration-picker dialog for snoozing entity visibility. Options: 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent. Calls `onSnooze(expiryMs)` where `expiryMs = 0` means permanent, otherwise `Date.now() + durationMs`. Used by both unavailable and orphaned ignore handlers.
+
+### `_showAddToGroupDialog(entityIds)`
+
+Shows a two-section picker dialog matching the sidebar Groups section:
+
+**Grouping Modes** (top):
+- By Area / By Floor → `_showAreaFloorDialog('Assign area', entities)`
+- By Device Name → `_showDevicePickerDialog(entityIds[0], ...)` (single entity only; disabled if `entityIds.length > 1`)
+- By Integration / By Type → informational only (greyed out — automatic grouping, not assignable)
+
+**Custom Groups** (bottom): lists `this.customGroups` (re-read fresh from `em-custom-groups` on open). Clickable rows add entities instantly; `+N` badge shows how many new entities will be added. "+ New Custom Group" button opens `_showGroupEditorDialog(null, entityIds)`.
+
+Inner helper `_attachRowHover(el)` attaches identical mouseenter/mouseleave border+background effects to both mode rows and custom group rows.
 
 ### `_showConfigEntryHealthDialog({ inline, container })`
 
@@ -1333,4 +1352,4 @@ Card extraction is recursive across `views[]` → `cards[]` and `sections[]`. Pa
 
 ---
 
-*This document covers the code architecture as of v2.15.0. For project setup, services, WebSocket backend (Python), and git workflow see [CLAUDE.md](CLAUDE.md).*
+*This document covers the code architecture as of v2.19.0. For project setup, services, WebSocket backend (Python), and git workflow see [CLAUDE.md](CLAUDE.md).*
