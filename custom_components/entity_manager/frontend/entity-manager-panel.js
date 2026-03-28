@@ -459,16 +459,14 @@ class EntityManagerPanel extends HTMLElement {
     return this._formatTimeDiff(ms) + ' ago';
   }
 
-  /** Absolute timestamp: "Thursday, 27 March 2026 - 14:35" */
+  /** Absolute timestamp — locale-aware: 12h/24h and date order follow browser locale */
   _fmtAbsDate(isoStr, fallback = '—') {
     if (!isoStr) return fallback;
     const d = new Date(isoStr);
     if (isNaN(d.getTime())) return fallback;
-    const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} - ${hh}:${mm}`;
+    const datePart = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timePart = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return `${datePart} - ${timePart}`;
   }
 
   /** Collapsible group section. Pass `openByDefault = true` to start expanded. */
@@ -580,7 +578,7 @@ class EntityManagerPanel extends HTMLElement {
          <span class="entity-header-state" style="${colorStyle}">${this._escapeHtml(state)}</span>
          <span style="font-size:9px;color:var(--em-text-secondary);flex-shrink:0">Avg</span>
          <span class="entity-header-state" style="opacity:0.65${colorStyle ? ';' + colorStyle : ''}">${this._escapeHtml(extraChip)}</span>`
-      : state != null ? `<span class="entity-header-state" style="${colorStyle}">${this._escapeHtml(state)}</span>` : '';
+      : state != null ? `<span class="entity-header-state" style="${colorStyle}">${this._escapeHtml(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(state) ? this._fmtAgo(state) : state)}</span>` : '';
     return `
       <div class="entity-item entity-list-item em-mini-card ${extraClass}" data-entity-id="${eid}">
         <div class="entity-card-header">
