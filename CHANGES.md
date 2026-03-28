@@ -1,5 +1,77 @@
 # Entity Manager UI Changes
 
+## Version 2.20.0 - Notification Center & Entity Details Redesign
+
+### New Features
+
+#### Bell Icon Notification Center
+- A bell icon (🔔) appears in the panel header, right of the title and left of the Theme button
+- Badge shows unread notification count in red; fills to `mdi:bell-badge` when unread items exist
+- Clicking the bell opens a dropdown panel listing all notifications newest-first
+
+#### Four Tracked Event Types
+- **Device offline** (`mdi:wifi-off`, red left border) — fires when any entity transitions from a non-unavailable state to `unavailable` in live HA state updates
+- **State anomaly** (`mdi:help-circle`, orange border) — fires when an entity transitions to `unknown` from a previously known state
+- **Entity enabled/disabled** (`mdi:toggle-switch` / off-outline, green / red border) — detected on each `loadData()` refresh by comparing `is_disabled` maps between loads
+- **New entity added** (`mdi:new-box`, blue border) — fires when a new entity ID appears in the registry that wasn't known on the previous `loadData()` call
+
+#### Notification Behaviour
+- **Persistent** — stored in `localStorage['em-notifications']`, survives page refreshes and HA restarts
+- **Rate-limited** — same entity + event type can fire at most once every 5 minutes (prevents spam on flapping devices)
+- **Capped** — max 100 notifications; oldest are dropped when the limit is reached
+- **Mark all read** — badge clears; all items dim to 50% opacity
+- **Dismiss** — individual × button removes a single notification
+- **Clear all** — empties the list entirely
+
+#### First-Load Safety
+- `_hassInitialized` flag: first `set hass()` call snapshots state without firing offline/anomaly notifications (prevents false alerts on panel open)
+- `_knownEntityIds = null` sentinel: first `loadData()` seeds the known-entity set from localStorage without firing "new entity" notifications (prevents flood on first install)
+
+#### Notification Preferences
+- Gear icon in the dropdown opens a settings panel with toggles for each notification type (offline, anomaly, enabled, disabled, new)
+- Preferences stored in `localStorage['em-notif-prefs']`; each type can be individually silenced
+
+#### EM-Action Suppression
+- Notifications are **not** fired for enable/disable actions performed inside Entity Manager itself — only for changes made externally in HA
+
+---
+
+### Entity Details Dialog — Full Redesign
+
+#### Hero Header
+- Friendly name displayed prominently with an inline pencil icon; clicking it opens an editable text field — saves via `update_entity_display_name`, cancel with ✕ or Escape, confirm with ✓ or Enter, click outside to cancel
+- Entity ID shown below name in monospace
+- Chip row: domain (blue border), platform, Disabled badge (if applicable), Area name
+- State displayed as a colored pill badge (orange for unavailable/unknown, green for on/open, grey for off) with "State" label prefix
+- Timestamps show absolute format: `Thursday, 27 March 2026 - 14:35` (new `_fmtAbsDate` helper)
+- Toggle / Press button appears inline for controllable entities (switch, light, fan, cover, automation, etc.) and button/script entities — fires the appropriate HA service directly
+
+#### Action Buttons
+Four buttons in the dialog footer:
+- **Copy ID** — copies entity ID to clipboard with a toast confirmation
+- **Enable / Disable** — enables or disables the entity and closes the dialog
+- **Open in HA** — opens the entity's HA settings page in a new tab
+- **Close**
+
+#### Attribute Display
+- Attributes shown in a 2-column CSS grid with key above value — much more compact than the previous card-per-attribute layout
+
+#### Flat Label/Value Rows
+- Registry, Device, Integration sections now use clean horizontal `Label → Value` rows instead of mini entity cards with dark header bands
+
+#### History Timeline
+- State history entries show as compact rows: coloured dot + state value + absolute timestamp
+
+#### Area & Labels — Merged Section
+- Area and Labels combined into one collapsible section; area shown as two side-by-side bordered chips (`[Area]` `[Kitchen]`)
+
+#### Structure Improvements
+- Sections reduced from 11 to 8 (Statistics section removed — was a duplicate of Overview + Current State)
+- Attributes section open by default
+- `_collGroup()` now accepts an `openByDefault` parameter
+
+---
+
 ## Version 2.19.0 - Health & Cleanup Inline View Improvements
 
 ### New Features

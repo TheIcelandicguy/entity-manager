@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '2.19.0';
+const EM_VERSION = '2.20.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -224,6 +224,10 @@ const EM_ICONS = {
   dashboard:    'mdi:view-dashboard',
   new:          'mdi:new-box',
   undoRedo:     'mdi:undo-variant',
+  // Notifications
+  bell:         'mdi:bell-outline',
+  bellActive:   'mdi:bell-badge',
+  offline:      'mdi:wifi-off',
 };
 
 // Icon + color per action type (format strings need this._escapeHtml so live in _showActivityLog)
@@ -345,6 +349,15 @@ class EntityManagerPanel extends HTMLElement {
     this.showAllSidebarLabels = false;
     this.labelsVisibleCount = 8; // lazy-scroll: items visible at a time
     
+    // Notification state
+    this._notifications      = this._loadFromStorage('em-notifications', []);
+    this._notifPrefs         = this._loadFromStorage('em-notif-prefs', { offline: true, anomaly: true, enabled: true, disabled: true, new: true });
+    this._hassInitialized    = false;   // skip detection on very first hass call
+    this._prevHassStates     = {};      // entity_id → state string
+    this._prevEntityDisabled = null;    // entity_id → is_disabled; null = first loadData
+    this._knownEntityIds     = null;    // Set of known entity IDs; null = first ever load
+    this._notifRateLimit     = {};      // `${type}_${eid}` → last fired ms (5-min gate)
+
     // Listen for theme changes
     this._themeObserver = new MutationObserver(() => {
       this.updateTheme();
@@ -446,15 +459,29 @@ class EntityManagerPanel extends HTMLElement {
     return this._formatTimeDiff(ms) + ' ago';
   }
 
-  /** Collapsible group section (collapsed by default) used in entity-list dialogs */
-  _collGroup(label, bodyHtml) {
+  /** Absolute timestamp: "Thursday, 27 March 2026 - 14:35" */
+  _fmtAbsDate(isoStr, fallback = '—') {
+    if (!isoStr) return fallback;
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return fallback;
+    const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} - ${hh}:${mm}`;
+  }
+
+  /** Collapsible group section. Pass `openByDefault = true` to start expanded. */
+  _collGroup(label, bodyHtml, openByDefault = false) {
+    const arrowStyle = openByDefault ? '' : 'transform:rotate(-90deg)';
+    const bodyStyle  = openByDefault ? '' : 'display:none';
     return `
       <div class="entity-list-group">
         <div class="entity-list-group-title em-collapsible" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px">
-          <span class="em-collapse-arrow em-collapsible-icon" style="transform:rotate(-90deg)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+          <span class="em-collapse-arrow em-collapsible-icon" style="${arrowStyle}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
           ${label}
         </div>
-        <div class="em-group-body" style="display:none">${bodyHtml}</div>
+        <div class="em-group-body" style="${bodyStyle}">${bodyHtml}</div>
       </div>
     `;
   }
@@ -1697,6 +1724,110 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
   
+  // ── Notification system ───────────────────────────────────────────────────
+
+  /** Pre-update _prevEntityDisabled so EM-initiated changes don't fire notifications. */
+  _suppressEntityNotif(entityIds, isDisabled) {
+    if (!this._prevEntityDisabled) return;
+    for (const eid of [].concat(entityIds)) {
+      if (eid in this._prevEntityDisabled) this._prevEntityDisabled[eid] = isDisabled;
+    }
+  }
+
+  _pushNotification(type, entity_id, message) {
+    if (!this._notifPrefs[type]) return;  // user has disabled this event type
+    const rateKey = `${type}_${entity_id}`;
+    const now = Date.now();
+    if (this._notifRateLimit[rateKey] && now - this._notifRateLimit[rateKey] < 300_000) return;
+    this._notifRateLimit[rateKey] = now;
+    this._notifications.unshift({ id: `${rateKey}_${now}`, type, entity_id, message, ts: now, read: false });
+    if (this._notifications.length > 100) this._notifications.length = 100;
+    this._saveToStorage('em-notifications', this._notifications);
+    this._updateNotifBadge();
+    this._refreshNotifList();
+  }
+
+  _updateNotifBadge() {
+    const badge = this.querySelector('#em-notif-badge');
+    const btn   = this.querySelector('#em-notif-btn');
+    if (!badge || !btn) return;
+    const unread = this._notifications.filter(n => !n.read).length;
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.style.display = unread > 0 ? '' : 'none';
+    const icon = btn.querySelector('ha-icon');
+    if (icon) icon.setAttribute('icon', unread > 0 ? 'mdi:bell-badge' : 'mdi:bell-outline');
+  }
+
+  _refreshNotifList() {
+    const list = this.querySelector('#em-notif-list');
+    if (!list) return;
+    if (!this._notifications.length) {
+      list.innerHTML = `<div class="em-notif-empty">No notifications</div>`;
+      return;
+    }
+    const ICONS = {
+      offline:  'mdi:wifi-off',
+      anomaly:  'mdi:help-circle',
+      enabled:  'mdi:toggle-switch',
+      disabled: 'mdi:toggle-switch-off-outline',
+      new:      'mdi:new-box',
+    };
+    list.innerHTML = this._notifications.map(n => `
+      <div class="em-notif-item em-notif-type-${n.type}${n.read ? ' em-notif-read' : ''}" data-id="${this._escapeAttr(n.id)}" data-entity-id="${this._escapeAttr(n.entity_id)}" role="button" style="cursor:pointer">
+        <span class="em-notif-icon">${this._icon(ICONS[n.type] || 'mdi:bell')}</span>
+        <div class="em-notif-body">
+          <div class="em-notif-msg">${this._escapeHtml(n.message)}</div>
+          <div class="em-notif-time">${this._fmtAgo(new Date(n.ts).toISOString(), 'just now')}</div>
+        </div>
+        <button class="em-notif-dismiss" data-id="${this._escapeAttr(n.id)}" title="Dismiss">&times;</button>
+      </div>
+    `).join('');
+  }
+
+  _renderNotifSettings(panel) {
+    const labels = {
+      offline:  'Device went offline',
+      anomaly:  'Entity state became unknown',
+      enabled:  'Entity was enabled',
+      disabled: 'Entity was disabled',
+      new:      'New entity added',
+    };
+    panel.innerHTML = `
+      <div class="em-notif-settings-title">Notify me about</div>
+      ${Object.entries(labels).map(([key, label]) => `
+        <label class="em-notif-pref-row">
+          <input type="checkbox" class="em-notif-pref-cb" data-pref="${key}" ${this._notifPrefs[key] ? 'checked' : ''}>
+          <span>${this._escapeHtml(label)}</span>
+        </label>
+      `).join('')}
+    `;
+    panel.addEventListener('change', e => {
+      const cb = e.target.closest('.em-notif-pref-cb');
+      if (cb) {
+        this._notifPrefs[cb.dataset.pref] = cb.checked;
+        this._saveToStorage('em-notif-prefs', this._notifPrefs);
+      }
+    });
+  }
+
+  _detectStateChanges(newStates) {
+    const prev = this._prevHassStates;
+    for (const [eid, stObj] of Object.entries(newStates)) {
+      const newSt = stObj.state;
+      const prevSt = prev[eid];
+      if (prevSt === undefined) continue; // just appeared — skip
+      if (prevSt !== 'unavailable' && newSt === 'unavailable') {
+        const name = stObj.attributes?.friendly_name || eid;
+        this._pushNotification('offline', eid, `${name} went offline`);
+      }
+      if (prevSt !== 'unknown' && prevSt !== 'unavailable' && newSt === 'unknown') {
+        const name = stObj.attributes?.friendly_name || eid;
+        this._pushNotification('anomaly', eid, `${name} state became unknown`);
+      }
+    }
+    this._prevHassStates = Object.fromEntries(Object.entries(newStates).map(([k, v]) => [k, v.state]));
+  }
+
   _selectAllVisible() {
     const checkboxes = this.querySelectorAll('.entity-checkbox:not(:checked)');
     checkboxes.forEach(cb => {
@@ -2809,78 +2940,77 @@ class EntityManagerPanel extends HTMLElement {
     const deviceLabels = details.device_labels || [];
     const state = this._hass?.states[entityId];
     const isDisabled = !!e.disabled_by;
+    const domain = entityId.split('.')[0];
+    const friendlyTitle = state?.attributes?.friendly_name || e.original_name || e.name || entityId;
+
+    // ── Controllable entity flags ──────────────────────────────────
+    const controllableDomains = new Set(['switch','light','input_boolean','automation','fan','cover','media_player','climate','alarm_control_panel','lock','valve','humidifier']);
+    const pressableDomains    = new Set(['button','input_button']);
+    const isControllable = controllableDomains.has(domain);
+    const isPressable    = pressableDomains.has(domain) || domain === 'script';
+    const isOn = state?.state === 'on' || state?.state === 'open' || state?.state === 'playing' || state?.state === 'unlocked';
 
     // ── Helpers ────────────────────────────────────────────────────
-    const row = (label, value, extra = '') => value != null && value !== ''
-      ? `<div class="entity-item" style="margin-bottom:4px;cursor:default">
-           <div class="entity-card-header">
-             <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-text-secondary);font-weight:600">${label}</span>
-           </div>
-           <div class="entity-card-body">
-             <div style="font-size:14px;font-weight:500;word-break:break-all;white-space:normal;overflow:visible">${value}${extra}</div>
-           </div>
-         </div>`
+    const row = (label, value) => value != null && value !== ''
+      ? `<div class="em-ed-row"><span class="em-ed-label">${label}</span><span class="em-ed-value">${value}</span></div>`
       : '';
 
     const stateColor = (s) => {
       if (!s) return 'var(--em-text-secondary)';
-      if (s === 'on' || s === 'home' || s === 'open') return '#4caf50';
+      if (s === 'on' || s === 'home' || s === 'open') return 'var(--em-success)';
       if (s === 'off' || s === 'not_home' || s === 'closed') return 'var(--em-text-secondary)';
-      if (s === 'unavailable' || s === 'unknown') return '#ff9800';
+      if (s === 'unavailable' || s === 'unknown') return 'var(--em-warning)';
       return 'var(--em-text-primary)';
     };
 
-    // ── Section: Overview ──────────────────────────────────────────
-    const domain = entityId.split('.')[0];
-    const overviewHtml = `<div class="device-list" style="padding:8px 0">
-      ${row('Entity ID', `<code style="font-family:monospace;background:var(--em-bg-hover);padding:2px 6px;border-radius:4px">${this._escapeHtml(e.entity_id)}</code>`)}
-      ${row('Friendly name', this._escapeHtml(state?.attributes?.friendly_name || e.original_name || e.name || '—'))}
-      ${row('Domain', `<span style="text-transform:uppercase;font-size:11px;background:var(--em-bg-hover);padding:2px 8px;border-radius:4px">${this._escapeHtml(domain)}</span>`)}
-      ${row('Platform', this._escapeHtml(e.platform || '—'))}
-      ${row('Unique ID', `<code style="font-family:monospace;font-size:11px;opacity:0.7">${this._escapeHtml(e.unique_id || '—')}</code>`)}
-      ${e.aliases?.length ? row('Aliases', e.aliases.map(a => `<span style="background:var(--em-bg-hover);padding:2px 8px;border-radius:12px;margin-right:4px;font-size:12px">${this._escapeHtml(a)}</span>`).join('')) : ''}
+    // ── Hero header ────────────────────────────────────────────────
+    const attrs = state?.attributes || {};
+    const heroHtml = `<div class="em-ed-hero">
+      <div class="em-ed-hero-name" title="Click to rename" style="cursor:pointer">${this._escapeHtml(friendlyTitle)} <span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span></div>
+      ${friendlyTitle !== entityId ? `<div class="em-ed-hero-id">${this._escapeHtml(entityId)}</div>` : ''}
+      <div class="em-ed-hero-chips">
+        <span class="em-ed-chip em-ed-chip-domain">${this._escapeHtml(domain)}</span>
+        ${e.platform ? `<span class="em-ed-chip em-ed-chip-platform">${this._escapeHtml(e.platform)}</span>` : ''}
+        ${isDisabled ? `<span class="em-ed-chip em-ed-chip-disabled">Disabled</span>` : ''}
+        ${area ? `<span class="em-ed-chip em-ed-chip-area">${this._icon('mdi:map-marker-outline', '12px')} ${this._escapeHtml(area.name)}</span>` : ''}
+      </div>
+      ${state ? `<div class="em-ed-hero-state">
+        <span style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.4px;font-weight:600">State</span>
+        <span class="em-ed-state-val" style="color:${stateColor(state.state)}">${this._escapeHtml(state.state)}</span>
+        ${attrs.unit_of_measurement ? `<span style="font-size:16px;color:var(--em-text-secondary)">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
+        ${(isControllable || isPressable) ? `<button id="em-edd-toggle-btn" class="em-dialog-btn em-dialog-btn-outline-primary" style="font-size:12px;padding:4px 10px;margin-left:4px">${isPressable ? 'Press' : (isOn ? 'Turn Off' : 'Turn On')}</button>` : ''}
+        <span class="em-ed-hero-times">Changed ${this._escapeHtml(this._fmtAbsDate(state.last_changed))} &nbsp;·&nbsp; Updated ${this._escapeHtml(this._fmtAbsDate(state.last_updated))}</span>
+      </div>` : `<div style="font-size:13px;color:var(--em-text-secondary);margin-top:6px">No state available (entity may be disabled)</div>`}
     </div>`;
 
-    // ── Section: Current State ─────────────────────────────────────
-    const attrs = state?.attributes || {};
-    const attrRows = Object.entries(attrs)
-      .filter(([k]) => k !== 'friendly_name')
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => {
-        const displayVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
-        return row(k, this._escapeHtml(displayVal));
-      }).join('');
-
-    const stateHtml = state ? `<div style="padding:8px 0">
-      <div style="margin-bottom:12px">
-        <span style="font-size:28px;font-weight:700;color:${stateColor(state.state)}">${this._escapeHtml(state.state)}</span>
-        ${attrs.unit_of_measurement ? `<span style="font-size:16px;color:var(--em-text-secondary);margin-left:4px">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
-      </div>
-      <div class="device-list">
-        ${row('Last changed', this._fmtAgo(state.last_changed))}
-        ${row('Last updated', this._fmtAgo(state.last_updated))}
-        ${attrRows || ''}
-      </div>
-      ${!attrRows ? '<div style="color:var(--em-text-secondary);font-size:12px;padding:4px 0">No attributes</div>' : ''}
-    </div>` : `<div style="padding:16px 0;color:var(--em-text-secondary)">No state available (entity may be disabled)</div>`;
+    // ── Section: Current State (attributes) ───────────────────────
+    const attrEntries = Object.entries(attrs).filter(([k]) => k !== 'friendly_name').sort(([a], [b]) => a.localeCompare(b));
+    const stateHtml = attrEntries.length
+      ? `<div class="em-ed-attr-grid">${attrEntries.map(([k, v]) => {
+          const displayVal = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          return `<div class="em-ed-attr-item"><span class="em-ed-attr-key">${this._escapeHtml(k)}</span><span class="em-ed-attr-val">${this._escapeHtml(displayVal)}</span></div>`;
+        }).join('')}</div>`
+      : `<div style="padding:12px 0;color:var(--em-text-secondary);font-size:13px">No attributes</div>`;
 
     // ── Section: Registry ──────────────────────────────────────────
-    const registryHtml = `<div class="device-list" style="padding:8px 0">
+    const registryHtml = `<div class="em-ed-rows">
       ${row('Status', isDisabled
         ? `<span style="color:var(--em-danger);font-weight:600">Disabled</span> <span style="color:var(--em-text-secondary);font-size:12px">(by ${this._escapeHtml(e.disabled_by)})</span>`
         : `<span style="color:var(--em-success);font-weight:600">Enabled</span>`)}
+      ${row('Unique ID', `<code style="font-family:monospace;font-size:11px">${this._escapeHtml(e.unique_id || '—')}</code>`)}
       ${e.hidden_by ? row('Hidden by', this._escapeHtml(e.hidden_by)) : ''}
       ${row('Entity category', this._escapeHtml(e.entity_category || '—'))}
       ${row('Device class', this._escapeHtml(e.device_class || e.original_device_class || '—'))}
-      ${row('Unit of measurement', this._escapeHtml(e.unit_of_measurement || '—'))}
+      ${row('Unit', this._escapeHtml(e.unit_of_measurement || '—'))}
       ${row('Icon', this._escapeHtml(e.icon || e.original_icon || '—'))}
       ${e.supported_features ? row('Supported features', `<code style="font-size:11px">${e.supported_features}</code>`) : ''}
+      ${e.aliases?.length ? row('Aliases', e.aliases.map(a => `<span style="background:var(--em-bg-hover);padding:2px 8px;border-radius:10px;margin-right:4px;font-size:12px">${this._escapeHtml(a)}</span>`).join('')) : ''}
       ${Object.keys(e.capabilities || {}).length ? row('Capabilities', Object.entries(e.capabilities).map(([k, v]) =>
         `<span style="font-size:11px"><strong>${this._escapeHtml(k)}</strong>: ${this._escapeHtml(v)}</span>`).join('<br>')) : ''}
     </div>`;
 
     // ── Section: Device ────────────────────────────────────────────
-    const deviceHtml = d ? `<div class="device-list" style="padding:8px 0">
+    const deviceHtml = d ? `<div class="em-ed-rows">
       ${row('Name', this._escapeHtml(d.name_by_user || d.name || '—'))}
       ${row('Manufacturer', this._escapeHtml(d.manufacturer || '—'))}
       ${row('Model', this._escapeHtml(d.model || '—'))}
@@ -2896,7 +3026,7 @@ class EntityManagerPanel extends HTMLElement {
     </div>` : '';
 
     // ── Section: Integration ───────────────────────────────────────
-    const integrationHtml = ce ? `<div class="device-list" style="padding:8px 0">
+    const integrationHtml = ce ? `<div class="em-ed-rows">
       ${row('Title', this._escapeHtml(ce.title || '—'))}
       ${row('Domain', this._escapeHtml(ce.domain || '—'))}
       ${row('Source', this._escapeHtml(ce.source || '—'))}
@@ -2905,21 +3035,19 @@ class EntityManagerPanel extends HTMLElement {
       ${ce.disabled_by ? row('Disabled by', this._escapeHtml(ce.disabled_by)) : ''}
     </div>` : '';
 
-    // ── Section: Area ──────────────────────────────────────────────
-    const areaHtml = area ? `<div class="device-list" style="padding:8px 0">
-      ${row('Name', this._escapeHtml(area.name))}
-      ${area.aliases?.length ? row('Aliases', area.aliases.map(a =>
-        `<span style="background:var(--em-bg-hover);padding:2px 8px;border-radius:12px;margin-right:4px;font-size:12px">${this._escapeHtml(a)}</span>`).join('')) : ''}
-    </div>` : '';
-
-    // ── Section: Labels ────────────────────────────────────────────
+    // ── Section: Area & Labels (merged) ───────────────────────────
     const labelChipHtml = (labelObjs) => labelObjs.length
       ? labelObjs.map(l => `<span style="background:${this._escapeAttr(this._labelColorCss(l.color))};color:white;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600">${this._escapeHtml(l.name)}</span>`).join('')
       : `<span style="color:var(--em-text-secondary);font-size:13px">None</span>`;
     const manageBtnStyle = 'padding:5px 12px;border-radius:6px;border:1px solid var(--em-border);background:var(--em-bg-hover);color:var(--em-text-primary);cursor:pointer;font-size:12px';
     const labelSubHead = (text) => `<div style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">${text}</div>`;
 
-    const labelsHtml = `<div style="padding:8px 0;display:flex;flex-direction:column;gap:12px">
+    const areaLabelsHtml = `<div style="padding:8px 0;display:flex;flex-direction:column;gap:14px">
+      ${area ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 12px">
+        <span class="em-ed-chip em-ed-chip-domain">Area</span>
+        <span class="em-ed-chip" style="color:var(--em-primary);border:1px solid var(--em-primary)">${this._escapeHtml(area.name)}</span>
+        ${area.aliases?.length ? area.aliases.map(a => `<span class="em-ed-chip">${this._escapeHtml(a)}</span>`).join('') : ''}
+      </div>` : ''}
       <div>
         ${labelSubHead('Entity Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Entities</span>')}
         <div id="em-edd-entity-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(entityLabels)}</div>
@@ -2936,33 +3064,17 @@ class EntityManagerPanel extends HTMLElement {
     const histItems = history ? Object.values(history)[0] : null;
     const histHtml = histItems?.length ? (() => {
       const sorted = [...histItems].reverse().slice(0, 30);
-      return `<div class="device-list" style="padding:8px 0">
-        ${sorted.map(h => {
-          const sv = h.s || h.state || '—';
-          const sc = stateColor(sv);
-          const ts = h.last_changed || (h.lu ? new Date(h.lu * 1000).toISOString() : '');
-          return `<div class="entity-item" style="cursor:default">
-            <div class="entity-card-header">
-              <span class="entity-header-time" style="font-size:11px">${this._icon(EM_ICONS.activity, '14px')} ${this._escapeHtml(this._fmtAgo(ts))}</span>
-            </div>
-            <div class="entity-card-body">
-              <div class="entity-id" style="font-size:14px;font-weight:600;color:${sc}">${this._escapeHtml(sv)}</div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
-    })() : `<div style="padding:16px 0;color:var(--em-text-secondary)">No history available</div>`;
-
-    // ── Section: Statistics ────────────────────────────────────────
-    const st = this._hass?.states[entityId];
-    const statsSectionHtml = `<div class="device-list" style="padding:8px 0">
-      ${row('Entity ID', `<code style="font-family:monospace;background:var(--em-bg-hover);padding:2px 6px;border-radius:4px">${this._escapeHtml(entityId)}</code>`)}
-      ${row('Current State', st?.state ? `<strong style="color:${stateColor(st.state)}">${this._escapeHtml(st.state)}</strong>` : '—')}
-      ${row('Last Changed', st?.last_changed ? this._fmtAgo(st.last_changed) : '—')}
-      ${row('Last Updated', st?.last_updated ? this._fmtAgo(st.last_updated) : '—')}
-      ${row('Attributes', st?.attributes ? String(Object.keys(st.attributes).length) + ' attributes' : '0')}
-      ${st?.attributes ? Object.entries(st.attributes).slice(0, 15).map(([k, v]) => row(this._escapeHtml(k), this._escapeHtml(String(v)))).join('') : ''}
-    </div>`;
+      return `<div class="em-ed-hist-list">${sorted.map(h => {
+        const sv = h.s || h.state || '—';
+        const sc = stateColor(sv);
+        const ts = h.last_changed || (h.lu ? new Date(h.lu * 1000).toISOString() : '');
+        return `<div class="em-ed-hist-row">
+          <span class="em-ed-hist-dot" style="background:${sc}"></span>
+          <span class="em-ed-hist-state" style="color:${sc}">${this._escapeHtml(sv)}</span>
+          <span class="em-ed-hist-time">${this._escapeHtml(this._fmtAbsDate(ts))}</span>
+        </div>`;
+      }).join('')}</div>`;
+    })() : `<div style="padding:12px 0;color:var(--em-text-secondary);font-size:13px">No history available</div>`;
 
     // ── Section: Dependencies ──────────────────────────────────────
     let sameDeviceEntities = [];
@@ -2974,69 +3086,106 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
     const depHtml = sameDeviceEntities.length
-      ? `<div class="device-list" style="padding:8px 0">${sameDeviceEntities.map(en => {
+      ? `<div class="em-ed-dep-list">${sameDeviceEntities.map(en => {
           const es = this._hass?.states[en.entity_id];
           const sv = en.is_disabled ? 'disabled' : (es?.state ?? '—');
           const sc = sv === 'on' || sv === 'open' ? 'var(--em-success)'
             : sv === 'unavailable' ? 'var(--em-warning)'
             : sv === 'disabled' ? 'var(--em-danger)'
             : 'var(--em-text-secondary)';
-          return `<div class="entity-item" style="cursor:default">
-            <div class="entity-card-header">
-              <span class="entity-header-state" style="border-color:${sc};color:${sc}">${this._icon(EM_ICONS.automation, '14px')} ${this._escapeHtml(sv)}</span>
-            </div>
-            <div class="entity-card-body">
-              <div class="entity-id">${this._escapeHtml(en.entity_id)}</div>
-              ${en.original_name ? `<div class="entity-name">${this._escapeHtml(en.original_name)}</div>` : ''}
-            </div>
+          return `<div class="em-ed-dep-row">
+            <span class="em-ed-dep-state" style="color:${sc}">${this._escapeHtml(sv)}</span>
+            <span class="em-ed-dep-id">${this._escapeHtml(en.entity_id)}</span>
+            ${en.original_name ? `<span class="em-ed-dep-name">${this._escapeHtml(en.original_name)}</span>` : ''}
           </div>`;
         }).join('')}</div>`
-      : '<p style="font-size:0.9em;opacity:0.6;padding:8px 0">No related entities from same device</p>';
+      : '<div style="padding:12px 0;font-size:13px;color:var(--em-text-secondary)">No related entities from same device</div>';
 
     // ── Section: Automation Impact placeholder ─────────────────────
-    const impactPlaceholder = `<div id="em-impact-placeholder" style="padding:12px;text-align:center;opacity:0.6;font-size:0.9em">Scanning automations…</div>`;
+    const impactPlaceholder = `<div id="em-impact-placeholder" style="padding:12px;text-align:center;color:var(--em-text-secondary);font-size:13px">Scanning automations…</div>`;
 
     // ── Assemble sections ──────────────────────────────────────────
-    // Open overview + state by default; rest collapsed
-    const openGroup = (label, bodyHtml) => `
-      <div class="entity-list-group">
-        <div class="entity-list-group-title em-collapsible" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px">
-          <span class="em-collapse-arrow em-collapsible-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
-          ${label}
-        </div>
-        <div class="em-group-body">${bodyHtml}</div>
-      </div>`;
-
-    let sectionsHtml = openGroup('Overview', overviewHtml);
-    sectionsHtml += openGroup('Current State', stateHtml);
-    sectionsHtml += this._collGroup('Registry', registryHtml);
-    if (d)   sectionsHtml += this._collGroup('Device', deviceHtml);
-    if (ce)  sectionsHtml += this._collGroup('Integration', integrationHtml);
-    if (area) sectionsHtml += this._collGroup(`Area: ${this._escapeHtml(area.name)}`, areaHtml);
     const totalLabelCount = entityLabels.length + deviceLabels.length;
-    sectionsHtml += this._collGroup(`Labels${totalLabelCount ? ` (${totalLabelCount})` : ''}`, labelsHtml);
-    sectionsHtml += this._collGroup('Statistics', statsSectionHtml);
-    sectionsHtml += this._collGroup(`Dependencies (${sameDeviceEntities.length})`, depHtml);
+    let sectionsHtml = this._collGroup('Attributes', stateHtml, true);
+    sectionsHtml += this._collGroup('Registry', registryHtml);
+    if (d)  sectionsHtml += this._collGroup('Device', deviceHtml);
+    if (ce) sectionsHtml += this._collGroup('Integration', integrationHtml);
+    const areaLabelsTitle = [area ? `Area: ${this._escapeHtml(area.name)}` : '', totalLabelCount ? `Labels (${totalLabelCount})` : 'Labels'].filter(Boolean).join(' · ');
+    sectionsHtml += this._collGroup(areaLabelsTitle, areaLabelsHtml);
+    sectionsHtml += this._collGroup(`Other entities on device (${sameDeviceEntities.length})`, depHtml);
     sectionsHtml += this._collGroup('Automation Impact', impactPlaceholder);
     sectionsHtml += this._collGroup('State History', histHtml);
 
-    const friendlyTitle = state?.attributes?.friendly_name || e.original_name || entityId;
-
     // Update dialog content
-    overlay.querySelector('#em-edd-body').innerHTML = `
-      <div style="padding:4px 8px 0">
-        ${friendlyTitle !== entityId ? `<div style="font-size:13px;color:var(--em-text-secondary);margin-bottom:10px;font-family:monospace">${this._escapeHtml(entityId)}</div>` : ''}
-        ${sectionsHtml}
-      </div>`;
+    overlay.querySelector('#em-edd-body').innerHTML = `<div style="padding:4px 8px 0">${heroHtml}${sectionsHtml}</div>`;
     overlay.querySelector('.confirm-dialog-header h2').textContent = friendlyTitle;
 
-    // Actions row - Close only
-    const btnBase = 'padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;border:2px solid';
+    // ── Actions row ────────────────────────────────────────────────
     overlay.querySelector('.confirm-dialog-actions').innerHTML = `
-      <button id="em-edd-close" style="${btnBase} var(--em-primary);background:transparent;color:var(--em-text-primary)">Close</button>`;
+      <button id="em-edd-copy-id"       class="btn btn-secondary">${this._icon('mdi:content-copy','16px')} Copy ID</button>
+      <button id="em-edd-toggle-enable" class="btn ${isDisabled ? 'btn-primary' : 'btn-danger'}">${isDisabled ? `${this._icon(EM_ICONS.enable,'16px')} Enable` : `${this._icon(EM_ICONS.disable,'16px')} Disable`}</button>
+      <button id="em-edd-open-ha"       class="btn btn-secondary">${this._icon('mdi:open-in-new','16px')} Open in HA</button>
+      <button id="em-edd-close"         class="btn btn-secondary">Close</button>`;
 
-    // Attach listeners
+    overlay.querySelector('#em-edd-copy-id')?.addEventListener('click', () => {
+      navigator.clipboard.writeText(entityId);
+      this._showToast('Entity ID copied', 'success');
+    });
+    overlay.querySelector('#em-edd-toggle-enable')?.addEventListener('click', async () => {
+      if (isDisabled) await this.enableEntity(entityId);
+      else            await this.disableEntity(entityId);
+      closeDialog();
+    });
+    overlay.querySelector('#em-edd-open-ha')?.addEventListener('click', () => {
+      window.open(`/config/entities/edit/${entityId}`, '_blank');
+    });
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
+
+    // Hero name inline rename
+    const pencilHtml = `<span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span>`;
+    const heroNameEl = overlay.querySelector('.em-ed-hero-name');
+    heroNameEl?.addEventListener('click', () => {
+      if (heroNameEl.querySelector('#em-edd-name-input')) return; // already editing
+      const cur = heroNameEl.dataset.name || friendlyTitle;
+      const restoreHtml = `${this._escapeHtml(cur)} ${pencilHtml}`;
+
+      heroNameEl.innerHTML = `<input id="em-edd-name-input" value="${this._escapeAttr(cur)}" style="font-size:16px;font-weight:700;border:none;border-bottom:2px solid var(--em-primary);background:transparent;color:inherit;width:calc(100% - 60px);outline:none"><span id="em-edd-name-save" style="cursor:pointer;color:var(--em-success);margin-left:8px;font-size:18px">✓</span><span id="em-edd-name-cancel" style="cursor:pointer;color:var(--em-danger);margin-left:6px;font-size:18px">✕</span>`;
+      overlay.querySelector('#em-edd-name-input')?.focus();
+
+      const doCancel = () => {
+        overlay.removeEventListener('click', cancelOnOutside, true);
+        heroNameEl.innerHTML = restoreHtml;
+      };
+      const doSave = async () => {
+        overlay.removeEventListener('click', cancelOnOutside, true);
+        const newName = heroNameEl.querySelector('#em-edd-name-input')?.value.trim() || null;
+        try {
+          await this._hass.callWS({ type: 'entity_manager/update_entity_display_name', entity_id: entityId, display_name: newName });
+          const saved = newName || cur;
+          heroNameEl.dataset.name = saved;
+          heroNameEl.innerHTML = `${this._escapeHtml(saved)} ${pencilHtml}`;
+          overlay.querySelector('.confirm-dialog-header h2').textContent = saved;
+        } catch {
+          heroNameEl.innerHTML = restoreHtml;
+        }
+      };
+      const cancelOnOutside = (ev) => { if (!heroNameEl.contains(ev.target)) doCancel(); };
+      overlay.addEventListener('click', cancelOnOutside, { capture: true });
+
+      heroNameEl.querySelector('#em-edd-name-save')?.addEventListener('click',   (ev) => { ev.stopPropagation(); doSave(); });
+      heroNameEl.querySelector('#em-edd-name-cancel')?.addEventListener('click', (ev) => { ev.stopPropagation(); doCancel(); });
+      heroNameEl.querySelector('#em-edd-name-input')?.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter')  { ev.preventDefault(); doSave(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); doCancel(); }
+      });
+    });
+
+    // Toggle / Press button
+    overlay.querySelector('#em-edd-toggle-btn')?.addEventListener('click', async () => {
+      const svcDomain = domain;
+      const service = isPressable ? 'press' : (isOn ? 'turn_off' : 'turn_on');
+      await this._hass.callWS({ type: 'call_service', domain: svcDomain, service, target: { entity_id: entityId } });
+    });
 
     // Async automation impact scan
     requestAnimationFrame(async () => {
@@ -3048,17 +3197,13 @@ class EntityManagerPanel extends HTMLElement {
            s.entity_id.toLowerCase().includes(entityId.split('.')[1]?.toLowerCase() || ''))
         );
         const impactContent = affected.length
-          ? `<div class="device-list" style="padding:8px 0">${affected.map(s => `
-              <div class="entity-item" style="cursor:default">
-                <div class="entity-card-header">
-                  <span class="entity-header-state">${s.entity_id.startsWith('automation.') ? '⚙️ Automation' : '📜 Script'}</span>
-                </div>
-                <div class="entity-card-body">
-                  <div class="entity-id">${this._escapeHtml(s.attributes?.friendly_name || s.entity_id)}</div>
-                  <div class="entity-name">${this._escapeHtml(s.entity_id)}</div>
-                </div>
+          ? `<div class="em-ed-dep-list">${affected.map(s => `
+              <div class="em-ed-dep-row">
+                <span class="em-ed-dep-state" style="color:var(--em-primary)">${s.entity_id.startsWith('automation.') ? 'Auto' : 'Script'}</span>
+                <span class="em-ed-dep-id">${this._escapeHtml(s.entity_id)}</span>
+                ${s.attributes?.friendly_name ? `<span class="em-ed-dep-name">${this._escapeHtml(s.attributes.friendly_name)}</span>` : ''}
               </div>`).join('')}</div>`
-          : '<p style="font-size:0.9em;opacity:0.6;padding:8px 0">No automations or scripts appear to reference this entity</p>';
+          : '<div style="padding:12px 0;font-size:13px;color:var(--em-text-secondary)">No automations or scripts appear to reference this entity</div>';
         const ph = overlay.querySelector('#em-impact-placeholder');
         if (ph) ph.outerHTML = impactContent;
       } catch (err) {
@@ -5983,6 +6128,15 @@ class EntityManagerPanel extends HTMLElement {
       }
     }
 
+    // ── Notification: detect state changes ──
+    if (this._hassInitialized) {
+      this._detectStateChanges(hass.states || {});
+    } else {
+      // Snapshot initial state — no notifications on first call
+      this._prevHassStates = Object.fromEntries(Object.entries(hass.states || {}).map(([k, v]) => [k, v.state]));
+      this._hassInitialized = true;
+    }
+
     if (!this.content && hass) {
       try {
         this.render();
@@ -6066,6 +6220,49 @@ class EntityManagerPanel extends HTMLElement {
       if (this._brandsToken === '') this._fetchBrandsToken();
 
       await this.loadDeviceInfo();
+
+      // ── Notification: new entity and enable/disable detection ──
+      const allEntities = [];
+      for (const integ of this.data) {
+        for (const dev of Object.values(integ.devices)) {
+          for (const ent of (dev.entities || [])) allEntities.push(ent);
+        }
+      }
+
+      // New entity detection
+      const currentIds = new Set(allEntities.map(e => e.entity_id));
+      if (this._knownEntityIds !== null) {
+        for (const eid of currentIds) {
+          if (!this._knownEntityIds.has(eid)) {
+            const name = this._hass?.states?.[eid]?.attributes?.friendly_name || eid;
+            this._pushNotification('new', eid, `New entity: ${name}`);
+          }
+        }
+      } else {
+        // First ever load: seed from localStorage or empty — don't fire notifications
+        const stored = this._loadFromStorage('em-known-entity-ids', null);
+        this._knownEntityIds = stored ? new Set(stored) : new Set();
+      }
+      this._knownEntityIds = currentIds;
+      this._saveToStorage('em-known-entity-ids', [...currentIds]);
+
+      // Enable/disable change detection
+      const currentDisabledMap = Object.fromEntries(allEntities.map(e => [e.entity_id, e.is_disabled]));
+      if (this._prevEntityDisabled !== null) {
+        for (const [eid, isDisabled] of Object.entries(currentDisabledMap)) {
+          const prev = this._prevEntityDisabled[eid];
+          if (prev === undefined) continue;
+          if (!prev && isDisabled) {
+            const name = this._hass?.states?.[eid]?.attributes?.friendly_name || eid;
+            this._pushNotification('disabled', eid, `${name} was disabled`);
+          } else if (prev && !isDisabled) {
+            const name = this._hass?.states?.[eid]?.attributes?.friendly_name || eid;
+            this._pushNotification('enabled', eid, `${name} was enabled`);
+          }
+        }
+      }
+      this._prevEntityDisabled = currentDisabledMap;
+
     } catch (error) {
       console.error('Entity Manager Error:', error);
       this.showErrorDialog(`Error loading entities: ${error.message}`);
@@ -6381,6 +6578,24 @@ class EntityManagerPanel extends HTMLElement {
       </button>
       <span class="app-header-title">Entity Manager <span class="em-version-badge">v${this.panel?.config?.version || EM_VERSION}</span></span>
       <div class="header-right">
+        <div class="em-notif-container" id="em-notif-container">
+          <button class="em-notif-btn" id="em-notif-btn" title="Notifications">
+            ${this._icon('mdi:bell-outline', '22px')}
+            <span class="em-notif-badge" id="em-notif-badge" style="display:none">0</span>
+          </button>
+          <div class="em-notif-dropdown" id="em-notif-dropdown">
+            <div class="em-notif-hdr">
+              <span>Notifications</span>
+              <div>
+                <button class="em-notif-settings-btn" title="Settings">${this._icon(EM_ICONS.cog, '14px')}</button>
+                <button class="em-notif-mark-all">Mark all read</button>
+                <button class="em-notif-clear-all">Clear all</button>
+              </div>
+            </div>
+            <div class="em-notif-settings-panel" id="em-notif-settings-panel" style="display:none"></div>
+            <div class="em-notif-list" id="em-notif-list"></div>
+          </div>
+        </div>
         <div class="theme-dropdown-container">
           <button class="theme-dropdown-btn" id="theme-dropdown-btn">
             <svg viewBox="0 0 24 24"><path d="M12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,15.31L23.31,12L20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31Z" fill="currentColor"/></svg>
@@ -6765,6 +6980,80 @@ class EntityManagerPanel extends HTMLElement {
         };
         document.addEventListener('click', this._themeOutsideHandler);
       }
+    }
+
+    // Handle notification bell — mirrors the theme dropdown pattern exactly
+    const notifBtn      = this.querySelector('#em-notif-btn');
+    const notifDropdown = this.querySelector('#em-notif-dropdown');
+    if (notifBtn && notifDropdown) {
+      notifBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const opening = !notifDropdown.classList.contains('active');
+        notifDropdown.classList.toggle('active');
+        if (opening) {
+          this._notifications.forEach(n => n.read = true);
+          this._saveToStorage('em-notifications', this._notifications);
+          this._updateNotifBadge();
+          this._refreshNotifList();
+        }
+      });
+
+      // Close when clicking outside — bubble phase, same as theme dropdown
+      if (!this._notifOutsideHandler) {
+        this._notifOutsideHandler = (event) => {
+          if (!notifDropdown.classList.contains('active')) return;
+          if (!notifDropdown.contains(event.target) && !notifBtn.contains(event.target)) {
+            notifDropdown.classList.remove('active');
+          }
+        };
+        document.addEventListener('click', this._notifOutsideHandler);
+      }
+
+      // Delegated: dismiss, mark-all-read, clear-all, settings toggle
+      // stopPropagation prevents clicks inside the dropdown from reaching the outside-close handler
+      notifDropdown.addEventListener('click', e => {
+        e.stopPropagation();
+        const dismiss = e.target.closest('.em-notif-dismiss');
+        if (dismiss) {
+          this._notifications = this._notifications.filter(n => n.id !== dismiss.dataset.id);
+          this._saveToStorage('em-notifications', this._notifications);
+          this._updateNotifBadge();
+          this._refreshNotifList();
+          return;
+        }
+        if (e.target.closest('.em-notif-mark-all')) {
+          this._notifications.forEach(n => n.read = true);
+          this._saveToStorage('em-notifications', this._notifications);
+          this._updateNotifBadge();
+          this._refreshNotifList();
+        }
+        if (e.target.closest('.em-notif-clear-all')) {
+          this._notifications = [];
+          this._saveToStorage('em-notifications', this._notifications);
+          this._updateNotifBadge();
+          this._refreshNotifList();
+        }
+        if (e.target.closest('.em-notif-settings-btn')) {
+          const settingsPanel = notifDropdown.querySelector('#em-notif-settings-panel');
+          const listPanel     = notifDropdown.querySelector('#em-notif-list');
+          const opening = settingsPanel.style.display === 'none';
+          settingsPanel.style.display = opening ? '' : 'none';
+          listPanel.style.display     = opening ? 'none' : '';
+          if (opening) this._renderNotifSettings(settingsPanel);
+          return;
+        }
+        const notifItem = e.target.closest('.em-notif-item');
+        if (notifItem && !e.target.closest('.em-notif-dismiss')) {
+          const entityId = notifItem.dataset.entityId;
+          if (entityId) {
+            notifDropdown.classList.remove('active');
+            this._showEntityDetailsDialog(entityId);
+          }
+        }
+      });
+
+      this._updateNotifBadge();
+      this._refreshNotifList();
     }
 
     // Handle search
@@ -7250,6 +7539,7 @@ class EntityManagerPanel extends HTMLElement {
             const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
             const res = await this._hass.callWS({ type: wsType, entity_ids: preset.entityIds });
             const n = res.success?.length ?? preset.entityIds.length;
+            this._suppressEntityNotif(preset.entityIds, !isEnable);
             this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`, 'success');
             await this.loadData();
           } catch (err) {
@@ -8353,6 +8643,7 @@ class EntityManagerPanel extends HTMLElement {
           const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
           const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
           const n = res?.succeeded?.length ?? entityIds.length;
+          this._suppressEntityNotif(entityIds, !isEnable);
           this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
           this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
           await this.loadData();
@@ -8503,6 +8794,7 @@ class EntityManagerPanel extends HTMLElement {
           const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
           const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
           const n = res.success?.length ?? entityIds.length;
+          this._suppressEntityNotif(entityIds, !isEnable);
           this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
           this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
           await this.loadData();
@@ -8875,6 +9167,7 @@ class EntityManagerPanel extends HTMLElement {
       
       this.selectedEntities.delete(entityId);
       this.updateSelectedCount();
+      this._suppressEntityNotif(entityId, false);
       this.loadData();
       if (!skipUndo) this._showToast(`Enabled ${entityId}`);
     } catch (error) {
@@ -8888,7 +9181,7 @@ class EntityManagerPanel extends HTMLElement {
         type: 'entity_manager/disable_entity',
         entity_id: entityId,
       });
-      
+
       // Push undo action (skip when called from undo/redo)
       if (!skipUndo) {
         this._pushUndoAction({
@@ -8897,9 +9190,10 @@ class EntityManagerPanel extends HTMLElement {
         });
         this._logActivity('disable', { entity: entityId });
       }
-      
+
       this.selectedEntities.delete(entityId);
       this.updateSelectedCount();
+      this._suppressEntityNotif(entityId, true);
       this.loadData();
       if (!skipUndo) this._showToast(`Disabled ${entityId}`);
     } catch (error) {
@@ -8972,6 +9266,7 @@ class EntityManagerPanel extends HTMLElement {
       
       this.selectedEntities.clear();
       this.updateSelectedCount();
+      this._suppressEntityNotif(toDisable, true);
       this.loadData();
       this._showToast(`Disabled ${toDisable.length} entities`);
     } catch (error) {
@@ -8988,16 +9283,17 @@ class EntityManagerPanel extends HTMLElement {
         type: 'entity_manager/bulk_enable',
         entity_ids: entityIds,
       });
-      
+
       // Push undo action for bulk enable
       this._pushUndoAction({
         type: 'bulk_enable',
         entityIds: [...entityIds],
         undo: async () => await this._hass.callWS({ type: 'entity_manager/bulk_disable', entity_ids: entityIds })
       });
-      
+
       this.selectedEntities.clear();
       this.updateSelectedCount();
+      this._suppressEntityNotif(entityIds, false);
       this.loadData();
       this._showToast(`Enabled ${entityIds.length} entities`);
     } catch (error) {
@@ -11970,6 +12266,7 @@ class EntityManagerPanel extends HTMLElement {
               entity_id: entity.entity_id,
             });
           }
+          this._suppressEntityNotif(browser.entities.map(e => e.entity_id), true);
           this._showToast(`Disabled ${browser.entities.length} entities for ${browser.name}`, 'success');
           btn.textContent = 'Disabled';
         } catch (err) {
@@ -12391,6 +12688,7 @@ class EntityManagerPanel extends HTMLElement {
         disableBtn.disabled = true; disableBtn.textContent = '…';
         try {
           await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
+          this._suppressEntityNotif(entityId, true);
           overlay.querySelector(`.em-cleanup-stale-row[data-entity-id="${CSS.escape(entityId)}"]`)?.remove();
           this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
           this.cleanupCount = Math.max(0, (this.cleanupCount || 0) - 1);
@@ -13089,6 +13387,7 @@ class EntityManagerPanel extends HTMLElement {
                 disableBtn.textContent = '…';
                 try {
                   await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
+                  this._suppressEntityNotif(entityId, true);
                   _removeStaleRow(entityId);
                   this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
                   this._showToast(`${entityId} disabled`, 'success');
@@ -13654,6 +13953,7 @@ class EntityManagerPanel extends HTMLElement {
         ],
         orphaned: [
           { id: 'bulk-orphan-disable', handler: async (entityIds) => {
+            this._suppressEntityNotif(entityIds, true);
             const results = await Promise.allSettled(
               entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
             );
@@ -13690,6 +13990,7 @@ class EntityManagerPanel extends HTMLElement {
         ],
         unavailable: [
           { id: 'bulk-unavail-disable', handler: async (entityIds) => {
+            this._suppressEntityNotif(entityIds, true);
             const results = await Promise.allSettled(
               entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
             );
@@ -14349,6 +14650,7 @@ class EntityManagerPanel extends HTMLElement {
             disBtn.disabled = true;
             try {
               await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid });
+              this._suppressEntityNotif(eid, true);
               disBtn.closest('.entity-list-item')?.remove();
               this._showToast(`Disabled ${eid}`, 'success');
               this.loadCounts();
