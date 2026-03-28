@@ -43,7 +43,7 @@
 - Entity ID shown below name in monospace
 - Chip row: domain (blue border), platform, Disabled badge (if applicable), Area name
 - State displayed as a colored pill badge (orange for unavailable/unknown, green for on/open, grey for off) with "State" label prefix
-- Timestamps show absolute format: `Thursday, 27 March 2026 - 14:35` (new `_fmtAbsDate` helper)
+- Timestamps show locale-aware absolute format via `_fmtAbsDate` — 12h/24h and date order follow the browser locale (e.g. `en-GB`: `Thursday, 27 March 2026 - 14:35`; `en-US`: `Thursday, March 27, 2026 - 02:35 PM`)
 - Toggle / Press button appears inline for controllable entities (switch, light, fan, cover, automation, etc.) and button/script entities — fires the appropriate HA service directly
 
 #### Action Buttons
@@ -69,6 +69,10 @@ Four buttons in the dialog footer:
 - Sections reduced from 11 to 8 (Statistics section removed — was a duplicate of Overview + Current State)
 - Attributes section open by default
 - `_collGroup()` now accepts an `openByDefault` parameter
+
+### Bug Fixes
+
+- **ISO-valued states in mini entity cards** — entities whose HA state value is an ISO timestamp (e.g. `tts.home_assistant_cloud`, `stt.home_assistant_cloud`) were showing the raw `2026-01-27T21:46:17.330074+00:00` string in the Cleanup/Orphaned dialog and all other mini card contexts; they now display a relative time ("2 days ago") consistent with the main entity list
 
 ---
 

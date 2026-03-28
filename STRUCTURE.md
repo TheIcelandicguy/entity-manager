@@ -7,7 +7,7 @@ entity-manager/
 │       ├── __init__.py                  # Integration entry point, panel + resource registration
 │       ├── config_flow.py               # UI-based configuration flow (single-step, no options)
 │       ├── const.py                     # DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
-│       ├── manifest.json                # Integration metadata (v2.16.0)
+│       ├── manifest.json                # Integration metadata (v2.20.0)
 │       ├── services.yaml                # Service schema for enable_entity / disable_entity
 │       ├── strings.json                 # UI strings for config flow
 │       ├── voice_assistant.py           # Voice intent handlers (enable/disable)
@@ -107,7 +107,7 @@ Key methods:
 | Method | Purpose |
 |--------|---------|
 | `_renderMergedEntitySections(types, bodyEl)` | Async-loads multiple section types into inline view body |
-| `_collGroup(label, bodyHtml)` | Collapsible group helper used across all dialogs |
+| `_collGroup(label, bodyHtml, openByDefault?)` | Collapsible group helper; pass `true` to start expanded |
 | `_renderMiniEntityCard(opts)` | Standard mini entity card used in all dialogs/views |
 | `_renderManagedItem(opts)` | Standard Edit/Rename/Remove row for automation/script/helper dialogs |
 | `_pushUndoAction(action)` | Push to undo stack + persist to localStorage |
@@ -125,6 +125,9 @@ Key methods:
 | `_showToast(msg, type)` | Transient notification (success/info/warning/error) |
 | `_escapeHtml(s)` / `_escapeAttr(s)` | XSS-safe HTML/attribute encoding |
 | `_loadFromStorage(key, default)` / `_saveToStorage(key, val)` | localStorage I/O |
+| `_fmtAbsDate(isoStr, fallback?)` | Locale-aware absolute timestamp (12h/24h + date order from browser locale) |
+| `_showEntityDetailsDialog(entityId)` | Full entity detail dialog with hero header, inline rename, state pill, action buttons |
+| `_addNotification(type, entityId, msg)` | Push a notification to the bell dropdown; rate-limited, persisted in localStorage |
 
 **`frontend/entity-manager-panel.css`** (~6,300 lines)
 

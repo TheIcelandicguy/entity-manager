@@ -3346,6 +3346,8 @@ class EntityManagerPanel extends HTMLElement {
       { id: 'labels',      icon: EM_ICONS.labels,      title: 'Labels' },
       { id: 'suggestions', icon: EM_ICONS.suggestions, title: 'Suggestions' },
       { id: 'smartgroups', icon: EM_ICONS.type,        title: 'Groups' },
+      { id: 'entitydetail', icon: EM_ICONS.search,       title: 'Entity Detail Dialog' },
+      { id: 'notifications', icon: 'mdi:bell',          title: 'Notification Center' },
       { id: 'statcards',   icon: EM_ICONS.dashboard,   title: 'Stat Card Dialogs' },
       { id: 'unavailable', icon: EM_ICONS.warning,      title: 'Unavailable Entities' },
       { id: 'cleanup',     icon: EM_ICONS.cleanup,     title: 'Cleanup' },
@@ -3485,6 +3487,40 @@ class EntityManagerPanel extends HTMLElement {
                 <li><strong>By Device Name:</strong> enter a keyword to show only matching devices across all integrations</li>
                 <li><strong>Custom Groups:</strong> click <strong>+ New Group</strong> in the sidebar to create a named collection of any entities — they appear as a new grouping mode you can switch to</li>
                 <li><strong>Add to Group button</strong> on entity cards opens a picker showing all 5 grouping modes — By Area and By Floor open the area assignment dialog; By Device Name opens the device picker; custom groups let you add instantly or create a new one</li>
+              </ul>
+            </div>
+
+            <div class="help-section" id="help-entitydetail">
+              <h3>${this._icon(EM_ICONS.search, '16px')} Entity Detail Dialog</h3>
+              <ul>
+                <li>Click any entity card body (not a button or checkbox) to open the full detail dialog</li>
+                <li><strong>Hero header</strong> — shows the friendly name, entity ID in monospace, domain/platform chips, and a colour-coded state pill (green = on/open, orange = unavailable/unknown, grey = off); timestamps are in your browser's locale format (12h/24h and date order adapt automatically)</li>
+                <li>Click the <strong>pencil icon</strong> next to the name to rename inline — confirm with ✓ or Enter, cancel with ✕, Escape, or clicking outside</li>
+                <li><strong>Toggle / Press</strong> button appears for controllable entities (switch, light, fan, automation, cover…) and button/script entities — fires the action directly without leaving the dialog</li>
+                <li><strong>Attributes</strong> section is open by default — all state attributes in a 2-column grid</li>
+                <li>Additional collapsible sections: Registry, Device, Integration, Area &amp; Labels, State History, Dependencies</li>
+                <li>Footer buttons: <strong>Copy ID</strong> (clipboard toast), <strong>Enable / Disable</strong> (closes dialog after), <strong>Open in HA</strong> (new tab), <strong>Close</strong></li>
+              </ul>
+            </div>
+
+            <div class="help-section" id="help-notifications">
+              <h3>${this._icon('mdi:bell', '16px')} Notification Center</h3>
+              <ul>
+                <li>The <strong>bell icon</strong> in the panel header tracks live entity events — a red badge shows unread count</li>
+                <li>Click the bell to open the notification dropdown; newest events appear at the top</li>
+                <li><strong>Four event types tracked:</strong>
+                  <ul>
+                    <li>📡 <strong>Device offline</strong> — entity transitions to <code>unavailable</code></li>
+                    <li>❓ <strong>State anomaly</strong> — entity transitions to <code>unknown</code> from a known state</li>
+                    <li>✓/✕ <strong>Entity enabled / disabled</strong> — detected on each data refresh</li>
+                    <li>🆕 <strong>New entity</strong> — a new entity ID appears in the registry</li>
+                  </ul>
+                </li>
+                <li>Click any notification to open its <strong>Entity Detail Dialog</strong></li>
+                <li>Notifications are <strong>persistent</strong> (survive refreshes), <strong>rate-limited</strong> (same entity + type fires at most once per 5 min), and <strong>capped</strong> at 100 entries</li>
+                <li>Use <strong>Mark all read</strong>, <strong>×</strong> to dismiss individual items, or <strong>Clear all</strong></li>
+                <li>The <strong>gear icon</strong> opens per-type preferences — silence any event type individually</li>
+                <li>Actions performed inside Entity Manager do not generate notifications</li>
               </ul>
             </div>
 
