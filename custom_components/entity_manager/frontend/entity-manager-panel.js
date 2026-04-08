@@ -11411,7 +11411,8 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
       </div>`;
-      return this._collGroup(`${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+      if (!items.length) return '';
+      return `<div class="em-sug-sub-label">${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span></div>${body}`;
     };
 
     const renderMismatchSection = (emoji, title, items) => {
@@ -11437,8 +11438,8 @@ class EntityManagerPanel extends HTMLElement {
               style="flex-shrink:0;white-space:nowrap">Choose Area</button>
         </div>`;
       }).join('');
-      const body = `<div style="padding:4px 0">${rows}</div>`;
-      return this._collGroup(`${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+      if (!items.length) return '';
+      return `<div class="em-sug-sub-label">${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span></div><div style="padding:4px 0">${rows}</div>`;
     };
 
     const renderLabelSuggestionsSection = (groups) => {

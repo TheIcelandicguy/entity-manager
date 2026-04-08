@@ -5899,6 +5899,24 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-sug-mismatch .em-group-body                                { background: rgba(255, 152, 0, 0.02); }
 .em-sug-mismatch .em-sug-mismatch-row                          { border-bottom-color: rgba(255, 152, 0, 0.2); }
 
+/* Area sub-section static label (non-collapsible divider inside Area Suggestions parent) */
+.em-sug-sub-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--em-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+  border-top: 1px solid var(--em-border);
+  margin-top: 4px;
+}
+.em-sug-sub-label:first-child { margin-top: 0; border-top: none; }
+
 /* Label Suggestions — yellow */
 .em-sug-labels .entity-list-group-title                       { background: rgba(255, 200, 0, 0.07); border-color: rgba(200, 170, 0, 0.35); color: rgb(170, 140, 0); }
 .em-sug-labels .em-group-body                                 { background: rgba(255, 200, 0, 0.02); }
