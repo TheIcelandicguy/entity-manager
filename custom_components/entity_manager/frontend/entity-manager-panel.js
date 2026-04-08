@@ -8438,6 +8438,7 @@ class EntityManagerPanel extends HTMLElement {
             <button class="icon-btn rename-entity" data-entity-id="${eid}" title="Rename">${this._icon(EM_ICONS.rename, '16px')}</button>
             <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable">${this._icon(EM_ICONS.enable, '16px')}</button>
             <button class="icon-btn disable-entity" data-entity-id="${eid}" title="Disable">${this._icon(EM_ICONS.disable, '16px')}</button>
+            <button class="icon-btn assign-area-btn" data-entity-id="${eid}" title="Assign to area">${this._icon(EM_ICONS.area, '16px')}</button>
             <button class="icon-btn bulk-rename-btn" data-action="bulk-rename" title="Bulk Rename Selected" ${this.selectedEntities.size >= 2 ? '' : 'disabled'}>${this._icon(EM_ICONS.bulkRename, '16px')}</button>
             <button class="icon-btn bulk-labels-btn" data-action="bulk-labels" title="Bulk Labels Selected" ${this.selectedEntities.size >= 2 ? '' : 'disabled'}>${this._icon(EM_ICONS.bulkLabels, '16px')}</button>
             <button class="icon-btn bulk-delete-btn" data-action="bulk-delete" title="Delete Selected" style="display:${this.selectedEntities.has(eid) ? '' : 'none'}">${this._icon(EM_ICONS.delete, '16px')}</button>
@@ -8927,6 +8928,14 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.disable-entity').forEach(btn => {
       btn.addEventListener('click', () => {
         this.disableEntity(btn.dataset.entityId);
+      });
+    });
+
+    this.content.querySelectorAll('.assign-area-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const [entityObj] = this._resolveEntitiesById([btn.dataset.entityId]);
+        this._showAreaFloorDialog('Assign area', [entityObj]);
       });
     });
 
@@ -11083,6 +11092,16 @@ class EntityManagerPanel extends HTMLElement {
     for (const e of entityRegistry) { if (e.area_id) entityAreaMap.set(e.entity_id, e.area_id); }
     for (const d of deviceRegistry) { if (d.area_id) deviceAreaMap.set(d.id, d.area_id); }
 
+    // Name-based area suggestion: substring match against known area names
+    const suggestAreaByName = (str) => {
+      if (!str) return null;
+      const lc = str.toLowerCase().replace(/[_-]/g, ' ');
+      for (const [areaId, { areaName }] of (this.areaLookup || new Map())) {
+        if (lc.includes(areaName.toLowerCase())) return { areaId, areaName };
+      }
+      return null;
+    };
+
     const states  = this._hass?.states || {};
     const now     = Date.now();
     const day7ms  = 7  * 86400000;
@@ -11102,7 +11121,7 @@ class EntityManagerPanel extends HTMLElement {
       }
     }
 
-    const health = [], disable = [], naming = [], area = [];
+    const health = [], disable = [], naming = [], area = [], mismatch = [];
     const seenDevicesForArea = new Set();
 
     for (const entity of allEntities) {
@@ -11133,11 +11152,26 @@ class EntityManagerPanel extends HTMLElement {
       if (!entity.is_disabled && entity.device_id && !helperDomains.has(domain)) {
         const entityArea = entityAreaMap.get(entity.entity_id) || entity.area_id;
         const deviceArea = deviceAreaMap.get(entity.device_id);
+        // Mismatch: entity has explicit area that differs from its device's area
+        if (entityArea && deviceArea && entityArea !== deviceArea) {
+          mismatch.push({
+            entity, name,
+            entityAreaId: entityArea,
+            entityAreaName: this.areaLookup?.get(entityArea)?.areaName || entityArea,
+            deviceAreaId: deviceArea,
+            deviceAreaName: this.areaLookup?.get(deviceArea)?.areaName || deviceArea,
+            deviceId: entity.device_id,
+          });
+        }
+        // Missing: neither entity nor device has any area — one suggestion per device
         if (!entityArea && !deviceArea && !seenDevicesForArea.has(entity.device_id)) {
           seenDevicesForArea.add(entity.device_id);
+          const suggestion = suggestAreaByName(entity.deviceName) || suggestAreaByName(name);
           area.push({ entity, name: entity.deviceName || entity.device_id,
             reason: `No area assigned · ${entity.deviceEntityCount} entit${entity.deviceEntityCount !== 1 ? 'ies' : 'y'}`,
-            action: 'assign-area', actionLabel: 'Assign Area', deviceId: entity.device_id });
+            action: 'assign-area', actionLabel: 'Assign Area', deviceId: entity.device_id,
+            suggestedAreaId: suggestion?.areaId || null,
+            suggestedAreaName: suggestion?.areaName || null });
         }
       }
     }
@@ -11198,7 +11232,7 @@ class EntityManagerPanel extends HTMLElement {
     area.sort((a, b) => a.entity.entity_id.localeCompare(b.entity.entity_id));
     labelGroups.sort((a, b) => (a.deviceName || a.label || '').localeCompare(b.deviceName || b.label || ''));
 
-    const total = health.length + disable.length + naming.length + area.length + labelGroups.length;
+    const total = health.length + disable.length + naming.length + area.length + mismatch.length + labelGroups.length;
 
     const svgChev = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
@@ -11327,6 +11361,12 @@ class EntityManagerPanel extends HTMLElement {
                      style="flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)" title="Select device">
               <span style="font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</span>
               <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${deviceEntities.length || item.entity.deviceEntityCount || ''} entit${(deviceEntities.length || 1) !== 1 ? 'ies' : 'y'}</span>
+              ${item.suggestedAreaName ? `<span style="font-size:11px;color:var(--em-success);font-weight:600;white-space:nowrap">→ ${this._escapeHtml(item.suggestedAreaName)}</span>
+              <button class="em-sug-action btn btn-sm" data-action="apply-suggested-area"
+                  data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
+                  data-device-id="${this._escapeAttr(item.deviceId)}"
+                  data-area-id="${this._escapeAttr(item.suggestedAreaId)}"
+                  style="flex-shrink:0;white-space:nowrap;background:var(--em-success);color:white;border-color:var(--em-success)">Apply</button>` : ''}
               <button class="em-sug-action em-assign-btn btn btn-sm" data-action="assign-area"
                   data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
                   data-device-id="${this._escapeAttr(item.deviceId)}"
@@ -11357,6 +11397,33 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
       </div>`;
+      return this._collGroup(`${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+    };
+
+    const renderMismatchSection = (emoji, title, items) => {
+      if (!items.length) return '';
+      const rows = items.map(item => {
+        const eid = this._escapeAttr(item.entity.entity_id);
+        return `<div class="em-sug-mismatch-row" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--em-border-light)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
+            <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
+            <div style="font-size:11px;margin-top:2px">
+              <span style="color:var(--em-danger);font-weight:600">In: ${this._escapeHtml(item.entityAreaName)}</span>
+              <span style="color:var(--em-text-secondary)"> → Device: </span>
+              <span style="color:var(--em-success);font-weight:600">${this._escapeHtml(item.deviceAreaName)}</span>
+            </div>
+          </div>
+          <button class="em-sug-action btn btn-sm" data-action="sync-to-device-area"
+              data-entity-id="${eid}" data-device-area-id="${this._escapeAttr(item.deviceAreaId)}"
+              style="flex-shrink:0;white-space:nowrap;background:var(--em-success);color:white;border-color:var(--em-success)">
+            Sync to ${this._escapeHtml(item.deviceAreaName)}</button>
+          <button class="em-sug-action btn btn-sm" data-action="assign-area-mismatch"
+              data-entity-id="${eid}"
+              style="flex-shrink:0;white-space:nowrap">Choose Area</button>
+        </div>`;
+      }).join('');
+      const body = `<div style="padding:4px 0">${rows}</div>`;
       return this._collGroup(`${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
     };
 
@@ -11459,6 +11526,7 @@ class EntityManagerPanel extends HTMLElement {
            <div class="em-sug-section em-sug-disable">${renderSection(this._icon(EM_ICONS.disable, '16px'), 'Disable Candidates', disable, 'disable')}</div>
            <div class="em-sug-section em-sug-naming">${renderNamingSection(this._icon(EM_ICONS.namingFix, '16px'), 'Naming Improvements', naming)}</div>
            <div class="em-sug-section em-sug-area">${renderAreaSection(this._icon(EM_ICONS.area, '16px'), 'Area Assignment', area)}</div>
+           <div class="em-sug-section em-sug-mismatch">${renderMismatchSection(this._icon('mdi:map-marker-alert', '16px'), 'Area Mismatch', mismatch)}</div>
            <div class="em-sug-section em-sug-labels">${renderLabelSuggestionsSection(labelGroups)}</div>`
       }
     </div>`;
@@ -11750,6 +11818,24 @@ class EntityManagerPanel extends HTMLElement {
         } else if (action === 'assign-area') {
           const entityObj = this._resolveEntitiesById([entityId])[0] || { entity_id: entityId, device_id: deviceId };
           await this._showAreaFloorDialog('Assign device to area', [entityObj]);
+          this._refreshView();
+        } else if (action === 'apply-suggested-area') {
+          const areaId = btn.dataset.areaId;
+          btn.disabled = true; btn.textContent = '…';
+          await Promise.all([
+            this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: areaId }),
+            deviceId ? this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId }) : Promise.resolve(),
+          ]);
+          this.saveToUndo(); btn.closest('.em-naming-device-group')?.remove();
+          await this.loadData();
+        } else if (action === 'sync-to-device-area') {
+          btn.disabled = true; btn.textContent = '…';
+          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: null });
+          this.saveToUndo(); btn.closest('.em-sug-mismatch-row')?.remove();
+          await this.loadData();
+        } else if (action === 'assign-area-mismatch') {
+          const [entityObj] = this._resolveEntitiesById([entityId]);
+          await this._showAreaFloorDialog('Assign area', [entityObj]);
           this._refreshView();
         }
       });

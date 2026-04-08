@@ -2250,6 +2250,16 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   color: white !important;
 }
 
+.icon-btn.assign-area-btn {
+  color: var(--em-success) !important;
+  border-color: var(--em-success) !important;
+}
+
+.icon-btn.assign-area-btn:hover:not(:disabled) {
+  background: var(--em-success) !important;
+  color: white !important;
+}
+
 .icon-btn.bulk-rename-btn {
   color: var(--em-primary) !important;
   border-color: var(--em-primary) !important;
@@ -5860,6 +5870,11 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-sug-area .em-naming-device-toggle .em-collapsible-icon    { border-color: rgba(244, 67, 54, 0.5); color: rgba(244, 67, 54, 0.8); }
 .em-sug-area .em-sug-row,
 .em-sug-area .em-mini-card                                    { border-color: rgba(244, 67, 54, 0.2); }
+
+/* Area Mismatch — amber/orange */
+.em-sug-mismatch .entity-list-group-title                      { background: rgba(255, 152, 0, 0.08); border-color: rgba(255, 152, 0, 0.4); color: rgb(200, 110, 0); }
+.em-sug-mismatch .em-group-body                                { background: rgba(255, 152, 0, 0.02); }
+.em-sug-mismatch .em-sug-mismatch-row                          { border-bottom-color: rgba(255, 152, 0, 0.2); }
 
 /* Label Suggestions — yellow */
 .em-sug-labels .entity-list-group-title                       { background: rgba(255, 200, 0, 0.07); border-color: rgba(200, 170, 0, 0.35); color: rgb(170, 140, 0); }
