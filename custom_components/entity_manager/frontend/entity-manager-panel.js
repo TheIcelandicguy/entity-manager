@@ -2014,7 +2014,7 @@ class EntityManagerPanel extends HTMLElement {
   // Works whether called immediately after render or while the view is already open.
   _expandSuggestionsSection(dialogBody, section) {
     if (!dialogBody || !section) return;
-    const sectionMap = { naming: 'Naming Improvements', labels: 'Label Suggestions' };
+    const sectionMap = { naming: 'Naming Improvements', labels: 'Label Suggestions', area: 'Area Suggestions' };
     const heading = sectionMap[section];
     if (!heading) return;
     const expand = () => {
@@ -11539,8 +11539,14 @@ class EntityManagerPanel extends HTMLElement {
            <div class="em-sug-section em-sug-health">${renderSection(this._icon(EM_ICONS.configHealth, '16px'), 'Health Issues', health, 'health')}</div>
            <div class="em-sug-section em-sug-disable">${renderSection(this._icon(EM_ICONS.disable, '16px'), 'Disable Candidates', disable, 'disable')}</div>
            <div class="em-sug-section em-sug-naming">${renderNamingSection(this._icon(EM_ICONS.namingFix, '16px'), 'Naming Improvements', naming)}</div>
-           <div class="em-sug-section em-sug-area">${renderAreaSection(this._icon(EM_ICONS.area, '16px'), 'Area Assignment', area)}</div>
-           <div class="em-sug-section em-sug-mismatch">${renderMismatchSection(this._icon('mdi:map-marker-alert', '16px'), 'Area Mismatch', mismatch)}</div>
+           <div class="em-sug-section em-sug-area">${
+             (area.length + mismatch.length) === 0 ? '' :
+             this._collGroup(
+               `${this._icon(EM_ICONS.area, '16px')} Area Suggestions <span style="opacity:0.55;font-weight:400;font-size:12px">(${area.length + mismatch.length})</span>`,
+               `${renderAreaSection(this._icon(EM_ICONS.area, '16px'), 'Area Assignment', area)}
+                ${renderMismatchSection(this._icon('mdi:map-marker-alert', '16px'), 'Area Mismatch', mismatch)}`
+             )
+           }</div>
            <div class="em-sug-section em-sug-labels">${renderLabelSuggestionsSection(labelGroups)}</div>`
       }
     </div>`;
