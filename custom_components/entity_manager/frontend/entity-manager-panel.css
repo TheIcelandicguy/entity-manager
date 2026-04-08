@@ -5081,6 +5081,29 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .entity-header-area.em-area-unset { opacity: 0.45; border-style: dashed; }
 .em-area-placeholder { font-style: italic; }
 
+/* Area chip — mismatch (entity area ≠ device area) */
+.entity-header-area.em-area-mismatch {
+  color: var(--em-warning) !important;
+  border-color: var(--em-warning) !important;
+  opacity: 1;
+}
+
+/* Area suggestion chip (entity + device have no area, name match found) */
+.entity-header-area-suggestion {
+  font-size: 11px;
+  color: var(--em-success);
+  background: var(--em-bg-secondary);
+  border: 1px solid var(--em-success);
+  border-style: dashed;
+  border-radius: 4px;
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
 /* Entity card floor chip (separate from area chip) */
 .entity-header-floor-chip {
   font-size: 11px;

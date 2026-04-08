@@ -8381,14 +8381,28 @@ class EntityManagerPanel extends HTMLElement {
     const deviceAreaId  = entity.device_id ? (this.deviceInfo?.[entity.device_id]?.area_id || null) : null;
     const effectiveAreaId = entityAreaId || deviceAreaId;
     const areaInfo = effectiveAreaId ? (this.areaLookup?.get(effectiveAreaId) || null) : null;
+    // Area mismatch: entity has explicit area that differs from device area
+    const hasAreaMismatch = !!(entityAreaId && deviceAreaId && entityAreaId !== deviceAreaId);
+    const deviceAreaInfo  = hasAreaMismatch ? (this.areaLookup?.get(deviceAreaId) || null) : null;
+    // Area suggestion: name-match when no area assigned at all
+    let suggestedAreaName = null;
+    if (!effectiveAreaId && entity.device_id && this.areaLookup?.size) {
+      const lc = ((entity.deviceName || '') + ' ' + (entity.original_name || '')).toLowerCase().replace(/[_-]/g, ' ');
+      for (const [, { areaName }] of this.areaLookup) {
+        if (lc.includes(areaName.toLowerCase())) { suggestedAreaName = areaName; break; }
+      }
+    }
 
     // Header band: device name, area+floor chip, state chip, time chip
     const deviceChip = col('device') && entity.deviceName
       ? `<span class="entity-header-device">${this._icon('mdi:devices', '14px')} ${this._escapeHtml(entity.deviceName)}</span>` : '';
     const canAssignArea = !!entity.device_id || !!entityAreaId;
     const areaChip = canAssignArea
-      ? `<span class="entity-header-area${areaInfo ? '' : ' em-area-unset'}"
-             title="${areaInfo ? this._escapeAttr(areaInfo.areaName) : 'No area assigned'}">${this._icon(EM_ICONS.area, '14px')} ${areaInfo ? this._escapeHtml(areaInfo.areaName) : '<span class="em-area-placeholder">No area</span>'}</span>`
+      ? `<span class="entity-header-area${areaInfo ? '' : ' em-area-unset'}${hasAreaMismatch ? ' em-area-mismatch' : ''}"
+             title="${hasAreaMismatch ? `⚠ Entity area (${this._escapeAttr(areaInfo?.areaName || '')}) differs from device area (${this._escapeAttr(deviceAreaInfo?.areaName || '')})` : areaInfo ? this._escapeAttr(areaInfo.areaName) : 'No area assigned'}">${this._icon(EM_ICONS.area, '14px')} ${hasAreaMismatch ? `⚠ ${this._escapeHtml(areaInfo?.areaName || '')}` : areaInfo ? this._escapeHtml(areaInfo.areaName) : '<span class="em-area-placeholder">No area</span>'}</span>`
+      : '';
+    const areaSuggestionChip = suggestedAreaName
+      ? `<span class="entity-header-area-suggestion" title="Suggested area: ${this._escapeAttr(suggestedAreaName)}">${this._icon(EM_ICONS.area, '14px')} → ${this._escapeHtml(suggestedAreaName)}?</span>`
       : '';
     const floorChip = canAssignArea
       ? `<span class="entity-header-floor-chip${(areaInfo && areaInfo.floorName) ? '' : ' em-area-unset'}"
@@ -8407,13 +8421,13 @@ class EntityManagerPanel extends HTMLElement {
     const _timeMs = _cachedTs ?? (state?.last_changed ? new Date(state.last_changed).getTime() : null);
     const timeChip = col('lastChanged') && _timeMs
       ? `<span class="entity-header-chip-label">Last active</span><span class="entity-header-time">${this._icon(EM_ICONS.activity, '14px')} ${this._escapeHtml(this._formatTimeDiff(Date.now() - _timeMs))} ago</span>` : '';
-    const hasHeader = deviceChip || areaChip || floorChip || stateChip || timeChip;
+    const hasHeader = deviceChip || areaChip || floorChip || areaSuggestionChip || stateChip || timeChip;
 
     const hasBottom = col('checkbox') || col('favorite') || col('actions');
 
     return `
       <div class="entity-item${isToggleable && isOn ? ' entity-is-on' : ''}" data-entity-id="${eid}" data-disabled="${entity.is_disabled ? 'true' : 'false'}">
-        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${floorChip}${stateChip}${timeChip}</div>` : ''}
+        ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${areaSuggestionChip}${floorChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
           ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
