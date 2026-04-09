@@ -5762,3 +5762,47 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     padding: 6px 10px;
   }
 }
+
+/* ===== ANIMATED DOMAIN ICONS ===== */
+.em-domain-icon {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* Animation classes applied per-icon when entity is in active state */
+.em-domain-icon.em-anim-glow  { animation: em-icon-glow   2s   ease-in-out infinite; }
+.em-domain-icon.em-anim-blink { animation: em-icon-blink  1s   ease-in-out infinite; }
+.em-domain-icon.em-anim-bounce{ animation: em-icon-bounce 1.5s ease        infinite; }
+.em-domain-icon.em-anim-flash { animation: em-icon-flash  0.75s ease-in-out infinite; }
+.em-domain-icon.em-anim-wave  { animation: em-icon-wave   1.8s ease-in-out infinite; }
+.em-domain-icon.em-anim-spin  {
+  animation: em-spin 1.4s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes em-icon-glow {
+  0%, 100% { opacity: 1;    filter: drop-shadow(0 0 2px currentColor); }
+  50%       { opacity: 0.7; filter: drop-shadow(0 0 6px currentColor); }
+}
+@keyframes em-icon-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.15; }
+}
+@keyframes em-icon-bounce {
+  0%, 100% { transform: translateY(0);   }
+  40%       { transform: translateY(-3px); }
+  60%       { transform: translateY(-1px); }
+}
+@keyframes em-icon-flash {
+  0%, 100% { opacity: 1;    }
+  30%       { opacity: 0.1; }
+  70%       { opacity: 0.9; }
+}
+@keyframes em-icon-wave {
+  0%, 100% { transform: rotate(0deg);  }
+  25%       { transform: rotate(5deg); }
+  75%       { transform: rotate(-5deg); }
+}

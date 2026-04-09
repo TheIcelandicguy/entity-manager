@@ -329,6 +329,320 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
+  // ── Animated domain icons ──────────────────────────────────────────────────
+  // Returns an inline SVG string for a given HA domain, animated when active.
+  _domainIcon(domain, isOn = false) {
+    const on = isOn;
+    // Helper to build the <svg> wrapper
+    const icon = (paths, onColor, offColor, animClass) => {
+      const color = on && onColor ? onColor : (offColor || 'currentColor');
+      const cls   = on && animClass ? ` ${animClass}` : '';
+      return `<svg class="em-domain-icon${cls}" viewBox="0 0 24 24" width="16" height="16" `
+        + `fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`
+        + paths + `</svg>`;
+    };
+
+    switch (domain) {
+      // ── Lighting & power ──────────────────────────────────────────────────
+      case 'light':
+        return icon(
+          `<path d="M12 2a7 7 0 0 1 4.9 11.9V17H7.1v-3.1A7 7 0 0 1 12 2z"/>`
+          + `<line x1="10" y1="20" x2="14" y2="20"/><line x1="11" y1="22" x2="13" y2="22"/>`,
+          '#ffc107', null, 'em-anim-glow');
+
+      case 'switch':
+      case 'input_boolean':
+        return icon(
+          `<rect x="1" y="8" width="22" height="8" rx="4"/>`
+          + `<circle cx="${on ? 17 : 7}" cy="12" r="3" fill="currentColor"/>`,
+          'var(--em-success)', null, null);
+
+      case 'outlet':
+        return icon(
+          `<rect x="2" y="4" width="20" height="16" rx="2"/>`
+          + `<circle cx="9" cy="9" r="1.5" fill="currentColor"/>`
+          + `<circle cx="15" cy="9" r="1.5" fill="currentColor"/>`
+          + `<path d="M9 13v2M15 13v2M11 15h2"/>`,
+          'var(--em-success)', null, null);
+
+      // ── Sensors ───────────────────────────────────────────────────────────
+      case 'sensor':
+        return icon(
+          `<polyline points="2 18 7 13 11 17 16 9 22 7"/>`
+          + `<line x1="2" y1="22" x2="22" y2="22"/>`,
+          null, null, null);
+
+      case 'binary_sensor':
+        return icon(
+          `<circle cx="12" cy="12" r="2" fill="${on ? 'currentColor' : 'none'}"/>`
+          + `<path d="M8.6 8.6a6 6 0 0 0 0 6.8"/><path d="M15.4 8.6a6 6 0 0 1 0 6.8"/>`
+          + `<path d="M5.2 5.2a11 11 0 0 0 0 13.6"/><path d="M18.8 5.2a11 11 0 0 1 0 13.6"/>`,
+          'var(--em-success)', null, on ? 'em-anim-blink' : null);
+
+      // ── Climate ───────────────────────────────────────────────────────────
+      case 'climate':
+        return icon(
+          `<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26A4.5 4.5 0 1 0 14 14.76z"/>`
+          + `<line x1="14" y1="7" x2="16" y2="7"/><line x1="14" y1="10" x2="17" y2="10"/>`,
+          '#ef5350', null, on ? 'em-anim-wave' : null);
+
+      case 'humidifier':
+        return icon(
+          `<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>`,
+          '#2196f3', null, on ? 'em-anim-glow' : null);
+
+      case 'water_heater':
+        return icon(
+          `<path d="M12 2c-2 3-4 5.56-4 9a4 4 0 0 0 8 0c0-3.44-2-6-4-9z"/>`
+          + `<path d="M12 12c-1 1.5-1.5 3-1.5 3.5a1.5 1.5 0 0 0 3 0C13.5 15 13 13.5 12 12z"/>`,
+          '#ef5350', null, null);
+
+      case 'fan':
+        return icon(
+          `<circle cx="12" cy="12" r="2"/>`
+          + `<path d="M12 10c0-3.5-2-6-4-6a2 2 0 0 0 0 4c2.5 0 4 2 4 2z"/>`
+          + `<path d="M12 10c0-3.5 2-6 4-6a2 2 0 0 1 0 4c-2.5 0-4 2-4 2z"/>`
+          + `<path d="M12 14c0 3.5-2 6-4 6a2 2 0 0 1 0-4c2.5 0 4-2 4-2z"/>`
+          + `<path d="M12 14c0 3.5 2 6 4 6a2 2 0 0 0 0-4c-2.5 0-4-2-4-2z"/>`,
+          'var(--em-primary)', null, on ? 'em-anim-spin' : null);
+
+      // ── Security ──────────────────────────────────────────────────────────
+      case 'lock':
+        return icon(
+          `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>`
+          + (on
+            ? `<path d="M7 11V7a5 5 0 0 1 9.9-1"/>`
+            : `<path d="M7 11V7a5 5 0 0 1 10 0v4"/>`),
+          '#4caf50', '#ef5350', null);
+
+      case 'alarm_control_panel':
+        return icon(
+          `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>`,
+          '#ef5350', null, on ? 'em-anim-flash' : null);
+
+      // ── Media & entertainment ─────────────────────────────────────────────
+      case 'media_player':
+        return icon(
+          `<polygon points="5 3 19 12 5 21 5 3"/>`,
+          'var(--em-primary)', null, on ? 'em-anim-glow' : null);
+
+      case 'remote':
+        return icon(
+          `<rect x="7" y="2" width="10" height="20" rx="5"/>`
+          + `<circle cx="12" cy="7" r="1.5" fill="currentColor"/>`
+          + `<line x1="9" y1="12" x2="15" y2="12"/>`
+          + `<line x1="9" y1="15" x2="15" y2="15"/>`
+          + `<line x1="9" y1="18" x2="15" y2="18"/>`,
+          null, null, null);
+
+      case 'camera':
+        return icon(
+          `<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>`
+          + `<circle cx="12" cy="13" r="4"/>`,
+          null, null, null);
+
+      // ── Covers & doors ────────────────────────────────────────────────────
+      case 'cover':
+        return icon(
+          `<line x1="3" y1="4" x2="21" y2="4"/>`
+          + `<line x1="3" y1="8" x2="21" y2="8"/>`
+          + `<line x1="3" y1="12" x2="21" y2="12"/>`
+          + `<path d="M12 4v12M7 16l5 4 5-4"/>`,
+          null, null, null);
+
+      // ── Appliances ────────────────────────────────────────────────────────
+      case 'vacuum':
+        return icon(
+          `<circle cx="12" cy="12" r="9"/>`
+          + `<polyline points="1 4 1 10 7 10"/>`
+          + `<path d="M3.51 9A9 9 0 1 1 3 12"/>`,
+          'var(--em-primary)', null, on ? 'em-anim-spin' : null);
+
+      case 'lawn_mower':
+        return icon(
+          `<rect x="2" y="12" width="20" height="8" rx="2"/>`
+          + `<path d="M6 12V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v4"/>`
+          + `<circle cx="7" cy="20" r="2.5"/><circle cx="17" cy="20" r="2.5"/>`,
+          null, null, null);
+
+      case 'siren':
+        return icon(
+          `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>`
+          + `<path d="M13.73 21a2 2 0 0 1-3.46 0"/>`,
+          '#ef5350', null, on ? 'em-anim-flash' : null);
+
+      case 'valve':
+        return icon(
+          `<circle cx="12" cy="12" r="4"/>`
+          + `<path d="M12 2v6M12 16v6M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24`
+          + `M2 12h6M16 12h6M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24"/>`,
+          on ? 'var(--em-primary)' : null, null, null);
+
+      // ── Automation & scripting ────────────────────────────────────────────
+      case 'automation':
+        return icon(
+          `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`,
+          '#ff9800', null, on ? 'em-anim-flash' : null);
+
+      case 'script':
+        return icon(
+          `<circle cx="12" cy="12" r="9"/>`
+          + `<polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>`,
+          'var(--em-primary)', null, null);
+
+      case 'scene':
+        return icon(
+          `<circle cx="13" cy="6" r="3"/><circle cx="6" cy="14" r="3"/>`
+          + `<circle cx="17.5" cy="15.5" r="2.5"/>`
+          + `<path d="M9 6H3M21 6h-5M3 14h1M12 14h9M15 15.5H3"/>`,
+          null, null, null);
+
+      // ── Input helpers ─────────────────────────────────────────────────────
+      case 'input_number':
+      case 'number':
+        return icon(
+          `<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/>`
+          + `<line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/>`
+          + `<line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/>`
+          + `<line x1="1" y1="14" x2="7" y2="14"/>`
+          + `<line x1="9" y1="8" x2="15" y2="8"/>`
+          + `<line x1="17" y1="16" x2="23" y2="16"/>`,
+          null, null, null);
+
+      case 'input_select':
+      case 'select':
+        return icon(
+          `<line x1="8" y1="6" x2="21" y2="6"/>`
+          + `<line x1="8" y1="12" x2="21" y2="12"/>`
+          + `<line x1="8" y1="18" x2="21" y2="18"/>`
+          + `<circle cx="3" cy="6" r="1" fill="currentColor"/>`
+          + `<circle cx="3" cy="12" r="1" fill="currentColor"/>`
+          + `<circle cx="3" cy="18" r="1" fill="currentColor"/>`,
+          null, null, null);
+
+      case 'input_text':
+      case 'text':
+        return icon(
+          `<line x1="17" y1="10" x2="3" y2="10"/>`
+          + `<line x1="21" y1="6" x2="3" y2="6"/>`
+          + `<line x1="21" y1="14" x2="3" y2="14"/>`
+          + `<line x1="17" y1="18" x2="3" y2="18"/>`,
+          null, null, null);
+
+      case 'input_datetime':
+      case 'calendar':
+        return icon(
+          `<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>`
+          + `<line x1="16" y1="2" x2="16" y2="6"/>`
+          + `<line x1="8" y1="2" x2="8" y2="6"/>`
+          + `<line x1="3" y1="10" x2="21" y2="10"/>`,
+          null, null, null);
+
+      case 'button':
+        return icon(
+          `<circle cx="12" cy="12" r="10"/>`
+          + `<circle cx="12" cy="12" r="4" fill="currentColor"/>`,
+          null, null, null);
+
+      // ── Tracking & location ───────────────────────────────────────────────
+      case 'device_tracker':
+        return icon(
+          `<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>`
+          + `<circle cx="12" cy="10" r="3"/>`,
+          null, null, null);
+
+      case 'person':
+        return icon(
+          `<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>`
+          + `<circle cx="12" cy="7" r="4"/>`,
+          null, null, null);
+
+      case 'zone':
+        return icon(
+          `<circle cx="12" cy="12" r="10"/>`
+          + `<circle cx="12" cy="12" r="5"/>`
+          + `<circle cx="12" cy="12" r="1" fill="currentColor"/>`,
+          null, null, null);
+
+      // ── Time & timers ─────────────────────────────────────────────────────
+      case 'timer':
+        return icon(
+          `<circle cx="12" cy="12" r="9"/>`
+          + `<polyline points="12 7 12 12 15 15"/>`,
+          on ? '#ff9800' : null, null, null);
+
+      case 'counter':
+        return icon(
+          `<line x1="4" y1="9" x2="20" y2="9"/>`
+          + `<line x1="4" y1="15" x2="20" y2="15"/>`
+          + `<line x1="10" y1="3" x2="8" y2="21"/>`
+          + `<line x1="16" y1="3" x2="14" y2="21"/>`,
+          null, null, null);
+
+      // ── System & misc ─────────────────────────────────────────────────────
+      case 'update':
+        return icon(
+          `<polyline points="1 4 1 10 7 10"/>`
+          + `<path d="M3.51 15a9 9 0 1 0 .49-3.51"/>`
+          + `<line x1="12" y1="8" x2="12" y2="16"/>`
+          + `<polyline points="9 13 12 16 15 13"/>`,
+          'var(--em-primary)', null, on ? 'em-anim-bounce' : null);
+
+      case 'notify':
+        return icon(
+          `<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>`
+          + `<path d="M13.73 21a2 2 0 0 1-3.46 0"/>`,
+          null, null, null);
+
+      case 'group':
+        return icon(
+          `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>`
+          + `<circle cx="9" cy="7" r="4"/>`
+          + `<path d="M23 21v-2a4 4 0 0 0-3-3.87"/>`
+          + `<path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
+          null, null, null);
+
+      case 'weather':
+        return icon(
+          `<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>`,
+          '#ffc107', null, null);
+
+      case 'tag':
+        return icon(
+          `<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>`
+          + `<line x1="7" y1="7" x2="7.01" y2="7"/>`,
+          null, null, null);
+
+      case 'image':
+        return icon(
+          `<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>`
+          + `<circle cx="8.5" cy="8.5" r="1.5"/>`
+          + `<polyline points="21 15 16 10 5 21"/>`,
+          null, null, null);
+
+      case 'todo':
+        return icon(
+          `<polyline points="9 11 12 14 22 4"/>`
+          + `<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>`,
+          null, null, null);
+
+      // ── Fallback: generic cog ─────────────────────────────────────────────
+      default:
+        return icon(
+          `<circle cx="12" cy="12" r="3"/>`
+          + `<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06`
+          + `a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09`
+          + `A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83`
+          + `l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09`
+          + `A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83`
+          + `l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09`
+          + `a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83`
+          + `l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09`
+          + `a1.65 1.65 0 0 0-1.51 1z"/>`,
+          null, null, null);
+    }
+  }
+
   _escapeAttr(str) {
     if (str == null) return '';
     const s = String(str);
@@ -5152,19 +5466,19 @@ class EntityManagerPanel extends HTMLElement {
         <div class="sidebar-section ${this.sidebarOpenSections.has('smart-groups') ? '' : 'section-collapsed'}">
           <div class="sidebar-section-title" data-section-id="smart-groups">Groups<svg class="em-chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
           <div class="sidebar-item ${this.smartGroupMode === 'integration' ? 'active' : ''}" data-group-mode="integration">
-            <span class="icon">🔌</span>
+            <span class="icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 6H7v8a5 5 0 0 0 10 0V8h-3z"/><line x1="7" y1="2" x2="7" y2="6"/><line x1="17" y1="2" x2="17" y2="6"/><line x1="10" y1="14" x2="10" y2="17"/><line x1="14" y1="14" x2="14" y2="17"/></svg></span>
             <span class="label">By Integration</span>
           </div>
           <div class="sidebar-item ${this.smartGroupMode === 'room' ? 'active' : ''}" data-group-mode="room">
-            <span class="icon">🏠</span>
+            <span class="icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
             <span class="label">By Room</span>
           </div>
           <div class="sidebar-item ${this.smartGroupMode === 'type' ? 'active' : ''}" data-group-mode="type">
-            <span class="icon">📂</span>
+            <span class="icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span>
             <span class="label">By Type</span>
           </div>
           <div class="sidebar-item ${this.smartGroupMode === 'floor' ? 'active' : ''}" data-group-mode="floor">
-            <span class="icon">🏢</span>
+            <span class="icon"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22V12h6v10"/><line x1="8" y1="7" x2="8.01" y2="7"/><line x1="12" y1="7" x2="12.01" y2="7"/><line x1="16" y1="7" x2="16.01" y2="7"/></svg></span>
             <span class="label">By Floor</span>
           </div>
           <div class="sidebar-item ${this.smartGroupMode === 'device-name' ? 'active' : ''}" data-group-mode="device-name">
@@ -7049,10 +7363,11 @@ class EntityManagerPanel extends HTMLElement {
       'floor': 'Floor'
     };
 
+    const _sgSvg = (paths) => `<svg style="vertical-align:middle;margin-right:4px" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
     const modeIcons = {
-      'room': '🏠',
-      'type': '📂',
-      'floor': '🏢'
+      'room':  _sgSvg('<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'),
+      'type':  _sgSvg('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>'),
+      'floor': _sgSvg('<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22V12h6v10"/><line x1="8" y1="7" x2="8.01" y2="7"/><line x1="12" y1="7" x2="12.01" y2="7"/><line x1="16" y1="7" x2="16.01" y2="7"/>'),
     };
 
     return sortedKeys.map(groupKey => {
@@ -7425,14 +7740,16 @@ class EntityManagerPanel extends HTMLElement {
     const isPressable = domain === 'button' && !entity.is_disabled;
     const isOn = state?.state === 'on' || state?.state === 'open' || state?.state === 'unlocked'
       || state?.state === 'playing' || state?.state === 'cleaning';
+    const domainIcon = this._domainIcon(domain, isOn);
 
     // Header band: device name, state chip, time chip
+    const _chipSvg = (paths) => `<svg style="vertical-align:middle;margin-right:3px" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
     const deviceChip = col('device') && entity.deviceName
-      ? `<span class="entity-header-device">📱 ${this._escapeHtml(entity.deviceName)}</span>` : '';
+      ? `<span class="entity-header-device">${_chipSvg('<rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>')}${this._escapeHtml(entity.deviceName)}</span>` : '';
     const stateChip = col('state') && state
-      ? `<span class="entity-header-state">⚡ ${this._escapeHtml(state.state)}${state.attributes?.unit_of_measurement ? ' ' + this._escapeHtml(state.attributes.unit_of_measurement) : ''}</span>` : '';
+      ? `<span class="entity-header-state">${_chipSvg('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>')}${this._escapeHtml(state.state)}${state.attributes?.unit_of_measurement ? ' ' + this._escapeHtml(state.attributes.unit_of_measurement) : ''}</span>` : '';
     const timeChip = col('lastChanged') && state?.last_changed
-      ? `<span class="entity-header-time">🕐 ${this._escapeHtml(this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime()))} ago</span>` : '';
+      ? `<span class="entity-header-time">${_chipSvg('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')}${this._escapeHtml(this._formatTimeDiff(Date.now() - new Date(state.last_changed).getTime()))} ago</span>` : '';
     const hasHeader = deviceChip || stateChip || timeChip;
 
     const hasBottom = col('checkbox') || col('favorite') || col('actions');
@@ -7442,9 +7759,9 @@ class EntityManagerPanel extends HTMLElement {
         ${hasHeader ? `<div class="entity-card-header">${deviceChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
-          ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
+          ${col('name') && entity.original_name ? `<div class="entity-name">${domainIcon}${this._escapeHtml(entity.original_name)}</div>` : ''}
           ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
-          ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
+          ${col('id') ? `<div class="entity-id">${!entity.original_name ? domainIcon : ''}${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
         ${col('status') ? `<span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
         ${hasBottom ? `<div class="entity-item-bottom">
@@ -7513,12 +7830,13 @@ class EntityManagerPanel extends HTMLElement {
     const devName = this.getDeviceName(deviceId);
     const deviceIdEsc = this._escapeAttr(deviceId);
     const SENSOR_DOMAINS = new Set(['sensor', 'binary_sensor']);
+    const _catSvg = (paths) => `<svg style="vertical-align:middle;margin-right:3px" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
     const CAT_BUCKETS = [
-      { label: '⚡ Controls',       cls: 'cat-controls',     match: e => !e.entity_category && !SENSOR_DOMAINS.has(e.entity_id.split('.')[0]) },
-      { label: '📊 Sensors',        cls: 'cat-sensors',      match: e => !e.entity_category && SENSOR_DOMAINS.has(e.entity_id.split('.')[0]) },
-      { label: '⚙️ Configuration',  cls: 'cat-config',       match: e => e.entity_category === 'config' },
-      { label: '🔧 Diagnostic',     cls: 'cat-diagnostic',   match: e => e.entity_category === 'diagnostic' },
-      { label: '📡 Connectivity',   cls: 'cat-connectivity', match: e => e.entity_category === 'connectivity' },
+      { label: _catSvg('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>') + ' Controls',     cls: 'cat-controls',     match: e => !e.entity_category && !SENSOR_DOMAINS.has(e.entity_id.split('.')[0]) },
+      { label: _catSvg('<polyline points="2 18 7 13 11 17 16 9 22 7"/><line x1="2" y1="22" x2="22" y2="22"/>') + ' Sensors', cls: 'cat-sensors',  match: e => !e.entity_category && SENSOR_DOMAINS.has(e.entity_id.split('.')[0]) },
+      { label: _catSvg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-2.82-1.18l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 2.82-1.18V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.18l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>') + ' Config', cls: 'cat-config', match: e => e.entity_category === 'config' },
+      { label: _catSvg('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>') + ' Diagnostic', cls: 'cat-diagnostic', match: e => e.entity_category === 'diagnostic' },
+      { label: _catSvg('<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>') + ' Connectivity', cls: 'cat-connectivity', match: e => e.entity_category === 'connectivity' },
     ];
     const allEntitiesForDevice = device.entities.map(e => ({ ...e, deviceName: devName, integration }));
     const catCardsHtml = isExpanded ? CAT_BUCKETS
