@@ -3437,6 +3437,257 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 #main-content.em-bulk-rename-active .toolbar-search,
 #main-content.em-bulk-rename-active #stats { display: none; }
 
+/* ===== Area Assignment Inline View ===== */
+#main-content.em-area-assign-active .toolbar,
+#main-content.em-area-assign-active .toolbar-row-2,
+#main-content.em-area-assign-active .toolbar-search,
+#main-content.em-area-assign-active #stats { display: none; }
+
+.em-area-assign-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.em-aa-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--em-success);
+  background: color-mix(in srgb, var(--em-success) 4%, var(--em-bg-primary));
+  flex-wrap: wrap;
+}
+.em-aa-title {
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+}
+.em-aa-search {
+  padding: 5px 10px;
+  border: 1px solid var(--em-border);
+  border-radius: 6px;
+  background: var(--em-surface);
+  color: var(--em-text);
+  font-size: 13px;
+  width: 200px;
+  max-width: 100%;
+}
+
+.em-aa-summary {
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+}
+.em-aa-stat {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.em-aa-stat-matched { color: var(--em-success); }
+.em-aa-stat-unmatched { color: var(--em-text-secondary); }
+
+.em-aa-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.em-aa-area-group {
+  border-bottom: 1px solid var(--em-border);
+}
+.em-aa-area-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--em-success) 6%, var(--em-bg-primary));
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.em-aa-area-header:hover {
+  background: color-mix(in srgb, var(--em-success) 12%, var(--em-bg-primary));
+}
+.em-aa-unmatched-header {
+  background: color-mix(in srgb, var(--em-warning) 6%, var(--em-bg-primary));
+}
+.em-aa-unmatched-header:hover {
+  background: color-mix(in srgb, var(--em-warning) 12%, var(--em-bg-primary));
+}
+.em-aa-area-chevron {
+  transition: transform 0.2s;
+  display: flex;
+  align-items: center;
+}
+.em-aa-collapsed .em-aa-area-chevron {
+  transform: rotate(-90deg);
+}
+.em-aa-collapsed .em-aa-area-body {
+  display: none;
+}
+.em-aa-area-cb {
+  accent-color: var(--em-success);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.em-aa-area-name {
+  font-size: 14px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-aa-area-count {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+}
+
+/* Integration sub-group inside area group — second-level collapsible */
+.em-aa-integration-group {
+  border-top: 1px solid var(--em-border-light);
+}
+.em-aa-integration-group:first-child {
+  border-top: none;
+}
+.em-aa-integration-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 28px;
+  background: color-mix(in srgb, var(--em-primary) 4%, var(--em-bg-secondary));
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.em-aa-integration-header:hover {
+  background: color-mix(in srgb, var(--em-primary) 10%, var(--em-bg-secondary));
+}
+.em-aa-int-chevron {
+  transition: transform 0.2s;
+  display: flex;
+  align-items: center;
+  color: var(--em-text-secondary);
+}
+.em-aa-int-collapsed .em-aa-int-chevron {
+  transform: rotate(-90deg);
+}
+.em-aa-int-collapsed .em-aa-integration-body {
+  display: none;
+}
+.em-aa-int-icon {
+  display: flex;
+  align-items: center;
+  color: var(--em-primary);
+}
+.em-aa-int-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--em-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-aa-int-count {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+}
+
+.em-aa-device-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 56px;
+  border-bottom: 1px solid var(--em-border-light);
+  transition: background 0.1s, opacity 0.2s;
+}
+/* Devices directly under unmatched area group (no integration wrapper) — shallower indent */
+.em-aa-unmatched .em-aa-device-row {
+  padding-left: 40px;
+}
+.em-aa-device-row:hover {
+  background: color-mix(in srgb, var(--em-primary) 4%, transparent);
+}
+.em-aa-device-cb {
+  accent-color: var(--em-success);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.em-aa-device-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.em-aa-device-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-aa-device-meta {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+}
+.em-aa-rule-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--em-border);
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.em-aa-apply-btn {
+  background: var(--em-success) !important;
+  color: white !important;
+  border-color: var(--em-success) !important;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.em-aa-apply-area-btn {
+  background: var(--em-success) !important;
+  color: white !important;
+  border-color: var(--em-success) !important;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.em-aa-manual-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.em-aa-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--em-text-secondary);
+  font-size: 14px;
+}
+
 /* Inline view fills available height */
 .em-bulk-rename-view {
   display: flex;
@@ -5093,15 +5344,127 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-size: 11px;
   color: var(--em-success);
   background: var(--em-bg-secondary);
-  border: 1px solid var(--em-success);
-  border-style: dashed;
-  border-radius: 4px;
-  padding: 2px 6px;
+  border: 1.5px dashed var(--em-success);
+  border-radius: 12px;
+  padding: 2px 8px 2px 5px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  opacity: 0.75;
+  font-weight: 600;
+  cursor: pointer;
   flex-shrink: 0;
+  transition: background 0.15s, opacity 0.15s;
+}
+.entity-header-area-suggestion:hover {
+  background: color-mix(in srgb, var(--em-success) 15%, var(--em-bg-secondary));
+}
+
+/* Device header — current area chip (solid) */
+.device-area-chip {
+  font-size: 11px;
+  color: var(--em-primary);
+  background: color-mix(in srgb, var(--em-primary) 8%, transparent);
+  border: 1.5px solid var(--em-primary);
+  border-radius: 12px;
+  padding: 2px 8px 2px 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Device suggestion row — dedicated row below device header showing area suggestion */
+.device-suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--em-success) 6%, transparent);
+  border-left: 3px solid var(--em-success);
+  border-bottom: 1px solid color-mix(in srgb, var(--em-success) 20%, var(--em-border));
+  overflow: hidden;
+}
+.device-suggestion-row .device-suggestion-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--em-success) 18%, transparent);
+  color: var(--em-success);
+}
+.device-suggestion-row .device-suggestion-label {
+  font-size: 12px;
+  color: var(--em-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.device-suggestion-row .device-suggestion-area-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--em-success);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.device-suggestion-row .device-suggestion-rule-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1.5px solid var(--em-success);
+  color: var(--em-success);
+  background: var(--em-bg-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.device-suggestion-row .device-suggestion-rule-badge.device-suggestion-auto {
+  border-color: var(--em-primary);
+  color: var(--em-primary);
+}
+.device-suggestion-row .device-suggestion-spacer {
+  flex: 1;
+  min-width: 0;
+}
+.device-suggestion-row .device-suggestion-apply,
+.device-suggestion-row .device-suggestion-ignore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.device-suggestion-row .device-suggestion-apply {
+  background: var(--em-success);
+  color: #fff;
+  border: 2px solid var(--em-success);
+}
+.device-suggestion-row .device-suggestion-apply:hover {
+  background: color-mix(in srgb, var(--em-success) 85%, black);
+  transform: translateY(-1px);
+}
+.device-suggestion-row .device-suggestion-ignore {
+  background: transparent;
+  color: var(--em-text-secondary);
+  border: 2px solid var(--em-border);
+}
+.device-suggestion-row .device-suggestion-ignore:hover {
+  background: var(--em-bg-hover);
+  border-color: var(--em-text-secondary);
+  color: var(--em-text-primary);
 }
 
 /* Entity card floor chip (separate from area chip) */
@@ -5115,6 +5478,63 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* Area confirm dialog — entity checkbox rows */
+.em-confirm-entity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.em-confirm-entity-row:last-child { border-bottom: none; }
+.em-confirm-entity-row:hover { background: color-mix(in srgb, var(--em-primary) 5%, transparent); }
+.em-confirm-entity-row input[type="checkbox"] {
+  accent-color: var(--em-success);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Mapping rules dialog */
+.em-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+}
+.em-rule-row:last-child { border-bottom: none; }
+.em-rule-pattern {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--em-text);
+  background: var(--em-bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.em-rule-type-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--em-border);
+  color: var(--em-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.em-rule-add-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--em-bg-secondary);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
 .em-sug-action.em-assign-btn { margin-top: 8px; display: inline-block; }
 
 /* ===== Area / Floor Assignment Dialog ===== */
@@ -5917,6 +6337,88 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 .em-sug-sub-label:first-child { margin-top: 0; border-top: none; }
 
+/* Area Suggestions — bulk action bar (sticky-feel bar above integration groups) */
+.em-sug-area-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--em-border);
+  background: color-mix(in srgb, var(--em-success) 5%, var(--em-bg-secondary));
+}
+
+/* Area Suggestions — richer entity row (3-level hierarchy, nested inside device card) */
+.em-sug-area-entity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 44px;
+  border-bottom: 1px solid var(--em-border-light);
+  background: var(--em-bg-primary);
+}
+.em-sug-area-entity-row:last-child { border-bottom: none; }
+.em-sug-area-entity-row:hover { background: var(--em-bg-hover); }
+
+.em-sug-area-entity-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
+  color: var(--em-primary);
+}
+
+.em-sug-area-entity-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.em-sug-area-entity-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--em-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-sug-area-entity-id {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--em-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-sug-area-entity-state {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 2px solid var(--em-primary);
+  color: var(--em-primary);
+  background: var(--em-bg-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.em-sug-area-entity-state.em-sug-state-muted {
+  border-color: var(--em-text-secondary);
+  color: var(--em-text-secondary);
+  opacity: 0.65;
+}
+
 /* Label Suggestions — yellow */
 .em-sug-labels .entity-list-group-title                       { background: rgba(255, 200, 0, 0.07); border-color: rgba(200, 170, 0, 0.35); color: rgb(170, 140, 0); }
 .em-sug-labels .em-group-body                                 { background: rgba(255, 200, 0, 0.02); }
@@ -6573,4 +7075,35 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .em-ed-attr-grid { grid-template-columns: 1fr; }
   .em-ed-hero-times { margin-left: 0; width: 100%; }
   .em-ed-hist-time  { text-align: left; }
+}
+
+/* ===== MOBILE OVERRIDES — Area Assignment ===== */
+@media (max-width: 768px) {
+  .em-aa-toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
+  .em-aa-search { width: 100%; }
+  .em-aa-title { font-size: 14px; }
+  .em-rule-add-form { flex-direction: column; align-items: stretch; }
+}
+@media (max-width: 600px) {
+  .device-area-chip { font-size: 10px; padding: 1px 6px 1px 4px; }
+  .em-aa-device-row { padding-left: 36px; }
+  .em-aa-unmatched .em-aa-device-row { padding-left: 20px; }
+  .em-aa-area-header { padding: 6px 10px; }
+  .em-aa-integration-header { padding: 5px 10px 5px 20px; }
+  .em-aa-int-name { font-size: 11px; }
+
+  /* Device suggestion row — stack vertically on mobile */
+  .device-suggestion-row {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .device-suggestion-row .device-suggestion-label { font-size: 10px; }
+  .device-suggestion-row .device-suggestion-area-name { font-size: 14px; width: 100%; }
+  .device-suggestion-row .device-suggestion-spacer { display: none; }
+  .device-suggestion-row .device-suggestion-apply,
+  .device-suggestion-row .device-suggestion-ignore {
+    font-size: 12px;
+    padding: 5px 10px;
+  }
 }

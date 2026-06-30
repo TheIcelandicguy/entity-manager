@@ -181,7 +181,7 @@ All persistent state lives in `localStorage` under `em-*` keys. Key properties:
 
 ## Development Workflow
 
-1. Edit files in `c:\Users\brave\entity-manager\custom_components\entity_manager\`
+1. Edit files in `E:\entity-manager\custom_components\entity_manager\`
 2. Run `sync-to-ha.ps1` to copy to the live HA instance on `Z:\`
 3. Python changes require HA restart; frontend-only changes need only a hard browser refresh
 4. Use `npx eslint custom_components/entity_manager/frontend/` for JS linting
