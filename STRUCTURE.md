@@ -7,14 +7,14 @@ entity-manager/
 │       ├── __init__.py                  # Integration entry point, panel + resource registration
 │       ├── config_flow.py               # UI-based configuration flow (single-step, no options)
 │       ├── const.py                     # DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
-│       ├── manifest.json                # Integration metadata (v2.20.0)
+│       ├── manifest.json                # Integration metadata (v2.21.0)
 │       ├── services.yaml                # Service schema for enable_entity / disable_entity
 │       ├── strings.json                 # UI strings for config flow
 │       ├── voice_assistant.py           # Voice intent handlers (enable/disable)
 │       ├── websocket_api.py             # 18 WebSocket command handlers
 │       ├── frontend/
-│       │   ├── entity-manager-panel.js  # Custom web component UI (~15,000 lines)
-│       │   └── entity-manager-panel.css # External stylesheet (~6,300 lines)
+│       │   ├── entity-manager-panel.js  # Custom web component UI (~17,000 lines)
+│       │   └── entity-manager-panel.css # External stylesheet (~7,400 lines)
 │       └── translations/
 │           └── en.json                  # English translations
 ├── sentences/en/

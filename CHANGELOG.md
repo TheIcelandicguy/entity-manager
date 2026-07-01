@@ -1,5 +1,39 @@
 # Changelog
 
+## Version 2.21.0 - Clickable Chips, Unified Assign Dialog & Suggestion Ignore/Restore
+
+### ✨ New Features
+
+- **Clickable area / floor / label chips** — every entity and device card header now shows area, floor, and label chips as real clickable buttons instead of static text. Empty states ("No area", "No floor", "No label") are dashed placeholders that are also clickable
+- **Label scope badges (`E` / `D` / `A`)** — each label chip is badged with where the label actually lives: **E**ntity, **D**evice (inherited), or **A**rea (inherited), using broadest-source-wins so a label set at the device/area level shows its wider reach
+- **Unified "Assign" dialog** (`_showAssignDialog`) — one dialog reachable from any chip, combining Area & Floor assignment with Label management (Apply to: Entity / Device / Both / Area) in a single place; opens scrolled to whichever section the clicked chip relates to
+  - Removing an inherited (Device/Area) label prompts a confirmation, since it affects every entity under that device/area
+  - **Cancel** button returns to Entity Manager without any extra action
+- **Suggestion Ignore / Restore** — every suggestion (Health Issues, Disable Candidates, Naming, Area Assignment, Area Mismatch, Label Suggestions) now has an **Ignore** button that persistently dismisses it. A **View ignored** checkbox reveals a list of everything dismissed — with its type and origin (entity/device/label) — and a one-click **Restore** per item, plus **Restore all**
+
+### 🎨 Visual
+
+- New label-color picker layout in the label editor — name field and Create button on one row, full-width color swatches on their own labeled row below (previously cramped into a single narrow column)
+- Suggestion "Ignore" control changed from a bare ✕ icon to a labeled **Ignore** button for clarity
+
+### 🐛 Bug Fixes
+
+- Fixed a latent null-reference in the Area & Floor dialog that threw a console error every time it opened (dangling reference to a non-existent `.em-floor-cancel-btn`)
+- Removed redundant per-category Enable All / Disable All buttons (Controls/Sensors/Configuration/Diagnostic/Connectivity sub-cards) — the device header's Enable All / Disable All already cover the whole device
+- Unified Assign dialog no longer clips content on mobile — the Area & Floor picker is now a simple scrollable stack instead of a fixed-height two-pane layout that cut off the area list
+
+### Screenshots
+
+| Assign Dialog — Area & Floor | Assign Dialog — Labels |
+|:---:|:---:|
+| ![Assign Dialog — Area and Floor](screenshots/Assign%20Dialog%20Area%20and%20Floor.png) | ![Assign Dialog — Labels](screenshots/Assign%20Dialog%20Labels.png) |
+
+| Suggestions — Ignore button | Suggestions — View ignored |
+|:---:|:---:|
+| ![Suggestions — Ignore button](screenshots/Suggestions%20Ignore%20Button.png) | ![Suggestions — View ignored](screenshots/Suggestions%20View%20Ignored.png) |
+
+---
+
 ## Version 2.20.0 - Notification Center & Entity Details Redesign
 
 ### ✨ New Features

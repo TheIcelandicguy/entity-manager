@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.20.0-blue)
+![Version](https://img.shields.io/badge/version-2.21.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -590,11 +590,13 @@ Entity Manager stores user preferences in the browser:
 
 ![Templates](screenshots/Templates.png)
 
-### Assign to Device
+### Unified Assign Dialog — Area, Floor & Labels
 
-| Picker | Confirmation |
+One dialog reachable from any clickable chip on an entity or device card — area/floor picker on top, label management below, with `E`/`D`/`A` scope badges showing whether a label lives on the entity, its device, or its area.
+
+| Area & Floor | Labels (scoped, Apply-to target) |
 |:---:|:---:|
-| ![Assign to a device](screenshots/Assign%20to%20a%20device.png) | ![Assign to a device confirm](screenshots/Assign%20to%20a%20device%20confirm.png) |
+| ![Assign Dialog — Area and Floor](screenshots/Assign%20Dialog%20Area%20and%20Floor.png) | ![Assign Dialog — Labels](screenshots/Assign%20Dialog%20Labels.png) |
 
 ### Updates
 
@@ -619,6 +621,12 @@ Entity Manager stores user preferences in the browser:
 ### Suggestions
 
 ![Suggestions](screenshots/Entity%20Sugestions.png)
+
+Every suggestion row has an **Ignore** button that persistently dismisses it. A **View ignored** checkbox reveals everything you've dismissed — with its type (Health Issue, Disable Candidate, Naming, Area Assignment, Area Mismatch, Label) and origin — and a one-click **Restore**.
+
+| Ignore button on a suggestion | View ignored + Restore |
+|:---:|:---:|
+| ![Suggestions — Ignore button](screenshots/Suggestions%20Ignore%20Button.png) | ![Suggestions — View ignored](screenshots/Suggestions%20View%20Ignored.png) |
 
 ---
 ## Use Cases

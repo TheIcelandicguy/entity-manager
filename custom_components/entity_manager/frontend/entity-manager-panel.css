@@ -5682,6 +5682,147 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 .em-afd-apply-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* ===== Clickable header chips (area / floor / label) ===== */
+.em-chip-clickable {
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.05s, opacity 0.15s, border-color 0.15s;
+}
+.em-chip-clickable:hover {
+  box-shadow: 0 0 0 1px var(--em-border-light);
+  filter: brightness(1.08);
+}
+.em-chip-clickable:active { transform: translateY(1px); }
+/* Empty placeholders brighten + solidify on hover to signal "click to assign" */
+.em-chip-clickable.em-area-unset:hover,
+.em-chip-clickable.em-label-unset:hover { opacity: 0.95; border-style: solid; }
+
+/* Label chip — colored pill driven by inline style; scope badge inside */
+.entity-header-label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px 2px 5px;
+  border-radius: 12px;
+  border: 1.5px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: #fff;
+}
+.em-label-scope {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+/* "No label" placeholder — amber dashed, matches the label theme anchors */
+.entity-header-label.em-label-unset {
+  background: transparent;
+  color: rgb(170, 140, 0);
+  border: 1.5px dashed rgba(200, 170, 0, 0.55);
+  opacity: 0.7;
+}
+
+/* ===== Unified Assign dialog ===== */
+.confirm-dialog-box.em-assign-dialog { width: 660px; max-width: 96vw; }
+.em-assign-wrap { display: flex; flex-direction: column; gap: 14px; }
+.em-assign-section {
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
+  overflow: hidden;
+  /* Don't let sections shrink to fit the bounded wrap height — otherwise the
+     area list gets clipped instead of the dialog scrolling. Keep them at full
+     height so the wrap's overflow-y:auto scrolls the whole dialog. */
+  flex-shrink: 0;
+}
+.em-assign-section.em-assign-focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--em-primary) 55%, transparent); }
+.em-assign-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+}
+.em-assign-body { padding: 12px; }
+.em-assign-current { font-size: 12px; color: var(--em-text-secondary); margin-bottom: 10px; }
+.em-assign-current b { color: var(--em-text-primary); }
+.em-assign-sub {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--em-text-secondary); font-weight: 600; margin: 10px 0 5px;
+}
+.em-afd-col-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--em-text-secondary); font-weight: 700;
+}
+.em-assign-area-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.em-asn-apply-area:not(:disabled) { background: var(--em-success); border-color: var(--em-success); color: #fff; }
+.em-asn-apply-area:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Current label chips (removable) */
+.em-asn-current-labels { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; }
+.em-asn-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 6px 4px 5px; border-radius: 12px; font-size: 12px; font-weight: 600;
+}
+.em-asn-remove { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; opacity: 0.85; }
+.em-asn-remove:hover { opacity: 1; }
+
+/* Available labels to add */
+.em-asn-available { display: flex; flex-wrap: wrap; gap: 8px; }
+.em-asn-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--em-border); border-radius: 10px; padding: 5px 10px;
+  cursor: pointer; font-size: 12px; transition: background 0.12s;
+}
+.em-asn-opt:hover { background: var(--em-bg-hover); }
+.em-asn-opt.em-asn-opt-on { opacity: 0.55; cursor: default; }
+.em-asn-opt .sw { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.em-asn-create { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--em-border); }
+.em-asn-create-row { display: flex; gap: 8px; align-items: center; }
+.em-asn-create-colors { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.em-asn-color-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--em-text-secondary); font-weight: 600; flex-shrink: 0;
+}
+.em-asn-create-colors .em-label-color-picker { flex: 1; padding: 0; }
+.em-asn-new-name {
+  flex: 1; min-width: 120px; padding: 7px 10px; font-size: 13px;
+  border: 1px solid var(--em-border); border-radius: 6px;
+  background: var(--em-bg-primary); color: var(--em-text-primary);
+}
+/* Assign dialog: stack the area picker as plain blocks (floor list, then area
+   list) and let the WHOLE dialog scroll instead of clipping content inside the
+   fixed-height flex panes that _showAreaFloorDialog relies on. */
+.em-assign-dialog .em-afd-top { display: block; min-height: 0; overflow: visible; }
+.em-assign-dialog .em-afd-left,
+.em-assign-dialog .em-afd-right {
+  display: block; flex: none; width: auto; min-width: 0;
+  border: none; padding: 0; overflow: visible;
+}
+.em-assign-dialog .em-afd-left { margin-bottom: 14px; }
+.em-assign-dialog .em-afd-area-list,
+.em-assign-dialog .em-afd-floor-list { max-height: none; overflow: visible; }
+
+@media (max-width: 600px) {
+  .entity-header-label { font-size: 10px; padding: 2px 7px 2px 4px; }
+  /* Unified Assign dialog — go near-fullscreen and let everything scroll */
+  .confirm-dialog-box.em-assign-dialog { width: 96vw; max-width: 96vw; max-height: 94vh; }
+  .em-assign-dialog .em-assign-body { padding: 10px; }
+  .em-assign-dialog #em-asn-target { gap: 4px; }
+  .em-assign-dialog #em-asn-target .em-target-btn { min-width: 0; flex: 1 1 auto; }
+}
+
 /* Separator line between top selectors and entity info box */
 .em-afd-divider {
   border: none;
@@ -6346,6 +6487,132 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   border-bottom: 1px solid var(--em-border);
   background: color-mix(in srgb, var(--em-success) 5%, var(--em-bg-secondary));
 }
+
+/* Suggestion "Ignore" button — subtle dismiss control on each suggestion row */
+.em-sug-ignore {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--em-border);
+  background: transparent;
+  color: var(--em-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.em-sug-ignore:hover {
+  background: color-mix(in srgb, var(--em-danger) 12%, transparent);
+  border-color: var(--em-danger);
+  color: var(--em-danger);
+}
+
+/* "View ignored (N)" bar + restore list at the top of the Suggestions view */
+.em-sug-ignored-wrap:empty { display: none; }
+.em-sug-ignored-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border: 1px dashed var(--em-border);
+  border-radius: 8px;
+  background: var(--em-bg-secondary);
+  font-size: 12px;
+  color: var(--em-text-secondary);
+}
+.em-sug-view-ignored {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+}
+.em-sug-view-ignored input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--em-primary);
+  cursor: pointer;
+}
+.em-sug-ignored-bar .em-sug-reset-ignored {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--em-primary);
+  background: transparent;
+  color: var(--em-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.em-sug-ignored-bar .em-sug-reset-ignored:hover {
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
+}
+
+.em-sug-ignored-list {
+  border: 1px solid var(--em-border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.em-sug-ignored-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+  background: var(--em-bg-secondary);
+}
+.em-sug-ignored-row:last-child { border-bottom: none; }
+.em-sug-ignored-type {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1.5px solid var(--em-border);
+  white-space: nowrap;
+}
+.em-sug-ignored-info { flex: 1; min-width: 0; }
+.em-sug-ignored-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-sug-ignored-sub {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--em-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-sug-restore {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--em-success);
+  background: transparent;
+  color: var(--em-success);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.em-sug-restore:hover { background: color-mix(in srgb, var(--em-success) 12%, transparent); }
 
 /* Area Suggestions — richer entity row (3-level hierarchy, nested inside device card) */
 .em-sug-area-entity-row {
