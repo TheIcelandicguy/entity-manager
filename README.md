@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.20.0-blue)
+![Version](https://img.shields.io/badge/version-2.21.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -25,6 +25,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Column Customization](#column-customization)
   - [Devices View](#devices-view)
   - [Entity Detail Dialog](#entity-detail-dialog)
+  - [Notification Center](#notification-center)
   - [Firmware Update Manager](#firmware-update-manager)
   - [Export & Import](#export--import)
   - [Theme System](#theme-system)
@@ -173,20 +174,50 @@ A dedicated **Devices** tab shows all devices sorted alphabetically and organise
 - Entities whose device has a `configuration_url` show a **🔗** button to open the device web UI in a new tab
 
 ### Entity Detail Dialog
-Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity:
+Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity.
+
+**Hero Header** — the top of the dialog shows:
+- Friendly name with inline pencil to rename (saves via `update_entity_display_name`; cancel with ✕, Escape, or click outside)
+- Entity ID in monospace below the name
+- Chip row: domain (blue border), platform, Disabled badge (if applicable), Area name
+- State displayed as a colour-coded pill (green for on/open, orange for unavailable/unknown, grey for off) with a **"State" label** prefix
+- Last changed / Last updated timestamps in locale-aware absolute format (12h/24h and date order follow your browser locale)
+- **Toggle / Press** button inline for controllable entities (switch, light, fan, cover, automation, etc.) and button/script entities
+
+**Collapsible Sections** (all use flat label → value rows, not cards):
 
 | Section | Contents |
 |---------|----------|
-| **Overview** | Entity ID, friendly name, domain, platform, unique ID, aliases |
-| **Current State** | State value (colour-coded) + all attributes sorted A–Z |
-| **Registry** | Entity category, device class, disabled/hidden state, icon, unit, supported features |
+| **Attributes** | All state attributes in a 2-column grid — open by default |
+| **Registry** | Entity category, device class, disabled/hidden state, icon, unit, unique ID, supported features |
 | **Device** | Manufacturer, model, SW/HW version, serial number, config URL, connections |
 | **Integration** | Config entry title, domain, source, version, state |
-| **Area** | Assigned area name and aliases |
-| **Labels** | All HA labels attached to the entity |
-| **State History** | Last 30 days of state changes, newest first |
+| **Area & Labels** | Assigned area shown as bordered chips; all HA labels attached |
+| **State History** | Compact timeline of state changes: coloured dot + state value + absolute timestamp |
+| **Dependencies** | Automations and scripts that reference this entity |
 
-All sections render as compact mini cards in a 3-column grid for easy scanning. Action buttons in the dialog footer let you **Rename** or **Enable/Disable** the entity without leaving the dialog.
+**Footer Action Buttons:**
+- **Copy ID** — copies entity ID to clipboard with a toast confirmation
+- **Enable / Disable** — toggles entity state and closes the dialog
+- **Open in HA** — opens the entity's HA settings page in a new tab
+- **Close**
+
+### Notification Center
+A live notification feed built into the panel header:
+- **Bell icon** (🔔) sits right of the panel title — a red badge shows unread count; the icon fills to `mdi:bell-badge` when unread items exist
+- Clicking the bell opens a dropdown listing all notifications newest-first
+- **Four tracked event types:**
+  - **Device offline** (red) — fires when any entity transitions to `unavailable`
+  - **State anomaly** (orange) — fires when an entity transitions to `unknown` from a known state
+  - **Entity enabled / disabled** (green / red) — detected on each data refresh by comparing states between loads
+  - **New entity** (blue) — fires when a new entity ID appears in the registry
+- **Persistent** — stored in `localStorage`, survives page refreshes and HA restarts
+- **Rate-limited** — same entity + event type fires at most once per 5 minutes (prevents spam on flapping devices)
+- **Capped** at 100 entries — oldest dropped when the limit is reached
+- **Mark all read**, **dismiss individual**, and **clear all** controls
+- **Gear icon** opens per-type preference toggles — silence any event type individually
+- **Click any notification** to open the full Entity Detail Dialog for that entity
+- **EM-action suppression** — enable/disable actions performed inside Entity Manager itself do not generate notifications
 
 ### Firmware Update Manager
 A dedicated **Updates** tab to manage all firmware and software updates:
@@ -559,11 +590,13 @@ Entity Manager stores user preferences in the browser:
 
 ![Templates](screenshots/Templates.png)
 
-### Assign to Device
+### Unified Assign Dialog — Area, Floor & Labels
 
-| Picker | Confirmation |
+One dialog reachable from any clickable chip on an entity or device card — area/floor picker on top, label management below, with `E`/`D`/`A` scope badges showing whether a label lives on the entity, its device, or its area.
+
+| Area & Floor | Labels (scoped, Apply-to target) |
 |:---:|:---:|
-| ![Assign to a device](screenshots/Assign%20to%20a%20device.png) | ![Assign to a device confirm](screenshots/Assign%20to%20a%20device%20confirm.png) |
+| ![Assign Dialog — Area and Floor](screenshots/Assign%20Dialog%20Area%20and%20Floor.png) | ![Assign Dialog — Labels](screenshots/Assign%20Dialog%20Labels.png) |
 
 ### Updates
 
@@ -588,6 +621,12 @@ Entity Manager stores user preferences in the browser:
 ### Suggestions
 
 ![Suggestions](screenshots/Entity%20Sugestions.png)
+
+Every suggestion row has an **Ignore** button that persistently dismisses it. A **View ignored** checkbox reveals everything you've dismissed — with its type (Health Issue, Disable Candidate, Naming, Area Assignment, Area Mismatch, Label) and origin — and a one-click **Restore**.
+
+| Ignore button on a suggestion | View ignored + Restore |
+|:---:|:---:|
+| ![Suggestions — Ignore button](screenshots/Suggestions%20Ignore%20Button.png) | ![Suggestions — View ignored](screenshots/Suggestions%20View%20Ignored.png) |
 
 ---
 ## Use Cases

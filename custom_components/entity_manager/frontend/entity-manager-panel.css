@@ -2250,6 +2250,16 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   color: white !important;
 }
 
+.icon-btn.assign-area-btn {
+  color: var(--em-success) !important;
+  border-color: var(--em-success) !important;
+}
+
+.icon-btn.assign-area-btn:hover:not(:disabled) {
+  background: var(--em-success) !important;
+  color: white !important;
+}
+
 .icon-btn.bulk-rename-btn {
   color: var(--em-primary) !important;
   border-color: var(--em-primary) !important;
@@ -3426,6 +3436,257 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 #main-content.em-bulk-rename-active .toolbar-row-2,
 #main-content.em-bulk-rename-active .toolbar-search,
 #main-content.em-bulk-rename-active #stats { display: none; }
+
+/* ===== Area Assignment Inline View ===== */
+#main-content.em-area-assign-active .toolbar,
+#main-content.em-area-assign-active .toolbar-row-2,
+#main-content.em-area-assign-active .toolbar-search,
+#main-content.em-area-assign-active #stats { display: none; }
+
+.em-area-assign-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.em-aa-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--em-success);
+  background: color-mix(in srgb, var(--em-success) 4%, var(--em-bg-primary));
+  flex-wrap: wrap;
+}
+.em-aa-title {
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 120px;
+}
+.em-aa-search {
+  padding: 5px 10px;
+  border: 1px solid var(--em-border);
+  border-radius: 6px;
+  background: var(--em-surface);
+  color: var(--em-text);
+  font-size: 13px;
+  width: 200px;
+  max-width: 100%;
+}
+
+.em-aa-summary {
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+}
+.em-aa-stat {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.em-aa-stat-matched { color: var(--em-success); }
+.em-aa-stat-unmatched { color: var(--em-text-secondary); }
+
+.em-aa-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.em-aa-area-group {
+  border-bottom: 1px solid var(--em-border);
+}
+.em-aa-area-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--em-success) 6%, var(--em-bg-primary));
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.em-aa-area-header:hover {
+  background: color-mix(in srgb, var(--em-success) 12%, var(--em-bg-primary));
+}
+.em-aa-unmatched-header {
+  background: color-mix(in srgb, var(--em-warning) 6%, var(--em-bg-primary));
+}
+.em-aa-unmatched-header:hover {
+  background: color-mix(in srgb, var(--em-warning) 12%, var(--em-bg-primary));
+}
+.em-aa-area-chevron {
+  transition: transform 0.2s;
+  display: flex;
+  align-items: center;
+}
+.em-aa-collapsed .em-aa-area-chevron {
+  transform: rotate(-90deg);
+}
+.em-aa-collapsed .em-aa-area-body {
+  display: none;
+}
+.em-aa-area-cb {
+  accent-color: var(--em-success);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.em-aa-area-name {
+  font-size: 14px;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-aa-area-count {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+}
+
+/* Integration sub-group inside area group — second-level collapsible */
+.em-aa-integration-group {
+  border-top: 1px solid var(--em-border-light);
+}
+.em-aa-integration-group:first-child {
+  border-top: none;
+}
+.em-aa-integration-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 28px;
+  background: color-mix(in srgb, var(--em-primary) 4%, var(--em-bg-secondary));
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.em-aa-integration-header:hover {
+  background: color-mix(in srgb, var(--em-primary) 10%, var(--em-bg-secondary));
+}
+.em-aa-int-chevron {
+  transition: transform 0.2s;
+  display: flex;
+  align-items: center;
+  color: var(--em-text-secondary);
+}
+.em-aa-int-collapsed .em-aa-int-chevron {
+  transform: rotate(-90deg);
+}
+.em-aa-int-collapsed .em-aa-integration-body {
+  display: none;
+}
+.em-aa-int-icon {
+  display: flex;
+  align-items: center;
+  color: var(--em-primary);
+}
+.em-aa-int-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--em-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-aa-int-count {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+}
+
+.em-aa-device-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 56px;
+  border-bottom: 1px solid var(--em-border-light);
+  transition: background 0.1s, opacity 0.2s;
+}
+/* Devices directly under unmatched area group (no integration wrapper) — shallower indent */
+.em-aa-unmatched .em-aa-device-row {
+  padding-left: 40px;
+}
+.em-aa-device-row:hover {
+  background: color-mix(in srgb, var(--em-primary) 4%, transparent);
+}
+.em-aa-device-cb {
+  accent-color: var(--em-success);
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.em-aa-device-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.em-aa-device-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-aa-device-meta {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+}
+.em-aa-rule-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--em-border);
+  color: var(--em-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.em-aa-apply-btn {
+  background: var(--em-success) !important;
+  color: white !important;
+  border-color: var(--em-success) !important;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.em-aa-apply-area-btn {
+  background: var(--em-success) !important;
+  color: white !important;
+  border-color: var(--em-success) !important;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.em-aa-manual-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.em-aa-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--em-text-secondary);
+  font-size: 14px;
+}
 
 /* Inline view fills available height */
 .em-bulk-rename-view {
@@ -5071,6 +5332,141 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .entity-header-area.em-area-unset { opacity: 0.45; border-style: dashed; }
 .em-area-placeholder { font-style: italic; }
 
+/* Area chip — mismatch (entity area ≠ device area) */
+.entity-header-area.em-area-mismatch {
+  color: var(--em-warning) !important;
+  border-color: var(--em-warning) !important;
+  opacity: 1;
+}
+
+/* Area suggestion chip (entity + device have no area, name match found) */
+.entity-header-area-suggestion {
+  font-size: 11px;
+  color: var(--em-success);
+  background: var(--em-bg-secondary);
+  border: 1.5px dashed var(--em-success);
+  border-radius: 12px;
+  padding: 2px 8px 2px 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, opacity 0.15s;
+}
+.entity-header-area-suggestion:hover {
+  background: color-mix(in srgb, var(--em-success) 15%, var(--em-bg-secondary));
+}
+
+/* Device header — current area chip (solid) */
+.device-area-chip {
+  font-size: 11px;
+  color: var(--em-primary);
+  background: color-mix(in srgb, var(--em-primary) 8%, transparent);
+  border: 1.5px solid var(--em-primary);
+  border-radius: 12px;
+  padding: 2px 8px 2px 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Device suggestion row — dedicated row below device header showing area suggestion */
+.device-suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--em-success) 6%, transparent);
+  border-left: 3px solid var(--em-success);
+  border-bottom: 1px solid color-mix(in srgb, var(--em-success) 20%, var(--em-border));
+  overflow: hidden;
+}
+.device-suggestion-row .device-suggestion-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--em-success) 18%, transparent);
+  color: var(--em-success);
+}
+.device-suggestion-row .device-suggestion-label {
+  font-size: 12px;
+  color: var(--em-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.device-suggestion-row .device-suggestion-area-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--em-success);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.device-suggestion-row .device-suggestion-rule-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1.5px solid var(--em-success);
+  color: var(--em-success);
+  background: var(--em-bg-primary);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.device-suggestion-row .device-suggestion-rule-badge.device-suggestion-auto {
+  border-color: var(--em-primary);
+  color: var(--em-primary);
+}
+.device-suggestion-row .device-suggestion-spacer {
+  flex: 1;
+  min-width: 0;
+}
+.device-suggestion-row .device-suggestion-apply,
+.device-suggestion-row .device-suggestion-ignore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.device-suggestion-row .device-suggestion-apply {
+  background: var(--em-success);
+  color: #fff;
+  border: 2px solid var(--em-success);
+}
+.device-suggestion-row .device-suggestion-apply:hover {
+  background: color-mix(in srgb, var(--em-success) 85%, black);
+  transform: translateY(-1px);
+}
+.device-suggestion-row .device-suggestion-ignore {
+  background: transparent;
+  color: var(--em-text-secondary);
+  border: 2px solid var(--em-border);
+}
+.device-suggestion-row .device-suggestion-ignore:hover {
+  background: var(--em-bg-hover);
+  border-color: var(--em-text-secondary);
+  color: var(--em-text-primary);
+}
+
 /* Entity card floor chip (separate from area chip) */
 .entity-header-floor-chip {
   font-size: 11px;
@@ -5082,6 +5478,63 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* Area confirm dialog — entity checkbox rows */
+.em-confirm-entity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.em-confirm-entity-row:last-child { border-bottom: none; }
+.em-confirm-entity-row:hover { background: color-mix(in srgb, var(--em-primary) 5%, transparent); }
+.em-confirm-entity-row input[type="checkbox"] {
+  accent-color: var(--em-success);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Mapping rules dialog */
+.em-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+}
+.em-rule-row:last-child { border-bottom: none; }
+.em-rule-pattern {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--em-text);
+  background: var(--em-bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.em-rule-type-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--em-border);
+  color: var(--em-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.em-rule-add-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--em-bg-secondary);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
 .em-sug-action.em-assign-btn { margin-top: 8px; display: inline-block; }
 
 /* ===== Area / Floor Assignment Dialog ===== */
@@ -5228,6 +5681,147 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   border-color: color-mix(in srgb, var(--em-primary) 85%, #000);
 }
 .em-afd-apply-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ===== Clickable header chips (area / floor / label) ===== */
+.em-chip-clickable {
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.05s, opacity 0.15s, border-color 0.15s;
+}
+.em-chip-clickable:hover {
+  box-shadow: 0 0 0 1px var(--em-border-light);
+  filter: brightness(1.08);
+}
+.em-chip-clickable:active { transform: translateY(1px); }
+/* Empty placeholders brighten + solidify on hover to signal "click to assign" */
+.em-chip-clickable.em-area-unset:hover,
+.em-chip-clickable.em-label-unset:hover { opacity: 0.95; border-style: solid; }
+
+/* Label chip — colored pill driven by inline style; scope badge inside */
+.entity-header-label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px 2px 5px;
+  border-radius: 12px;
+  border: 1.5px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: #fff;
+}
+.em-label-scope {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  letter-spacing: 0.3px;
+}
+/* "No label" placeholder — amber dashed, matches the label theme anchors */
+.entity-header-label.em-label-unset {
+  background: transparent;
+  color: rgb(170, 140, 0);
+  border: 1.5px dashed rgba(200, 170, 0, 0.55);
+  opacity: 0.7;
+}
+
+/* ===== Unified Assign dialog ===== */
+.confirm-dialog-box.em-assign-dialog { width: 660px; max-width: 96vw; }
+.em-assign-wrap { display: flex; flex-direction: column; gap: 14px; }
+.em-assign-section {
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
+  overflow: hidden;
+  /* Don't let sections shrink to fit the bounded wrap height — otherwise the
+     area list gets clipped instead of the dialog scrolling. Keep them at full
+     height so the wrap's overflow-y:auto scrolls the whole dialog. */
+  flex-shrink: 0;
+}
+.em-assign-section.em-assign-focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--em-primary) 55%, transparent); }
+.em-assign-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+}
+.em-assign-body { padding: 12px; }
+.em-assign-current { font-size: 12px; color: var(--em-text-secondary); margin-bottom: 10px; }
+.em-assign-current b { color: var(--em-text-primary); }
+.em-assign-sub {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--em-text-secondary); font-weight: 600; margin: 10px 0 5px;
+}
+.em-afd-col-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--em-text-secondary); font-weight: 700;
+}
+.em-assign-area-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.em-asn-apply-area:not(:disabled) { background: var(--em-success); border-color: var(--em-success); color: #fff; }
+.em-asn-apply-area:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Current label chips (removable) */
+.em-asn-current-labels { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; }
+.em-asn-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 6px 4px 5px; border-radius: 12px; font-size: 12px; font-weight: 600;
+}
+.em-asn-remove { background: none; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; opacity: 0.85; }
+.em-asn-remove:hover { opacity: 1; }
+
+/* Available labels to add */
+.em-asn-available { display: flex; flex-wrap: wrap; gap: 8px; }
+.em-asn-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--em-border); border-radius: 10px; padding: 5px 10px;
+  cursor: pointer; font-size: 12px; transition: background 0.12s;
+}
+.em-asn-opt:hover { background: var(--em-bg-hover); }
+.em-asn-opt.em-asn-opt-on { opacity: 0.55; cursor: default; }
+.em-asn-opt .sw { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.em-asn-create { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--em-border); }
+.em-asn-create-row { display: flex; gap: 8px; align-items: center; }
+.em-asn-create-colors { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.em-asn-color-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--em-text-secondary); font-weight: 600; flex-shrink: 0;
+}
+.em-asn-create-colors .em-label-color-picker { flex: 1; padding: 0; }
+.em-asn-new-name {
+  flex: 1; min-width: 120px; padding: 7px 10px; font-size: 13px;
+  border: 1px solid var(--em-border); border-radius: 6px;
+  background: var(--em-bg-primary); color: var(--em-text-primary);
+}
+/* Assign dialog: stack the area picker as plain blocks (floor list, then area
+   list) and let the WHOLE dialog scroll instead of clipping content inside the
+   fixed-height flex panes that _showAreaFloorDialog relies on. */
+.em-assign-dialog .em-afd-top { display: block; min-height: 0; overflow: visible; }
+.em-assign-dialog .em-afd-left,
+.em-assign-dialog .em-afd-right {
+  display: block; flex: none; width: auto; min-width: 0;
+  border: none; padding: 0; overflow: visible;
+}
+.em-assign-dialog .em-afd-left { margin-bottom: 14px; }
+.em-assign-dialog .em-afd-area-list,
+.em-assign-dialog .em-afd-floor-list { max-height: none; overflow: visible; }
+
+@media (max-width: 600px) {
+  .entity-header-label { font-size: 10px; padding: 2px 7px 2px 4px; }
+  /* Unified Assign dialog — go near-fullscreen and let everything scroll */
+  .confirm-dialog-box.em-assign-dialog { width: 96vw; max-width: 96vw; max-height: 94vh; }
+  .em-assign-dialog .em-assign-body { padding: 10px; }
+  .em-assign-dialog #em-asn-target { gap: 4px; }
+  .em-assign-dialog #em-asn-target .em-target-btn { min-width: 0; flex: 1 1 auto; }
+}
 
 /* Separator line between top selectors and entity info box */
 .em-afd-divider {
@@ -5860,6 +6454,237 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-sug-area .em-naming-device-toggle .em-collapsible-icon    { border-color: rgba(244, 67, 54, 0.5); color: rgba(244, 67, 54, 0.8); }
 .em-sug-area .em-sug-row,
 .em-sug-area .em-mini-card                                    { border-color: rgba(244, 67, 54, 0.2); }
+
+/* Area Mismatch — amber/orange */
+.em-sug-mismatch .entity-list-group-title                      { background: rgba(255, 152, 0, 0.08); border-color: rgba(255, 152, 0, 0.4); color: rgb(200, 110, 0); }
+.em-sug-mismatch .em-group-body                                { background: rgba(255, 152, 0, 0.02); }
+.em-sug-mismatch .em-sug-mismatch-row                          { border-bottom-color: rgba(255, 152, 0, 0.2); }
+
+/* Area sub-section static label (non-collapsible divider inside Area Suggestions parent) */
+.em-sug-sub-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--em-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--em-bg-secondary);
+  border-bottom: 1px solid var(--em-border);
+  border-top: 1px solid var(--em-border);
+  margin-top: 4px;
+}
+.em-sug-sub-label:first-child { margin-top: 0; border-top: none; }
+
+/* Area Suggestions — bulk action bar (sticky-feel bar above integration groups) */
+.em-sug-area-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--em-border);
+  background: color-mix(in srgb, var(--em-success) 5%, var(--em-bg-secondary));
+}
+
+/* Suggestion "Ignore" button — subtle dismiss control on each suggestion row */
+.em-sug-ignore {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--em-border);
+  background: transparent;
+  color: var(--em-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.em-sug-ignore:hover {
+  background: color-mix(in srgb, var(--em-danger) 12%, transparent);
+  border-color: var(--em-danger);
+  color: var(--em-danger);
+}
+
+/* "View ignored (N)" bar + restore list at the top of the Suggestions view */
+.em-sug-ignored-wrap:empty { display: none; }
+.em-sug-ignored-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border: 1px dashed var(--em-border);
+  border-radius: 8px;
+  background: var(--em-bg-secondary);
+  font-size: 12px;
+  color: var(--em-text-secondary);
+}
+.em-sug-view-ignored {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+}
+.em-sug-view-ignored input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--em-primary);
+  cursor: pointer;
+}
+.em-sug-ignored-bar .em-sug-reset-ignored {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--em-primary);
+  background: transparent;
+  color: var(--em-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.em-sug-ignored-bar .em-sug-reset-ignored:hover {
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
+}
+
+.em-sug-ignored-list {
+  border: 1px solid var(--em-border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.em-sug-ignored-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+  background: var(--em-bg-secondary);
+}
+.em-sug-ignored-row:last-child { border-bottom: none; }
+.em-sug-ignored-type {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1.5px solid var(--em-border);
+  white-space: nowrap;
+}
+.em-sug-ignored-info { flex: 1; min-width: 0; }
+.em-sug-ignored-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-sug-ignored-sub {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--em-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.em-sug-restore {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--em-success);
+  background: transparent;
+  color: var(--em-success);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.em-sug-restore:hover { background: color-mix(in srgb, var(--em-success) 12%, transparent); }
+
+/* Area Suggestions — richer entity row (3-level hierarchy, nested inside device card) */
+.em-sug-area-entity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 44px;
+  border-bottom: 1px solid var(--em-border-light);
+  background: var(--em-bg-primary);
+}
+.em-sug-area-entity-row:last-child { border-bottom: none; }
+.em-sug-area-entity-row:hover { background: var(--em-bg-hover); }
+
+.em-sug-area-entity-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
+  color: var(--em-primary);
+}
+
+.em-sug-area-entity-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.em-sug-area-entity-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--em-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-sug-area-entity-id {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--em-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-sug-area-entity-state {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 2px solid var(--em-primary);
+  color: var(--em-primary);
+  background: var(--em-bg-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.em-sug-area-entity-state.em-sug-state-muted {
+  border-color: var(--em-text-secondary);
+  color: var(--em-text-secondary);
+  opacity: 0.65;
+}
 
 /* Label Suggestions — yellow */
 .em-sug-labels .entity-list-group-title                       { background: rgba(255, 200, 0, 0.07); border-color: rgba(200, 170, 0, 0.35); color: rgb(170, 140, 0); }
@@ -6517,4 +7342,35 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .em-ed-attr-grid { grid-template-columns: 1fr; }
   .em-ed-hero-times { margin-left: 0; width: 100%; }
   .em-ed-hist-time  { text-align: left; }
+}
+
+/* ===== MOBILE OVERRIDES — Area Assignment ===== */
+@media (max-width: 768px) {
+  .em-aa-toolbar { flex-direction: column; align-items: stretch; gap: 6px; }
+  .em-aa-search { width: 100%; }
+  .em-aa-title { font-size: 14px; }
+  .em-rule-add-form { flex-direction: column; align-items: stretch; }
+}
+@media (max-width: 600px) {
+  .device-area-chip { font-size: 10px; padding: 1px 6px 1px 4px; }
+  .em-aa-device-row { padding-left: 36px; }
+  .em-aa-unmatched .em-aa-device-row { padding-left: 20px; }
+  .em-aa-area-header { padding: 6px 10px; }
+  .em-aa-integration-header { padding: 5px 10px 5px 20px; }
+  .em-aa-int-name { font-size: 11px; }
+
+  /* Device suggestion row — stack vertically on mobile */
+  .device-suggestion-row {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .device-suggestion-row .device-suggestion-label { font-size: 10px; }
+  .device-suggestion-row .device-suggestion-area-name { font-size: 14px; width: 100%; }
+  .device-suggestion-row .device-suggestion-spacer { display: none; }
+  .device-suggestion-row .device-suggestion-apply,
+  .device-suggestion-row .device-suggestion-ignore {
+    font-size: 12px;
+    padding: 5px 10px;
+  }
 }

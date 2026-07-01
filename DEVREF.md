@@ -100,6 +100,15 @@ Developer reference for `entity-manager-panel.js` (~15,000 lines) and `entity-ma
 | `undoStack` | `em_undoStack` | 50 | Undo steps — **persisted** to survive panel re-creation |
 | `redoStack` | `em_redoStack` | 50 | Redo steps — **persisted** |
 
+### Notification Center
+| Property | localStorage Key | Max | Purpose |
+|----------|-----------------|-----|---------|
+| `_notifications` | `em-notifications` | 100 | Persisted notification objects `{ id, type, entityId, message, timestamp, read }` |
+| `_notifPrefs` | `em-notif-prefs` | — | Per-type enable flags `{ offline, anomaly, enabled, disabled, newEntity }` |
+| `_hassInitialized` | *(in-memory)* | — | Set after first `set hass()` call to prevent false offline/anomaly alerts on panel open |
+| `_knownEntityIds` | *(in-memory)* | — | `null` on first load (seeds without firing new-entity events); Set thereafter |
+| `_notifRateMap` | *(in-memory)* | — | `"entityId:type" → timestamp_ms` — rate-limit tracker (5-minute window) |
+
 ### Updates View
 | Property | localStorage Key | Purpose |
 |----------|-----------------|---------|
@@ -472,6 +481,7 @@ _renderMiniEntityCard({
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `_fmtAgo(isoStr, fallback='Never')` | String | Formats ISO timestamp as "Nd ago" / "Nh ago" / "Nm ago" |
+| `_fmtAbsDate(isoStr, fallback='—')` | String | Locale-aware absolute timestamp — 12h/24h and date order follow browser locale (e.g. `en-GB`: `Thursday, 27 March 2026 - 14:35`; `en-US`: `Thursday, March 27, 2026 - 02:35 PM`) |
 | `_triggerBadge(item)` | HTML string | "Human (name)" / "Automation" / "System" / "Never triggered" badge |
 
 ### Storage

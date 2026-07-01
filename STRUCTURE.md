@@ -7,14 +7,14 @@ entity-manager/
 │       ├── __init__.py                  # Integration entry point, panel + resource registration
 │       ├── config_flow.py               # UI-based configuration flow (single-step, no options)
 │       ├── const.py                     # DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
-│       ├── manifest.json                # Integration metadata (v2.16.0)
+│       ├── manifest.json                # Integration metadata (v2.21.0)
 │       ├── services.yaml                # Service schema for enable_entity / disable_entity
 │       ├── strings.json                 # UI strings for config flow
 │       ├── voice_assistant.py           # Voice intent handlers (enable/disable)
 │       ├── websocket_api.py             # 18 WebSocket command handlers
 │       ├── frontend/
-│       │   ├── entity-manager-panel.js  # Custom web component UI (~15,000 lines)
-│       │   └── entity-manager-panel.css # External stylesheet (~6,300 lines)
+│       │   ├── entity-manager-panel.js  # Custom web component UI (~17,000 lines)
+│       │   └── entity-manager-panel.css # External stylesheet (~7,400 lines)
 │       └── translations/
 │           └── en.json                  # English translations
 ├── sentences/en/
@@ -107,7 +107,7 @@ Key methods:
 | Method | Purpose |
 |--------|---------|
 | `_renderMergedEntitySections(types, bodyEl)` | Async-loads multiple section types into inline view body |
-| `_collGroup(label, bodyHtml)` | Collapsible group helper used across all dialogs |
+| `_collGroup(label, bodyHtml, openByDefault?)` | Collapsible group helper; pass `true` to start expanded |
 | `_renderMiniEntityCard(opts)` | Standard mini entity card used in all dialogs/views |
 | `_renderManagedItem(opts)` | Standard Edit/Rename/Remove row for automation/script/helper dialogs |
 | `_pushUndoAction(action)` | Push to undo stack + persist to localStorage |
@@ -125,6 +125,9 @@ Key methods:
 | `_showToast(msg, type)` | Transient notification (success/info/warning/error) |
 | `_escapeHtml(s)` / `_escapeAttr(s)` | XSS-safe HTML/attribute encoding |
 | `_loadFromStorage(key, default)` / `_saveToStorage(key, val)` | localStorage I/O |
+| `_fmtAbsDate(isoStr, fallback?)` | Locale-aware absolute timestamp (12h/24h + date order from browser locale) |
+| `_showEntityDetailsDialog(entityId)` | Full entity detail dialog with hero header, inline rename, state pill, action buttons |
+| `_addNotification(type, entityId, msg)` | Push a notification to the bell dropdown; rate-limited, persisted in localStorage |
 
 **`frontend/entity-manager-panel.css`** (~6,300 lines)
 
@@ -178,7 +181,7 @@ All persistent state lives in `localStorage` under `em-*` keys. Key properties:
 
 ## Development Workflow
 
-1. Edit files in `c:\Users\brave\entity-manager\custom_components\entity_manager\`
+1. Edit files in `E:\entity-manager\custom_components\entity_manager\`
 2. Run `sync-to-ha.ps1` to copy to the live HA instance on `Z:\`
 3. Python changes require HA restart; frontend-only changes need only a hard browser refresh
 4. Use `npx eslint custom_components/entity_manager/frontend/` for JS linting

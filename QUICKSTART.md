@@ -7,7 +7,7 @@ Get up and running with Entity Manager in under 5 minutes!
 ### Option A: HACS (Easiest)
 ```
 HACS → Integrations → ⋮ → Custom repositories
-Add: https://github.com/yourusername/entity-manager
+Add: https://github.com/TheIcelandicguy/entity-manager
 Category: Integration
 Download → Restart HA
 ```

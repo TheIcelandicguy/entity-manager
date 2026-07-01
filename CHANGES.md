@@ -1,5 +1,48 @@
 # Entity Manager UI Changes
 
+## Version 2.21.0 - Clickable Chips, Unified Assign Dialog & Suggestion Ignore/Restore
+
+### New Features
+
+#### Clickable Area / Floor / Label Chips
+- Entity card header chips for **area**, **floor**, and (new) **label** are now real buttons — hover tint, press nudge — instead of static text
+- Empty states render as dashed, still-clickable placeholders: "No area", "No floor", "No label"
+- Device card header gets the same treatment: clickable area chip (with "No area" placeholder) plus device-level label chips
+- Every label chip carries a **scope badge**:
+  - `E` — the label is set directly on the entity
+  - `D` — inherited from the entity's device
+  - `A` — inherited from the entity's area
+  - Resolution is **broadest-source-wins**: if a label is set at multiple levels, the widest scope (Area > Device > Entity) is shown, and chips are grouped broadest-first
+- New data layer built once per `loadDeviceInfo()` load (no per-card async calls): `entityLabelsMap`, `deviceLabelsMap`, `areaLabelsMap`, `labelLookup`, plus `_effectiveEntityLabels()` and `_scopeToTarget()` helpers
+
+#### Unified "Assign" Dialog
+- New `_showAssignDialog(entities, { focus, labelTarget })` — a single dialog for area/floor assignment **and** label management, opened from any chip (area, floor, label, or the device header's chips)
+- **Area & Floor section** — reuses the existing two-pane floor/area picker and `_assignAreaToEntities()` apply logic; create-area / create-floor supported inline
+- **Labels section** — Apply-to target selector now includes **Area** alongside Entity / Device / Both (previously areas could only be *viewed* via the `A` badge, never *set*); current labels list shows the same `E`/`D`/`A` badges with per-label remove
+  - Removing a `D` or `A` (inherited) label prompts a confirmation, since it affects every entity on that device/area
+  - "Already on" state for the Add-label list is target-specific — a label already on the entity can still be added to the area from the same list
+- **Cancel** button in the dialog footer (alongside Done) closes without side effects
+- Dialog opens auto-scrolled to whichever section (`area` or `labels`) the clicked chip corresponds to
+
+#### Suggestion Ignore / Restore System
+- Every suggestion row across **Health Issues**, **Disable Candidates**, **Naming Improvements**, **Area Assignment**, **Area Mismatch**, and **Label Suggestions** now has an **Ignore** button
+- Ignoring persists to `localStorage['em-ignored-suggestions']` (keyed `type:id`) so the suggestion stays hidden across sessions/re-scans
+- A **View ignored (N)** checkbox at the top of the Suggestions view expands a list showing each ignored item's **type badge**, name, and origin (entity ID / device / label group)
+- Per-item **Restore** button un-ignores just that one; **Restore all** clears the whole list at once — both trigger an immediate re-scan
+
+### Visual / UX Fixes
+
+- **Label color picker** in the label editor moved off the cramped single-column layout — name + Create button on one row, full-width labeled color-swatch row underneath
+- **Ignore button** changed from a bare ✕ icon to a labeled "✕ Ignore" text button for clarity
+- Removed the duplicate per-category **Enable All / Disable All** buttons on device category sub-cards (Controls/Sensors/Configuration/Diagnostic/Connectivity) — redundant with the device header's buttons
+
+### Bug Fixes
+
+- Fixed a dangling `overlay.querySelector('.em-floor-cancel-btn')` reference in the Area & Floor dialog that threw a null-reference error on every open (the class doesn't exist in that dialog's markup; the working cancel binding was elsewhere)
+- Fixed the Unified Assign dialog clipping content on mobile — the Area & Floor picker's two-pane flex layout was collapsing to a fixed height inside the dialog's bounded-height wrap, cutting off the area list. Sections no longer shrink (`flex-shrink: 0`), so the whole dialog scrolls instead
+
+---
+
 ## Version 2.20.0 - Notification Center & Entity Details Redesign
 
 ### New Features
@@ -43,7 +86,7 @@
 - Entity ID shown below name in monospace
 - Chip row: domain (blue border), platform, Disabled badge (if applicable), Area name
 - State displayed as a colored pill badge (orange for unavailable/unknown, green for on/open, grey for off) with "State" label prefix
-- Timestamps show absolute format: `Thursday, 27 March 2026 - 14:35` (new `_fmtAbsDate` helper)
+- Timestamps show locale-aware absolute format via `_fmtAbsDate` — 12h/24h and date order follow the browser locale (e.g. `en-GB`: `Thursday, 27 March 2026 - 14:35`; `en-US`: `Thursday, March 27, 2026 - 02:35 PM`)
 - Toggle / Press button appears inline for controllable entities (switch, light, fan, cover, automation, etc.) and button/script entities — fires the appropriate HA service directly
 
 #### Action Buttons
@@ -69,6 +112,10 @@ Four buttons in the dialog footer:
 - Sections reduced from 11 to 8 (Statistics section removed — was a duplicate of Overview + Current State)
 - Attributes section open by default
 - `_collGroup()` now accepts an `openByDefault` parameter
+
+### Bug Fixes
+
+- **ISO-valued states in mini entity cards** — entities whose HA state value is an ISO timestamp (e.g. `tts.home_assistant_cloud`, `stt.home_assistant_cloud`) were showing the raw `2026-01-27T21:46:17.330074+00:00` string in the Cleanup/Orphaned dialog and all other mini card contexts; they now display a relative time ("2 days ago") consistent with the main entity list
 
 ---
 

@@ -14,11 +14,11 @@ Solves the common problem of managing hundreds of disabled diagnostic entities (
 
 ## Project Stats
 
-- **Version**: 2.16.0
+- **Version**: 2.20.0
 - **License**: MIT
 - **Language**: Python (backend), JavaScript (frontend)
 - **HA Minimum**: 2024.1.0
-- **Lines of Code**: ~13,500+ JS / ~6,100 CSS / ~1,050 Python
+- **Lines of Code**: ~15,000+ JS / ~6,300 CSS / ~1,050 Python
 
 ## File Structure
 
@@ -33,7 +33,7 @@ entity-manager/
 ├── services.yaml                   # Service schema for HA UI
 ├── strings.json                    # UI strings for config flow
 ├── frontend/
-│   └── entity-manager-panel.js     # Custom web component UI (~3300 lines)
+│   └── entity-manager-panel.js     # Custom web component UI (~15,000 lines)
 ├── translations/
 │   └── en.json                     # English translations
 ├── sentences/en/
@@ -67,7 +67,9 @@ entity-manager/
 ✅ Vanilla JS web component (~13,500 lines, no framework)
 ✅ Tree view: Integration → Device → Entity with expand/collapse
 ✅ 5 smart grouping modes (Integration, Room/Area, Type, Floor, Device Name)
-✅ Inline views: Automations & Helpers, Health & Cleanup, Templates, HACS, Lovelace, Browser Mod, Activity Log
+✅ Inline views: Automations & Helpers, Health & Cleanup, Templates, HACS, Lovelace, Browser Mod, Activity Log, Last Activity Timeline, Devices
+✅ Notification Center — persistent bell dropdown with 4 event types, rate-limiting, per-type toggles, click-to-open entity details
+✅ Entity Details dialog — hero header with inline rename, state pill, Toggle/Press, locale-aware timestamps, attribute grid, history timeline
 ✅ Bulk rename inline panel with find & replace and live preview
 ✅ Undo/Redo with combined History dialog (full timeline, clear history)
 ✅ Area & Floor assignment dialog (two-panel, native HA APIs)
@@ -225,6 +227,6 @@ MIT License - Free to use, modify, and distribute
 
 ---
 
-**Version**: 2.16.0
+**Version**: 2.20.0
 **Created**: January 2025
 **Maintainer**: @TheIcelandicguy
