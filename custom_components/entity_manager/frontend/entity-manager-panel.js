@@ -277,7 +277,7 @@ class EntityManagerPanel extends HTMLElement {
     this.integrationViewFilter = {};       // Per-integration entity state filter: 'enabled' | 'disabled' | undefined
     this.deviceViewFilter = {};            // Per-device entity state filter: 'enabled' | 'disabled' | undefined
     this.showAllSidebarIntegrations = false; // Show all integrations in sidebar
-    this.updateFilter = 'all'; // all, available, stable, beta
+    this.updateFilter = 'all'; // all, stable, beta
     this.selectedUpdateType = 'all'; // all, device, integration
     this.hideUpToDate = false; // Hide up-to-date items
     this.ghostDeviceCount = 0;
@@ -2545,7 +2545,6 @@ class EntityManagerPanel extends HTMLElement {
         const deviceRows = [...(group?.querySelectorAll('.em-aa-device-row') || [])];
         if (!deviceRows.length) return;
         btn.disabled = true; btn.textContent = 'Applying…';
-        this.saveToUndo();
         let successCount = 0;
         for (const row of deviceRows) {
           const deviceId = row.dataset.deviceId;
@@ -2553,17 +2552,7 @@ class EntityManagerPanel extends HTMLElement {
           const areaId = applyBtn?.dataset.areaId;
           if (!deviceId || !areaId) continue;
           try {
-            await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
-            // Also assign all entities of this device
-            for (const intg of (this.data || [])) {
-              const dev = intg.devices?.[deviceId];
-              if (dev) {
-                await Promise.all((dev.entities || []).map(ent =>
-                  this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId }).catch(() => null)
-                ));
-                break;
-              }
-            }
+            await this._assignAreaToEntities(this._deviceEntitiesById(deviceId), areaId);
             row.style.opacity = '0.4';
             successCount++;
           } catch (err) {
@@ -2583,22 +2572,12 @@ class EntityManagerPanel extends HTMLElement {
       if (!allApplyBtns.length) return;
       const btn = contentEl.querySelector('.em-aa-apply-all-btn');
       btn.disabled = true; btn.textContent = 'Applying…';
-      this.saveToUndo();
       let successCount = 0;
       for (const applyBtn of allApplyBtns) {
         const { deviceId, areaId } = applyBtn.dataset;
         if (!deviceId || !areaId) continue;
         try {
-          await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
-          for (const intg of (this.data || [])) {
-            const dev = intg.devices?.[deviceId];
-            if (dev) {
-              await Promise.all((dev.entities || []).map(ent =>
-                this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId }).catch(() => null)
-              ));
-              break;
-            }
-          }
+          await this._assignAreaToEntities(this._deviceEntitiesById(deviceId), areaId);
           applyBtn.closest('.em-aa-device-row').style.opacity = '0.4';
           successCount++;
         } catch (err) {
@@ -6723,10 +6702,11 @@ class EntityManagerPanel extends HTMLElement {
       // Config entry health count (non-blocking — stat card updates when ready)
       this._hass.callWS({ type: 'entity_manager/get_config_entry_health' }).then(entries => {
         this.configHealthCount = entries.length;
-        const healthCard = this.querySelector('[data-stat-type="config-health"] .stat-value');
+        const healthCard = this.querySelector('[data-stat-type="health-cleanup"] .stat-value');
         if (healthCard) {
-          healthCard.textContent = String(this.configHealthCount);
-          healthCard.style.color = this.configHealthCount > 0 ? 'var(--em-danger)' : 'var(--em-success)';
+          const merged = (this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0);
+          healthCard.textContent = String(merged);
+          healthCard.style.color = merged > 0 ? 'var(--em-danger)' : 'var(--em-success)';
         }
       }).catch(() => { this.configHealthCount = 0; });
       // Count templates via backend (covers YAML platform=template + template.* domain)
@@ -7541,18 +7521,15 @@ class EntityManagerPanel extends HTMLElement {
       });
     }
     
-    // Handle sidebar toggle
-    const sidebarToggle = this.querySelector('#sidebar-toggle-btn');
-    if (sidebarToggle) {
-      sidebarToggle.addEventListener('click', () => this._toggleSidebar());
-    }
-    
-    // Setup sidebar click handlers
+    // Setup sidebar click handlers (includes the sidebar-toggle-btn listener)
     this._attachSidebarListeners();
 
     this.setActiveFilter();
+
+    // Option D: single delegated ripple listener for all .btn clicks (render-time, once)
+    this._attachRippleListener();
   }
-  
+
   _attachSidebarListeners() {
     // Handle sidebar toggle button
     const sidebarToggle = this.querySelector('#sidebar-toggle-btn');
@@ -7876,9 +7853,6 @@ class EntityManagerPanel extends HTMLElement {
         }
       });
     });
-
-    // Option D: single delegated ripple listener for all .btn clicks
-    this._attachRippleListener();
   }
 
   setActiveFilter() {
@@ -8267,16 +8241,12 @@ class EntityManagerPanel extends HTMLElement {
   _renderSmartGroups(groups) {
     const sortedKeys = Object.keys(groups).sort();
     
-    const modeLabels = {
-      'room': 'Room',
-      'type': 'Entity Type',
-      'floor': 'Floor'
-    };
-
     const modeIcons = {
-      'room':  this._icon(EM_ICONS.home,  '18px'),
-      'type':  this._icon(EM_ICONS.type,  '18px'),
-      'floor': this._icon(EM_ICONS.floor, '18px'),
+      'room':        this._icon(EM_ICONS.home,       '18px'),
+      'type':        this._icon(EM_ICONS.type,        '18px'),
+      'floor':       this._icon(EM_ICONS.floor,       '18px'),
+      'device-name': this._icon(EM_ICONS.deviceName,  '18px'),
+      'custom':      this._icon(EM_ICONS.customGroup, '18px'),
     };
 
     return sortedKeys.map(groupKey => {
@@ -9011,7 +8981,7 @@ class EntityManagerPanel extends HTMLElement {
         try {
           const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
           const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
-          const n = res?.succeeded?.length ?? entityIds.length;
+          const n = res?.success?.length ?? entityIds.length;
           this._suppressEntityNotif(entityIds, !isEnable);
           this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
           this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
@@ -9061,20 +9031,6 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedIntegrations.delete(integration);
         } else {
           this.expandedIntegrations.add(integration);
-        }
-        this.updateView();
-      });
-    });
-
-    // Device card expand/collapse (Devices view)
-    this.content.querySelectorAll('[data-device-expand]').forEach(header => {
-      header.addEventListener('click', (e) => {
-        if (e.target.closest('.integration-select-wrapper')) return;
-        const deviceId = header.dataset.deviceExpand;
-        if (this.expandedDevices.has(deviceId)) {
-          this.expandedDevices.delete(deviceId);
-        } else {
-          this.expandedDevices.add(deviceId);
         }
         this.updateView();
       });
@@ -9359,7 +9315,7 @@ class EntityManagerPanel extends HTMLElement {
             type: 'call_service',
             domain: 'homeassistant',
             service: 'toggle',
-            service_data: { entity_id: entityId },
+            target: { entity_id: entityId },
           });
           // Optimistic UI: flip active class while waiting for state update
           btn.classList.toggle('toggle-on');
@@ -9831,9 +9787,7 @@ class EntityManagerPanel extends HTMLElement {
     // Filter updates based on selected filter
     let filteredUpdates = this.updateEntities;
     
-    if (this.updateFilter === 'available') {
-      filteredUpdates = this.updateEntities.filter(update => update.state === 'on');
-    } else if (this.updateFilter === 'stable') {
+    if (this.updateFilter === 'stable') {
       filteredUpdates = this.updateEntities.filter(update => {
         const latestVersion = update.attributes.latest_version || '';
         return !latestVersion.toLowerCase().includes('beta') && 
@@ -11214,17 +11168,8 @@ class EntityManagerPanel extends HTMLElement {
       applyBtn.disabled = true;
       applyBtn.textContent = 'Applying…';
       try {
-        this.saveToUndo();
-        // Assign area to device
-        await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
-        // Assign area to checked entities
-        const promises = checkedIds.map(eid =>
-          this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, area_id: areaId }).catch(err => {
-            console.warn('EM: failed to set area on', eid, err);
-            return null;
-          })
-        );
-        await Promise.all(promises);
+        // Assign area to device + checked entities (dedups the device-registry call, pushes undo actions)
+        await this._assignAreaToEntities(checkedIds.map(eid => ({ entity_id: eid, device_id: deviceId })), areaId);
         closeDialog();
         this._showToast(`Assigned ${this._escapeHtml(areaName)} to ${deviceName} + ${checkedIds.length} entit${checkedIds.length !== 1 ? 'ies' : 'y'}`, 'success');
         await this.loadData();
@@ -12701,8 +12646,10 @@ class EntityManagerPanel extends HTMLElement {
           }
         } else if (action === 'sync-to-device-area') {
           btn.disabled = true; btn.textContent = '…';
+          const oldAreaId = this.entityAreaMap?.get(entityId) || null;
           await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: null });
-          this.saveToUndo(); btn.closest('.em-sug-mismatch-row')?.remove();
+          this._pushUndoAction({ type: 'assign_entity_area', entityId, oldAreaId, newAreaId: null });
+          btn.closest('.em-sug-mismatch-row')?.remove();
           await this.loadData();
         } else if (action === 'assign-area-mismatch') {
           const [entityObj] = this._resolveEntitiesById([entityId]);
