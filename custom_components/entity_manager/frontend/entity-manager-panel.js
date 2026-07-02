@@ -937,6 +937,48 @@ class EntityManagerPanel extends HTMLElement {
     return entry ? entry[1] : color;
   }
 
+  /**
+   * Shared label color picker markup: the 19 preset HA_LABEL_COLORS swatches plus one
+   * "Custom" swatch backed by a native <input type="color">. `currentColor` may be a
+   * preset name (e.g. "blue") or a raw hex string from a previously-picked custom color.
+   */
+  _renderLabelColorPickerHtml(pickerId, currentColor = 'blue', extraClass = '') {
+    const isPreset = HA_LABEL_COLORS.some(([name]) => name === currentColor);
+    const customValue = isPreset ? '#2196f3' : (currentColor || '#2196f3');
+    const swatchHtml = HA_LABEL_COLORS.map(([name, hex]) =>
+      `<button class="em-label-swatch${name === currentColor ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`
+    ).join('');
+    return `
+      <div class="em-label-color-picker${extraClass ? ' ' + this._escapeAttr(extraClass) : ''}" id="${this._escapeAttr(pickerId)}" data-value="${this._escapeAttr(currentColor)}">
+        ${swatchHtml}
+        <label class="em-label-swatch em-label-swatch-custom${!isPreset ? ' selected' : ''}" data-color="${this._escapeAttr(customValue)}" style="background:${this._escapeAttr(customValue)}" title="Custom color">
+          <input type="color" class="em-label-custom-color-input" value="${this._escapeAttr(customValue)}">
+        </label>
+      </div>`;
+  }
+
+  /** Wires up click/change behavior for a picker rendered by _renderLabelColorPickerHtml. */
+  _attachLabelColorPicker(picker) {
+    if (!picker) return;
+    picker.addEventListener('click', (e) => {
+      const swatch = e.target.closest('.em-label-swatch:not(.em-label-swatch-custom)');
+      if (!swatch) return;
+      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+      picker.dataset.value = swatch.dataset.color;
+    });
+    const customSwatch = picker.querySelector('.em-label-swatch-custom');
+    const customInput = picker.querySelector('.em-label-custom-color-input');
+    customInput?.addEventListener('input', () => {
+      const hex = customInput.value;
+      customSwatch.style.background = hex;
+      customSwatch.dataset.color = hex;
+      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
+      customSwatch.classList.add('selected');
+      picker.dataset.value = hex;
+    });
+  }
+
   // ── Label target selector helpers ──────────────────────────────
   _labelTargetSelectorHtml(id = 'em-label-target', defaultTarget = 'both', hasDevice = true) {
     const opts = [
@@ -5003,9 +5045,6 @@ class EntityManagerPanel extends HTMLElement {
   
   async _showLabelEditDialog(label, selectedEntityIds = []) {
     const currentColor = label.color || 'blue';
-    const swatchHtml = HA_LABEL_COLORS.map(([name, hex]) =>
-      `<button class="em-label-swatch${name === currentColor ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`
-    ).join('');
 
     const haSelection = selectedEntityIds.length > 0;
     const selectionHtml = haSelection ? `
@@ -5035,9 +5074,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>
           <div>
             <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:6px">Color</label>
-            <div class="em-label-color-picker" id="em-label-edit-color" data-value="${this._escapeAttr(currentColor)}">
-              ${swatchHtml}
-            </div>
+            ${this._renderLabelColorPickerHtml('em-label-edit-color', currentColor)}
           </div>
         </div>
       `,
@@ -5086,14 +5123,7 @@ class EntityManagerPanel extends HTMLElement {
     }
 
     // Swatch picker
-    overlay.querySelector('#em-label-edit-color').addEventListener('click', (e) => {
-      const swatch = e.target.closest('.em-label-swatch');
-      if (!swatch) return;
-      const picker = swatch.closest('.em-label-color-picker');
-      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
-      swatch.classList.add('selected');
-      picker.dataset.value = swatch.dataset.color;
-    });
+    this._attachLabelColorPicker(overlay.querySelector('#em-label-edit-color'));
 
     // Save
     overlay.querySelector('#em-label-save-btn').addEventListener('click', async () => {
@@ -5211,9 +5241,7 @@ class EntityManagerPanel extends HTMLElement {
               <input type="text" id="new-label-name" placeholder="Label name"
                 style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:4px;background:var(--em-bg-primary);color:var(--em-text-primary)">
             </div>
-            <div class="em-label-color-picker" id="new-label-color" data-value="blue" style="margin-top:8px">
-              ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
-            </div>
+            <div style="margin-top:8px">${this._renderLabelColorPickerHtml('new-label-color', 'blue')}</div>
             <div style="display:flex;justify-content:flex-end;margin-top:8px">
               <button class="btn btn-primary" id="create-label-btn">Create</button>
             </div>
@@ -5266,14 +5294,7 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     // Swatch picker
-    overlay.querySelector('#new-label-color').addEventListener('click', (e) => {
-      const swatch = e.target.closest('.em-label-swatch');
-      if (!swatch) return;
-      const picker = swatch.closest('.em-label-color-picker');
-      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
-      swatch.classList.add('selected');
-      picker.dataset.value = swatch.dataset.color;
-    });
+    this._attachLabelColorPicker(overlay.querySelector('#new-label-color'));
 
     // Create label
     overlay.querySelector('#create-label-btn').addEventListener('click', async () => {
@@ -5345,9 +5366,7 @@ class EntityManagerPanel extends HTMLElement {
             <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
               <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-bg-primary); color: var(--em-text-primary);">
             </div>
-            <div class="em-label-color-picker" id="new-label-color" data-value="blue" style="margin-top:8px">
-              ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
-            </div>
+            <div style="margin-top:8px">${this._renderLabelColorPickerHtml('new-label-color', 'blue')}</div>
             <div style="display:flex;justify-content:flex-end;margin-top:8px">
               <button class="btn btn-secondary" id="create-label-btn">Create</button>
             </div>
@@ -5373,14 +5392,7 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     // Swatch picker click handler (bulk dialog)
-    overlay.querySelector('#new-label-color').addEventListener('click', (e) => {
-      const swatch = e.target.closest('.em-label-swatch');
-      if (!swatch) return;
-      const picker = swatch.closest('.em-label-color-picker');
-      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
-      swatch.classList.add('selected');
-      picker.dataset.value = swatch.dataset.color;
-    });
+    this._attachLabelColorPicker(overlay.querySelector('#new-label-color'));
 
     // Handle creating new label in bulk editor
     overlay.querySelector('#create-label-btn').addEventListener('click', async () => {
@@ -11475,9 +11487,7 @@ class EntityManagerPanel extends HTMLElement {
                 </div>
                 <div class="em-asn-create-colors">
                   <span class="em-asn-color-label">Color</span>
-                  <div class="em-label-color-picker em-asn-new-color" data-value="blue">
-                    ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
-                  </div>
+                  ${this._renderLabelColorPickerHtml('em-asn-new-color-picker', 'blue', 'em-asn-new-color')}
                 </div>
               </div>
             </div>
@@ -11698,12 +11708,7 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     // Create a new label
-    overlay.querySelector('.em-asn-new-color').addEventListener('click', (e) => {
-      const sw = e.target.closest('.em-label-swatch'); if (!sw) return;
-      const picker = sw.closest('.em-label-color-picker');
-      picker.querySelectorAll('.em-label-swatch').forEach(s => s.classList.remove('selected'));
-      sw.classList.add('selected'); picker.dataset.value = sw.dataset.color;
-    });
+    this._attachLabelColorPicker(overlay.querySelector('.em-asn-new-color'));
     overlay.querySelector('.em-asn-create-btn2').addEventListener('click', async () => {
       const nameInput = overlay.querySelector('.em-asn-new-name');
       const name = nameInput.value.trim();
@@ -12001,7 +12006,8 @@ class EntityManagerPanel extends HTMLElement {
       { label: 'Window Sensors',       emoji: 'mdi:window-closed',      match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'window' },
       { label: 'Vibration Sensors',    emoji: 'mdi:vibrate',            match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'vibration' },
       { label: 'Power Monitoring',      emoji: 'mdi:flash',              match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'power' },
-      { label: 'Energy Monitoring',     emoji: 'mdi:lightning-bolt',     match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage','energy_return'].includes(st?.attributes?.device_class) },
+      { label: 'Energy Monitoring',     emoji: 'mdi:lightning-bolt',     match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) },
+      { label: 'Energy Return',         emoji: 'mdi:transmission-tower-export', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'energy_return' },
       { label: 'Covers',               emoji: 'mdi:window-shutter',     match: (e, st) => e.entity_id.split('.')[0] === 'cover' },
       { label: 'Climate',              emoji: 'mdi:snowflake',          match: (e, st) => e.entity_id.split('.')[0] === 'climate' },
       { label: 'Media Players',        emoji: 'mdi:speaker',            match: (e, st) => e.entity_id.split('.')[0] === 'media_player' },
