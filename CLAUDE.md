@@ -96,7 +96,6 @@ Entity Registry / Device Registry / Area Registry / Label Registry
 4. **HA Integration**: Use `this.hass.callWS()` for WebSocket calls
 5. **Styling**: External CSS file + HA CSS variables; avoid inline styles for non-dynamic values
 6. **DOM Updates**: Batch changes, use `requestAnimationFrame` where possible
-7. **Keyboard Shortcuts**: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+E (export), Ctrl+G (grouping), Ctrl+B (sidebar)
 
 ### Home Assistant Conventions
 
@@ -187,32 +186,44 @@ All 18 commands require admin privileges via `@websocket_api.require_admin`.
 
 ## Frontend State Management
 
-All state is persisted to `localStorage`. Key properties on the `EntityManagerPanel` instance:
+Most state is persisted to `localStorage` via `_loadFromStorage()`/`_saveToStorage()`, but several instance properties below are intentionally in-memory-only (reset on reload). Keys are kebab-case (`em-foo-bar`) except two legacy camelCase-with-underscore holdouts noted below — this table was regenerated from a full grep of every `_loadFromStorage`/`_saveToStorage`/`localStorage.getItem`/`setItem` call site; re-grep before trusting it if it's been a while.
 
-| Property | localStorage Key | Description |
+| Property / Feature | localStorage Key | Description |
 |----------|-----------------|-------------|
 | `this.data` | _(in-memory)_ | Raw entity data from WebSocket |
-| `this.expandedIntegrations` | `em_expandedIntegrations` | Collapsed/expanded integration sections |
-| `this.expandedDevices` | `em_expandedDevices` | Collapsed/expanded device sections |
+| `this.expandedIntegrations` / `expandedDevices` | _(in-memory)_ | Collapsed/expanded tree sections — **not persisted**, resets every reload |
 | `this.selectedEntities` | _(in-memory)_ | Current checkbox selections |
-| `this.searchTerm` | `em_searchTerm` | Active search string |
-| `this.viewState` | `em_viewState` | `"all"`, `"enabled"`, or `"disabled"` |
-| `this.selectedDomain` | `em_selectedDomain` | Active domain filter |
-| `this.favorites` | `em_favorites` | Favorited entity IDs |
-| `this.entityTags` | `em_entityTags` | Custom `#tagname` annotations |
-| `this.entityAliases` | `em_entityAliases` | Non-destructive display name overrides |
-| `this.activityLog` | `em_activityLog` | Last 100 operations |
-| `this.undoStack` | `em_undoStack` | Up to 50 undo steps |
-| `this.redoStack` | `em_redoStack` | Up to 50 redo steps |
-| `this.customThemes` | `em_customThemes` | User-created themes |
-| `this.activeTheme` | `em_activeTheme` | Active theme name |
-| `this.filterPresets` | `em_filterPresets` | Saved filter combinations |
-| `this.visibleColumns` | `em_visibleColumns` | Column visibility toggles |
-| `this.smartGroupsEnabled` | `em_smartGroupsEnabled` | Whether smart grouping is on |
-| `this.smartGroupMode` | `em_smartGroupMode` | `"integration"`, `"area"`, `"type"`, `"device"` |
-| `this.floorsData` | `em_floorsData` | Cached HA floor/area hierarchy |
-| `this.labelsCache` | `em_labelsCache` | Cached HA label registry |
-| `this.entityOrder` | `em_entityOrder` | Custom drag-and-drop entity ordering |
+| `this.searchTerm` / `viewState` / `selectedDomain` | _(in-memory)_ | Active search/filter state — **not persisted**, resets every reload (unlike almost every other toolbar control below) |
+| `this.favorites` | `em-favorites` | Favorited entity IDs |
+| `this.entityAliases` | `em-entity-aliases` | Non-destructive display name overrides |
+| `this.activityLog` | `em-activity-log` | Last 100 operations |
+| `this.undoStack` | `em_undoStack` | Up to 50 undo steps (legacy camelCase key, unlike the rest of this table) |
+| `this.redoStack` | `em_redoStack` | Up to 50 redo steps (legacy camelCase key) |
+| `this.customThemes` | `em-custom-themes` | User-created themes |
+| `this.activeTheme` | `em-active-theme` | Active theme name |
+| `this.filterPresets` (sidebar "Saved Views") | `em-filter-presets` | Saved filter combinations — distinct from `em-presets` below, easy to confuse |
+| entity-ID presets (sidebar "Presets") | `em-presets` | Saved lists of specific entity IDs — a different feature from `filterPresets`/Saved Views despite the similar name |
+| `this.visibleColumns` | `em-visible-columns` | Column visibility toggles |
+| `this.smartGroupMode` | `em-smart-group-mode` | `"integration"`, `"room"`, `"type"`, `"floor"`, `"device-name"`, or `"custom"` — there is no separate "smart groups enabled" boolean, `"integration"` mode is the off-equivalent |
+| `this.entityOrder` | `em-entity-order` | Custom drag-and-drop entity ordering |
+| `this.customGroups` | `em-custom-groups` | User-defined custom groups |
+| Sidebar collapsed state | `em-sidebar-collapsed` | Whether the whole sidebar nav is collapsed |
+| Sidebar section open/closed | `em-sidebar-sections` | Which ACTIONS/LABELS/GROUPS/etc. sections are expanded |
+| "Offline only" toolbar toggle | `em-show-offline-only` | Devices-view filter |
+| Device type filter | `em-device-type-filter` | Devices-view filter |
+| Backup-before-update toggle | `em-backup-before-update` | Update-flow setting |
+| Saved device filters / device-name filter | `em-saved-device-filters` / `em-device-name-filter` | Devices-view filter presets |
+| Notification settings | `em-notifications` / `em-notif-prefs` | Notification center data + preferences |
+| Area-mapping rules | `em-area-mapping-rules` | Custom name→area suggestion rules |
+| Ignore/restore system | `em-ignored-suggestions` / `em-ignore-migrated-v1` | See "Unified Ignore / Restore System" below |
+| Health banner | `em-health-alert-threshold` / `em-health-banner-dismissed` | Health & Cleanup alert banner config |
+| Dismissed stale-entity warnings | `em-stale-dismissed` | Health & Cleanup |
+| Unavailable-entities time filter | `em-unavail-time-filter` | Health & Cleanup |
+| Activity Log filter | `em-at-filter` | Activity Log dialog |
+| Known entity IDs snapshot | `em-known-entity-ids` | Used to detect newly-added entities |
+| Last-activity cache | `em_lastActivityCache` | Legacy camelCase key, unlike the rest of this table |
+
+Note: there is no `entityTags`/custom `#tagname` feature in this codebase — see "No custom tags — uses HA native Labels exclusively" further down.
 
 ### Key Frontend Methods
 
@@ -223,8 +234,8 @@ All state is persisted to `localStorage`. Key properties on the `EntityManagerPa
 | `render()` | Full component re-render (use sparingly) |
 | `bulkEnable()` / `bulkDisable()` | Execute bulk operations on `selectedEntities` |
 | `showEntityDetails(entityId)` | Open entity detail dialog |
-| `applyTheme(themeName)` | Switch active theme |
-| `saveToUndo()` | Push current state to undo stack before mutations |
+| `_setActiveTheme(name)` / `updateTheme()` / `_applyCustomTheme(theme)` | Switch/apply active theme (there is no `applyTheme()` method — a past doc claimed one, it never existed) |
+| `_pushUndoAction({...})` | Push an undo-able action onto the undo stack before a mutation — **the only real undo helper** (there is no `saveToUndo()` method — see "Undo/Redo" guidance below) |
 
 ## Development Workflow
 
@@ -360,12 +371,12 @@ const result = await this.hass.callWS({
 - `EntityManagerPanel` class extending `HTMLElement`
 - State: `data`, `deviceInfo`, `expandedIntegrations`, `expandedDevices`, `selectedEntities`, `searchTerm`, `viewState`, `labeledEntitiesCache`, `labeledDevicesCache`, `labeledAreasCache`
 - Key methods: `loadData()`, `updateView()`, `render()`, `bulkEnable()`, `bulkDisable()`, `updateSelectedCount()`
-- Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderManagedItem()`, `_renderMiniEntityCard()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()`
-- Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAreaFloorDialog()` (replaces `_showAreaPickerDialog` + `_showFloorPickerDialog`)
+- Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderMiniEntityCard()`, `_renderEntityItem()`, `_buildDeviceCard()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()` (there is no `_renderManagedItem()` — a past doc claimed one, it was renamed/removed without updating this file)
+- Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAssignDialog()` (unified area/floor/label assignment — replaces the old `_showAreaFloorDialog()`/`_showAreaPickerDialog()`/`_showFloorPickerDialog()`, all since deleted)
 - Bulk rename methods: `_openBulkRenameDialog()` (async mode-switcher), `_renderBulkRenameView()` (full inline panel)
 
 ### Entity Card Action Row (`icon-btn` pattern)
-- Every entity card renders an `.entity-actions` row with `.icon-btn` buttons: Rename (✎), Enable (✓), Disable (✕), Bulk Rename (✎✎), Bulk Labels (🏷️)
+- Every entity card renders an `.entity-actions` row with `.icon-btn` buttons: Rename (✎), Enable (✓), Disable (✕), Bulk Rename (✎✎), Bulk Labels (🏷️), plus `open-ha-btn` (open in HA's own entity dialog), `press-entity` (button-domain entities), `assign-area-btn`, `bulk-delete-btn`
 - Bulk Rename uses CSS class `bulk-rename-btn` (blue, matches `--em-primary`); Bulk Labels uses `bulk-labels-btn` (amber, matches `--em-warning`)
 - Both bulk buttons are **always rendered** but carry the `disabled` attribute when `selectedEntities.size < 2`
 - `updateSelectedCount()` flips `disabled` on all `[data-action="bulk-rename"]` and `[data-action="bulk-labels"]` elements in real time — no full re-render needed
@@ -375,10 +386,11 @@ const result = await this.hass.callWS({
 - No custom tags — uses HA native Labels exclusively
 ```javascript
 // Always call before any state-changing operation
-this.saveToUndo();
+this._pushUndoAction({ type: '...', /* enough before-state to reverse it */ });
 // ... perform mutation ...
 await this.loadData();
 ```
+`remove_entity` is the one intentional exception — it's irreversible by design and has no undo support anywhere in `_executeAction`'s switch, so don't treat its lack of an undo call as a bug.
 
 ## Important Files Deep-Dive
 
@@ -393,14 +405,14 @@ await this.loadData();
 - `async_setup_ws_api(hass)` registers all commands — **this is the only registration point**
 - Helper `_resolve_trigger_context()` tracks human/automation/system trigger sources
 - `enable_entity()` / `disable_entity()` are standalone async helpers called by both single and bulk handlers
-- Bulk handlers iterate with per-item error handling and return `{"succeeded": [...], "failed": [...]}`
+- Bulk handlers iterate with per-item error handling and return `{"success": [...], "failed": [...]}` (note the key is `success`, not `succeeded` — this doc previously said `succeeded`, and at least one frontend bulk-toggle handler had copied that wrong key, always reporting full success even on partial failure)
 
 ### `entity-manager-panel.js` (Frontend UI, ~9,600 lines)
 - Single `EntityManagerPanel` custom element class
 - `connectedCallback()` → bootstraps state from localStorage, attaches shadow DOM, calls `loadData()`
 - `set hass(value)` → called by HA on every state change; used to update `this.hass` reference
-- Theme system: 4 built-in themes (`default`, `dark`, `high-contrast`, `oled`) + arbitrary custom themes
-- Smart grouping: toggled per-session, modes = `integration` / `area` / `type` / `device`
+- Theme system: `PREDEFINED_THEMES` has 4 built-in themes, Title Case keys in code (`'Light'`, `'Dark'`, `'High Contrast'`, `'OLED Black'`) — plus a 5th `'default'` mode meaning "follow HA's own theme" — arbitrary custom themes on top. Persisted via `em-active-theme`/`em-custom-themes` (see Frontend State Management above).
+- Smart grouping: persisted via `em-smart-group-mode`, modes = `integration` (off-equivalent) / `room` / `type` / `floor` / `device-name` / `custom`
 - Lazy loading: large entity lists use intersection observer for performance
 
 ### `config_flow.py` (Setup Flow)
@@ -419,7 +431,7 @@ await this.loadData();
 ### Manual Testing Checklist
 
 1. **Multi-integration grouping** — verify Integration → Device → Entity tree is correct
-2. **Bulk operations** — test with > 100 entities; verify `succeeded`/`failed` reporting
+2. **Bulk operations** — test with > 100 entities; verify `success`/`failed` reporting
 3. **Search** — matches entity ID, display name, device name, integration name
 4. **Smart grouping** — test all 4 modes (Integration, Room/Area, Type, Device Name)
 5. **Undo/Redo** — perform mutations and verify undo restores previous state
@@ -471,7 +483,7 @@ Two-panel dialog for assigning devices/entities to HA areas (floor comes with ar
 2. **403 / WebSocket errors**: User must have admin privileges
 3. **Frontend not updating**: Hard-refresh (Ctrl+Shift+R); check browser console for JS errors
 4. **Services not registering**: Check HA logs at startup for `custom_components.entity_manager` errors
-5. **Bulk op partially failing**: Normal — returns `{"succeeded": [...], "failed": [...]}` for per-entity errors
+5. **Bulk op partially failing**: Normal — returns `{"success": [...], "failed": [...]}` for per-entity errors
 6. **YAML updater not finding files**: HA config directory path may vary; check `hass.config.config_dir`
 
 ### Debug Logging
@@ -515,7 +527,7 @@ For adding new features:
 - Always validate `entity_id` with `VALID_ENTITY_ID` regex before registry operations
 - Handle errors per-item in bulk loops — don't abort the whole batch on a single failure
 - Use HA entity/device registries directly; never cache stale data beyond a single request
-- In JS, always call `saveToUndo()` before any mutating operation
+- In JS, always call `this._pushUndoAction({...})` before any mutating operation (except `remove_entity`, which is intentionally undo-exempt — irreversible by design)
 - Never reference HA theme variables (e.g. `var(--secondary-background-color)`, `var(--card-background-color)`) directly in component CSS — always use `--em-*` equivalents so EM light/dark mode overrides take effect correctly
 - Prefer `this.hass.callWS()` over `this.hass.callService()` for entity manager operations
 
