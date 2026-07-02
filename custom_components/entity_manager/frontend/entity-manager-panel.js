@@ -11882,10 +11882,11 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('.em-inline-back-btn').addEventListener('click', closeDialog);
     overlay.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
 
-    const [entityRegistry, deviceRegistry, labelRegistry] = await Promise.all([
+    const [entityRegistry, deviceRegistry, labelRegistry, areaRegistry] = await Promise.all([
       this._hass.callWS({ type: 'config/entity_registry/list' }).catch(() => []),
       this._hass.callWS({ type: 'config/device_registry/list' }).catch(() => []),
       this._hass.callWS({ type: 'config/label_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config/area_registry/list' }).catch(() => []),
     ]);
     const entityAreaMap = new Map();
     const deviceAreaMap = new Map();
@@ -11971,11 +11972,36 @@ class EntityManagerPanel extends HTMLElement {
     }
 
     // ── Label suggestions ──────────────────────────────────────────
-    const existingLabelsByName = new Map(labelRegistry.map(l => [l.name.toLowerCase(), l]));
+    // Strip a trailing "es"/"s" so a user's own singular label (e.g. "Camera") still
+    // matches a plural suggestion definition (e.g. "Cameras") instead of being treated
+    // as a different label and re-suggested forever.
+    const normalizeLabelName = (s) => s.toLowerCase().trim().replace(/(es|s)$/, '');
+    const existingLabelsByName = new Map(labelRegistry.map(l => [normalizeLabelName(l.name), l]));
     const entityCurrentLabels  = new Map();
+    const entityDeviceIdMap    = new Map();
     for (const e of entityRegistry) {
       if (e.labels?.length) entityCurrentLabels.set(e.entity_id, new Set(e.labels));
+      if (e.device_id) entityDeviceIdMap.set(e.entity_id, e.device_id);
     }
+    const deviceCurrentLabels = new Map();
+    for (const d of deviceRegistry) {
+      if (d.labels?.length) deviceCurrentLabels.set(d.id, new Set(d.labels));
+    }
+    const areaCurrentLabels = new Map();
+    for (const a of areaRegistry) {
+      if (a.labels?.length) areaCurrentLabels.set(a.area_id, new Set(a.labels));
+    }
+    // A label applied at any scope (entity, device, or its effective area) counts as
+    // "already labeled" — mirrors the broadest-wins resolution in _effectiveEntityLabels,
+    // otherwise device/area-scoped labels keep getting re-suggested forever.
+    const entityHasLabel = (e, labelId) => {
+      if (entityCurrentLabels.get(e.entity_id)?.has(labelId)) return true;
+      const devId = entityDeviceIdMap.get(e.entity_id) || e.device_id;
+      if (devId && deviceCurrentLabels.get(devId)?.has(labelId)) return true;
+      const areaId = entityAreaMap.get(e.entity_id) || (devId ? deviceAreaMap.get(devId) : null);
+      if (areaId && areaCurrentLabels.get(areaId)?.has(labelId)) return true;
+      return false;
+    };
 
     const LABEL_DEFS = [
       { label: 'Lights',               emoji: 'mdi:lightbulb',          match: (e, st) => e.entity_id.split('.')[0] === 'light' },
@@ -12007,14 +12033,11 @@ class EntityManagerPanel extends HTMLElement {
 
     let labelGroups = [];
     for (const def of LABEL_DEFS) {
-      const existingLabel = existingLabelsByName.get(def.label.toLowerCase());
+      const existingLabel = existingLabelsByName.get(normalizeLabelName(def.label));
       const untagged = allEntities.filter(e => {
         if (e.is_disabled) return false;
         if (!def.match(e, states[e.entity_id])) return false;
-        if (existingLabel) {
-          const cur = entityCurrentLabels.get(e.entity_id);
-          if (cur?.has(existingLabel.label_id)) return false;
-        }
+        if (existingLabel && entityHasLabel(e, existingLabel.label_id)) return false;
         return true;
       });
       if (untagged.length > 0) labelGroups.push({ ...def, entities: untagged, existingLabel: existingLabel || null });
@@ -12764,7 +12787,9 @@ class EntityManagerPanel extends HTMLElement {
 
     // Label suggestion apply — preview dialog with checkboxes before confirming
     const applyLabel = async (labelName, entityIds, triggerBtn) => {
-      const isNew = !existingLabelsByName.has(labelName.toLowerCase());
+      const matchedLabel = existingLabelsByName.get(normalizeLabelName(labelName));
+      const isNew = !matchedLabel;
+      const displayName = matchedLabel?.name || labelName;
 
       const entityListHtml = entityIds.map(eid => {
         const name = this._hass?.states?.[eid]?.attributes?.friendly_name || eid;
@@ -12778,14 +12803,14 @@ class EntityManagerPanel extends HTMLElement {
       }).join('');
 
       const { overlay: previewOverlay, closeDialog: closePreview } = this.createDialog({
-        title: `Apply label: ${this._escapeHtml(labelName)}`,
+        title: `Apply label: ${this._escapeHtml(displayName)}`,
         color: 'var(--em-primary)',
         contentHtml: `
           <div style="padding:10px 14px 6px">
             <div style="margin-bottom:8px;font-size:13px">
               ${isNew
-                ? `<span style="color:var(--em-warning);font-weight:600">⚠ New label</span> — <strong>"${this._escapeHtml(labelName)}"</strong> will be created.`
-                : `Label <strong>"${this._escapeHtml(labelName)}"</strong> will be added to:`}
+                ? `<span style="color:var(--em-warning);font-weight:600">⚠ New label</span> — <strong>"${this._escapeHtml(displayName)}"</strong> will be created.`
+                : `Label <strong>"${this._escapeHtml(displayName)}"</strong> will be added to:`}
             </div>
             <div style="border:1px solid var(--em-border);border-radius:8px;overflow:hidden">
               <label style="display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--em-bg-secondary);border-bottom:1px solid var(--em-border);cursor:pointer;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">
@@ -12835,13 +12860,12 @@ class EntityManagerPanel extends HTMLElement {
         if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '…'; }
         try {
           let labelId;
-          const found = existingLabelsByName.get(labelName.toLowerCase());
-          if (found) {
-            labelId = found.label_id;
+          if (matchedLabel) {
+            labelId = matchedLabel.label_id;
           } else {
             const created = await this._hass.callWS({ type: 'config/label_registry/create', name: labelName });
             labelId = created.label_id;
-            existingLabelsByName.set(labelName.toLowerCase(), created);
+            existingLabelsByName.set(normalizeLabelName(labelName), created);
           }
           await Promise.all(selected.map(eid => {
             const cur = [...(entityCurrentLabels.get(eid) || new Set())];
@@ -12849,7 +12873,7 @@ class EntityManagerPanel extends HTMLElement {
             return this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, labels: [...cur, labelId] });
           }).filter(Boolean));
           const sug = triggerBtn?.closest('.em-label-sug-card');
-          if (sug) sug.innerHTML = `<div style="padding:8px 4px;color:var(--em-success);font-size:13px">✓ "${this._escapeHtml(labelName)}" applied to ${selected.length} entit${selected.length !== 1 ? 'ies' : 'y'}</div>`;
+          if (sug) sug.innerHTML = `<div style="padding:8px 4px;color:var(--em-success);font-size:13px">✓ "${this._escapeHtml(displayName)}" applied to ${selected.length} entit${selected.length !== 1 ? 'ies' : 'y'}</div>`;
           this.labeledEntitiesCache = null; this.labeledDevicesCache = null; this.labeledAreasCache = null;
         } catch {
           if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = `Apply to ${entityIds.length}`; }
