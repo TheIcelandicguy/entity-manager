@@ -15299,9 +15299,14 @@ class EntityManagerPanel extends HTMLElement {
     document.body.classList.add('em-dialog-open');
 
     const closeDialog = () => {
-      document.body.classList.remove('em-dialog-open');
       document.removeEventListener('keydown', escHandler);
       overlay.remove();
+      // Only lift the scroll lock once no dialogs remain — closing an inner
+      // confirm sub-dialog must not unlock the page while its parent dialog
+      // is still open behind it.
+      if (!document.querySelector('.confirm-dialog-overlay')) {
+        document.body.classList.remove('em-dialog-open');
+      }
     };
 
     // Escape closes only the topmost dialog when several are stacked (e.g. a
