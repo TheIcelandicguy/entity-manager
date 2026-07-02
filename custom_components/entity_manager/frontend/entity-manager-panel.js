@@ -8620,9 +8620,10 @@ class EntityManagerPanel extends HTMLElement {
     let entityCount = 0;
     let disabledCount = 0;
     let enabledCount = 0;
-    
-    // Collect all entities from all devices
+
+    // Collect all entities from all devices, tallying category counts alongside
     const allEntities = [];
+    const categoryCounts = new Map();
     Object.entries(integration.devices).forEach(([deviceId, device]) => {
       device.entities.forEach(entity => {
         entityCount++;
@@ -8636,8 +8637,35 @@ class EntityManagerPanel extends HTMLElement {
           deviceId,
           deviceName: this.getDeviceName(deviceId)
         });
+        const cat = this._categorizeEntity(entity);
+        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
       });
     });
+
+    const categoryBadgesHtml = this._categoryMeta()
+      .filter(m => categoryCounts.get(m.key) > 0)
+      .map(m => `<span class="integration-cat-badge ${m.cls}">${m.label}: ${categoryCounts.get(m.key)}</span>`)
+      .join('');
+
+    // Union every entity's effective labels (entity/device/area scoped) into one rollup,
+    // keeping the broadest scope seen per label — display-only, no single click subject exists.
+    const labelScopeOrder = { A: 0, D: 1, E: 2 };
+    const labelRollupMap = new Map();
+    allEntities.forEach(entity => {
+      this._effectiveEntityLabels(entity).forEach(({ labelId, scope }) => {
+        const existingScope = labelRollupMap.get(labelId);
+        if (!existingScope || labelScopeOrder[scope] < labelScopeOrder[existingScope]) {
+          labelRollupMap.set(labelId, scope);
+        }
+      });
+    });
+    const labelRollup = Array.from(labelRollupMap, ([labelId, scope]) => ({ labelId, scope }))
+      .sort((a, b) => labelScopeOrder[a.scope] - labelScopeOrder[b.scope]);
+    const labelRollupHtml = labelRollup.length
+      ? `<div class="integration-label-rollup">${this._renderLabelChips(labelRollup, '')
+          .replace(/ em-chip-clickable/g, '')
+          .replace(/ — click to manage/g, '')}</div>`
+      : '';
 
     const intName = this._escapeAttr(integration.integration);
     const intDisplay = this._escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1));
@@ -8667,6 +8695,8 @@ class EntityManagerPanel extends HTMLElement {
           <div class="integration-info">
             <div class="integration-name">${intDisplay}</div>
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
+            ${categoryBadgesHtml ? `<div class="integration-cat-badges">${categoryBadgesHtml}</div>` : ''}
+            ${labelRollupHtml}
           </div>
           <div class="integration-actions">
             <button class="btn view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities" style="${_ivf === 'enabled' ? '' : 'color:var(--em-success);border-color:var(--em-success)'}">View Enabled</button>
@@ -8839,6 +8869,31 @@ class EntityManagerPanel extends HTMLElement {
     this.updateView();
   }
 
+  /**
+   * Classify an entity into one of the 5 category buckets used both at the device level
+   * (`_buildDeviceCard`'s CAT_BUCKETS) and the integration level (category-count rollup in
+   * `renderIntegration`) — kept as one shared source of truth so the two never drift.
+   */
+  _categorizeEntity(entity) {
+    const SENSOR_DOMAINS = new Set(['sensor', 'binary_sensor']);
+    if (entity.entity_category === 'diagnostic') return 'diagnostic';
+    if (entity.entity_category === 'config') return 'config';
+    if (entity.entity_category === 'connectivity') return 'connectivity';
+    return SENSOR_DOMAINS.has(entity.entity_id.split('.')[0]) ? 'sensors' : 'controls';
+  }
+
+  /** Icon/label/class metadata for each `_categorizeEntity` bucket, shared by the device-level
+   *  category cards and the integration-level category-count badges. */
+  _categoryMeta() {
+    return [
+      { key: 'controls',     label: `${this._icon(EM_ICONS.automation, '14px')} Controls`,      cls: 'cat-controls' },
+      { key: 'sensors',      label: `${this._icon(EM_ICONS.thermometer, '14px')} Sensors`,       cls: 'cat-sensors' },
+      { key: 'config',       label: `${this._icon(EM_ICONS.cog, '14px')} Configuration`,         cls: 'cat-config' },
+      { key: 'diagnostic',   label: `${this._icon(EM_ICONS.helper, '14px')} Diagnostic`,         cls: 'cat-diagnostic' },
+      { key: 'connectivity', label: `${this._icon('mdi:access-point', '14px')} Connectivity`,    cls: 'cat-connectivity' },
+    ];
+  }
+
   _buildDeviceCard(deviceId, device, integration, opts = {}) {
     const {
       showSelectCheckbox = false,
@@ -8867,14 +8922,7 @@ class EntityManagerPanel extends HTMLElement {
 
     const devName = this.getDeviceName(deviceId);
     const deviceIdEsc = this._escapeAttr(deviceId);
-    const SENSOR_DOMAINS = new Set(['sensor', 'binary_sensor']);
-    const CAT_BUCKETS = [
-      { label: `${this._icon(EM_ICONS.automation, '14px')} Controls`,      cls: 'cat-controls',     match: e => !e.entity_category && !SENSOR_DOMAINS.has(e.entity_id.split('.')[0]) },
-      { label: `${this._icon(EM_ICONS.thermometer, '14px')} Sensors`,      cls: 'cat-sensors',      match: e => !e.entity_category && SENSOR_DOMAINS.has(e.entity_id.split('.')[0]) },
-      { label: `${this._icon(EM_ICONS.cog, '14px')} Configuration`,        cls: 'cat-config',       match: e => e.entity_category === 'config' },
-      { label: `${this._icon(EM_ICONS.helper, '14px')} Diagnostic`,        cls: 'cat-diagnostic',   match: e => e.entity_category === 'diagnostic' },
-      { label: `${this._icon('mdi:access-point', '14px')} Connectivity`,   cls: 'cat-connectivity', match: e => e.entity_category === 'connectivity' },
-    ];
+    const CAT_BUCKETS = this._categoryMeta().map(m => ({ ...m, match: e => this._categorizeEntity(e) === m.key }));
     const allEntitiesForDevice = device.entities.map(e => ({ ...e, deviceName: devName, integration }));
     const catCardsHtml = isExpanded ? CAT_BUCKETS
       .map(b => ({ ...b, entities: allEntitiesForDevice.filter(b.match).sort((a, z) =>

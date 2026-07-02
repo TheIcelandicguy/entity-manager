@@ -1899,6 +1899,38 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .device-cat-chip.cat-diagnostic   { color: var(--em-warning);  border-color: var(--em-warning); }
 .device-cat-chip.cat-connectivity { color: var(--em-success);  border-color: var(--em-success); }
 
+/* Integration-level category-count breakdown (collapsed-state summary) */
+.integration-cat-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.integration-cat-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.integration-cat-badge.cat-controls     { color: var(--em-success); border-color: var(--em-success); }
+.integration-cat-badge.cat-sensors      { color: var(--em-primary); border-color: var(--em-primary); }
+.integration-cat-badge.cat-config       { color: var(--em-primary); border-color: var(--em-primary); }
+.integration-cat-badge.cat-diagnostic   { color: var(--em-warning); border-color: var(--em-warning); }
+.integration-cat-badge.cat-connectivity { color: var(--em-success); border-color: var(--em-success); }
+
+/* Integration-level HA Label rollup — display-only, no click target */
+.integration-label-rollup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.integration-label-rollup .entity-header-label {
+  cursor: default;
+}
+
 
 .entity-list {
   padding: 8px 12px 12px 12px;
