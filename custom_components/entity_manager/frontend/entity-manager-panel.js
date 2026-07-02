@@ -12006,8 +12006,13 @@ class EntityManagerPanel extends HTMLElement {
       { label: 'Window Sensors',       emoji: 'mdi:window-closed',      match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'window' },
       { label: 'Vibration Sensors',    emoji: 'mdi:vibrate',            match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'vibration' },
       { label: 'Power Monitoring',      emoji: 'mdi:flash',              match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'power' },
-      { label: 'Energy Monitoring',     emoji: 'mdi:lightning-bolt',     match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) },
-      { label: 'Energy Return',         emoji: 'mdi:transmission-tower-export', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'energy_return' },
+      // HA's device_class alone can't tell consumed vs returned energy apart — both are just
+      // device_class "energy". Direction only shows up in the entity_id/name (e.g. Reolink/Shelly
+      // energy monitoring plugs emit "..._consumed_energy" / "..._returned_energy" sensors), so
+      // match on that instead, falling back to a generic bucket for undifferentiated energy sensors.
+      { label: 'Energy Consumed',      emoji: 'mdi:transmission-tower-import', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) && /consumed_energy|energy_consumed/i.test(e.entity_id) },
+      { label: 'Energy Returned',      emoji: 'mdi:transmission-tower-export', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) && /returned_energy|energy_return/i.test(e.entity_id) },
+      { label: 'Energy Monitoring',     emoji: 'mdi:lightning-bolt',     match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) && !/consumed_energy|energy_consumed|returned_energy|energy_return/i.test(e.entity_id) },
       { label: 'Covers',               emoji: 'mdi:window-shutter',     match: (e, st) => e.entity_id.split('.')[0] === 'cover' },
       { label: 'Climate',              emoji: 'mdi:snowflake',          match: (e, st) => e.entity_id.split('.')[0] === 'climate' },
       { label: 'Media Players',        emoji: 'mdi:speaker',            match: (e, st) => e.entity_id.split('.')[0] === 'media_player' },
