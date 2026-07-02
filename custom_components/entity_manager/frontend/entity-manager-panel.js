@@ -7887,6 +7887,7 @@ class EntityManagerPanel extends HTMLElement {
       const searchInput = this.content.querySelector('#search-input');
       if (searchInput) searchInput.value = '';
       this.expandedIntegrations.add(integration);
+      this._autoExpandLoneDevice(integration);
       this.updateView();
       this._reRenderSidebar();
       this._showToast(`Showing ${integration} entities`, 'info');
@@ -8594,6 +8595,24 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
+  /**
+   * If `integrationName` has exactly one device, also mark that device expanded — so
+   * expanding a single-device integration reveals its entities in one click instead of
+   * two. Must only be called at genuine expand-transition moments (click handlers), never
+   * from inside a render function, or it would re-add the device on every unrelated
+   * re-render and permanently block a user's manual collapse of that device row.
+   */
+  _autoExpandLoneDevice(integrationName) {
+    const intg = (this.data || []).find(i => i.integration === integrationName);
+    if (!intg) return false;
+    const deviceIds = Object.keys(intg.devices);
+    if (deviceIds.length !== 1) return false;
+    const [deviceId] = deviceIds;
+    if (this.expandedDevices.has(deviceId)) return false;
+    this.expandedDevices.add(deviceId);
+    return true;
+  }
+
   renderIntegration(integration) {
     const isExpanded = this.expandedIntegrations.has(integration.integration);
     const deviceCount = Object.keys(integration.devices).length;
@@ -9075,6 +9094,7 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedIntegrations.delete(integration);
         } else {
           this.expandedIntegrations.add(integration);
+          this._autoExpandLoneDevice(integration);
         }
         this.updateView();
       });
@@ -9431,11 +9451,16 @@ class EntityManagerPanel extends HTMLElement {
         this.integrationViewFilter[integration] = current === filterType ? undefined : filterType;
 
         // Expand the integration so the entity list is visible
+        const wasExpanded = this.expandedIntegrations.has(integration);
         this.expandedIntegrations.add(integration);
+        const loneDeviceNewlyExpanded = this._autoExpandLoneDevice(integration);
 
-        // Apply immediately via CSS class on the existing container (no full re-render needed)
+        // Apply immediately via CSS class on the existing container (no full re-render needed) —
+        // but only when the integration's device list was already rendered; the wrapper itself
+        // always exists in the DOM (isExpanded only gates its inner body), so a bare container
+        // lookup can't tell a freshly-expanded integration from an already-expanded one.
         const container = this.content.querySelector(`.integration-group[data-integration="${CSS.escape(integration)}"]`);
-        if (container) {
+        if (container && wasExpanded && !loneDeviceNewlyExpanded) {
           container.classList.remove('em-filter-enabled', 'em-filter-disabled');
           if (this.integrationViewFilter[integration]) {
             container.classList.add(`em-filter-${this.integrationViewFilter[integration]}`);
@@ -9446,7 +9471,7 @@ class EntityManagerPanel extends HTMLElement {
           container.querySelector('.view-integration-disabled')?.classList.toggle('btn-primary', this.integrationViewFilter[integration] === 'disabled');
           container.querySelector('.view-integration-disabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'disabled');
         } else {
-          // Integration was collapsed — re-render to expand it with the filter applied
+          // Integration was collapsed, or the lone device just became expanded — re-render fully
           this.updateView();
         }
       });
