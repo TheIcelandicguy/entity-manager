@@ -12000,14 +12000,8 @@ class EntityManagerPanel extends HTMLElement {
       { label: 'Door Sensors',         emoji: 'mdi:door',               match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'door' },
       { label: 'Window Sensors',       emoji: 'mdi:window-closed',      match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'window' },
       { label: 'Vibration Sensors',    emoji: 'mdi:vibrate',            match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'vibration' },
-      { label: 'Energy Monitoring',    emoji: 'mdi:lightning-bolt',
-        match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','power','energy_return','energy_storage'].includes(st?.attributes?.device_class),
-        subGroups: [
-          { label: 'Power Sensors',  match: (e, st) => st?.attributes?.device_class === 'power' },
-          { label: 'Energy Sensors', match: (e, st) => ['energy','energy_storage'].includes(st?.attributes?.device_class) },
-          { label: 'Energy Return',  match: (e, st) => st?.attributes?.device_class === 'energy_return' },
-        ]
-      },
+      { label: 'Power Monitoring',      emoji: 'mdi:flash',              match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'power' },
+      { label: 'Energy Monitoring',     emoji: 'mdi:lightning-bolt',     match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage','energy_return'].includes(st?.attributes?.device_class) },
       { label: 'Covers',               emoji: 'mdi:window-shutter',     match: (e, st) => e.entity_id.split('.')[0] === 'cover' },
       { label: 'Climate',              emoji: 'mdi:snowflake',          match: (e, st) => e.entity_id.split('.')[0] === 'climate' },
       { label: 'Media Players',        emoji: 'mdi:speaker',            match: (e, st) => e.entity_id.split('.')[0] === 'media_player' },
@@ -12318,27 +12312,6 @@ class EntityManagerPanel extends HTMLElement {
         return allGroups.map(g => renderDevGroupCard(g, labelKey)).join('');
       };
 
-      const renderLabelBody = (entities, labelKey, subGroups) => {
-        if (subGroups?.length) {
-          const states = this._hass?.states || {};
-          let html = '';
-          for (const sg of subGroups) {
-            const sgEntities = entities.filter(e => sg.match(e, states[e.entity_id]));
-            if (!sgEntities.length) continue;
-            html += `
-              <div class="em-label-type-group" style="border-bottom:1px solid var(--em-border)">
-                <div class="em-label-type-toggle" style="display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;user-select:none;background:var(--em-bg-primary);border-bottom:1px solid var(--em-border-light)">
-                  <span class="em-label-type-arrow" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
-                  <span style="font-size:12px;font-weight:700;flex:1;text-transform:uppercase;letter-spacing:0.04em">${this._escapeHtml(sg.label)}</span>
-                  <span style="font-size:11px;color:var(--em-text-secondary)">${sgEntities.length} entit${sgEntities.length !== 1 ? 'ies' : 'y'}</span>
-                </div>
-                <div class="em-label-type-body" style="display:none">${renderDeviceGroups(sgEntities, labelKey)}</div>
-              </div>`;
-          }
-          return html;
-        }
-        return renderDeviceGroups(entities, labelKey);
-      };
 
       const rows = groups.map(g => {
         const labelKey = this._escapeAttr(g.label);
@@ -12358,7 +12331,7 @@ class EntityManagerPanel extends HTMLElement {
                       style="margin-left:4px">Apply to <span class="em-label-apply-count">${g.entities.length}</span></button>
               ${this._ignoreBtn('label:' + g.label)}
             </div>
-            <div class="em-naming-device-body" style="display:none">${renderLabelBody(g.entities, labelKey, g.subGroups)}</div>
+            <div class="em-naming-device-body" style="display:none">${renderDeviceGroups(g.entities, labelKey)}</div>
           </div>`;
       }).join('');
       const body = `<div style="padding:2px 0">${rows}</div>`;
@@ -12471,19 +12444,6 @@ class EntityManagerPanel extends HTMLElement {
           applyBtn.disabled = checkedCbs.length === 0;
           applyBtn.dataset.entityIds = checkedCbs.map(c => c.dataset.entityId).join(',');
         }
-      });
-    });
-
-    // Type sub-group toggles (Energy Monitoring: Power / Energy / Energy Return)
-    dialogBody.querySelectorAll('.em-label-type-toggle').forEach(toggle => {
-      toggle.addEventListener('click', () => {
-        const group = toggle.closest('.em-label-type-group');
-        const body = group?.querySelector('.em-label-type-body');
-        const arrow = toggle.querySelector('.em-label-type-arrow');
-        if (!body) return;
-        const collapsed = body.style.display === 'none';
-        body.style.display = collapsed ? '' : 'none';
-        if (arrow) arrow.style.transform = collapsed ? '' : 'rotate(-90deg)';
       });
     });
 
