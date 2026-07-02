@@ -5721,8 +5721,13 @@ class EntityManagerPanel extends HTMLElement {
     (this.data || []).forEach(integration => {
       Object.entries(integration.devices).forEach(([deviceId, device]) => {
         device.entities.forEach(entity => {
+          // View state filter — this.data always holds the full set now, so callers that use
+          // this result directly (e.g. the smart-group bulk-action fallback when
+          // _renderedSmartGroups is stale/null) still only ever see the current viewState's entities.
+          if (this.viewState === 'enabled' && entity.is_disabled) return;
+          if (this.viewState === 'disabled' && !entity.is_disabled) return;
           let groupKey;
-          
+
           switch (this.smartGroupMode) {
             case 'room': {
               // Group by area/room if available — resolve to the friendly name, not the raw area_id slug
@@ -6411,12 +6416,14 @@ class EntityManagerPanel extends HTMLElement {
   async loadData() {
     this.setLoading(true);
     try {
-      // 'updates' is a frontend-only view — map it to 'all' for the backend
-      const backendState = ['all', 'disabled', 'enabled'].includes(this.viewState)
-        ? this.viewState : 'all';
+      // Always fetch the full set — viewState (all/enabled/disabled/updates) is applied
+      // client-side in updateView(), same as domain/search/favorites/label filters.
+      // Fetching a pre-filtered set here made stat cards and toolbar badges (e.g. "Enabled")
+      // go wrong whenever viewState wasn't 'all', since this.data only ever held the
+      // currently-selected subset.
       const result = await this._hass.callWS({
         type: 'entity_manager/get_disabled_entities',
-        state: backendState,
+        state: 'all',
       });
       
       this.data = Array.isArray(result) ? result.map(integration => {
@@ -7959,7 +7966,7 @@ class EntityManagerPanel extends HTMLElement {
     const showOnlyFavorites = this._showOnlyFavorites;
     const hasIntegrationFilter = Boolean(this.selectedIntegrationFilter);
     const hasLabelFilter = Boolean(this.selectedLabelFilter);
-    
+
     // Get entities for selected label (merge entity labels + device labels)
     let labeledEntityIds = null;
     if (hasLabelFilter) {
@@ -7970,69 +7977,66 @@ class EntityManagerPanel extends HTMLElement {
         labeledEntityIds = new Set([...fromEntities, ...fromDevices, ...fromAreas]);
       }
     }
-    
+
     // Filter by selected integration first
     if (hasIntegrationFilter) {
       filteredData = filteredData.filter(int => int.integration === this.selectedIntegrationFilter);
     }
-    
-    // Apply domain, search, favorites, and label filters
-    if (hasDomainFilter || hasSearch || showOnlyFavorites || hasLabelFilter) {
-      filteredData = filteredData.map(integration => {
-        const filteredDevices = {};
-        Object.entries(integration.devices).forEach(([deviceId, device]) => {
-          // Filter entities by domain, search, favorites, and label
-          const filteredEntities = device.entities.filter(entity => {
-            // Label filter
-            if (hasLabelFilter && labeledEntityIds && !labeledEntityIds.has(entity.entity_id)) return false;
-            
-            // Favorites filter
-            if (showOnlyFavorites && !this.favorites.has(entity.entity_id)) return false;
-            
-            const matchesDomain = !hasDomainFilter || entity.entity_id.startsWith(`${this.selectedDomain}.`);
-            if (!matchesDomain) return false;
 
-            if (!hasSearch) return true;
+    // Entity-level predicate for domain/search/favorites/label — everything EXCEPT viewState.
+    // Applied twice below: once alone (statsData, for stat cards + All/Enabled/Disabled toolbar
+    // badges, which must show true counts regardless of which state filter is active — otherwise
+    // switching to "Disabled" makes the "Enabled" badge show 0) and once combined with the
+    // viewState check (filteredData, for the actual rendered tree/smart groups).
+    const matchesNonViewStateFilters = (entity, deviceId, integration) => {
+      if (hasLabelFilter && labeledEntityIds && !labeledEntityIds.has(entity.entity_id)) return false;
+      if (showOnlyFavorites && !this.favorites.has(entity.entity_id)) return false;
+      if (hasDomainFilter && !entity.entity_id.startsWith(`${this.selectedDomain}.`)) return false;
+      if (!hasSearch) return true;
+      const entityId = entity.entity_id.toLowerCase();
+      const originalName = entity.original_name ? entity.original_name.toLowerCase() : '';
+      const integrationName = integration.integration.toLowerCase();
+      const deviceName = this.getDeviceName(deviceId).toLowerCase();
+      const termLower = this.searchTerm.toLowerCase();
+      return (
+        this._fuzzyMatch(entityId, termLower) ||
+        this._fuzzyMatch(originalName, termLower) ||
+        this._fuzzyMatch(integrationName, termLower) ||
+        this._fuzzyMatch(deviceName, termLower)
+      );
+    };
 
-            const entityId = entity.entity_id.toLowerCase();
-            const originalName = entity.original_name ? entity.original_name.toLowerCase() : '';
-            const integrationName = integration.integration.toLowerCase();
-            const deviceName = this.getDeviceName(deviceId).toLowerCase();
-
-            // Use fuzzy matching for search
-            const termLower = this.searchTerm.toLowerCase();
-            return (
-              this._fuzzyMatch(entityId, termLower) ||
-              this._fuzzyMatch(originalName, termLower) ||
-              this._fuzzyMatch(integrationName, termLower) ||
-              this._fuzzyMatch(deviceName, termLower)
-            );
-          });
-
-          if (filteredEntities.length > 0) {
-            filteredDevices[deviceId] = {
-              ...device,
-              entities: filteredEntities
-            };
+    const applyEntityFilter = (data, includeViewState) => data.map(integration => {
+      const filteredDevices = {};
+      Object.entries(integration.devices).forEach(([deviceId, device]) => {
+        const filteredEntities = device.entities.filter(entity => {
+          if (includeViewState) {
+            if (this.viewState === 'enabled' && entity.is_disabled) return false;
+            if (this.viewState === 'disabled' && !entity.is_disabled) return false;
           }
+          return matchesNonViewStateFilters(entity, deviceId, integration);
         });
+        if (filteredEntities.length > 0) {
+          filteredDevices[deviceId] = { ...device, entities: filteredEntities };
+        }
+      });
+      return { ...integration, devices: filteredDevices };
+    }).filter(integration => Object.keys(integration.devices).length > 0);
 
-        return {
-          ...integration,
-          devices: filteredDevices
-        };
-      }).filter(integration => Object.keys(integration.devices).length > 0);
-    }
+    // statsData: view-state-independent — drives stat cards + All/Enabled/Disabled toolbar badges.
+    const statsData = applyEntityFilter(filteredData, false);
+    // filteredData: also view-state-filtered — drives the actual rendered tree/smart groups.
+    filteredData = applyEntityFilter(filteredData, true);
 
-    // Calculate stats with enabled/disabled breakdown
-    const totalIntegrations = filteredData.length;
-    const totalDevices = filteredData.reduce((sum, int) => sum + Object.keys(int.devices).length, 0);
-    
+    // Calculate stats with enabled/disabled breakdown (from statsData — see above)
+    const totalIntegrations = statsData.length;
+    const totalDevices = statsData.reduce((sum, int) => sum + Object.keys(int.devices).length, 0);
+
     let totalEntities = 0;
     let disabledEntities = 0;
     let enabledEntities = 0;
-    
-    filteredData.forEach(integration => {
+
+    statsData.forEach(integration => {
       Object.values(integration.devices).forEach(device => {
         device.entities.forEach(entity => {
           totalEntities++;
@@ -8191,19 +8195,35 @@ class EntityManagerPanel extends HTMLElement {
       const smartGroups = this._getSmartGroups();
       if (smartGroups) {
         // Apply the same filters to smart groups
+        // Memoize per-device offline status so it's computed once per device, not once per entity
+        const offlineCache = new Map();
+        const isDeviceOffline = (deviceId) => {
+          if (offlineCache.has(deviceId)) return offlineCache.get(deviceId);
+          const devEntities = this._deviceEntitiesById(deviceId);
+          const withState = devEntities.filter(e => this._hass?.states[e.entity_id]);
+          const offline = withState.length > 0 && withState.every(e => this._hass.states[e.entity_id].state === 'unavailable');
+          offlineCache.set(deviceId, offline);
+          return offline;
+        };
         const filteredGroups = {};
         Object.entries(smartGroups).forEach(([groupKey, entities]) => {
           const filtered = entities.filter(entity => {
             // View state filter
             if (this.viewState === 'enabled' && entity.is_disabled) return false;
             if (this.viewState === 'disabled' && !entity.is_disabled) return false;
-            
+
+            // Offline-only filter (mirrors _renderDevicesView's device-level check)
+            if (this.showOfflineOnly && !(entity.device_id && isDeviceOffline(entity.device_id))) return false;
+
+            // Device type filter
+            if (this.deviceTypeFilter !== 'all' && (!entity.device_id || this.getDeviceType(entity.device_id) !== this.deviceTypeFilter)) return false;
+
             // Domain filter
             if (this.selectedDomain !== 'all' && !entity.entity_id.startsWith(`${this.selectedDomain}.`)) return false;
-            
+
             // Favorites filter
             if (this._showOnlyFavorites && !this.favorites.has(entity.entity_id)) return false;
-            
+
             // Search filter
             if (this.searchTerm) {
               const term = this.searchTerm.toLowerCase();
@@ -8211,7 +8231,7 @@ class EntityManagerPanel extends HTMLElement {
                      (entity.original_name || '').toLowerCase().includes(term) ||
                      entity.integration.toLowerCase().includes(term);
             }
-            
+
             return true;
           });
           
@@ -8293,9 +8313,6 @@ class EntityManagerPanel extends HTMLElement {
         displayName = groupKey;
       }
       
-      const isUnassigned = (this.smartGroupMode === 'room'  && groupKey === 'Unassigned') ||
-                           (this.smartGroupMode === 'floor' && groupKey === 'No Floor / No Area');
-
       return `
         <div class="smart-group ${isExpanded ? 'expanded' : ''}" data-smart-group="${this._escapeAttr(groupKey)}">
           <div class="smart-group-header" data-smart-group-toggle="${this._escapeAttr(groupKey)}">
@@ -8321,11 +8338,10 @@ class EntityManagerPanel extends HTMLElement {
           </div>
           ${isExpanded ? `
             <div class="smart-group-content">
-              ${(this.smartGroupMode === 'room' || isUnassigned) ? (() => {
-                // Sub-group entities: Integration → Device → Entities.
-                // - By Area mode: applied to every area group so users can spot
-                //   devices that don't belong in the current area at a glance.
-                // - Floor mode: applied only to the "No Floor / No Area" bucket.
+              ${(() => {
+                // Sub-group entities: Integration → Device → Entities, uniformly across every
+                // smart-group mode (previously only Room/Floor modes did this; Type/Device Name/
+                // Custom modes fell back to a flat entity list with no device structure at all).
                 const byIntg = {};
                 for (const entity of entities) {
                   const intg = entity.integration || 'unknown';
@@ -8363,7 +8379,7 @@ class EntityManagerPanel extends HTMLElement {
                   }).join('');
                   return this._collGroup(intgLabel, devGroups);
                 }).join('');
-              })() : entities.map(entity => this._renderEntityItem(entity, entity.integration)).join('')}
+              })()}
             </div>
           ` : ''}
         </div>
@@ -8654,7 +8670,7 @@ class EntityManagerPanel extends HTMLElement {
     
     const loadMoreBtn = hasMore ? `
       <div class="load-more-container">
-        <button class="btn btn-secondary load-more-btn" data-integration="${integrationId}" data-remaining="${remainingCount}">
+        <button class="btn btn-secondary load-more-btn" data-integration="${integrationId}" data-remaining="${remainingCount}" data-total="${entities.length}">
           Load More (${remainingCount} remaining)
         </button>
         <button class="btn btn-secondary load-all-btn" data-integration="${integrationId}" data-total="${entities.length}">
@@ -8770,13 +8786,17 @@ class EntityManagerPanel extends HTMLElement {
     `;
   }
 
-  _loadMoreEntities(integrationId, loadAll = false) {
-    const integration = (this.data || []).find(int => int.integration === integrationId);
-    if (!integration) return;
-
-    const totalEntities = Object.values(integration.devices || {}).reduce(
-      (count, device) => count + (device.entities?.length || 0), 0
-    );
+  _loadMoreEntities(integrationId, loadAll = false, totalEntities) {
+    // totalEntities should be the currently-*filtered* count (passed via the button's
+    // data-total attribute, set from _renderEntityListWithLazyLoad's own `entities` array).
+    // Falling back to this.data here would use the unfiltered total instead.
+    if (totalEntities === undefined) {
+      const integration = (this.data || []).find(int => int.integration === integrationId);
+      if (!integration) return;
+      totalEntities = Object.values(integration.devices || {}).reduce(
+        (count, device) => count + (device.entities?.length || 0), 0
+      );
+    }
 
     if (loadAll) {
       this.visibleEntityCounts[integrationId] = totalEntities;
@@ -9483,15 +9503,15 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.load-more-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._loadMoreEntities(btn.dataset.integration, false);
+        this._loadMoreEntities(btn.dataset.integration, false, parseInt(btn.dataset.total, 10));
       });
     });
-    
+
     // Load All buttons
     this.content.querySelectorAll('.load-all-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._loadMoreEntities(btn.dataset.integration, true);
+        this._loadMoreEntities(btn.dataset.integration, true, parseInt(btn.dataset.total, 10));
       });
     });
     
