@@ -537,9 +537,9 @@ if (unavailCtx.getIgnoredSet().has(eid)) { ... }  // ✓
 // NOT: if (_uvIgnoredSet.has(eid)) { ... }        // ✗ ReferenceError
 ```
 
-The same pattern applies to `orphanCtx` and any future type-specific context objects.
+The same pattern applies to any future type-specific context objects (e.g. `unavailCtx`).
 
-**Delegation pattern**: All three section types in `_renderMergedEntitySections` (`config-health`, `cleanup`, `unavailable`) must use direct-container delegation — pass `groupBody` as `container` so `overlay = groupBody` and click listeners remain on a live DOM ancestor. Never use the temp+move pattern for sections that rely on delegated event handlers.
+**Delegation pattern**: All six section types in `_renderMergedEntitySections` (`config-health`, `cleanup`, `unavailable`, `automation`, `script`, `helper`) use direct-container delegation — pass `groupBody` as `container` so `overlay = groupBody` and click listeners remain on a live DOM ancestor. Never use the temp+move pattern for sections that rely on delegated event handlers; it silently drops any DOM that isn't inside `.em-group-body` (the bulk-action bar and tint wrapper included) since only children get moved, not siblings. `automation`/`script`/`helper` pass `skipOuterGroup: true` to `showEntityListDialog` so it doesn't add a second, redundant `_collGroup` header on top of the one `_renderMergedEntitySections` already built.
 
 ### CSS Cascade Traps
 
@@ -557,6 +557,36 @@ Several base rules are defined late in `entity-manager-panel.css` (after the `@m
 ### Dialog Content Wrapper Rule
 
 `createDialog()` applies `flex: 1; overflow-y: auto` to **every direct child** of `.confirm-dialog-box` that is not the header or actions. Always wrap `contentHtml` content in a single `<div>` — never pass multiple sibling elements as top-level content — or each element becomes its own independent scroll box.
+
+### Dialog Conventions
+
+All `createDialog()`-based dialogs follow one shared convention (established during the UI structural consistency pass — see `CHANGES.md` for the version this landed in):
+
+- **Buttons**: secondary `Cancel` on the left, a verb-labeled primary action on the right (never a bare "OK"). Solo-dismiss dialogs (nothing to cancel) get a single secondary-styled `Close`.
+- **Escape** closes the topmost dialog — wired once, centrally, inside `createDialog()` itself. Don't add a per-dialog `keydown` handler for Escape; it's redundant and `createDialog()` already resolves the "only the topmost of several stacked dialogs closes" case.
+- **Width**: use `extraClass` + the `--dialog-width-md/lg/xl/2xl` CSS custom properties (defined in `:root`) instead of a one-off `max-width` value. Never set `width` directly on `.confirm-dialog-box` — only `max-width`, so the dialog still shrinks on narrow viewports.
+- **`color`**: always pass a semantic `color` (`var(--em-primary)`, `var(--em-danger)`, etc.) — it tints the header border/title and is the dialog's only visual severity cue.
+- **Search**: prefer `searchPlaceholder` (renders the input in the fixed header, outside the scrolling body) + `_attachDialogSearch(overlay)` over a hand-rolled `<input>` inside `contentHtml`. `_attachDialogSearch` filters both `.em-mini-card[data-entity-id]` rows and Suggestions-style rows (`.em-sug-row`/`.em-sug-area-card`/`.em-label-sug-card`) and hides empty `.em-group-body` sections. If a dialog's search needs to filter a re-rendered data list rather than hide/show existing DOM rows (e.g. Activity Log, Device Picker), still use `searchPlaceholder` for the input's placement, but wire its `input` event to the dialog's own re-render function instead of calling `_attachDialogSearch`.
+- **Native `confirm()`/`window.confirm()` is banned** — use `await this._confirmAsync(title, message)` instead, which resolves `true`/`false` and correctly resolves `false` on any dismissal path (No, backdrop click, Escape), not just an explicit Cancel click.
+
+### Display-Name Rename — Two Implementations, Not Three
+
+There are two legitimate rename flows, kept separate because they edit different fields:
+
+- **`showRenameDialog(entityId)`** — renames the entity's `entity_id` itself (the object-id after the domain), with a YAML dry-run/reference-update preview. Used for regular entities.
+- **`_showDisplayNameEditDialog(entityId, currentName, onSave)`** — renames only the display name (`entity_manager/update_entity_display_name`, WS param is `name`, **not** `display_name`) for automations/scripts/helpers, which don't have a user-facing renameable object-id the same way. Both the automation/script list rename button and the Entity Details dialog's hero pencil-edit route through this one shared helper — don't add a third bespoke implementation for a new display-name-rename entry point.
+
+### Unified Ignore / Restore System
+
+There is exactly **one** persistent dismiss mechanism in the app: `this._ignoredSugKeys` (a `Set` of `"type:id"` strings, persisted to the `em-ignored-suggestions` localStorage key). It's used by Suggestions (health/disable/naming/area/mismatch/label) **and** Health & Cleanup's Orphaned + Unavailable sections. Ignoring is **permanent** — there is no snooze/duration picker (`_showIgnoreSnoozeDialog` was deleted; don't re-add a time-boxed variant without deliberately deciding to reintroduce that concept).
+
+- **`this._ignoreBtn(key)`** — returns the "✕ Ignore" button markup for a row. `key` is `"type:id"`, e.g. `"orphaned:sensor.foo"`.
+- **`this._describeIgnoredKey(key)`** — resolves a key to `{ type, id, meta, name, sub }` for display in the restore list.
+- **`this._renderIgnoredListUI(container, typeFilter?)`** — renders the "View ignored (N) / Restore all" bar + expandable restore list into `container`. Pass `typeFilter` (array of type prefixes, e.g. `['orphaned']`) to scope a dialog's ignored-list to just its own types — Suggestions omits it (shows everything, since it's the app's one central "recently dismissed" view); Cleanup's Orphaned and the Unavailable branch each scope to their own type so they don't show each other's unrelated ignores.
+- **`IGN_TYPE_META`** (module-level const) — label + accent color per type. Add an entry here before introducing a new ignorable type.
+- New ignorable types must each add a `container.querySelector('.em-sug-ignored-wrap')` div in their markup and call `_renderIgnoredListUI` after render (and again after any ignore/restore action, scoped to that container).
+
+**Migration**: `_migrateLegacyIgnoreData()` (constructor, guarded by the `em-ignore-migrated-v1` localStorage flag) is a **one-time, one-way** migration from the old `em-orphan-ignored`/`em-unavail-ignored` snooze stores into `_ignoredSugKeys` — do not remove this without confirming existing users have already migrated, since it's what preserves ignores set before the unified system existed.
 
 ### Bulk Rename Inline View Pattern
 

@@ -54,6 +54,12 @@ entity-manager-panel *::after {
   --dialog-content-padding: 24px;
   --dialog-actions-padding: 16px 24px 24px 24px;
   --dialog-gap: 12px;
+  /* Dialog width scale — named tiers instead of ad hoc max-width per dialog.
+     Base .confirm-dialog-box defaults to 500px; wider dialogs opt into a tier. */
+  --dialog-width-md: 600px;
+  --dialog-width-lg: 680px;
+  --dialog-width-xl: 720px;
+  --dialog-width-2xl: 960px;
 }
 
 /* Light mode — hardcoded so EM light theme overrides HA dark cascade.
@@ -884,7 +890,7 @@ body.em-dialog-open {
 
 /* Entity detail dialog: wider + scrollable body */
 .confirm-dialog-box.em-entity-detail {
-  max-width: 680px;
+  max-width: var(--dialog-width-lg);
   display: flex;
   flex-direction: column;
   max-height: 90vh;
@@ -968,7 +974,7 @@ body.em-dialog-open {
 }
 
 .entity-list-dialog {
-  max-width: 600px;
+  max-width: var(--dialog-width-md);
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -4734,250 +4740,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   border-color: var(--em-primary);
 }
 
-/* ===== ENTITY STATISTICS VIEW ===== */
-
-.entity-stats-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 400px;
-  max-width: 500px;
-}
-
-.stats-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--em-border);
-}
-
-.stats-header .entity-icon {
-  font-size: 32px;
-}
-
-.stats-header-info h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
-  color: var(--em-text-primary);
-}
-
-.stats-header-info .entity-id {
-  font-size: 12px;
-  color: var(--em-text-secondary);
-  font-family: monospace;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.stat-card {
-  padding: 16px;
-  background: var(--em-bg-secondary);
-  border-radius: 8px;
-  text-align: center;
-}
-
-.stat-card .stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--em-primary);
-  margin-bottom: 4px;
-}
-
-.stat-card .stat-label {
-  font-size: 12px;
-  color: var(--em-text-secondary);
-}
-
-.stats-attributes {
-  padding-top: 12px;
-  border-top: 1px solid var(--em-border);
-}
-
-.stats-attributes h4 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.attribute-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.attribute-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--em-bg-secondary);
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.attribute-row .attr-key {
-  color: var(--em-text-secondary);
-}
-
-.attribute-row .attr-value {
-  color: var(--em-text-primary);
-  font-family: monospace;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ===== STATE HISTORY VIEW ===== */
-
-.state-history-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 450px;
-  max-width: 600px;
-}
-
-.history-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.history-entry {
-  display: flex;
-  position: relative;
-  padding: 12px 0 12px 32px;
-}
-
-.history-entry::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--em-border);
-}
-
-.history-entry::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 16px;
-  width: 10px;
-  height: 10px;
-  background: var(--em-primary);
-  border-radius: 50%;
-  border: 2px solid var(--em-bg-primary);
-}
-
-.history-entry:first-child::before {
-  top: 16px;
-}
-
-.history-entry:last-child::before {
-  bottom: calc(100% - 16px);
-}
-
-.history-content {
-  flex: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 10px 14px;
-  background: var(--em-bg-secondary);
-  border-radius: 8px;
-}
-
-.history-state {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--em-text-primary);
-}
-
-.history-time {
-  font-size: 12px;
-  color: var(--em-text-secondary);
-}
-
-.history-empty {
-  text-align: center;
-  padding: 32px;
-  color: var(--em-text-secondary);
-}
-
-/* ===== DEPENDENCIES VIEW ===== */
-
-.dependencies-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 400px;
-  max-width: 500px;
-}
-
-.dependency-section {
-  padding: 12px;
-  background: var(--em-bg-secondary);
-  border-radius: 8px;
-}
-
-.dependency-section h4 {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--em-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.dependency-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  background: var(--em-bg-primary);
-  border-radius: 6px;
-  margin-bottom: 8px;
-}
-
-.dependency-item:last-child {
-  margin-bottom: 0;
-}
-
-.dependency-item .dep-icon {
-  font-size: 20px;
-}
-
-.dependency-item .dep-info {
-  flex: 1;
-}
-
-.dependency-item .dep-name {
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.dependency-item .dep-id {
-  font-size: 11px;
-  color: var(--em-text-secondary);
-  font-family: monospace;
-}
-
-.no-dependencies {
-  text-align: center;
-  padding: 24px;
-  color: var(--em-text-secondary);
-  font-style: italic;
-}
-
 /* ===== BATCH PREVIEW MODAL ===== */
 
 .batch-preview {
@@ -5106,73 +4868,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   cursor: pointer;
   font-size: 14px;
   color: var(--em-text-primary);
-}
-
-/* ===== IMPACT ANALYSIS VIEW ===== */
-
-.impact-analysis {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 450px;
-  max-width: 600px;
-}
-
-.impact-warning {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: rgba(255, 183, 77, 0.15);
-  border: 1px solid var(--em-warning);
-  border-radius: 8px;
-  color: var(--em-warning);
-}
-
-.impact-warning.no-impact {
-  background: rgba(0, 200, 83, 0.15);
-  border-color: var(--em-success);
-  color: var(--em-success);
-}
-
-.impact-warning .icon {
-  font-size: 24px;
-}
-
-.impact-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.impact-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--em-bg-secondary);
-  border-radius: 6px;
-}
-
-.impact-item .impact-icon {
-  font-size: 20px;
-}
-
-.impact-item .impact-info {
-  flex: 1;
-}
-
-.impact-item .impact-name {
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.impact-item .impact-type {
-  font-size: 11px;
-  color: var(--em-text-secondary);
-  text-transform: uppercase;
 }
 
 /* ===== VIRTUAL SCROLLING ===== */
@@ -5537,12 +5232,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .em-sug-action.em-assign-btn { margin-top: 8px; display: inline-block; }
 
-/* ===== Area / Floor Assignment Dialog ===== */
-.confirm-dialog-box.em-afd-dialog { max-width: 680px; }
-.confirm-dialog-box.em-afd-dialog .confirm-dialog-header {
-  border-bottom: 2px solid var(--em-primary);
-}
-
+/* ===== Area / Floor picker component (shared by the unified Assign dialog) ===== */
 .em-afd-wrap {
   display: flex;
   flex-direction: column;
@@ -5732,7 +5422,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 /* ===== Unified Assign dialog ===== */
-.confirm-dialog-box.em-assign-dialog { width: 660px; max-width: 96vw; }
+.confirm-dialog-box.em-assign-dialog { max-width: min(var(--dialog-width-lg), 96vw); }
 .em-assign-wrap { display: flex; flex-direction: column; gap: 14px; }
 .em-assign-section {
   border: 1px solid var(--em-border);
@@ -5817,7 +5507,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 @media (max-width: 600px) {
   .entity-header-label { font-size: 10px; padding: 2px 7px 2px 4px; }
   /* Unified Assign dialog — go near-fullscreen and let everything scroll */
-  .confirm-dialog-box.em-assign-dialog { width: 96vw; max-width: 96vw; max-height: 94vh; }
+  .confirm-dialog-box.em-assign-dialog { width: 96vw; max-height: 94vh; }
   .em-assign-dialog .em-assign-body { padding: 10px; }
   .em-assign-dialog #em-asn-target { gap: 4px; }
   .em-assign-dialog #em-asn-target .em-target-btn { min-width: 0; flex: 1 1 auto; }
@@ -6411,11 +6101,11 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Suggestions dialog — wider */
 .confirm-dialog-box.em-suggestions {
-  max-width: 720px;
+  max-width: var(--dialog-width-xl);
 }
 
 .confirm-dialog-box.em-wide {
-  max-width: 960px;
+  max-width: var(--dialog-width-2xl);
 }
 
 /* Per-section tints — section header, sub-group headers, entity rows */
