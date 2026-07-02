@@ -193,7 +193,9 @@ Most state is persisted to `localStorage` via `_loadFromStorage()`/`_saveToStora
 | `this.data` | _(in-memory)_ | Raw entity data from WebSocket |
 | `this.expandedIntegrations` / `expandedDevices` | _(in-memory)_ | Collapsed/expanded tree sections — **not persisted**, resets every reload |
 | `this.selectedEntities` | _(in-memory)_ | Current checkbox selections |
-| `this.searchTerm` / `viewState` / `selectedDomain` | _(in-memory)_ | Active search/filter state — **not persisted**, resets every reload (unlike almost every other toolbar control below) |
+| `this.searchTerm` | `em-search-term` | Active search string — persisted via getter/setter accessors, not a direct `_saveToStorage` call site |
+| `this.viewState` | `em-view-state` | `"all"`, `"enabled"`, `"disabled"`, or `"updates"` — persisted via getter/setter accessors |
+| `this.selectedDomain` | `em-selected-domain` | Active domain filter — persisted via getter/setter accessors |
 | `this.favorites` | `em-favorites` | Favorited entity IDs |
 | `this.entityAliases` | `em-entity-aliases` | Non-destructive display name overrides |
 | `this.activityLog` | `em-activity-log` | Last 100 operations |

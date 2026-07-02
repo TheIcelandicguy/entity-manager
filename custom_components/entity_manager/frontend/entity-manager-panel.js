@@ -261,18 +261,17 @@ class EntityManagerPanel extends HTMLElement {
     this.expandedDevices = new Set();
     this.selectedEntities = new Set();
     this.selectedUpdates = new Set();
-    this.searchTerm = '';
-    this.viewState = 'all';
+    this._searchTerm = localStorage.getItem('em-search-term') || '';
+    this._viewState = localStorage.getItem('em-view-state') || 'all';
     this.viewMode = 'integrations'; // 'integrations' | 'devices'
     this._viewingSelected = false;
     this._bulkRenameMode = false;
     this._activeView = null;
     this._pendingSuggestionsSection = null;
-    this._ignoredSuggestions = new Set(); // transient: device IDs whose area suggestion has been dismissed for this session
     // Persistent: suggestion keys (`<type>:<id>`) the user dismissed in the Suggestions view
     this._ignoredSugKeys = new Set(this._loadFromStorage('em-ignored-suggestions', []));
     this._migrateLegacyIgnoreData();
-    this.selectedDomain = 'all';
+    this._selectedDomain = localStorage.getItem('em-selected-domain') || 'all';
     this.selectedIntegrationFilter = null; // Filter to show only one integration
     this.integrationViewFilter = {};       // Per-integration entity state filter: 'enabled' | 'disabled' | undefined
     this.deviceViewFilter = {};            // Per-device entity state filter: 'enabled' | 'disabled' | undefined
@@ -342,6 +341,7 @@ class EntityManagerPanel extends HTMLElement {
     this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
     this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
     this.customGroups = JSON.parse(localStorage.getItem('em-custom-groups') || '[]'); // [{id, name, entityIds[]}]
+    this.presets = this._loadFromStorage('em-presets', []); // sidebar PRESETS: [{id, name, entityIds[]}] — distinct from filterPresets/Saved Views
     this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
     this._renderedSmartGroups = null; // Cached filtered groups from last smart-group render
     this.entityAreaMap = null;        // entity_id → area_id for orphan entities (no device)
@@ -824,7 +824,7 @@ class EntityManagerPanel extends HTMLElement {
         return `<div>
           <label style="display:block;font-size:0.85em;font-weight:600;margin-bottom:4px;color:var(--em-text-secondary)">${f.label}</label>
           <input type="${f.type || 'text'}" id="em-ch-${f.id}" value="${f.default}"
-            style="width:100%;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:0.9em;box-sizing:border-box">
+            style="width:100%;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:0.9em;box-sizing:border-box">
         </div>`;
       }).join('');
     };
@@ -836,14 +836,14 @@ class EntityManagerPanel extends HTMLElement {
         <div style="display:flex;flex-direction:column;gap:14px;padding:4px 0">
           <div>
             <label style="display:block;font-size:0.85em;font-weight:600;margin-bottom:6px;color:var(--em-text-secondary)">Helper Type</label>
-            <select id="em-ch-type" style="width:100%;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:0.9em">
+            <select id="em-ch-type" style="width:100%;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:0.9em">
               ${typeOptionsHtml}
             </select>
           </div>
           <div>
             <label style="display:block;font-size:0.85em;font-weight:600;margin-bottom:6px;color:var(--em-text-secondary)">Name</label>
             <input type="text" id="em-ch-name" placeholder="e.g. Living Room Toggle"
-              style="width:100%;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:0.9em;box-sizing:border-box">
+              style="width:100%;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:0.9em;box-sizing:border-box">
           </div>
           <div id="em-ch-extra-fields"></div>
         </div>
@@ -1010,6 +1010,26 @@ class EntityManagerPanel extends HTMLElement {
     }
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     return luminance < 0.5;
+  }
+
+  // Persisted via getter/setter (not per-call-site localStorage writes) so every
+  // assignment — present and future — stays in sync automatically.
+  get searchTerm() { return this._searchTerm; }
+  set searchTerm(value) {
+    this._searchTerm = value;
+    localStorage.setItem('em-search-term', value);
+  }
+
+  get viewState() { return this._viewState; }
+  set viewState(value) {
+    this._viewState = value;
+    localStorage.setItem('em-view-state', value);
+  }
+
+  get selectedDomain() { return this._selectedDomain; }
+  set selectedDomain(value) {
+    this._selectedDomain = value;
+    localStorage.setItem('em-selected-domain', value);
   }
 
   connectedCallback() {
@@ -4435,9 +4455,8 @@ class EntityManagerPanel extends HTMLElement {
     if (!entityIds.length) { this._showToast('No entities selected', 'info'); return; }
     this._showPromptDialog('Save Preset', 'Name for this preset:', `Preset ${Date.now() % 1000}`, name => {
       if (!name?.trim()) return;
-      const presets = this._loadFromStorage('em-presets', []);
-      presets.push({ id: `ep_${Date.now()}`, name: name.trim(), entityIds });
-      this._saveToStorage('em-presets', presets);
+      this.presets.push({ id: `ep_${Date.now()}`, name: name.trim(), entityIds });
+      this._saveToStorage('em-presets', this.presets);
       this._reRenderSidebar();
       this._showToast(`Preset "${name.trim()}" saved (${entityIds.length} entities)`, 'success');
     });
@@ -5190,7 +5209,7 @@ class EntityManagerPanel extends HTMLElement {
             <strong>Create New Label:</strong>
             <div style="display:flex;gap:8px;margin-top:8px">
               <input type="text" id="new-label-name" placeholder="Label name"
-                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:4px;background:var(--em-surface);color:var(--em-text)">
+                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:4px;background:var(--em-bg-primary);color:var(--em-text-primary)">
             </div>
             <div class="em-label-color-picker" id="new-label-color" data-value="blue" style="margin-top:8px">
               ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
@@ -5324,7 +5343,7 @@ class EntityManagerPanel extends HTMLElement {
           <div class="create-label" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--em-border);">
             <strong>Create New Label:</strong>
             <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
-              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-surface); color: var(--em-text);">
+              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-bg-primary); color: var(--em-text-primary);">
             </div>
             <div class="em-label-color-picker" id="new-label-color" data-value="blue" style="margin-top:8px">
               ${HA_LABEL_COLORS.map(([name, hex]) => `<button class="em-label-swatch${name === 'blue' ? ' selected' : ''}" data-color="${name}" style="background:${hex}" title="${name}"></button>`).join('')}
@@ -5705,11 +5724,13 @@ class EntityManagerPanel extends HTMLElement {
           let groupKey;
           
           switch (this.smartGroupMode) {
-            case 'room':
-              // Group by area/room if available
+            case 'room': {
+              // Group by area/room if available — resolve to the friendly name, not the raw area_id slug
               const deviceInfo = this.deviceInfo[deviceId];
-              groupKey = deviceInfo?.area_id || 'Unassigned';
+              const roomAreaId = deviceInfo?.area_id || null;
+              groupKey = roomAreaId ? (this.areaLookup?.get(roomAreaId)?.areaName || roomAreaId) : 'Unassigned';
               break;
+            }
             case 'type':
               // Group by entity domain
               groupKey = entity.entity_id.split('.')[0];
@@ -6143,7 +6164,7 @@ class EntityManagerPanel extends HTMLElement {
         <div class="sidebar-section ${this.sidebarOpenSections.has('presets') ? '' : 'section-collapsed'}">
           <div class="sidebar-section-title" data-section-id="presets">Presets<svg class="em-chev" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
           ${(() => {
-            const presets = this._loadFromStorage('em-presets', []);
+            const presets = this.presets;
             const hasSel = this.selectedEntities?.size > 0;
             const saveBtn = `
               <div class="sidebar-item ${hasSel ? '' : 'disabled'}" data-action="save-entity-preset" title="${hasSel ? 'Save selected entities as a preset' : 'Select entities first'}">
@@ -6614,6 +6635,20 @@ class EntityManagerPanel extends HTMLElement {
       out.push({ labelId: id, scope });
     }
     // Group broadest-first so A, then D, then E read left-to-right
+    out.sort((a, b) => order[a.scope] - order[b.scope]);
+    return out;
+  }
+
+  /** Device-level counterpart to _effectiveEntityLabels — device's own labels (D) plus its area's labels (A). */
+  _effectiveDeviceLabels(deviceId, areaId = null) {
+    const effectiveAreaId = areaId || this.deviceInfo?.[deviceId]?.area_id || null;
+    const dSet = new Set(this.deviceLabelsMap?.get(deviceId) || []);
+    const aSet = new Set(effectiveAreaId ? (this.areaLabelsMap?.get(effectiveAreaId) || []) : []);
+    const out = [];
+    const order = { A: 0, D: 1 };
+    for (const id of new Set([...dSet, ...aSet])) {
+      out.push({ labelId: id, scope: aSet.has(id) ? 'A' : 'D' });
+    }
     out.sort((a, b) => order[a.scope] - order[b.scope]);
     return out;
   }
@@ -7160,6 +7195,7 @@ class EntityManagerPanel extends HTMLElement {
           class="search-box"
           placeholder="Search entities, devices, or integrations..."
           id="search-input"
+          value="${this._escapeAttr(this.searchTerm)}"
         />
       </div>
 
@@ -7371,21 +7407,10 @@ class EntityManagerPanel extends HTMLElement {
         this._reRenderSidebar();
 
         // Show/hide update filter dropdown and buttons
-        const updateFilterDropdown = this.content.querySelector('#update-filter-dropdown');
-
+        this._setUpdatesChromeVisible(this.viewState === 'updates');
         if (this.viewState === 'updates') {
-          updateFilterDropdown.style.display = 'block';
-          const updateTypeDropdown = this.content.querySelector('#update-type-dropdown');
-          if (updateTypeDropdown) updateTypeDropdown.style.display = 'block';
-          const hideLabel = this.content.querySelector('#hide-uptodate-label');
-          if (hideLabel) hideLabel.style.display = 'flex';
           this.loadUpdates();
         } else {
-          updateFilterDropdown.style.display = 'none';
-          const updateTypeDropdown = this.content.querySelector('#update-type-dropdown');
-          if (updateTypeDropdown) updateTypeDropdown.style.display = 'none';
-          const hideLabel = this.content.querySelector('#hide-uptodate-label');
-          if (hideLabel) hideLabel.style.display = 'none';
           this.loadData();
         }
       });
@@ -7422,12 +7447,7 @@ class EntityManagerPanel extends HTMLElement {
         if (this.viewState === 'updates') {
           this.viewState = 'all';
           this.setActiveFilter();
-          const updateFilterDropdown = this.content.querySelector('#update-filter-dropdown');
-          if (updateFilterDropdown) updateFilterDropdown.style.display = 'none';
-          const updateTypeDropdown = this.content.querySelector('#update-type-dropdown');
-          if (updateTypeDropdown) updateTypeDropdown.style.display = 'none';
-          const hideLabel = this.content.querySelector('#hide-uptodate-label');
-          if (hideLabel) hideLabel.style.display = 'none';
+          this._setUpdatesChromeVisible(false);
           this.loadData();
         } else {
           this.updateView();
@@ -7566,11 +7586,54 @@ class EntityManagerPanel extends HTMLElement {
     }
     
     // Handle sidebar items
-    this.querySelector('.em-sidebar')?.addEventListener('click', (e) => {
+    this.querySelector('.em-sidebar')?.addEventListener('click', async (e) => {
       const deleteBtn = e.target.closest('.preset-delete');
       if (deleteBtn) {
         e.stopPropagation();
         this._deleteFilterPreset(parseInt(deleteBtn.dataset.delete));
+        return;
+      }
+      // Entity preset buttons (Enable / Disable / Rename / Delete)
+      const presetBtn = e.target.closest('.em-preset-enable, .em-preset-disable, .em-preset-rename-btn, .em-preset-delete');
+      if (presetBtn) {
+        e.stopPropagation();
+        const epId = presetBtn.dataset.epId;
+        const preset = this.presets.find(p => p.id === epId);
+        if (!preset) return;
+
+        if (presetBtn.classList.contains('em-preset-enable') || presetBtn.classList.contains('em-preset-disable')) {
+          const isEnable = presetBtn.classList.contains('em-preset-enable');
+          if (!preset.entityIds.length) { this._showToast('Preset is empty', 'info'); return; }
+          presetBtn.disabled = true;
+          presetBtn.textContent = '…';
+          try {
+            const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+            const res = await this._hass.callWS({ type: wsType, entity_ids: preset.entityIds });
+            const n = res.success?.length ?? preset.entityIds.length;
+            this._suppressEntityNotif(preset.entityIds, !isEnable);
+            this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds: [...preset.entityIds] });
+            this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`, 'success');
+            await this.loadData();
+          } catch (err) {
+            this._showToast('Preset action failed: ' + (err.message || err), 'error');
+            presetBtn.disabled = false;
+            presetBtn.textContent = isEnable ? 'Enable' : 'Disable';
+          }
+
+        } else if (presetBtn.classList.contains('em-preset-rename-btn')) {
+          this._showPromptDialog('Rename Preset', `New name for "${preset.name}":`, preset.name, newName => {
+            if (!newName?.trim()) return;
+            preset.name = newName.trim();
+            this._saveToStorage('em-presets', this.presets);
+            this._reRenderSidebar();
+          }, 'Rename');
+
+        } else if (presetBtn.classList.contains('em-preset-delete')) {
+          if (!(await this._confirmAsync('Delete preset', `Delete preset "${preset.name}"?`))) return;
+          this.presets = this.presets.filter(p => p.id !== epId);
+          this._saveToStorage('em-presets', this.presets);
+          this._reRenderSidebar();
+        }
         return;
       }
       // Custom group — edit
@@ -7809,50 +7872,6 @@ class EntityManagerPanel extends HTMLElement {
       this._reRenderSidebar();
       this._showToast(`Showing ${integration} entities`, 'info');
     }
-
-    // Entity preset buttons (Enable / Disable / Rename / Delete)
-    this.querySelector('.em-sidebar')?.querySelectorAll('.em-preset-enable, .em-preset-disable, .em-preset-rename-btn, .em-preset-delete').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const epId = btn.dataset.epId;
-        const presets = this._loadFromStorage('em-presets', []);
-        const preset = presets.find(p => p.id === epId);
-        if (!preset) return;
-
-        if (btn.classList.contains('em-preset-enable') || btn.classList.contains('em-preset-disable')) {
-          const isEnable = btn.classList.contains('em-preset-enable');
-          if (!preset.entityIds.length) { this._showToast('Preset is empty', 'info'); return; }
-          btn.disabled = true;
-          btn.textContent = '…';
-          try {
-            const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
-            const res = await this._hass.callWS({ type: wsType, entity_ids: preset.entityIds });
-            const n = res.success?.length ?? preset.entityIds.length;
-            this._suppressEntityNotif(preset.entityIds, !isEnable);
-            this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`, 'success');
-            await this.loadData();
-          } catch (err) {
-            this._showToast('Preset action failed: ' + (err.message || err), 'error');
-            btn.disabled = false;
-            btn.textContent = isEnable ? 'Enable' : 'Disable';
-          }
-
-        } else if (btn.classList.contains('em-preset-rename-btn')) {
-          this._showPromptDialog('Rename Preset', `New name for "${preset.name}":`, preset.name, newName => {
-            if (!newName?.trim()) return;
-            preset.name = newName.trim();
-            this._saveToStorage('em-presets', presets);
-            this._reRenderSidebar();
-          }, 'Rename');
-
-        } else if (btn.classList.contains('em-preset-delete')) {
-          if (!(await this._confirmAsync('Delete preset', `Delete preset "${preset.name}"?`))) return;
-          const updated = presets.filter(p => p.id !== epId);
-          this._saveToStorage('em-presets', updated);
-          this._reRenderSidebar();
-        }
-      });
-    });
   }
 
   setActiveFilter() {
@@ -7860,6 +7879,16 @@ class EntityManagerPanel extends HTMLElement {
     buttons.forEach(btn => {
       btn.classList.toggle('active', btn.dataset.filter === this.viewState);
     });
+  }
+
+  /** Show/hide the Updates-view-only toolbar chrome (filter dropdown, type dropdown, hide-uptodate checkbox). */
+  _setUpdatesChromeVisible(visible) {
+    const updateFilterDropdown = this.content.querySelector('#update-filter-dropdown');
+    if (updateFilterDropdown) updateFilterDropdown.style.display = visible ? 'block' : 'none';
+    const updateTypeDropdown = this.content.querySelector('#update-type-dropdown');
+    if (updateTypeDropdown) updateTypeDropdown.style.display = visible ? 'block' : 'none';
+    const hideLabel = this.content.querySelector('#hide-uptodate-label');
+    if (hideLabel) hideLabel.style.display = visible ? 'flex' : 'none';
   }
 
   updateView() {
@@ -7923,8 +7952,6 @@ class EntityManagerPanel extends HTMLElement {
         return;
       }
     }
-
-    this.updateDomainOptions();
 
     let filteredData = this.data;
     const hasDomainFilter = this.selectedDomain && this.selectedDomain !== 'all';
@@ -8731,8 +8758,8 @@ class EntityManagerPanel extends HTMLElement {
             ${isToggleable ? `<button class="icon-btn toggle-entity${isOn ? ' toggle-on' : ''}" data-entity-id="${eid}" title="${isOn ? 'Turn off' : 'Turn on'}"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg></button>` : ''}
             ${isPressable ? `<button class="icon-btn press-entity" data-entity-id="${eid}" title="Press">${this._icon(EM_ICONS.play, '16px')}</button>` : ''}
             <button class="icon-btn rename-entity" data-entity-id="${eid}" title="Rename">${this._icon(EM_ICONS.rename, '16px')}</button>
-            <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable">${this._icon(EM_ICONS.enable, '16px')}</button>
-            <button class="icon-btn disable-entity" data-entity-id="${eid}" title="Disable">${this._icon(EM_ICONS.disable, '16px')}</button>
+            <button class="icon-btn enable-entity" data-entity-id="${eid}" title="Enable" ${entity.is_disabled ? '' : 'disabled'}>${this._icon(EM_ICONS.enable, '16px')}</button>
+            <button class="icon-btn disable-entity" data-entity-id="${eid}" title="Disable" ${entity.is_disabled ? 'disabled' : ''}>${this._icon(EM_ICONS.disable, '16px')}</button>
             <button class="icon-btn assign-area-btn" data-entity-id="${eid}" title="Assign to area">${this._icon(EM_ICONS.area, '16px')}</button>
             <button class="icon-btn bulk-rename-btn" data-action="bulk-rename" title="Bulk Rename Selected" ${this.selectedEntities.size >= 2 ? '' : 'disabled'}>${this._icon(EM_ICONS.bulkRename, '16px')}</button>
             <button class="icon-btn bulk-labels-btn" data-action="bulk-labels" title="Bulk Labels Selected" ${this.selectedEntities.size >= 2 ? '' : 'disabled'}>${this._icon(EM_ICONS.bulkLabels, '16px')}</button>
@@ -8775,8 +8802,8 @@ class EntityManagerPanel extends HTMLElement {
     const deviceEntityIds = device.entities.map(e => this._escapeAttr(e.entity_id)).join(',');
     const areaId = this.deviceInfo?.[deviceId]?.area_id;
     const areaName = areaId ? (this.areaLookup?.get(areaId)?.areaName || areaId) : null;
-    // Area suggestion for devices with no area assigned (respect transient ignore set)
-    const deviceAreaSuggestion = (!areaId && !this._ignoredSuggestions?.has(deviceId))
+    // Area suggestion for devices with no area assigned (respect the shared, persistent ignore set)
+    const deviceAreaSuggestion = (!areaId && !this._ignoredSugKeys.has('area:' + deviceId))
       ? this._suggestArea(this.getDeviceName(deviceId))
       : null;
 
@@ -8828,7 +8855,7 @@ class EntityManagerPanel extends HTMLElement {
           ${typeBadge}
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span class="count-enabled">${enabledCount}</span>/<span class="count-disabled">${disabledCount}</span>)</span>
           <span class="device-area-chip em-chip-clickable${areaName ? '' : ' em-area-unset'}" data-device-id="${deviceIdEsc}" title="${areaName ? `${this._escapeAttr(areaName)} — click to change area` : 'No area assigned — click to assign'}">${this._icon(EM_ICONS.area, '13px')} ${areaName ? this._escapeHtml(areaName) : '<span class="em-area-placeholder">No area</span>'}</span>
-          ${this._renderLabelChips((this.deviceLabelsMap?.get(deviceId) || []).map(labelId => ({ labelId, scope: 'D' })), `data-device-id="${deviceIdEsc}"`)}
+          ${this._renderLabelChips(this._effectiveDeviceLabels(deviceId, areaId), `data-device-id="${deviceIdEsc}"`)}
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">${viewFilterBtns}
             <button class="device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
             <button class="device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
@@ -8975,22 +9002,7 @@ class EntityManagerPanel extends HTMLElement {
         const groups = this._renderedSmartGroups || this._getSmartGroups();
         const entities = groups[groupKey] || [];
         const entityIds = entities.map(en => en.entity_id);
-        if (!entityIds.length) return;
-        btn.disabled = true;
-        btn.textContent = '…';
-        try {
-          const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
-          const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
-          const n = res?.success?.length ?? entityIds.length;
-          this._suppressEntityNotif(entityIds, !isEnable);
-          this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
-          this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
-          await this.loadData();
-        } catch (err) {
-          this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ${err.message || err}`, 'error');
-          btn.disabled = false;
-          btn.textContent = isEnable ? 'Enable All' : 'Disable All';
-        }
+        await this._bulkToggleGroup(btn, entityIds, isEnable);
       });
     });
 
@@ -9106,13 +9118,14 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Device suggestion row — Ignore button dismisses for this session
+    // Device suggestion row — Ignore button dismisses persistently (shared with Suggestions dialog)
     this.content.querySelectorAll('.device-suggestion-row .device-suggestion-ignore').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const { deviceId } = btn.dataset;
         if (!deviceId) return;
-        this._ignoredSuggestions.add(deviceId);
+        this._ignoredSugKeys.add('area:' + deviceId);
+        this._saveToStorage('em-ignored-suggestions', [...this._ignoredSugKeys]);
         // Smooth removal of just this row (no full re-render needed)
         const row = btn.closest('.device-suggestion-row');
         if (row) {
@@ -9189,22 +9202,7 @@ class EntityManagerPanel extends HTMLElement {
         } else if (btn.dataset.entityIds) {
           entityIds = btn.dataset.entityIds.split(',').filter(Boolean);
         }
-        if (!entityIds.length) return;
-        btn.disabled = true;
-        btn.textContent = '…';
-        try {
-          const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
-          const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
-          const n = res.success?.length ?? entityIds.length;
-          this._suppressEntityNotif(entityIds, !isEnable);
-          this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
-          this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
-          await this.loadData();
-        } catch (err) {
-          this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ` + (err.message || err), 'error');
-          btn.disabled = false;
-          btn.textContent = isEnable ? 'Enable All' : 'Disable All';
-        }
+        await this._bulkToggleGroup(btn, entityIds, isEnable);
       });
     });
 
@@ -9710,6 +9708,30 @@ class EntityManagerPanel extends HTMLElement {
       this.showErrorDialog(`Error enabling entities: ${error.message}`);
     } finally {
       this.setLoading(false);
+    }
+  }
+
+  /**
+   * Shared handler for the device-card and smart-group "Enable All"/"Disable All"
+   * buttons — a fixed entity list bound to one button, not the toolbar's
+   * checkbox-selection-based bulkEnableEntities()/bulkDisable().
+   */
+  async _bulkToggleGroup(btn, entityIds, isEnable) {
+    if (!entityIds.length) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+      const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
+      const n = res?.success?.length ?? entityIds.length;
+      this._suppressEntityNotif(entityIds, !isEnable);
+      this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
+      this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+      await this.loadData();
+    } catch (err) {
+      this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ${err.message || err}`, 'error');
+      btn.disabled = false;
+      btn.textContent = isEnable ? 'Enable All' : 'Disable All';
     }
   }
 
@@ -10995,7 +11017,7 @@ class EntityManagerPanel extends HTMLElement {
           <button class="em-inline-back-btn">${svgBack} Back</button>
           <span class="em-inline-view-title">${this._icon(EM_ICONS.activity, '16px')} Last Activity</span>
           <span id="em-at-count" class="sidebar-count-badge" style="font-size:12px"></span>
-          <input id="em-at-search" type="text" class="em-at-search-input" placeholder="Search name, entity ID, device…" style="flex:1;min-width:140px;max-width:260px;padding:5px 10px;border-radius:6px;border:1.5px solid var(--em-border);background:var(--em-bg-secondary);color:var(--em-text);font-size:13px">
+          <input id="em-at-search" type="text" class="em-at-search-input" placeholder="Search name, entity ID, device…" style="flex:1;min-width:140px;max-width:260px;padding:5px 10px;border-radius:6px;border:1.5px solid var(--em-border);background:var(--em-bg-secondary);color:var(--em-text-primary);font-size:13px">
           <div class="em-at-filters">${filterPills}</div>
           <button class="em-inline-refresh-btn" id="em-at-refresh" title="Refresh timestamps">${svgRefresh}</button>
         </div>
@@ -11214,13 +11236,13 @@ class EntityManagerPanel extends HTMLElement {
           ${renderRuleList()}
         </div>
         <div class="em-rule-add-form">
-          <input type="text" class="em-rule-pattern-input" placeholder="Pattern (e.g. ELD, stofa, shelly.*bath)" style="flex:2;min-width:100px;padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:13px;font-family:monospace">
-          <select class="em-rule-type-select" style="padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:13px">
+          <input type="text" class="em-rule-pattern-input" placeholder="Pattern (e.g. ELD, stofa, shelly.*bath)" style="flex:2;min-width:100px;padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:13px;font-family:monospace">
+          <select class="em-rule-type-select" style="padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:13px">
             <option value="contains">Contains</option>
             <option value="prefix">Prefix</option>
             <option value="regex">Regex</option>
           </select>
-          <select class="em-rule-area-select" style="flex:2;min-width:100px;padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:13px">
+          <select class="em-rule-area-select" style="flex:2;min-width:100px;padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:13px">
             <option value="">Select area…</option>
             ${areaOptions}
           </select>
@@ -11229,7 +11251,7 @@ class EntityManagerPanel extends HTMLElement {
         <div style="border-top:1px solid var(--em-border);padding-top:10px">
           <div style="font-size:12px;font-weight:600;color:var(--em-text-secondary);margin-bottom:6px">Test a device name:</div>
           <div style="display:flex;gap:6px;align-items:center">
-            <input type="text" class="em-rule-test-input" placeholder="Type a device name…" style="flex:1;padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-surface);color:var(--em-text);font-size:13px">
+            <input type="text" class="em-rule-test-input" placeholder="Type a device name…" style="flex:1;padding:5px 8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary);font-size:13px">
             <span class="em-rule-test-result" style="font-size:12px;font-weight:600;min-width:80px;white-space:nowrap">—</span>
           </div>
         </div>
@@ -11724,7 +11746,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>`;
         }).join('');
         return `<div style="border:2px solid var(--em-primary);border-radius:8px;margin:6px 10px;overflow:hidden">
-          <div style="padding:6px 12px;background:rgba(var(--em-primary-rgb,33,150,243),0.08);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
+          <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
             ${this._escapeHtml(label)} <span style="font-weight:400;opacity:0.7">(${items.length})</span>
           </div>
           ${itemsHtml}
@@ -11779,7 +11801,7 @@ class EntityManagerPanel extends HTMLElement {
           <div style="padding:8px 4px 4px">
             <p style="margin:0 0 12px">Assign <strong>${this._escapeHtml(entityId)}</strong> to:</p>
             <div style="border:2px solid var(--em-primary);border-radius:8px;overflow:hidden;margin-bottom:4px">
-              <div style="padding:6px 12px;background:rgba(var(--em-primary-rgb,33,150,243),0.08);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
+              <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
                 ${this._escapeHtml(integLabel)}
               </div>
               <div style="padding:10px 14px;font-weight:600;font-size:13px">${this._escapeHtml(deviceName)}</div>
@@ -13216,13 +13238,15 @@ class EntityManagerPanel extends HTMLElement {
         btn.disabled = true;
         btn.textContent = 'Disabling…';
         try {
+          const entityIds = browser.entities.map(en => en.entity_id);
           for (const entity of browser.entities) {
             await this._hass.callWS({
               type: 'entity_manager/disable_entity',
               entity_id: entity.entity_id,
             });
           }
-          this._suppressEntityNotif(browser.entities.map(e => e.entity_id), true);
+          this._pushUndoAction({ type: 'bulk_disable', entityIds });
+          this._suppressEntityNotif(entityIds, true);
           this._showToast(`Disabled ${browser.entities.length} entities for ${browser.name}`, 'success');
           btn.textContent = 'Disabled';
         } catch (err) {
@@ -13636,6 +13660,7 @@ class EntityManagerPanel extends HTMLElement {
         disableBtn.disabled = true; disableBtn.textContent = '…';
         try {
           await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: entityId });
+          this._pushUndoAction({ type: 'disable', entityId });
           this._suppressEntityNotif(entityId, true);
           overlay.querySelector(`.em-cleanup-stale-row[data-entity-id="${CSS.escape(entityId)}"]`)?.remove();
           this.healthCount = Math.max(0, (this.healthCount || 0) - 1);
@@ -14621,10 +14646,12 @@ class EntityManagerPanel extends HTMLElement {
               entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
             );
             let ok = 0, fail = 0;
+            const succeededIds = [];
             results.forEach((r, i) => {
-              if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
+              if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); succeededIds.push(entityIds[i]); ok++; }
               else fail++;
             });
+            if (succeededIds.length) this._pushUndoAction({ type: 'bulk_disable', entityIds: succeededIds });
             if (ok) { this._showToast(`Disabled ${ok} entit${ok !== 1 ? 'ies' : 'y'}${fail ? `, ${fail} failed` : ''}`, fail ? 'warning' : 'success'); this.loadCounts(); }
             if (fail) this._showToast(`${fail} could not be disabled`, 'error');
           }},
@@ -15176,6 +15203,7 @@ class EntityManagerPanel extends HTMLElement {
             disBtn.disabled = true;
             try {
               await this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid });
+              this._pushUndoAction({ type: 'disable', entityId: eid });
               this._suppressEntityNotif(eid, true);
               disBtn.closest('.entity-list-item')?.remove();
               this._showToast(`Disabled ${eid}`, 'success');
