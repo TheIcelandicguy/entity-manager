@@ -2094,41 +2094,43 @@ class EntityManagerPanel extends HTMLElement {
    * Entities with a device → update device_registry (deduped, affects all device entities).
    * Orphan entities (no device) → update entity_registry directly.
    */
+  /**
+   * Assigns `areaId` to every entity in `entities` (and, per-device, the owning device once).
+   * Continues past per-entity failures rather than aborting the whole batch — a failure on
+   * entity #5 of 20 must not leave #1-4 mutated (and undone) while being reported as a total
+   * failure. Returns `{success: [entity_id...], failed: [{entity_id, error}...]}` so callers can
+   * show an accurate count instead of a single all-or-nothing toast.
+   */
   async _assignAreaToEntities(entities, areaId) {
     const seenDevices = new Set();
+    const result = { success: [], failed: [] };
     for (const ent of entities) {
-      // Prefer device-id from entity object; fall back to entityDeviceMap for filtered views
-      const deviceId = ent.device_id || this.entityDeviceMap?.get(ent.entity_id) || null;
-      if (deviceId) {
-        if (!seenDevices.has(deviceId)) {
-          seenDevices.add(deviceId);
-          const oldAreaId = this.deviceInfo?.[deviceId]?.area_id || null;
-          try {
+      try {
+        // Prefer device-id from entity object; fall back to entityDeviceMap for filtered views
+        const deviceId = ent.device_id || this.entityDeviceMap?.get(ent.entity_id) || null;
+        if (deviceId) {
+          if (!seenDevices.has(deviceId)) {
+            seenDevices.add(deviceId);
+            const oldAreaId = this.deviceInfo?.[deviceId]?.area_id || null;
             await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
-          } catch (e) {
-            throw e;
+            this._pushUndoAction({ type: 'assign_device_area', deviceId, oldAreaId, newAreaId: areaId });
           }
-          this._pushUndoAction({ type: 'assign_device_area', deviceId, oldAreaId, newAreaId: areaId });
-        }
-        const oldEntityAreaId = this.entityAreaMap?.get(ent.entity_id) || null;
-        try {
+          const oldEntityAreaId = this.entityAreaMap?.get(ent.entity_id) || null;
           await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
-        } catch (e) {
-          throw e;
-        }
-        if (oldEntityAreaId !== areaId) {
-          this._pushUndoAction({ type: 'assign_entity_area', entityId: ent.entity_id, oldAreaId: oldEntityAreaId, newAreaId: areaId });
-        }
-      } else {
-        const oldAreaId = this.entityAreaMap?.get(ent.entity_id) || null;
-        try {
+          if (oldEntityAreaId !== areaId) {
+            this._pushUndoAction({ type: 'assign_entity_area', entityId: ent.entity_id, oldAreaId: oldEntityAreaId, newAreaId: areaId });
+          }
+        } else {
+          const oldAreaId = this.entityAreaMap?.get(ent.entity_id) || null;
           await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: ent.entity_id, area_id: areaId });
-        } catch (e) {
-          throw e;
+          this._pushUndoAction({ type: 'assign_entity_area', entityId: ent.entity_id, oldAreaId, newAreaId: areaId });
         }
-        this._pushUndoAction({ type: 'assign_entity_area', entityId: ent.entity_id, oldAreaId, newAreaId: areaId });
+        result.success.push(ent.entity_id);
+      } catch (e) {
+        result.failed.push({ entity_id: ent.entity_id, error: e.message || String(e) });
       }
     }
+    return result;
   }
 
   /**
@@ -2194,8 +2196,16 @@ class EntityManagerPanel extends HTMLElement {
   
   // ===== BULK RENAME =====
   
-  async _openBulkRenameDialog() {
+  /**
+   * `entityIds`, when passed, overrides `this.selectedEntities` as the pre-populated queue —
+   * used by dialogs (Automations/Scripts/Helpers lists) that have their own checked-row
+   * selection independent of the main toolbar's. Must be passed through rather than
+   * temporarily swapped into `this.selectedEntities` and restored: this method's own await
+   * resolves well before the render it triggers actually reads the selection.
+   */
+  async _openBulkRenameDialog(entityIds = null) {
     this._bulkRenameMode = true;
+    this._bulkRenamePreselectedIds = entityIds;
     this.querySelector('#main-content')?.classList.add('em-bulk-rename-active');
     try {
       this._bulkRenameData = await this._hass.callWS({ type: 'entity_manager/get_disabled_entities', state: 'all' });
@@ -2613,12 +2623,12 @@ class EntityManagerPanel extends HTMLElement {
           const applyBtn = row.querySelector('.em-aa-apply-btn');
           const areaId = applyBtn?.dataset.areaId;
           if (!deviceId || !areaId) continue;
-          try {
-            await this._assignAreaToEntities(this._deviceEntitiesById(deviceId), areaId);
+          const res = await this._assignAreaToEntities(this._deviceEntitiesById(deviceId), areaId);
+          if (res.failed.length === 0) {
             row.style.opacity = '0.4';
             successCount++;
-          } catch (err) {
-            console.warn('EM: area assign failed for', deviceId, err);
+          } else {
+            console.warn('EM: area assign failed for', deviceId, res.failed);
           }
         }
         this._showToast(`Assigned ${areaName} to ${successCount} device${successCount !== 1 ? 's' : ''}`, 'success');
@@ -2638,12 +2648,12 @@ class EntityManagerPanel extends HTMLElement {
       for (const applyBtn of allApplyBtns) {
         const { deviceId, areaId } = applyBtn.dataset;
         if (!deviceId || !areaId) continue;
-        try {
-          await this._assignAreaToEntities(this._deviceEntitiesById(deviceId), areaId);
+        const res = await this._assignAreaToEntities(this._deviceEntitiesById(deviceId), areaId);
+        if (res.failed.length === 0) {
           applyBtn.closest('.em-aa-device-row').style.opacity = '0.4';
           successCount++;
-        } catch (err) {
-          console.warn('EM: area assign failed for', deviceId, err);
+        } else {
+          console.warn('EM: area assign failed for', deviceId, res.failed);
         }
       }
       this._showToast(`Assigned areas to ${successCount} device${successCount !== 1 ? 's' : ''}`, 'success');
@@ -2697,6 +2707,7 @@ class EntityManagerPanel extends HTMLElement {
 
     const exitMode = async () => {
       this._bulkRenameMode = false;
+      this._bulkRenamePreselectedIds = null;
       this.querySelector('#main-content')?.classList.remove('em-bulk-rename-active');
       await this.loadData();
     };
@@ -2731,7 +2742,7 @@ class EntityManagerPanel extends HTMLElement {
     };
 
     // ── Build entity list grouped by integration → device ───────────
-    const preSelected = new Set(this.selectedEntities);
+    const preSelected = new Set(this._bulkRenamePreselectedIds || this.selectedEntities);
     const hassStates = this._hass?.states || {};
     const renameData = this._bulkRenameData || this.data || [];
     const coveredIds = new Set();
@@ -3636,7 +3647,10 @@ class EntityManagerPanel extends HTMLElement {
     const pencilHtml = `<span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span>`;
     const heroNameEl = overlay.querySelector('.em-ed-hero-name');
     heroNameEl?.addEventListener('click', () => {
-      const cur = heroNameEl.dataset.name || friendlyTitle;
+      // Pre-fill from the raw registry name, never the live `friendly_name` state attribute —
+      // for has_entity_name devices that's often a "{device name} {entity name}" composite,
+      // and saving it unedited would write that composite back as the display-name override.
+      const cur = heroNameEl.dataset.name || e.name || e.original_name || entityId;
       this._showDisplayNameEditDialog(entityId, cur, (newName) => {
         const saved = newName || cur;
         heroNameEl.dataset.name = saved;
@@ -5250,6 +5264,20 @@ class EntityManagerPanel extends HTMLElement {
       actionsHtml: `<button class="btn btn-secondary" id="em-label-editor-done">Done</button>`
     });
 
+    // Resolve once the dialog actually closes — via Done, Escape, or a backdrop click, all of
+    // which converge on createDialog()'s shared closeDialog() removing `overlay` from the DOM.
+    // Callers (e.g. the Entity Details dialog) await this to refresh label chips only once
+    // editing is truly finished, not as soon as this dialog is merely drawn.
+    const closedPromise = new Promise(resolve => {
+      const observer = new MutationObserver(() => {
+        if (!document.body.contains(overlay)) {
+          observer.disconnect();
+          resolve();
+        }
+      });
+      observer.observe(document.body, { childList: true });
+    });
+
     const refreshLabels = async () => {
       this.labeledEntitiesCache = null;
       this.labeledDevicesCache = null;
@@ -5325,12 +5353,22 @@ class EntityManagerPanel extends HTMLElement {
       closeDialog();
       this._loadAndDisplayLabels();
     });
+
+    await closedPromise;
   }
 
-  async _showBulkLabelEditor() {
+  /**
+   * `entityIds`, when passed, overrides `this.selectedEntities` — used by dialogs with their
+   * own checked-row selection (Automations/Scripts/Helpers lists). Captured once up front and
+   * used throughout (including the Apply-click handler) rather than re-reading
+   * `this.selectedEntities` later, since by the time the user clicks Apply the toolbar's own
+   * selection may have changed or been restored by the caller.
+   */
+  async _showBulkLabelEditor(entityIds = null) {
+    const ids = entityIds || Array.from(this.selectedEntities);
     const allLabels = await this._loadHALabels();
-    const entityCount = this.selectedEntities.size;
-    
+    const entityCount = ids.length;
+
     const { overlay, closeDialog } = this.createDialog({
       title: 'Add Labels to Selected Entities',
       color: 'var(--em-primary)',
@@ -5346,7 +5384,7 @@ class EntityManagerPanel extends HTMLElement {
               Show selected entities
             </div>
             <div id="em-label-entities-body" style="display:none;margin-top:8px;max-height:120px;overflow-y:auto;background:var(--em-bg-secondary);border-radius:6px;padding:8px;">
-              ${Array.from(this.selectedEntities).map(id => `
+              ${ids.map(id => `
                 <div style="font-size: 12px; padding: 2px 4px; font-family: monospace; color: var(--em-text-primary);">${this._escapeHtml(id)}</div>
               `).join('')}
             </div>
@@ -5440,20 +5478,34 @@ class EntityManagerPanel extends HTMLElement {
       this._showToast(`Adding labels to ${entityCount} entities...`, 'info', 0);
 
       let successCount = 0;
-      for (const entityId of this.selectedEntities) {
+      for (const entityId of ids) {
         try {
+          let beforeEntity = [], afterEntity = [], beforeDevice = [], afterDevice = [], deviceId = null;
           if (target === 'entity' || target === 'both') {
-            const currentLabels = await this._getEntityLabels(entityId);
-            const newLabels = [...new Set([...currentLabels, ...selectedLabels])];
-            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, labels: newLabels });
+            beforeEntity = await this._getEntityLabels(entityId);
+            afterEntity = [...new Set([...beforeEntity, ...selectedLabels])];
+            if (afterEntity.length !== beforeEntity.length) {
+              await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, labels: afterEntity });
+            } else {
+              afterEntity = beforeEntity;
+            }
           }
           if (target === 'device' || target === 'both') {
-            const deviceId = await this._getEntityDeviceId(entityId);
+            deviceId = await this._getEntityDeviceId(entityId);
             if (deviceId) {
-              const devLabels = await this._getDeviceLabels(deviceId);
-              const newDevLabels = [...new Set([...devLabels, ...selectedLabels])];
-              await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, labels: newDevLabels });
+              beforeDevice = await this._getDeviceLabels(deviceId);
+              afterDevice = [...new Set([...beforeDevice, ...selectedLabels])];
+              if (afterDevice.length !== beforeDevice.length) {
+                await this._hass.callWS({ type: 'config/device_registry/update', device_id: deviceId, labels: afterDevice });
+              } else {
+                afterDevice = beforeDevice;
+              }
             }
+          }
+          const entityChanged = JSON.stringify([...beforeEntity].sort()) !== JSON.stringify([...afterEntity].sort());
+          const deviceChanged = JSON.stringify([...beforeDevice].sort()) !== JSON.stringify([...afterDevice].sort());
+          if (entityChanged || deviceChanged) {
+            this._pushUndoAction({ type: 'labels_change', entityId, deviceId, beforeEntity, afterEntity, beforeDevice, afterDevice });
           }
           successCount++;
         } catch (e) {
@@ -5463,6 +5515,7 @@ class EntityManagerPanel extends HTMLElement {
 
       document.querySelector('.em-toast')?.remove();
       this._showToast(`Added labels to ${successCount} entities`, 'success');
+      await this.loadData();
     });
     
     overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
@@ -5546,12 +5599,14 @@ class EntityManagerPanel extends HTMLElement {
           const updated = current.filter(lid => !toRemove.has(lid));
           if (updated.length !== current.length) {
             await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: eid, labels: updated });
+            this._pushUndoAction({ type: 'labels_change', entityId: eid, deviceId: null, beforeEntity: current, afterEntity: updated, beforeDevice: [], afterDevice: [] });
             ok++;
           }
         } catch (e) { console.warn('[EM] label remove error', e); }
       }
       document.querySelector('.em-toast')?.remove();
       this._showToast(`Labels removed from ${ok} entit${ok !== 1 ? 'ies' : 'y'}`, 'success');
+      await this.loadData();
     });
   }
 
@@ -6245,83 +6300,27 @@ class EntityManagerPanel extends HTMLElement {
   
   // ===== DISABLE SELECTED ENTITIES =====
   
+  // Confirm-then-delegate to the real bulk_disable/bulk_enable WS endpoint (bulkDisable/
+  // bulkEnable below) rather than looping individual enable_entity/disable_entity calls per
+  // selected entity — looping bypassed the server-side MAX_BULK_ENTITIES cap entirely and
+  // pushed one undo entry per entity, flooding the 50-slot-capped undo stack on large selections.
   async _disableSelectedEntities() {
     if (this.selectedEntities.size === 0) return;
-    
     const count = this.selectedEntities.size;
-    
     this.showConfirmDialog(
       'Disable Selected Entities',
       `Are you sure you want to disable ${count} selected entities?`,
-      async () => {
-        this._showToast(`Disabling ${count} entities...`, 'info', 0);
-        
-        // Group entities by integration (domain prefix)
-        const entitiesByIntegration = {};
-        for (const entityId of this.selectedEntities) {
-          const domain = entityId.split('.')[0];
-          if (!entitiesByIntegration[domain]) {
-            entitiesByIntegration[domain] = [];
-          }
-          entitiesByIntegration[domain].push(entityId);
-        }
-        
-        let successCount = 0;
-        
-        // Process integrations one at a time, but devices/entities within each in parallel
-        for (const [domain, entities] of Object.entries(entitiesByIntegration)) {
-          const results = await Promise.allSettled(
-            entities.map(entityId => this.disableEntity(entityId))
-          );
-          successCount += results.filter(r => r.status === 'fulfilled').length;
-        }
-        
-        document.querySelector('.em-toast')?.remove();
-        this._showToast(`Disabled ${successCount} entities`, 'success');
-        
-        this.selectedEntities.clear();
-        await this.loadData();
-      }
+      async () => { await this.bulkDisable(); }
     );
   }
 
   async _bulkEnableSelected() {
     if (this.selectedEntities.size === 0) return;
-    
     const count = this.selectedEntities.size;
-    
     this.showConfirmDialog(
       'Enable Selected Entities',
       `Are you sure you want to enable ${count} selected entities?`,
-      async () => {
-        this._showToast(`Enabling ${count} entities...`, 'info', 0);
-        
-        // Group entities by integration (domain prefix)
-        const entitiesByIntegration = {};
-        for (const entityId of this.selectedEntities) {
-          const domain = entityId.split('.')[0];
-          if (!entitiesByIntegration[domain]) {
-            entitiesByIntegration[domain] = [];
-          }
-          entitiesByIntegration[domain].push(entityId);
-        }
-        
-        let successCount = 0;
-        
-        // Process integrations one at a time, but devices/entities within each in parallel
-        for (const [domain, entities] of Object.entries(entitiesByIntegration)) {
-          const results = await Promise.allSettled(
-            entities.map(entityId => this.enableEntity(entityId))
-          );
-          successCount += results.filter(r => r.status === 'fulfilled').length;
-        }
-        
-        document.querySelector('.em-toast')?.remove();
-        this._showToast(`Enabled ${successCount} entities`, 'success');
-        
-        this.selectedEntities.clear();
-        await this.loadData();
-      }
+      async () => { await this.bulkEnable(); }
     );
   }
 
@@ -11296,9 +11295,13 @@ class EntityManagerPanel extends HTMLElement {
       applyBtn.textContent = 'Applying…';
       try {
         // Assign area to device + checked entities (dedups the device-registry call, pushes undo actions)
-        await this._assignAreaToEntities(checkedIds.map(eid => ({ entity_id: eid, device_id: deviceId })), areaId);
+        const res = await this._assignAreaToEntities(checkedIds.map(eid => ({ entity_id: eid, device_id: deviceId })), areaId);
         closeDialog();
-        this._showToast(`Assigned ${this._escapeHtml(areaName)} to ${deviceName} + ${checkedIds.length} entit${checkedIds.length !== 1 ? 'ies' : 'y'}`, 'success');
+        if (res.failed.length === 0) {
+          this._showToast(`Assigned ${this._escapeHtml(areaName)} to ${deviceName} + ${checkedIds.length} entit${checkedIds.length !== 1 ? 'ies' : 'y'}`, 'success');
+        } else {
+          this._showToast(`Assigned ${this._escapeHtml(areaName)} to ${res.success.length}/${checkedIds.length} entities — ${res.failed.length} failed: ${res.failed[0].error}`, 'warning');
+        }
         await this.loadData();
       } catch (err) {
         this._showToast('Failed to assign area: ' + (err.message || err), 'error');
@@ -11663,11 +11666,17 @@ class EntityManagerPanel extends HTMLElement {
       if (areaId === undefined) return;
       applyAreaBtn.disabled = true; applyAreaBtn.textContent = 'Applying…';
       try {
-        await this._assignAreaToEntities(entities, areaId);
+        const res = await this._assignAreaToEntities(entities, areaId);
         this.floorsData = null;
         const aName = areaId ? (areas.find(a => a.area_id === areaId)?.name || areaId) : 'None';
-        entities.forEach(e => this._logActivity('area', { entity: e.deviceName || e.entity_id, area: aName }));
-        this._showToast(`Area updated for ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'}`, 'success');
+        const succeededIds = new Set(res.success);
+        entities.filter(e => succeededIds.has(e.entity_id))
+          .forEach(e => this._logActivity('area', { entity: e.deviceName || e.entity_id, area: aName }));
+        if (res.failed.length === 0) {
+          this._showToast(`Area updated for ${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'}`, 'success');
+        } else {
+          this._showToast(`Area updated for ${res.success.length}/${entities.length} entities — ${res.failed.length} failed: ${res.failed[0].error}`, 'warning');
+        }
         await this.loadData();
         // refresh the dialog's "current" line + label section (area labels may now differ)
         const ci = areaId ? (this.areaLookup?.get(areaId) || null) : null;
@@ -14644,16 +14653,10 @@ class EntityManagerPanel extends HTMLElement {
       };
 
       const _bulkRenameHandler = (entityIds) => {
-        const saved = this.selectedEntities;
-        this.selectedEntities = new Set(entityIds);
-        this._openBulkRenameDialog();
-        this.selectedEntities = saved;
+        this._openBulkRenameDialog(entityIds);
       };
       const _bulkLabelsHandler = (entityIds) => {
-        const saved = this.selectedEntities;
-        this.selectedEntities = new Set(entityIds);
-        this._showBulkLabelEditor();
-        this.selectedEntities = saved;
+        this._showBulkLabelEditor(entityIds);
       };
       const _bulkAreaHandler = (entityIds) => {
         const entities = this._resolveEntitiesById(entityIds);
