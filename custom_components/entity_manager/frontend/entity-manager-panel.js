@@ -3624,7 +3624,7 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('.confirm-dialog-actions').innerHTML = `
       <button id="em-edd-copy-id"       class="btn btn-secondary">${this._icon('mdi:content-copy','16px')} Copy ID</button>
       <button id="em-edd-toggle-enable" class="btn ${isDisabled ? 'btn-primary' : 'btn-danger'}">${isDisabled ? `${this._icon(EM_ICONS.enable,'16px')} Enable` : `${this._icon(EM_ICONS.disable,'16px')} Disable`}</button>
-      <button id="em-edd-open-ha"       class="btn btn-secondary">${this._icon('mdi:open-in-new','16px')} Open in HA</button>
+      <button id="em-edd-open-ha" data-open-path="${this._escapeAttr(`/config/entities/entity/${entityId}`)}" class="btn btn-secondary">${this._icon('mdi:open-in-new','16px')} Open in HA</button>
       <button id="em-edd-close"         class="btn btn-secondary">Close</button>`;
 
     overlay.querySelector('#em-edd-copy-id')?.addEventListener('click', () => {
@@ -3636,9 +3636,15 @@ class EntityManagerPanel extends HTMLElement {
       else            await this.disableEntity(entityId);
       closeDialog();
     });
-    overlay.querySelector('#em-edd-open-ha')?.addEventListener('click', () => {
-      window.open(`/config/entities/edit/${entityId}`, '_blank');
-    });
+    // No click listener needed for #em-edd-open-ha — its data-open-path attribute is picked up
+    // by createDialog()'s own overlay-level delegation (same mechanism the automation/script
+    // list dialogs already use for their "Edit" rows), which pushes the route, dispatches
+    // location-changed, and closes this dialog. Two other approaches were tried live first and
+    // discarded: a bespoke history.pushState + location-changed handler (same target route,
+    // but ordering relative to closeDialog() proved unreliable), and data-open-path's sibling
+    // data-open-entity attribute (dispatches `hass-more-info` instead of navigating — no
+    // more-info dialog ever appeared in testing). data-open-path against this exact route was
+    // the one that verified reliably.
     overlay.querySelector('#em-edd-close')?.addEventListener('click', closeDialog);
 
     // Hero name rename — routes through the shared display-name editor (also
@@ -3660,10 +3666,30 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     // Toggle / Press button
-    overlay.querySelector('#em-edd-toggle-btn')?.addEventListener('click', async () => {
+    let currentOn = isOn;
+    overlay.querySelector('#em-edd-toggle-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
       const svcDomain = domain;
-      const service = isPressable ? 'press' : (isOn ? 'turn_off' : 'turn_on');
-      await this._hass.callWS({ type: 'call_service', domain: svcDomain, service, target: { entity_id: entityId } });
+      const service = isPressable ? 'press' : (currentOn ? 'turn_off' : 'turn_on');
+      try {
+        await this._hass.callWS({ type: 'call_service', domain: svcDomain, service, target: { entity_id: entityId } });
+        if (isPressable) {
+          this._showToast(`Pressed ${entityId}`, 'success');
+        } else {
+          currentOn = !currentOn;
+          btn.textContent = currentOn ? 'Turn Off' : 'Turn On';
+          const stateVal = overlay.querySelector('.em-ed-state-val');
+          if (stateVal) {
+            const newState = currentOn ? 'on' : 'off';
+            stateVal.textContent = newState;
+            stateVal.style.color = stateColor(newState);
+          }
+          this._showToast(`Turned ${currentOn ? 'on' : 'off'} ${entityId}`, 'success');
+        }
+      } catch (err) {
+        this._showToast(`${isPressable ? 'Press' : 'Toggle'} failed: ${err?.message || err}`, 'danger');
+        console.error('[EM] entity details toggle/press failed', entityId, err);
+      }
     });
 
     // Async automation impact scan
@@ -9764,23 +9790,26 @@ class EntityManagerPanel extends HTMLElement {
 
     this.setLoading(true);
     try {
-      await this._hass.callWS({
+      // Note: `success`/`failed` here, matching every other well-behaved bulk handler in this
+      // file — undo and notification suppression only apply to entities that actually changed.
+      const res = await this._hass.callWS({
         type: 'entity_manager/bulk_disable',
         entity_ids: toDisable,
       });
-      
-      // Push undo action for bulk disable
-      this._pushUndoAction({
-        type: 'bulk_disable',
-        entityIds: [...toDisable],
-        undo: async () => await this._hass.callWS({ type: 'entity_manager/bulk_enable', entity_ids: toDisable })
-      });
-      
-      this.selectedEntities.clear();
+      const succeededIds = res?.success ?? toDisable;
+
+      if (succeededIds.length) {
+        this._pushUndoAction({ type: 'bulk_disable', entityIds: [...succeededIds] });
+        this._suppressEntityNotif(succeededIds, true);
+      }
+      succeededIds.forEach(id => this.selectedEntities.delete(id));
       this.updateSelectedCount();
-      this._suppressEntityNotif(toDisable, true);
       this.loadData();
-      this._showToast(`Disabled ${toDisable.length} entities`);
+      if (res?.failed?.length) {
+        this._showToast(`Disabled ${succeededIds.length}, failed ${res.failed.length}`, 'warning');
+      } else {
+        this._showToast(`Disabled ${succeededIds.length} entities`);
+      }
     } catch (error) {
       this.showErrorDialog(`Error disabling entities: ${error.message}`);
     } finally {
@@ -9791,23 +9820,24 @@ class EntityManagerPanel extends HTMLElement {
   async bulkEnableEntities(entityIds) {
     this.setLoading(true);
     try {
-      await this._hass.callWS({
+      const res = await this._hass.callWS({
         type: 'entity_manager/bulk_enable',
         entity_ids: entityIds,
       });
+      const succeededIds = res?.success ?? entityIds;
 
-      // Push undo action for bulk enable
-      this._pushUndoAction({
-        type: 'bulk_enable',
-        entityIds: [...entityIds],
-        undo: async () => await this._hass.callWS({ type: 'entity_manager/bulk_disable', entity_ids: entityIds })
-      });
-
-      this.selectedEntities.clear();
+      if (succeededIds.length) {
+        this._pushUndoAction({ type: 'bulk_enable', entityIds: [...succeededIds] });
+        this._suppressEntityNotif(succeededIds, false);
+      }
+      succeededIds.forEach(id => this.selectedEntities.delete(id));
       this.updateSelectedCount();
-      this._suppressEntityNotif(entityIds, false);
       this.loadData();
-      this._showToast(`Enabled ${entityIds.length} entities`);
+      if (res?.failed?.length) {
+        this._showToast(`Enabled ${succeededIds.length}, failed ${res.failed.length}`, 'warning');
+      } else {
+        this._showToast(`Enabled ${succeededIds.length} entities`);
+      }
     } catch (error) {
       this.showErrorDialog(`Error enabling entities: ${error.message}`);
     } finally {
