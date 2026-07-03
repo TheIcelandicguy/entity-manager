@@ -14,11 +14,11 @@ Solves the common problem of managing hundreds of disabled diagnostic entities (
 
 ## Project Stats
 
-- **Version**: 2.20.0
+- **Version**: 2.22.0
 - **License**: MIT
 - **Language**: Python (backend), JavaScript (frontend)
 - **HA Minimum**: 2024.1.0
-- **Lines of Code**: ~15,000+ JS / ~6,300 CSS / ~1,050 Python
+- **Lines of Code**: ~16,100 JS / ~7,050 CSS / ~1,380 Python
 
 ## File Structure
 
@@ -33,7 +33,7 @@ entity-manager/
 ├── services.yaml                   # Service schema for HA UI
 ├── strings.json                    # UI strings for config flow
 ├── frontend/
-│   └── entity-manager-panel.js     # Custom web component UI (~15,000 lines)
+│   └── entity-manager-panel.js     # Custom web component UI (~16,100 lines)
 ├── translations/
 │   └── en.json                     # English translations
 ├── sentences/en/
@@ -53,7 +53,7 @@ entity-manager/
 ## Key Features
 
 ### Backend (Python)
-✅ WebSocket API with 18 commands
+✅ WebSocket API with 21 commands
 ✅ Entity registry integration (enable, disable, rename, remove, assign device)
 ✅ Device + area + label registry access
 ✅ Bulk operations (up to 500 entities)
@@ -64,8 +64,9 @@ entity-manager/
 ✅ Proper error handling with per-item failure reporting
 
 ### Frontend (JavaScript)
-✅ Vanilla JS web component (~13,500 lines, no framework)
+✅ Vanilla JS web component (~16,100 lines, no framework)
 ✅ Tree view: Integration → Device → Entity with expand/collapse
+✅ One-click reveal for single-device integrations; category-count breakdown and HA Label rollup on every integration row
 ✅ 5 smart grouping modes (Integration, Room/Area, Type, Floor, Device Name)
 ✅ Inline views: Automations & Helpers, Health & Cleanup, Templates, HACS, Lovelace, Browser Mod, Activity Log, Last Activity Timeline, Devices
 ✅ Notification Center — persistent bell dropdown with 4 event types, rate-limiting, per-type toggles, click-to-open entity details
@@ -227,6 +228,6 @@ MIT License - Free to use, modify, and distribute
 
 ---
 
-**Version**: 2.20.0
+**Version**: 2.22.0
 **Created**: January 2025
 **Maintainer**: @TheIcelandicguy

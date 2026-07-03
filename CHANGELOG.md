@@ -1,5 +1,29 @@
 # Changelog
 
+## Version 2.22.0 - One-Click Integration Reveal, Category/Label Rollup & Bulk-Action Fixes
+
+### ✨ New Features
+
+- **One-click reveal for single-device integrations** — expanding an integration with exactly one device now shows its entities immediately, no second click needed on the device row. Applies to the main tree, sidebar nav, and View Enabled/Disabled buttons
+- **Integration row category breakdown & label rollup** — every integration row now shows a Controls/Sensors/Configuration/Diagnostic/Connectivity count breakdown and a deduped HA Label rollup, without needing to expand
+- **Energy Monitoring split into four rows** — Power Monitoring, Energy Consumed, Energy Returned, and generic Energy Monitoring, matched by entity_id pattern since HA has no separate device_class for energy direction
+- **Custom color picker for labels** — all 4 label color pickers in the app now share one custom-hex swatch alongside the 19 presets
+
+### 🐛 Bug Fixes
+
+- Fixed stacked-dialog scroll-lock being stripped early when closing an inner confirm sub-dialog while its parent dialog is still open
+- Fixed Bulk Rename / Add Labels from the Automations/Scripts/Helpers list dialog silently operating on the wrong (stale) entity selection
+- Fixed Entity Details dialog's own label chips going stale after using its "Manage Labels" buttons
+- Fixed Entity Details rename pre-fill using a device-prefixed composite name instead of the raw entity name
+- Fixed bulk area assignment reporting total failure when only some entities in the batch actually failed
+- Fixed context-menu "Enable/Disable Selected" bypassing the bulk WS endpoint (and its 500-entity cap) by looping individual calls instead
+- Fixed the Bulk Labels editor and remover having no undo support and not refreshing the entity tree after use
+- Fixed "Open in HA" from Entity Details opening a new tab at the wrong route instead of matching the entity card's in-app navigation
+- Fixed the Entity Details toggle/press button having no error handling, no success feedback, and no UI refresh after use
+- Fixed the sidebar's bulk Enable/Disable Selected reporting the requested count as the success count regardless of the actual per-item result
+
+---
+
 ## Version 2.21.0 - Clickable Chips, Unified Assign Dialog & Suggestion Ignore/Restore
 
 ### ✨ New Features

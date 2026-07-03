@@ -5,7 +5,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration (v2.21.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration (v2.22.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
@@ -24,14 +24,14 @@ entity-manager/
 │   ├── __init__.py                     # Entry point, service registration, panel setup
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID)
-│   ├── manifest.json                   # Integration metadata (v2.21.0)
+│   ├── manifest.json                   # Integration metadata (v2.22.0)
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
-│   ├── websocket_api.py                # WebSocket command handlers (16 commands)
+│   ├── websocket_api.py                # WebSocket command handlers (21 commands)
 │   ├── frontend/
-│   │   ├── entity-manager-panel.js     # Custom web component UI (~9,600 lines)
-│   │   └── entity-manager-panel.css    # External stylesheet (~2,500 lines)
+│   │   ├── entity-manager-panel.js     # Custom web component UI (~16,100 lines)
+│   │   └── entity-manager-panel.css    # External stylesheet (~7,050 lines)
 │   └── translations/
 │       └── en.json                     # English translations
 ├── sentences/en/
@@ -70,7 +70,7 @@ Entity Registry / Device Registry / Area Registry / Label Registry
 | `__init__.py` | Integration setup, service registration, sidebar panel + frontend resource registration |
 | `config_flow.py` | Handle UI-based integration setup (single-step, no config options) |
 | `const.py` | Domain, bulk operation limits, entity ID validation regex |
-| `websocket_api.py` | 18 WebSocket handlers covering entity ops, registry access, YAML management |
+| `websocket_api.py` | 21 WebSocket handlers covering entity ops, registry access, YAML management |
 | `voice_assistant.py` | Intent handlers for enable/disable voice commands |
 | `entity-manager-panel.js` | Complete frontend UI as a custom element |
 | `entity-manager-panel.css` | External stylesheet loaded at startup |
@@ -118,7 +118,7 @@ VALID_ENTITY_ID = re.compile(    # Use for entity_id validation
 
 ## WebSocket API Reference
 
-All 18 commands require admin privileges via `@websocket_api.require_admin`.
+All 21 commands require admin privileges via `@websocket_api.require_admin`.
 
 ### Data Retrieval Commands
 
@@ -126,11 +126,13 @@ All 18 commands require admin privileges via `@websocket_api.require_admin`.
 |---------|------------|-------------|
 | `entity_manager/get_disabled_entities` | `state: "disabled"\|"enabled"\|"all"` | Entities grouped by integration/device |
 | `entity_manager/export_states` | _(none)_ | Export all entities to JSON |
+| `entity_manager/import_entity_states` | _(varies)_ | Import previously-exported entity states |
 | `entity_manager/get_automations` | _(none)_ | List automations with trigger context |
 | `entity_manager/get_template_sensors` | _(none)_ | List template entities with connections |
 | `entity_manager/get_entity_details` | `entity_id: string` | Full entity metadata from all registries |
 | `entity_manager/get_config_entry_health` | _(none)_ | Unhealthy/failed config entries |
 | `entity_manager/get_areas_and_floors` | _(none)_ | Area and floor hierarchy |
+| `entity_manager/get_last_activity` | _(none)_ | Recorder-backed last-changed timestamps for the Last Activity Timeline view |
 | `entity_manager/list_hacs_items` | _(none)_ | Installed HACS items + community store items |
 
 ### Entity Operation Commands
@@ -146,6 +148,7 @@ All 18 commands require admin privileges via `@websocket_api.require_admin`.
 | `entity_manager/remove_entity` | `entity_id: string` | Remove entity (handles templates, YAML, integration-managed) |
 | `entity_manager/assign_entity_device` | `entity_id: string, device_id: string` | Assign entity to a device |
 | `entity_manager/unassign_entity_device` | `entity_id: string` | Remove device assignment from entity |
+| `entity_manager/register_template` | _(varies)_ | Register a new UI-created template sensor config entry |
 
 ### YAML Management Commands
 
@@ -234,10 +237,14 @@ Note: there is no `entityTags`/custom `#tagname` feature in this codebase — se
 | `loadData()` | Fetch entity data via WebSocket, refresh view |
 | `updateView()` | Apply filters/search/grouping and re-render entity list |
 | `render()` | Full component re-render (use sparingly) |
-| `bulkEnable()` / `bulkDisable()` | Execute bulk operations on `selectedEntities` |
-| `showEntityDetails(entityId)` | Open entity detail dialog |
+| `bulkEnable()` / `bulkDisable()` | Execute bulk operations on `selectedEntities` — reads the WS response's real `success`/`failed` arrays for undo tracking and toast accuracy, does not just assume the whole batch succeeded |
+| `_showEntityDetailsDialog(entityId)` | Open entity detail dialog (there is no `showEntityDetails()` method — a past doc claimed that name, it never existed) |
 | `_setActiveTheme(name)` / `updateTheme()` / `_applyCustomTheme(theme)` | Switch/apply active theme (there is no `applyTheme()` method — a past doc claimed one, it never existed) |
 | `_pushUndoAction({...})` | Push an undo-able action onto the undo stack before a mutation — **the only real undo helper** (there is no `saveToUndo()` method — see "Undo/Redo" guidance below) |
+| `_autoExpandLoneDevice(integrationName)` | If an integration has exactly one device, marks that device pre-expanded too — called only from expand-transition click handlers (integration header click, sidebar nav click, View Enabled/Disabled buttons), never from a render function |
+| `_categorizeEntity(entity)` / `_categoryMeta()` | Shared category classification (Controls/Sensors/Configuration/Diagnostic/Connectivity) — used by both `_buildDeviceCard`'s per-device category cards and `renderIntegration`'s integration-row category-count badges, so the two can't drift apart |
+| `_showAssignDialog(entities, opts)` | Unified area/floor + label assignment dialog — see "Assign Dialog" below |
+| `_assignAreaToEntities(entities, areaId)` | Applies an area to entities (+ their devices, deduped by device). Continues past per-entity failures rather than aborting the batch; returns `{success: [entity_id...], failed: [{entity_id, error}...]}` so callers can report accurate partial-success counts |
 
 ## Development Workflow
 
@@ -259,7 +266,7 @@ Note: there is no `entityTags`/custom `#tagname` feature in this codebase — se
 
 - Edit `custom_components/entity_manager/frontend/entity-manager-panel.js`
 - Edit `custom_components/entity_manager/frontend/entity-manager-panel.css` for styling
-- The panel is a single-file web component (9,600+ lines) — use Ctrl+F to navigate
+- The panel is a single-file web component (16,000+ lines) — use Ctrl+F to navigate
 - Use HA CSS variables (e.g., `var(--primary-color)`) for theme compatibility
 - Clear browser cache after every change
 
@@ -373,7 +380,8 @@ const result = await this.hass.callWS({
 - `EntityManagerPanel` class extending `HTMLElement`
 - State: `data`, `deviceInfo`, `expandedIntegrations`, `expandedDevices`, `selectedEntities`, `searchTerm`, `viewState`, `labeledEntitiesCache`, `labeledDevicesCache`, `labeledAreasCache`
 - Key methods: `loadData()`, `updateView()`, `render()`, `bulkEnable()`, `bulkDisable()`, `updateSelectedCount()`
-- Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderMiniEntityCard()`, `_renderEntityItem()`, `_buildDeviceCard()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()` (there is no `_renderManagedItem()` — a past doc claimed one, it was renamed/removed without updating this file)
+- Helper methods: `_collGroup()`, `_reAttachCollapsibles()`, `_renderMiniEntityCard()`, `_renderEntityItem()`, `_buildDeviceCard()`, `_categorizeEntity()`, `_categoryMeta()`, `_autoExpandLoneDevice()`, `_triggerBadge()`, `_fmtAgo()`, `_reRenderSidebar()`, `_loadFromStorage()`, `_saveToStorage()`, `_escapeHtml()`, `_escapeAttr()` (there is no `_renderManagedItem()` — a past doc claimed one, it was renamed/removed without updating this file)
+- Label methods: `_effectiveEntityLabels()`, `_effectiveDeviceLabels()`, `_renderLabelChips()`, `_renderLabelColorPickerHtml()`, `_attachLabelColorPicker()` (shared custom-hex + 19-preset color picker used by all 4 label color picker call sites), `_showLabelEditor()` (its returned promise resolves on actual dialog close, not on draw — see "Dialogs That Need to Wait" below)
 - Dialog methods: `createDialog()`, `_showActivityLogDialog()`, `_showSuggestionsDialog()`, `_showHelpGuide()`, `_showAssignDialog()` (unified area/floor/label assignment — replaces the old `_showAreaFloorDialog()`/`_showAreaPickerDialog()`/`_showFloorPickerDialog()`, all since deleted)
 - Bulk rename methods: `_openBulkRenameDialog()` (async mode-switcher), `_renderBulkRenameView()` (full inline panel)
 
@@ -402,14 +410,14 @@ await this.loadData();
 - `async_unload_entry()`: Cleanup on unload
 - Panel registered via `frontend.async_register_built_in_panel()` with `require_admin=True`
 
-### `websocket_api.py` (Backend Logic, ~1,041 lines)
-- All 16 command handlers live here
+### `websocket_api.py` (Backend Logic, ~1,380 lines)
+- All 21 command handlers live here
 - `async_setup_ws_api(hass)` registers all commands — **this is the only registration point**
 - Helper `_resolve_trigger_context()` tracks human/automation/system trigger sources
 - `enable_entity()` / `disable_entity()` are standalone async helpers called by both single and bulk handlers
 - Bulk handlers iterate with per-item error handling and return `{"success": [...], "failed": [...]}` (note the key is `success`, not `succeeded` — this doc previously said `succeeded`, and at least one frontend bulk-toggle handler had copied that wrong key, always reporting full success even on partial failure)
 
-### `entity-manager-panel.js` (Frontend UI, ~9,600 lines)
+### `entity-manager-panel.js` (Frontend UI, ~16,100 lines)
 - Single `EntityManagerPanel` custom element class
 - `connectedCallback()` → bootstraps state from localStorage, attaches shadow DOM, calls `loadData()`
 - `set hass(value)` → called by HA on every state change; used to update `this.hass` reference
@@ -445,7 +453,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.21.0
+- **Current Version**: 2.22.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
@@ -458,17 +466,16 @@ await this.loadData();
 - Push changes to the designated feature branch (`claude/` prefix)
 - Version bumps live in `manifest.json` and `package.json`
 
-### Area & Floor Assignment Dialog (`_showAreaFloorDialog`)
+### Assign Dialog (`_showAssignDialog(entities, opts)`)
 
-Two-panel dialog for assigning devices/entities to HA areas (floor comes with area via `area.floor_id`).
+Unified area/floor + label assignment dialog, opened from any chip (area, floor, label, or a device header's chips). Replaces the old `_showAreaFloorDialog()`/`_showAreaPickerDialog()`/`_showFloorPickerDialog()`, all since deleted — do not re-add a separate area-only dialog; extend this one.
 
 **Key architecture points:**
-- Uses native HA APIs only: `config/area_registry/list`, `config/floor_registry/list`, `config/device_registry/update`, `config/entity_registry/update`
-- Does NOT use `entity_manager/get_areas_and_floors` (that handler was silently failing; native APIs are more reliable)
-- Sets area at BOTH device level AND entity level so both registry layers stay in sync
+- `opts.focus` (`'area'` or `'labels'`) auto-scrolls the dialog to that section; `opts.labelTarget` pre-selects Entity/Device/Both/Area in the labels section's Apply-to selector
+- **Area & Floor section** uses native HA APIs only: `config/area_registry/list`, `config/floor_registry/list`, `config/device_registry/update`, `config/entity_registry/update` — does NOT use `entity_manager/get_areas_and_floors` (see the trap below)
+- Apply calls `_assignAreaToEntities(entities, areaId)`, which sets area at BOTH device level AND entity level so both registry layers stay in sync, and continues past per-entity failures rather than aborting the whole batch — check `result.failed` for accurate partial-success reporting rather than assuming all-or-nothing
 - `selectedAreaId = undefined` → nothing chosen (Apply disabled); `= null` → clear assignment; `= string` → assign
-- `selectedFloorId` → only affects new area creation label (does NOT filter area list — all areas always shown)
-- `_afdSubject`: dialog title uses friendly name → device name → original name → entity_id
+- **Labels section** — Apply-to target selector includes Area alongside Entity/Device/Both; current labels list shows `E`/`D`/`A` scope badges with per-label remove; removing a `D`/`A` (inherited) label prompts a confirmation since it affects every entity on that device/area
 
 **`areaLookup` map** (built in `loadDeviceInfo`):
 - Built from `config/area_registry/list` + `config/floor_registry/list` (NOT the custom WS handler)
@@ -616,3 +623,37 @@ Bulk rename is an **inline panel view**, not a dialog. It follows the same patte
 - Entity picker grouped by integration → device from `this._bulkRenameData`; enriched with state from `this._hass.states`; if `preSelected.size > 0` only those entities are shown
 - Group headers (`.brp-int-header`, `.brp-dev-header`) have checkboxes (`.brp-int-cb`, `.brp-dev-cb`) to select all in group; clicking the chevron area collapses/expands; the checkbox change handler uses capture phase to fire before the collapse click handler
 - Queue rows (`.bulk-rename-entity-row`) show three lines: original ID, input for new name, live preview (`.brq-preview-id`) that turns green (`brq-preview-changed`) when changed — updated in `syncRenameBtn()`
+
+### Dialogs That Need to "Wait" for the User — Resolve on Close, Not on Draw
+
+`async` dialog-opening methods (e.g. `_showLabelEditor(entityId, target)`) return as soon as their `createDialog()` call finishes and listeners are attached — **not** when the user actually finishes and dismisses the dialog. A caller that does `this._showLabelEditor(id, 'entity').then(refreshSomething)` expecting `refreshSomething` to run *after* the user is done editing will instead run it almost immediately, using pre-edit data, and never again.
+
+**Fix pattern** (used in `_showLabelEditor`): resolve the method's own promise only when the dialog's overlay is actually removed from the DOM, regardless of exit path (Done button, Escape, backdrop click):
+
+```javascript
+const closedPromise = new Promise(resolve => {
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(overlay)) { observer.disconnect(); resolve(); }
+  });
+  observer.observe(document.body, { childList: true });
+});
+// ... attach listeners, wire up Done/Cancel/etc ...
+await closedPromise;
+```
+
+Apply this to any future dialog-opening method whose caller needs to know when the user is *actually done*, not just when the dialog was drawn.
+
+### Bulk Actions From a Different Selection Than the Toolbar's — Pass IDs Explicitly, Don't Swap `selectedEntities`
+
+Several entry points (e.g. the Automations/Scripts/Helpers list dialogs' bulk-action bar) need to run a toolbar-oriented bulk action (`_openBulkRenameDialog()`, `_showBulkLabelEditor()`) against a *different* set of entities than whatever's currently in `this.selectedEntities`. The tempting fix — save `this.selectedEntities`, swap in the desired ids, call the function, restore the saved value — is a bug if the called function is `async` and doesn't `await` synchronously to the point where it reads the selection: the restore runs before the function's later code (often past its first `await`) ever reads `this.selectedEntities`, so it silently operates on the *previous* selection instead.
+
+**Fix pattern**: give the function an explicit override parameter (`entityIds = null`) that it uses everywhere instead of `this.selectedEntities` when provided — including inside click handlers that fire later (e.g. an Apply button), not just at initial render. Never reach for save-swap-restore around `this.selectedEntities` for this; it doesn't work once any `await` is involved.
+
+### "Open in HA" / Cross-Navigation From a Custom Dialog — Use `data-open-path`, Not Manual pushState or `hass-more-info`
+
+`createDialog()`'s overlay already delegates clicks on any `[data-open-path]`/`[data-open-entity]` element: `data-open-path` pushes the route + dispatches `location-changed` + closes the dialog; `data-open-entity` instead dispatches a `hass-more-info` event. Live-tested this session trying to send an Entity Details dialog button to HA's own entity page:
+- A bespoke `history.pushState` + `location-changed` handler written inline (not going through the shared delegation) was order-sensitive relative to `closeDialog()` in a way that silently dropped the navigation depending on which ran first
+- `data-open-entity` (the `hass-more-info` event path) never actually opened HA's more-info dialog in testing, for reasons not fully root-caused
+- `data-open-path` targeting the same route (`/config/entities/entity/{id}`) — the same mechanism the automation/script list dialogs' "Edit" rows already use successfully — worked reliably
+
+**Takeaway**: for any new "jump to a HA page" button inside a `createDialog()`-based dialog, add `data-open-path="..."` to the element and skip writing a bespoke click handler; don't reach for `data-open-entity` unless you've verified `hass-more-info` actually opens something in this environment first.

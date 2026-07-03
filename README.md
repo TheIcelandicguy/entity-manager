@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-2.21.0-blue)
+![Version](https://img.shields.io/badge/version-2.22.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -50,6 +50,8 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - Real-time entity state display with color-coded status badges
 - Alphabetically sorted integrations for easy navigation
 - Device grouping with entity counts per device and integration
+- **One-click reveal** — expanding an integration with exactly one device shows its entities immediately, no extra click on the device row
+- Every integration row shows a **category-count breakdown** (Controls/Sensors/Configuration/Diagnostic/Connectivity) and a deduped **HA Label rollup** without needing to expand
 - **Bulk Rename** (✎✎) and **Bulk Labels** (🏷️) buttons on every entity card — greyed out until 2+ entities are selected, then activate instantly as you check boxes
 ### Entity Renaming
 - Click-to-rename any entity directly from the panel
@@ -109,7 +111,8 @@ Switch modes from the **Groups** sidebar section or with **Ctrl+G**. Your prefer
 - Create new labels directly from Entity Manager
 - Labels sidebar split into six sub-groups: **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, **Entities** — only shown when labels of that type exist
 - Clicking a label filters the main view, merging entity IDs from all matching groups
-- **Label Suggestions** in the Suggestions dialog — 18 semantic categories (Lights, Dimmable Lights, Switches, Temperature Sensors, Motion Sensors, etc.); one-click "Apply to N" creates and assigns the label in HA
+- **Label Suggestions** in the Suggestions dialog — 21 semantic categories (Lights, Dimmable Lights, Switches, Temperature Sensors, Motion Sensors, etc.), including Power Monitoring, Energy Consumed, Energy Returned, and generic Energy Monitoring as four separate rows; one-click "Apply to N" creates and assigns the label in HA
+- **Custom color picker** — every label color picker (label editor, bulk labels, Assign dialog) offers the 19 HA presets plus a custom-hex swatch
 - Expandable list with refresh capability; label data cached for performance
 ### Entity Comparison
 - Compare up to **4 entities side-by-side** in a table view
