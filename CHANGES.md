@@ -1,5 +1,42 @@
 # Entity Manager UI Changes
 
+## Version 2.22.0 - One-Click Integration Reveal, Category/Label Rollup & Bulk-Action Fixes
+
+### New Features
+
+#### One-Click Reveal for Single-Device Integrations
+- Expanding an integration that has exactly one device now reveals that device's entities immediately — no second click on the device row
+- Applies uniformly everywhere an integration can be expanded: the main tree header click, the sidebar's integration nav click, and the "View Enabled"/"View Disabled" buttons
+- New `_autoExpandLoneDevice(integrationName)` helper, called from all three expand-transition sites; never runs from inside a render function, so it can't fight a user's manual collapse of that device row
+
+#### Integration Row Category Breakdown & Label Rollup
+- Every integration row now shows, without expanding: a category-count breakdown (Controls / Sensors / Configuration / Diagnostic / Connectivity) and a deduped rollup of every HA Label present anywhere in the integration (entity, device, or area scoped)
+- Label rollup keeps the broadest scope seen per label (Area > Device > Entity) and is display-only — no click target exists for an integration-wide summary; the row is omitted entirely when an integration has no labels anywhere
+- Device-level category classification (previously inline in `_buildDeviceCard`) is now hoisted into shared `_categorizeEntity()` / `_categoryMeta()` methods so the device- and integration-level rollups can't drift apart
+
+#### Energy Monitoring Split Into Four Categories
+- Label Suggestions' single "Energy Monitoring" row is now four: **Power Monitoring**, **Energy Consumed**, **Energy Returned**, and generic **Energy Monitoring** (everything else)
+- HA has no separate `device_class` for consumed vs. returned energy — both are just `"energy"` — so direction is matched by entity_id substring (`consumed_energy`/`energy_consumed`, `returned_energy`/`energy_return`), verified against real floor-heating switch entity IDs
+
+#### Custom Color Picker for Labels
+- All 4 label color pickers in the app (label edit dialog, entity label editor's create-new-label, bulk label dialog's create-new-label, Assign dialog's inline label creator) now share one custom-color swatch alongside the 19 preset colors
+- New shared `_renderLabelColorPickerHtml()` / `_attachLabelColorPicker()` helpers replace 4 near-duplicate inline implementations; HA's label registry backend accepts arbitrary hex colors with no server-side validation, confirmed live
+
+### Bug Fixes
+
+- **Stacked-dialog scroll-lock**: closing an inner confirm sub-dialog no longer strips the page scroll-lock while its parent dialog is still open — `createDialog()`'s `closeDialog` now only removes `em-dialog-open` once no `.confirm-dialog-overlay` elements remain
+- **Bulk Rename / Bulk Labels from list dialogs**: fixed a stale-closure bug where invoking "Bulk Rename" or "Add Labels to Selected" from the Automations/Scripts/Helpers list dialog's bulk-action bar silently operated on the wrong (previous toolbar) selection — the save-and-restore-around-an-unawaited-async-call pattern reverted `selectedEntities` before the rename queue or label list ever read it. Both dialogs now take an explicit `entityIds` override instead
+- **Entity Details label chips going stale**: the "Manage Entity/Device Labels" buttons left the dialog's own label chips showing pre-edit data after use — `_showLabelEditor`'s returned promise resolved as soon as its own dialog was drawn, not when the user actually finished editing. It now resolves when that dialog truly closes (Done, Escape, or backdrop click)
+- **Entity Details rename pre-fill**: the hero pencil-edit pre-filled from the live `friendly_name` state attribute, which for `has_entity_name` devices is often a "{device name} {entity name}" composite — saving unedited wrote that composite back as the display-name override. Now prefers the raw registry name/`original_name`
+- **Bulk area assignment reporting total failure on partial success**: `_assignAreaToEntities` aborted the whole batch on the first per-entity failure while entities processed before the failure were already mutated (and undone) — it now continues past failures and returns `{success, failed}` so all 4 call sites report accurate `X/Y succeeded` counts
+- **Context-menu "Enable/Disable Selected" bypassing the bulk endpoint**: this path looped individual `enable_entity`/`disable_entity` calls instead of the real `bulk_enable`/`bulk_disable` WS commands, evading the server-side 500-entity cap entirely and flooding the 50-slot undo stack with one entry per entity. It now delegates to the same `bulkEnable()`/`bulkDisable()` the sidebar already uses correctly
+- **Bulk Labels editor/remover**: both mutated labels with no way to undo (violating the app-wide convention that only `remove_entity` is undo-exempt) and never refreshed the entity tree afterward, leaving label chips stale. Both now push proper undo actions and call `loadData()`
+- **"Open in HA" from Entity Details**: previously force-opened a new tab at a different (edit-form) route than the entity card's own "Open in HA" button. Now uses the same `data-open-path` delegation already proven reliable elsewhere in the app (the automation/script list dialogs' "Edit" rows) — two other approaches (manual `history.pushState`, and the sibling `data-open-entity`/`hass-more-info` mechanism) were tried live and discarded first
+- **Entity Details toggle/press button**: had no error handling (a failed service call was a silent unhandled rejection), no success toast, and no UI refresh — the button label and state chip stayed frozen at the pre-click value for the dialog's remaining lifetime. Now matches the entity card's toggle/press pattern: try/catch with a toast either way, optimistic label/state update on success
+- **Sidebar `bulkEnable()`/`bulkDisable()`**: reported the requested count as the success count regardless of the actual WS response, and pushed undo/cleared selection for entities that may have failed server-side. Now reads the response's real `success`/`failed` arrays; removed dead `undo` closures that were never read anywhere (undo/redo already reverses these generically) and couldn't have survived the undo stack's JSON persistence regardless
+
+---
+
 ## Version 2.21.0 - Clickable Chips, Unified Assign Dialog & Suggestion Ignore/Restore
 
 ### New Features

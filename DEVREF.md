@@ -1,6 +1,6 @@
 # DEVREF — Entity Manager Panel Internals
 
-Developer reference for `entity-manager-panel.js` (~15,000 lines) and `entity-manager-panel.css` (~6,300 lines). Companion to CLAUDE.md (which covers project overview, setup, git workflow, and contribution guide). This document covers internal architecture only.
+Developer reference for `entity-manager-panel.js` (~16,100 lines) and `entity-manager-panel.css` (~7,050 lines). Companion to CLAUDE.md (which covers project overview, setup, git workflow, and contribution guide). This document covers internal architecture only.
 
 ---
 
@@ -826,7 +826,7 @@ Token fetched once at startup. Always use `onerror="this.style.display='none'"` 
 
 ## 17. CSS Architecture
 
-### File: `entity-manager-panel.css` (~6,100 lines)
+### File: `entity-manager-panel.css` (~7,050 lines)
 
 ### Top-Level Layout
 ```
@@ -1318,25 +1318,21 @@ Can run as a modal or inline — injected into `container` when called from `_re
 
 | Sub-section | Content | Row actions |
 |-------------|---------|-------------|
-| Orphaned Entities | No device assigned; cards grouped by integration | Ignore (snooze) / Assign to device / Add to Group / Remove |
+| Orphaned Entities | No device assigned; cards grouped by integration | Ignore (permanent) / Assign to device / Add to Group / Remove |
 | Stale Entities | Not updated in 30+ days | Keep (dismiss 30d) / Disable (confirm) / Remove (confirm) |
 | Ghost Devices | In device registry but has no entities | Open in HA |
 | Never Triggered | Automations/scripts with no `last_triggered` attribute | Open editor (↗) |
 
-**Orphaned ignore state** (`em-orphan-ignored`): stored as `{ entity_id: expiry_ms }` where `0` = permanent. Shared storage key with `showEntityListDialog('orphaned')`. Migration from old `string[]` format is automatic. `_clnIgnoredMap`, `_clnBuildSet()`, `_clnIsIgnored()`, `let _clnIgnoredSet` manage state locally in the function closure. `_clnOrphanBodyHtml(showIgnored)` and `_clnOrphanHeaderHtml(showIgnored)` rebuild the orphaned section independently.
+**Orphaned ignore state**: uses the app-wide unified ignore system — `this._ignoredSugKeys` (a `Set` of `"type:id"` strings, e.g. `"orphaned:sensor.foo"`) persisted to `localStorage['em-ignored-suggestions']`. This is the *only* dismiss mechanism in the app; it's shared with Suggestions and the Unavailable section, not a cleanup-specific store. `this._ignoreBtn(key)` renders the row's Ignore button, `this._renderIgnoredListUI(container, typeFilter)` renders the "View ignored (N)" + restore list (Cleanup scopes this to its own types so it doesn't show Suggestions' unrelated ignores). Ignoring is permanent — there is no snooze/duration picker; a prior time-boxed variant (`_showIgnoreSnoozeDialog`, per-feature stores `em-orphan-ignored`/`em-unavail-ignored`) was replaced by this unified system. `_migrateLegacyIgnoreData()` (constructor, one-time, guarded by `em-ignore-migrated-v1`) migrates any leftover data from those old stores into `_ignoredSugKeys` — don't remove it without confirming existing users have already migrated.
 
 Rows are removed from the DOM immediately on successful action — no full re-render needed. `em-stale-dismissed` (localStorage) tracks dismissed stale entity IDs with expiry timestamps.
-
-### `_showIgnoreSnoozeDialog(entityId, onSnooze)`
-
-Opens a duration-picker dialog for snoozing entity visibility. Options: 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent. Calls `onSnooze(expiryMs)` where `expiryMs = 0` means permanent, otherwise `Date.now() + durationMs`. Used by both unavailable and orphaned ignore handlers.
 
 ### `_showAddToGroupDialog(entityIds)`
 
 Shows a two-section picker dialog matching the sidebar Groups section:
 
 **Grouping Modes** (top):
-- By Area / By Floor → `_showAreaFloorDialog('Assign area', entities)`
+- By Area / By Floor → `_showAssignDialog(entities, { focus: 'area' })`
 - By Device Name → `_showDevicePickerDialog(entityIds[0], ...)` (single entity only; disabled if `entityIds.length > 1`)
 - By Integration / By Type → informational only (greyed out — automatic grouping, not assignable)
 
@@ -1362,4 +1358,4 @@ Card extraction is recursive across `views[]` → `cards[]` and `sections[]`. Pa
 
 ---
 
-*This document covers the code architecture as of v2.19.0. For project setup, services, WebSocket backend (Python), and git workflow see [CLAUDE.md](CLAUDE.md).*
+*This document covers the code architecture as of v2.22.0. For project setup, services, WebSocket backend (Python), and git workflow see [CLAUDE.md](CLAUDE.md).*

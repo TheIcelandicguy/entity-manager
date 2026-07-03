@@ -7,14 +7,14 @@ entity-manager/
 │       ├── __init__.py                  # Integration entry point, panel + resource registration
 │       ├── config_flow.py               # UI-based configuration flow (single-step, no options)
 │       ├── const.py                     # DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
-│       ├── manifest.json                # Integration metadata (v2.21.0)
+│       ├── manifest.json                # Integration metadata (v2.22.0)
 │       ├── services.yaml                # Service schema for enable_entity / disable_entity
 │       ├── strings.json                 # UI strings for config flow
 │       ├── voice_assistant.py           # Voice intent handlers (enable/disable)
-│       ├── websocket_api.py             # 18 WebSocket command handlers
+│       ├── websocket_api.py             # 21 WebSocket command handlers
 │       ├── frontend/
-│       │   ├── entity-manager-panel.js  # Custom web component UI (~17,000 lines)
-│       │   └── entity-manager-panel.css # External stylesheet (~7,400 lines)
+│       │   ├── entity-manager-panel.js  # Custom web component UI (~16,100 lines)
+│       │   └── entity-manager-panel.css # External stylesheet (~7,050 lines)
 │       └── translations/
 │           └── en.json                  # English translations
 ├── sentences/en/
@@ -55,17 +55,19 @@ entity-manager/
 - `VALID_ENTITY_ID` — regex for entity ID validation before registry writes
 
 **`websocket_api.py`**
-18 WebSocket command handlers, all requiring `@websocket_api.require_admin`:
+21 WebSocket command handlers, all requiring `@websocket_api.require_admin`:
 
 | Command | Description |
 |---------|-------------|
 | `get_disabled_entities` | Entity tree grouped by integration → device |
 | `export_states` | Export all entities to JSON |
+| `import_entity_states` | Import previously-exported entity states |
 | `get_automations` | Automations with trigger context |
 | `get_template_sensors` | Template entities with connections |
 | `get_entity_details` | Full entity metadata (registry, device, area, labels) |
 | `get_config_entry_health` | Failed/unhealthy config entries |
 | `get_areas_and_floors` | Area + floor hierarchy |
+| `get_last_activity` | Recorder-backed last-changed timestamps for the Activity Timeline view |
 | `list_hacs_items` | Installed HACS items + store items |
 | `enable_entity` | Enable single entity |
 | `disable_entity` | Disable single entity |
@@ -77,6 +79,7 @@ entity-manager/
 | `update_yaml_references` | Find/replace entity ID across YAML config files |
 | `assign_entity_device` | Assign entity to a device in the registry |
 | `unassign_entity_device` | Remove device assignment from entity |
+| `register_template` | Register a new UI-created template sensor config entry |
 
 **`voice_assistant.py`**
 - Intent handlers for enable/disable voice commands
@@ -86,7 +89,7 @@ entity-manager/
 
 ### Frontend (JavaScript + CSS)
 
-**`frontend/entity-manager-panel.js`** (~15,000 lines)
+**`frontend/entity-manager-panel.js`** (~16,100 lines)
 
 Single `EntityManagerPanel` custom element (`extends HTMLElement`). Key areas:
 
@@ -109,13 +112,18 @@ Key methods:
 | `_renderMergedEntitySections(types, bodyEl)` | Async-loads multiple section types into inline view body |
 | `_collGroup(label, bodyHtml, openByDefault?)` | Collapsible group helper; pass `true` to start expanded |
 | `_renderMiniEntityCard(opts)` | Standard mini entity card used in all dialogs/views |
-| `_renderManagedItem(opts)` | Standard Edit/Rename/Remove row for automation/script/helper dialogs |
 | `_pushUndoAction(action)` | Push to undo stack + persist to localStorage |
 | `_showHistoryDialog()` | Combined undo/redo timeline dialog with Clear History |
 | `_describeAction(action)` | Human-readable label for each undo action type |
 | `_executeAction(action, isUndo)` | Execute a single undo or redo step |
 | `_showDevicePickerDialog(entityId, onSelect)` | Integration-grouped device picker with confirmation |
-| `_showAreaFloorDialog(title, entities)` | Two-panel area + floor assignment dialog |
+| `_showAssignDialog(entities, opts)` | Unified area/floor + label assignment dialog, opened from any chip; `opts.focus` scrolls to `'area'` or `'labels'` |
+| `_assignAreaToEntities(entities, areaId)` | Applies an area to entities (+ their devices, deduped); continues past per-entity failures, returns `{success, failed}` |
+| `_categorizeEntity(entity)` / `_categoryMeta()` | Shared category classification (Controls/Sensors/Configuration/Diagnostic/Connectivity) used by both device cards and integration-row breakdowns |
+| `_autoExpandLoneDevice(integrationName)` | Marks a single-device integration's device pre-expanded, called only from expand-transition click handlers |
+| `_effectiveEntityLabels(entity)` / `_effectiveDeviceLabels(deviceId, areaId)` | Resolve broadest-scope-wins label set (`[{labelId, scope}]`, A/D/E) |
+| `_renderLabelChips(scopedLabels, dataAttrs)` | Render label chip markup with scope badges from the above |
+| `_renderLabelColorPickerHtml(pickerId, currentColor)` / `_attachLabelColorPicker(picker)` | Shared 19-preset + custom-hex color picker used by all 4 label color picker call sites |
 | `_reAttachCollapsibles(root)` | Wire `.em-collapsible` click listeners; guards with `data-collapsible-bound` |
 | `_loadLastActivityCache()` | Queries `entity_manager/get_last_activity` (recorder DB), caches in localStorage 1h TTL; calls `updateView()` when done |
 | `_renderActivityTimelineView()` | Last Activity inline view — 15 domain-based sections, filter pills, search, live count badge |
@@ -129,7 +137,7 @@ Key methods:
 | `_showEntityDetailsDialog(entityId)` | Full entity detail dialog with hero header, inline rename, state pill, action buttons |
 | `_addNotification(type, entityId, msg)` | Push a notification to the bell dropdown; rate-limited, persisted in localStorage |
 
-**`frontend/entity-manager-panel.css`** (~6,300 lines)
+**`frontend/entity-manager-panel.css`** (~7,050 lines)
 
 All colors via `--em-*` CSS variables (never HA theme variables directly):
 

@@ -54,6 +54,12 @@ entity-manager-panel *::after {
   --dialog-content-padding: 24px;
   --dialog-actions-padding: 16px 24px 24px 24px;
   --dialog-gap: 12px;
+  /* Dialog width scale — named tiers instead of ad hoc max-width per dialog.
+     Base .confirm-dialog-box defaults to 500px; wider dialogs opt into a tier. */
+  --dialog-width-md: 600px;
+  --dialog-width-lg: 680px;
+  --dialog-width-xl: 720px;
+  --dialog-width-2xl: 960px;
 }
 
 /* Light mode — hardcoded so EM light theme overrides HA dark cascade.
@@ -836,7 +842,7 @@ entity-manager-panel[data-theme="dark"] .domain-option:hover {
 
 .filter-select:focus {
   outline: none;
-  border-color: var(--primary-color);
+  border-color: var(--em-primary);
   box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
 }
 
@@ -884,7 +890,7 @@ body.em-dialog-open {
 
 /* Entity detail dialog: wider + scrollable body */
 .confirm-dialog-box.em-entity-detail {
-  max-width: 680px;
+  max-width: var(--dialog-width-lg);
   display: flex;
   flex-direction: column;
   max-height: 90vh;
@@ -968,7 +974,7 @@ body.em-dialog-open {
 }
 
 .entity-list-dialog {
-  max-width: 600px;
+  max-width: var(--dialog-width-md);
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -1419,7 +1425,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 }
 
 .stat-card:hover {
-  border-color: var(--primary-color);
+  border-color: var(--em-primary);
   box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
   transform: translateY(-2px);
 }
@@ -1476,51 +1482,12 @@ entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="entities"] {
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="entities"] .stat-label { color: #00695c; }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="entities"] .stat-value { color: #26a69a; }
 
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="automation"] {
-  border-color: #2196f3;
-  background: rgba(33,150,243,0.06);
-}
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="automation"] .stat-label { color: #1565c0; }
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="automation"] .stat-value { color: #1976d2; }
-
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="script"] {
-  border-color: #4caf50;
-  background: rgba(76,175,80,0.06);
-}
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="script"] .stat-label { color: #2e7d32; }
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="script"] .stat-value { color: #388e3c; }
-
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="helper"] {
-  border-color: #9c27b0;
-  background: rgba(156,39,176,0.06);
-}
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="helper"] .stat-label { color: #6a1b9a; }
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="helper"] .stat-value { color: #7b1fa2; }
-
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="template"] {
   border-color: #ff9800;
   background: rgba(255,152,0,0.06);
 }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="template"] .stat-label { color: #e65100; }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="template"] .stat-value { color: #f57c00; }
-
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="unavailable"] {
-  border-color: #f44336;
-  background: rgba(244,67,54,0.06);
-}
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="unavailable"] .stat-label { color: #c62828; }
-
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="cleanup"] {
-  border-color: #ff9800;
-  background: rgba(255,152,0,0.06);
-}
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="cleanup"] .stat-label { color: #e65100; }
-
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="config-health"] {
-  border-color: #f44336;
-  background: rgba(244,67,54,0.06);
-}
-entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="config-health"] .stat-label { color: #c62828; }
 
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="hacs"] {
   border-color: #4caf50;
@@ -1571,54 +1538,12 @@ entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="entities"] {
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="entities"] .stat-label { color: #80cbc4; }
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="entities"] .stat-value { color: #4db6ac; }
 
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="automation"] {
-  border-color: #2196f3;
-  background: rgba(33,150,243,0.10);
-}
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="automation"] .stat-label { color: #90caf9; }
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="automation"] .stat-value { color: #64b5f6; }
-
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="script"] {
-  border-color: #66bb6a;
-  background: rgba(76,175,80,0.10);
-}
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="script"] .stat-label { color: #a5d6a7; }
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="script"] .stat-value { color: #66bb6a; }
-
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="helper"] {
-  border-color: #ba68c8;
-  background: rgba(156,39,176,0.10);
-}
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="helper"] .stat-label { color: #ce93d8; }
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="helper"] .stat-value { color: #ba68c8; }
-
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="template"] {
   border-color: #ffa726;
   background: rgba(255,152,0,0.10);
 }
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="template"] .stat-label { color: #ffcc80; }
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="template"] .stat-value { color: #ffa726; }
-
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="unavailable"] {
-  border-color: #ef5350;
-  background: rgba(244,67,54,0.10);
-}
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="unavailable"] .stat-label { color: #ef9a9a; }
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="unavailable"] .stat-value { color: #ef5350; }
-
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="cleanup"] {
-  border-color: #ffa726;
-  background: rgba(255,152,0,0.10);
-}
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="cleanup"] .stat-label { color: #ffcc80; }
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="cleanup"] .stat-value { color: #ffa726; }
-
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="config-health"] {
-  border-color: #ef5350;
-  background: rgba(244,67,54,0.10);
-}
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="config-health"] .stat-label { color: #ef9a9a; }
-entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="config-health"] .stat-value { color: #ef5350; }
 
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="hacs"] {
   border-color: #66bb6a;
@@ -1729,7 +1654,7 @@ entity-manager-panel[data-theme="dark"] .integration-select-checkbox {
 
 .integration-select-text {
   font-size: 12px;
-  color: var(--secondary-text-color);
+  color: var(--em-text-secondary);
   white-space: nowrap;
 }
 
@@ -1880,7 +1805,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   cursor: pointer;
   user-select: none;
   background: var(--em-bg-secondary);
-  border-bottom: 2px solid var(--primary-color);
+  border-bottom: 2px solid var(--em-primary);
   transition: background 0.2s ease;
   gap: 8px;
 }
@@ -1922,7 +1847,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   user-select: none;
   background: var(--em-bg-secondary);
   transition: background 0.2s ease;
-  border-bottom: 2px solid var(--primary-color);
+  border-bottom: 2px solid var(--em-primary);
 }
 
 .device-header:hover {
@@ -1973,6 +1898,38 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .device-cat-chip.cat-config       { color: var(--em-primary);  border-color: var(--em-primary); }
 .device-cat-chip.cat-diagnostic   { color: var(--em-warning);  border-color: var(--em-warning); }
 .device-cat-chip.cat-connectivity { color: var(--em-success);  border-color: var(--em-success); }
+
+/* Integration-level category-count breakdown (collapsed-state summary) */
+.integration-cat-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.integration-cat-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.integration-cat-badge.cat-controls     { color: var(--em-success); border-color: var(--em-success); }
+.integration-cat-badge.cat-sensors      { color: var(--em-primary); border-color: var(--em-primary); }
+.integration-cat-badge.cat-config       { color: var(--em-primary); border-color: var(--em-primary); }
+.integration-cat-badge.cat-diagnostic   { color: var(--em-warning); border-color: var(--em-warning); }
+.integration-cat-badge.cat-connectivity { color: var(--em-success); border-color: var(--em-success); }
+
+/* Integration-level HA Label rollup — display-only, no click target */
+.integration-label-rollup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.integration-label-rollup .entity-header-label {
+  cursor: default;
+}
 
 
 .entity-list {
@@ -2060,6 +2017,36 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   border-color: white;
   box-shadow: 0 0 0 2px var(--em-primary);
   transform: scale(1.15);
+}
+
+.em-label-swatch-custom {
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.em-label-swatch-custom::after {
+  content: '\270E';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0,0,0,0.7);
+  pointer-events: none;
+}
+
+.em-label-swatch-custom .em-label-custom-color-input {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
 }
 
 .entity-header-device {
@@ -2160,7 +2147,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .entity-checkbox {
   margin-right: 12px;
   cursor: pointer;
-  accent-color: var(--primary-color);
+  accent-color: var(--em-primary);
   flex-shrink: 0;
   width: 20px;
   height: 20px;
@@ -2375,7 +2362,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .empty-state {
   text-align: center;
   padding: 64px 32px;
-  color: var(--secondary-text-color);
+  color: var(--em-text-secondary);
 }
 
 .empty-state h2 {
@@ -2519,7 +2506,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .update-item.is-active {
   border: 2px solid var(--em-primary) !important;
   border-left: 4px solid var(--em-primary) !important;
-  background: rgba(var(--em-primary-rgb, 33, 150, 243), 0.06);
+  background: color-mix(in srgb, var(--em-primary) 6%, transparent);
   position: relative;
   overflow: hidden;
 }
@@ -2544,13 +2531,13 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .update-item.is-done {
   border: 2px solid var(--em-success) !important;
   border-left: 4px solid var(--em-success) !important;
-  background: rgba(var(--em-success-rgb, 76, 175, 80), 0.06);
+  background: color-mix(in srgb, var(--em-success) 6%, transparent);
 }
 
 .update-item.is-failed {
   border: 2px solid var(--em-danger) !important;
   border-left: 4px solid var(--em-danger) !important;
-  background: rgba(var(--em-danger-rgb, 244, 67, 54), 0.06);
+  background: color-mix(in srgb, var(--em-danger) 6%, transparent);
 }
 
 /* SVG progress ring — shown when entity reports update_percentage */
@@ -3473,8 +3460,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 5px 10px;
   border: 1px solid var(--em-border);
   border-radius: 6px;
-  background: var(--em-surface);
-  color: var(--em-text);
+  background: var(--em-bg-primary);
+  color: var(--em-text-primary);
   font-size: 13px;
   width: 200px;
   max-width: 100%;
@@ -3780,7 +3767,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   gap: 7px;
   padding: 5px 12px 5px 28px;
-  background: var(--em-bg-primary, var(--em-surface));
+  background: var(--em-bg-primary);
   border-bottom: 1px solid var(--em-border);
   font-size: 11px;
   font-weight: 600;
@@ -3938,7 +3925,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 4px 8px;
   border: 1.5px solid var(--em-border);
   border-radius: 6px;
-  background: var(--em-bg-primary, var(--em-surface));
+  background: var(--em-bg-primary);
   color: var(--em-text-primary);
   transition: border-color 0.15s;
 }
@@ -4051,7 +4038,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 7px 10px;
   border: 1.5px solid var(--em-border);
   border-radius: 6px;
-  background: var(--em-bg-primary, var(--em-surface));
+  background: var(--em-bg-primary);
   color: var(--em-text-primary);
   font-family: monospace;
   font-size: 13px;
@@ -4734,250 +4721,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   border-color: var(--em-primary);
 }
 
-/* ===== ENTITY STATISTICS VIEW ===== */
-
-.entity-stats-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 400px;
-  max-width: 500px;
-}
-
-.stats-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--em-border);
-}
-
-.stats-header .entity-icon {
-  font-size: 32px;
-}
-
-.stats-header-info h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
-  color: var(--em-text-primary);
-}
-
-.stats-header-info .entity-id {
-  font-size: 12px;
-  color: var(--em-text-secondary);
-  font-family: monospace;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.stat-card {
-  padding: 16px;
-  background: var(--em-bg-secondary);
-  border-radius: 8px;
-  text-align: center;
-}
-
-.stat-card .stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--em-primary);
-  margin-bottom: 4px;
-}
-
-.stat-card .stat-label {
-  font-size: 12px;
-  color: var(--em-text-secondary);
-}
-
-.stats-attributes {
-  padding-top: 12px;
-  border-top: 1px solid var(--em-border);
-}
-
-.stats-attributes h4 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.attribute-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.attribute-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--em-bg-secondary);
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.attribute-row .attr-key {
-  color: var(--em-text-secondary);
-}
-
-.attribute-row .attr-value {
-  color: var(--em-text-primary);
-  font-family: monospace;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ===== STATE HISTORY VIEW ===== */
-
-.state-history-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 450px;
-  max-width: 600px;
-}
-
-.history-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.history-entry {
-  display: flex;
-  position: relative;
-  padding: 12px 0 12px 32px;
-}
-
-.history-entry::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--em-border);
-}
-
-.history-entry::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 16px;
-  width: 10px;
-  height: 10px;
-  background: var(--em-primary);
-  border-radius: 50%;
-  border: 2px solid var(--em-bg-primary);
-}
-
-.history-entry:first-child::before {
-  top: 16px;
-}
-
-.history-entry:last-child::before {
-  bottom: calc(100% - 16px);
-}
-
-.history-content {
-  flex: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 10px 14px;
-  background: var(--em-bg-secondary);
-  border-radius: 8px;
-}
-
-.history-state {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--em-text-primary);
-}
-
-.history-time {
-  font-size: 12px;
-  color: var(--em-text-secondary);
-}
-
-.history-empty {
-  text-align: center;
-  padding: 32px;
-  color: var(--em-text-secondary);
-}
-
-/* ===== DEPENDENCIES VIEW ===== */
-
-.dependencies-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 400px;
-  max-width: 500px;
-}
-
-.dependency-section {
-  padding: 12px;
-  background: var(--em-bg-secondary);
-  border-radius: 8px;
-}
-
-.dependency-section h4 {
-  margin: 0 0 12px;
-  font-size: 13px;
-  color: var(--em-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.dependency-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  background: var(--em-bg-primary);
-  border-radius: 6px;
-  margin-bottom: 8px;
-}
-
-.dependency-item:last-child {
-  margin-bottom: 0;
-}
-
-.dependency-item .dep-icon {
-  font-size: 20px;
-}
-
-.dependency-item .dep-info {
-  flex: 1;
-}
-
-.dependency-item .dep-name {
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.dependency-item .dep-id {
-  font-size: 11px;
-  color: var(--em-text-secondary);
-  font-family: monospace;
-}
-
-.no-dependencies {
-  text-align: center;
-  padding: 24px;
-  color: var(--em-text-secondary);
-  font-style: italic;
-}
-
 /* ===== BATCH PREVIEW MODAL ===== */
 
 .batch-preview {
@@ -5106,73 +4849,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   cursor: pointer;
   font-size: 14px;
   color: var(--em-text-primary);
-}
-
-/* ===== IMPACT ANALYSIS VIEW ===== */
-
-.impact-analysis {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 450px;
-  max-width: 600px;
-}
-
-.impact-warning {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: rgba(255, 183, 77, 0.15);
-  border: 1px solid var(--em-warning);
-  border-radius: 8px;
-  color: var(--em-warning);
-}
-
-.impact-warning.no-impact {
-  background: rgba(0, 200, 83, 0.15);
-  border-color: var(--em-success);
-  color: var(--em-success);
-}
-
-.impact-warning .icon {
-  font-size: 24px;
-}
-
-.impact-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.impact-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--em-bg-secondary);
-  border-radius: 6px;
-}
-
-.impact-item .impact-icon {
-  font-size: 20px;
-}
-
-.impact-item .impact-info {
-  flex: 1;
-}
-
-.impact-item .impact-name {
-  font-size: 14px;
-  color: var(--em-text-primary);
-}
-
-.impact-item .impact-type {
-  font-size: 11px;
-  color: var(--em-text-secondary);
-  text-transform: uppercase;
 }
 
 /* ===== VIRTUAL SCROLLING ===== */
@@ -5511,7 +5187,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-family: monospace;
   font-size: 12px;
   font-weight: 600;
-  color: var(--em-text);
+  color: var(--em-text-primary);
   background: var(--em-bg-secondary);
   padding: 2px 6px;
   border-radius: 4px;
@@ -5537,12 +5213,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .em-sug-action.em-assign-btn { margin-top: 8px; display: inline-block; }
 
-/* ===== Area / Floor Assignment Dialog ===== */
-.confirm-dialog-box.em-afd-dialog { max-width: 680px; }
-.confirm-dialog-box.em-afd-dialog .confirm-dialog-header {
-  border-bottom: 2px solid var(--em-primary);
-}
-
+/* ===== Area / Floor picker component (shared by the unified Assign dialog) ===== */
 .em-afd-wrap {
   display: flex;
   flex-direction: column;
@@ -5732,7 +5403,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 /* ===== Unified Assign dialog ===== */
-.confirm-dialog-box.em-assign-dialog { width: 660px; max-width: 96vw; }
+.confirm-dialog-box.em-assign-dialog { max-width: min(var(--dialog-width-lg), 96vw); }
 .em-assign-wrap { display: flex; flex-direction: column; gap: 14px; }
 .em-assign-section {
   border: 1px solid var(--em-border);
@@ -5817,7 +5488,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 @media (max-width: 600px) {
   .entity-header-label { font-size: 10px; padding: 2px 7px 2px 4px; }
   /* Unified Assign dialog — go near-fullscreen and let everything scroll */
-  .confirm-dialog-box.em-assign-dialog { width: 96vw; max-width: 96vw; max-height: 94vh; }
+  .confirm-dialog-box.em-assign-dialog { width: 96vw; max-height: 94vh; }
   .em-assign-dialog .em-assign-body { padding: 10px; }
   .em-assign-dialog #em-asn-target { gap: 4px; }
   .em-assign-dialog #em-asn-target .em-target-btn { min-width: 0; flex: 1 1 auto; }
@@ -5895,7 +5566,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-size: inherit;
 }
 .em-area-option:hover { background: var(--em-bg-hover); }
-.em-area-clear { color: var(--secondary-text-color); font-style: italic; }
+.em-area-clear { color: var(--em-text-secondary); font-style: italic; }
 .em-area-dot { font-size: 10px; flex-shrink: 0; }
 
 /* Device count enabled/disabled colors */
@@ -5916,8 +5587,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Rename dry-run preview box */
 .em-rename-preview-box {
-  background: rgba(var(--em-warning-rgb, 255,152,0), 0.08);
-  border: 1px solid rgba(var(--em-warning-rgb, 255,152,0), 0.3);
+  background: color-mix(in srgb, var(--em-warning) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--em-warning) 30%, transparent);
   border-radius: 6px;
   padding: 10px 12px;
   margin-bottom: 10px;
@@ -6411,11 +6082,11 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Suggestions dialog — wider */
 .confirm-dialog-box.em-suggestions {
-  max-width: 720px;
+  max-width: var(--dialog-width-xl);
 }
 
 .confirm-dialog-box.em-wide {
-  max-width: 960px;
+  max-width: var(--dialog-width-2xl);
 }
 
 /* Per-section tints — section header, sub-group headers, entity rows */
