@@ -6091,7 +6091,7 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">${this._icon(EM_ICONS.columns)}</span>
             <span class="label">Columns</span>
           </div>
-          <div class="sidebar-item" data-filter="favorites">
+          <div class="sidebar-item ${this._showOnlyFavorites ? 'active' : ''}" data-filter="favorites">
             <span class="icon">${this._icon(EM_ICONS.favorites)}</span>
             <span class="label">Favorites</span>
             <span class="count" id="favorites-count">${this.favorites.size}</span>
@@ -7465,7 +7465,10 @@ class EntityManagerPanel extends HTMLElement {
     if (domainSelect) {
       domainSelect.addEventListener('change', () => {
         this.selectedDomain = domainSelect.value;
-        this._showOnlyFavorites = false;
+        if (this._showOnlyFavorites) {
+          this._showOnlyFavorites = false;
+          this._reRenderSidebar();
+        }
         this.updateView();
       });
     }
@@ -7850,12 +7853,17 @@ class EntityManagerPanel extends HTMLElement {
     } else if (presetId) {
       this._applyFilterPreset(parseInt(presetId));
     } else if (filter === 'favorites') {
-      this.searchTerm = '';
-      const searchInput = this.content.querySelector('#search-input');
-      if (searchInput) searchInput.value = '';
-      this._showOnlyFavorites = true;
+      this._showOnlyFavorites = !this._showOnlyFavorites;
+      if (this._showOnlyFavorites) {
+        this.searchTerm = '';
+        const searchInput = this.content.querySelector('#search-input');
+        if (searchInput) searchInput.value = '';
+        this._showToast('Showing favorites only', 'info');
+      } else {
+        this._showToast('Showing all entities', 'info');
+      }
       this.updateView();
-      this._showToast('Showing favorites only', 'info');
+      this._reRenderSidebar();
     } else if (action === 'load-labels') {
       this.labeledEntitiesCache = null;
       this.labeledDevicesCache = null;
@@ -7901,6 +7909,7 @@ class EntityManagerPanel extends HTMLElement {
       this._showOnlyFavorites = false;
       this.updateView();
       this.updateDomainOptions();
+      this._reRenderSidebar();
     } else if (item.dataset.labelId) {
       this._filterByLabel(item.dataset.labelId);
     } else if (integration) {
@@ -8202,7 +8211,10 @@ class EntityManagerPanel extends HTMLElement {
       let emptyMessage = 'No entities found';
       let emptyDesc = '';
       
-      if (hasSearch) {
+      if (this._showOnlyFavorites) {
+        emptyMessage = 'No favorites';
+        emptyDesc = 'Star an entity to add it here, or click Favorites in the sidebar to show all entities again';
+      } else if (hasSearch) {
         emptyMessage = 'No matching entities';
         emptyDesc = `No entities match "${this._escapeHtml(this.searchTerm)}"`;
       } else if (hasDomainFilter) {
