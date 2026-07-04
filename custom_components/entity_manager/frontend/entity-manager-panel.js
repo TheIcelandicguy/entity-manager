@@ -14024,7 +14024,7 @@ class EntityManagerPanel extends HTMLElement {
               return this._renderMiniEntityCard({
                 entity_id: t.entity_id,
                 name: tName,
-                state: t.disabled ? 'disabled' : _stateDisplay(t).replace(/<[^>]*>/g, ''),
+                state: (() => { if (t.disabled) return 'disabled'; const _tmp = document.createElement('span'); _tmp.innerHTML = _stateDisplay(t); return _tmp.textContent; })(),
                 stateColor: t.disabled ? 'var(--em-danger)' : 'var(--em-primary)',
                 timeAgo: this._fmtAgo(t.last_real_changed || t.last_changed, 'Unknown'),
                 infoLine: `${this._triggerBadge(t)}${connectedPart}`,
