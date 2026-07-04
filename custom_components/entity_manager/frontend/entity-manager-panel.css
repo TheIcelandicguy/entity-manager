@@ -4228,7 +4228,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 /* ===== SIDEBAR ===== */
 
 .em-sidebar {
-  width: 250px;
+  width: 232px;
   height: 100%;
   max-height: 100%;
   background: var(--em-bg-secondary);
@@ -4261,18 +4261,20 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  border-bottom: 1px solid var(--em-border);
+  padding: 12px 14px 10px;
   position: sticky;
   top: 0;
-  background: var(--em-bg-primary);
+  background: var(--em-bg-secondary);
   z-index: 10;
   flex-shrink: 0;
 }
 
 .sidebar-title {
-  font-weight: 600;
-  color: var(--em-text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--em-text-secondary);
 }
 
 .sidebar-toggle {
@@ -4291,25 +4293,26 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .sidebar-section {
   margin: 6px 8px;
-  padding: 6px 8px 10px;
-  border-radius: 8px;
+  padding: 6px 6px 8px;
+  border-radius: 9px;
   background: var(--em-bg-primary);
-  box-shadow: 0 0 0 1.5px var(--em-primary), 0 2px 6px rgba(0,0,0,0.1);
+  box-shadow: 0 0 0 1px var(--em-border);
 }
 
 .sidebar-section-title {
   font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--em-text-secondary);
-  margin-bottom: 6px;
-  padding: 4px 4px 4px 6px;
+  margin-bottom: 4px;
+  padding: 5px 5px 5px 6px;
   cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-radius: 4px;
+  border-radius: 5px;
 }
 
 .sidebar-section-title:hover {
@@ -4354,18 +4357,19 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .sidebar-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 9px;
+  padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
   color: var(--em-text-primary);
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
   transition: background 0.15s;
-  min-height: 40px;
+  min-height: 36px;
 }
 
 .sidebar-item:hover {
-  background: var(--em-bg-hover);
+  background: var(--em-bg-secondary);
 }
 
 .sidebar-count-badge {
@@ -4640,7 +4644,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     max-height: calc(100vh - var(--em-header-h));
     z-index: 1000;
     transform: translateX(-100%);
-    width: 280px;
+    width: 250px;
     max-width: 85vw;
     transition: transform 0.3s ease;
     overflow-y: auto;
@@ -4655,7 +4659,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   }
 
   .em-sidebar.collapsed {
-    width: 280px;
+    width: 250px;
     max-width: 85vw;
     transform: translateX(-100%);
   }
