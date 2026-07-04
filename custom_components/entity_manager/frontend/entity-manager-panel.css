@@ -23,29 +23,32 @@ entity-manager-panel *::after {
   box-sizing: border-box;
 }
 
-/* All --em-* vars on :root so body-appended overlays inherit them too */
+/* All --em-* vars on :root so body-appended overlays inherit them too.
+   Fallback values are the "Refined" (v3.0) palette. */
 :root {
   --em-primary: var(--primary-color, #2196f3);
   --em-primary-dark: var(--primary-color-dark, #1565c0);
   --em-primary-light: var(--primary-color-light, #64b5f6);
-  --em-success: var(--success-color, #4caf50);
-  --em-success-dark: var(--success-color-dark, #388e3c);
-  --em-danger: var(--error-color, #f44336);
-  --em-danger-dark: var(--error-color-dark, #d32f2f);
-  --em-warning: var(--warning-color, #ff9800);
-  --em-warning-dark: var(--warning-color-dark, #f57c00);
+  --em-success: var(--success-color, #2e9e4f);
+  --em-success-dark: var(--success-color-dark, #23803f);
+  --em-danger: var(--error-color, #e0473a);
+  --em-danger-dark: var(--error-color-dark, #c03428);
+  --em-warning: var(--warning-color, #e08a1e);
+  --em-warning-dark: var(--warning-color-dark, #bf7112);
   --em-purple: var(--accent-color, #9c27b0);
   --em-muted: #607d8b;
-  --em-text-primary: var(--primary-text-color, #212121);
-  --em-text-secondary: var(--secondary-text-color, #757575);
-  --em-text-disabled: var(--disabled-text-color, #9e9e9e);
+  --em-text-primary: var(--primary-text-color, #1a2027);
+  --em-text-secondary: var(--secondary-text-color, #5b6472);
+  --em-text-disabled: var(--disabled-text-color, #9aa3ad);
   --em-bg-primary: var(--card-background-color, #ffffff);
-  --em-bg-secondary: var(--secondary-background-color, #fafafa);
-  --em-bg-hover: var(--table-row-alternative-background-color, #f5f5f5);
-  --em-border: var(--divider-color, #e0e0e0);
-  --em-border-light: var(--divider-color, #eeeeee);
-  --em-shadow: var(--shadow-elevation-2dp_-_box-shadow, 0 2px 4px rgba(0,0,0,0.1));
-  --em-shadow-hover: var(--shadow-elevation-4dp_-_box-shadow, 0 4px 8px rgba(0,0,0,0.15));
+  --em-bg-secondary: var(--secondary-background-color, #f7f9fc);
+  --em-bg-hover: var(--table-row-alternative-background-color, #eef2f7);
+  --em-canvas: #eef1f6; /* page background behind cards — no clean native HA equivalent */
+  --em-border: var(--divider-color, rgba(30, 41, 59, 0.16));
+  --em-border-light: var(--divider-color, rgba(30, 41, 59, 0.09));
+  --em-shadow: 0 2px 10px rgba(20, 30, 50, 0.08);
+  --em-shadow-hover: 0 4px 16px rgba(20, 30, 50, 0.12);
+  --em-header-h: 58px; /* layout constant, not a theme token */
   /* Dialog spacing & sizing */
   --dialog-padding: 24px;
   --dialog-border-width: 2px;
@@ -67,36 +70,56 @@ entity-manager-panel *::after {
    without this block, var(--secondary-background-color) inside the panel
    would resolve to that dark color even when EM is set to light. */
 entity-manager-panel[data-theme="light"] {
-  --em-text-primary: #212121;
-  --em-text-secondary: #757575;
-  --em-text-disabled: #9e9e9e;
+  --em-text-primary: #1a2027;
+  --em-text-secondary: #5b6472;
+  --em-text-disabled: #9aa3ad;
   --em-bg-primary: #ffffff;
-  --em-bg-secondary: #fafafa;
-  --em-bg-hover: #f5f5f5;
-  --em-border: #e0e0e0;
-  --em-border-light: #f0f0f0;
-  --em-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  --em-shadow-hover: 0 4px 8px rgba(0,0,0,0.15);
+  --em-bg-secondary: #f7f9fc;
+  --em-bg-hover: #eef2f7;
+  --em-canvas: #eef1f6;
+  --em-border: rgba(30, 41, 59, 0.16);
+  --em-border-light: rgba(30, 41, 59, 0.09);
+  --em-shadow: 0 2px 10px rgba(20, 30, 50, 0.08);
+  --em-shadow-hover: 0 4px 16px rgba(20, 30, 50, 0.12);
 }
 
 /* Dark mode — scoped to panel's own data-theme so EM light mode overrides HA dark */
 entity-manager-panel[data-theme="dark"] {
-  --em-text-primary: #e0e0e0;
-  --em-text-secondary: #b0b0b0;
-  --em-text-disabled: #757575;
-  --em-bg-primary: #1e1e1e;
-  --em-bg-secondary: #2d2d2d;
-  --em-bg-hover: #3d3d3d;
-  --em-border: #424242;
-  --em-border-light: #383838;
-  --em-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  --em-shadow-hover: 0 4px 8px rgba(0,0,0,0.4);
+  --em-text-primary: #e7ebf0;
+  --em-text-secondary: #93a0af;
+  --em-text-disabled: #5d6773;
+  --em-bg-primary: #181c22;
+  --em-bg-secondary: #14171c;
+  --em-bg-hover: #20252c;
+  --em-canvas: #0f1216;
+  --em-border: rgba(255, 255, 255, 0.12);
+  --em-border-light: rgba(255, 255, 255, 0.07);
+  --em-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+  --em-shadow-hover: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
 /* Dark mode is controlled exclusively by [data-theme="dark"] (HA theme selector).
    Do NOT use prefers-color-scheme here — it fires on Android system dark even when
    the user has explicitly chosen the HA Light theme, which overrides variables and
    causes checkboxes and card backgrounds to appear black in light mode. */
+
+/* Keyboard focus ring — visible on every interactive element, all themes */
+entity-manager-panel :focus-visible {
+  outline: 2px solid #5aa9ff;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  entity-manager-panel *,
+  entity-manager-panel *::before,
+  entity-manager-panel *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 .app-header {
   background: var(--em-bg-primary);
@@ -743,7 +766,7 @@ entity-manager-panel.has-bg-image .app-header {
 
 .filter-toggle.active {
   background: var(--em-primary) !important;
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15) !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--em-primary) 15%, transparent) !important;
   border-color: var(--em-primary) !important;
   color: white !important;
 }
@@ -788,7 +811,7 @@ entity-manager-panel.has-bg-image .app-header {
 .domain-button:focus {
   outline: none;
   border-color: var(--em-primary);
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 
 .domain-menu {
@@ -822,7 +845,7 @@ entity-manager-panel.has-bg-image .app-header {
 }
 
 .domain-option.active {
-  background: rgba(33, 150, 243, 0.15);
+  background: color-mix(in srgb, var(--em-primary) 15%, transparent);
   font-weight: 600;
 }
 
@@ -843,7 +866,7 @@ entity-manager-panel[data-theme="dark"] .domain-option:hover {
 .filter-select:focus {
   outline: none;
   border-color: var(--em-primary);
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 
 /* Confirmation Dialog Styles */
@@ -1255,7 +1278,7 @@ entity-manager-panel[data-theme="dark"] .confirm-no:hover {
 .rename-input:focus {
   outline: none;
   border-color: var(--em-primary-dark);
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--em-primary) 20%, transparent);
 }
 
 entity-manager-panel[data-theme="dark"] .rename-input {
@@ -1280,7 +1303,7 @@ entity-manager-panel[data-theme="dark"] .rename-input {
 .search-box:focus {
   outline: none;
   border-color: var(--em-primary);
-  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 
 .search-box::placeholder {
@@ -1303,7 +1326,7 @@ entity-manager-panel[data-theme="dark"] .rename-input {
 }
 
 .hide-uptodate-label:hover {
-  background: rgba(33, 150, 243, 0.1);
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 
 .hide-uptodate-label input[type="checkbox"] {
@@ -1341,7 +1364,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 }
 
 .btn-primary:hover {
-  box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4) !important;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--em-primary) 40%, transparent) !important;
 }
 
 .btn-secondary {
@@ -1417,7 +1440,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
   padding: 24px;
   border-radius: 16px;
   border: 2px solid var(--em-primary);
-  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15), inset 0 0 0 1px rgba(33, 150, 243, 0.1);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--em-primary) 15%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--em-primary) 10%, transparent);
   transition: all 0.3s ease;
   text-align: center;
   flex: 1 1 auto;
@@ -1426,7 +1449,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 
 .stat-card:hover {
   border-color: var(--em-primary);
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--em-primary) 30%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--em-primary) 20%, transparent);
   transform: translateY(-2px);
 }
 
@@ -1436,7 +1459,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 
 .clickable-stat:hover {
   transform: translateY(-4px);
-  box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4), inset 0 0 0 2px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--em-primary) 40%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--em-primary) 30%, transparent);
 }
 
 .stat-label {
@@ -1463,7 +1486,7 @@ entity-manager-panel[data-theme="light"] .stat-card {
 }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="integrations"] {
   border-color: #2196f3;
-  background: rgba(33,150,243,0.06);
+  background: color-mix(in srgb, var(--em-primary) 6%, transparent);
 }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="integrations"] .stat-label { color: #1565c0; }
 entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="integrations"] .stat-value { color: #1976d2; }
@@ -1519,7 +1542,7 @@ entity-manager-panel[data-theme="light"] .stat-card[data-stat-type="browsers"] .
 /* ── Dark mode stat card accents ──────────────────────────────────────────── */
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="integrations"] {
   border-color: #2196f3;
-  background: rgba(33,150,243,0.10);
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="integrations"] .stat-label { color: #90caf9; }
 entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="integrations"] .stat-value { color: #64b5f6; }
@@ -1581,12 +1604,12 @@ entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="browsers"] .s
   border: 2px solid var(--em-primary);
   border-left: 5px solid var(--em-primary);
   transition: all 0.2s ease;
-  box-shadow: 0 2px 6px rgba(33, 150, 243, 0.3), inset 0 0 0 1px rgba(33, 150, 243, 0.2);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--em-primary) 30%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--em-primary) 20%, transparent);
   max-width: 100%;
 }
 
 .integration-group:hover {
-  box-shadow: 0 4px 16px rgba(33, 150, 243, 0.4), inset 0 0 0 1px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--em-primary) 40%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--em-primary) 30%, transparent);
   border-color: var(--em-primary);
   border-left-color: var(--em-primary);
   filter: brightness(1.1);
@@ -1599,7 +1622,7 @@ entity-manager-panel[data-theme="dark"] .stat-card[data-stat-type="browsers"] .s
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(var(--rgb-primary-color, 33, 150, 243), 0.1);
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
   margin-right: 16px;
   flex-shrink: 0;
 }
@@ -1836,7 +1859,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .device-item:hover {
-  box-shadow: 0 2px 8px rgba(var(--rgb-primary-color, 33, 150, 243), 0.3);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--em-primary) 30%, transparent);
 }
 
 .device-header {
@@ -2452,7 +2475,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .select-all-label:hover {
-  background: rgba(33, 150, 243, 0.1);
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 
 .select-all-label input[type="checkbox"] {
@@ -2486,7 +2509,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .update-item:hover {
   background: var(--em-bg-secondary);
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--em-primary) 20%, transparent);
 }
 
 .update-item.has-update {
@@ -2571,7 +2594,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   width: 48px;
   height: 48px;
   border-radius: 8px;
-  background: rgba(33, 150, 243, 0.1);
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2614,7 +2637,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .version-badge.current {
-  background: rgba(33, 150, 243, 0.15);
+  background: color-mix(in srgb, var(--em-primary) 15%, transparent);
   color: var(--em-primary);
 }
 
@@ -3788,9 +3811,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 8px;
-  background: rgba(33,150,243,0.12);
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
   color: var(--em-primary);
-  border: 1px solid rgba(33,150,243,0.25);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 25%, transparent);
   flex-shrink: 0;
 }
 .brp-dev-header .brp-group-count {
@@ -3815,7 +3838,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   min-width: 0;
 }
 .bulk-rename-picker-row:hover { background: var(--em-bg-hover); }
-.bulk-rename-picker-row.is-checked { background: rgba(33,150,243,0.07); border-color: rgba(33,150,243,0.4); }
+.bulk-rename-picker-row.is-checked { background: color-mix(in srgb, var(--em-primary) 7%, transparent); border-color: color-mix(in srgb, var(--em-primary) 40%, transparent); }
 .bulk-rename-picker-row input[type="checkbox"] {
   accent-color: var(--em-primary);
   flex-shrink: 0;
@@ -3855,7 +3878,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 .bulk-rename-entity-row:last-child { border-bottom: none; }
 .bulk-rename-entity-row.is-renamed {
-  background: rgba(33,150,243,0.05);
+  background: color-mix(in srgb, var(--em-primary) 5%, transparent);
   border-left: 3px solid var(--em-primary);
   padding-left: 8px;
 }
@@ -4954,12 +4977,12 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   white-space: nowrap;
   flex-shrink: 0;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--em-primary) 15%, transparent);
 }
 .em-assign-btn:hover {
   background: var(--em-primary-dark);
   border-color: var(--em-primary-dark);
-  box-shadow: 0 6px 16px rgba(33, 150, 243, 0.3);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--em-primary) 30%, transparent);
 }
 .em-assign-btn.no-area {
   opacity: 0.55;
@@ -6367,14 +6390,14 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-sug-labels .em-mini-card                                  { border-color: rgba(200, 170, 0, 0.2); }
 
 /* Automations — blue */
-.em-sug-primary .entity-list-group-title                      { background: rgba(33, 150, 243, 0.07); border-color: rgba(33, 150, 243, 0.35); color: rgb(33, 130, 210); }
-.em-sug-primary .em-group-body                                { background: rgba(33, 150, 243, 0.02); }
-.em-sug-primary .em-naming-device-group                       { border-color: rgba(33, 150, 243, 0.3); }
-.em-sug-primary .em-naming-device-toggle                      { border-bottom-color: rgba(33, 150, 243, 0.3); }
-.em-sug-primary .em-naming-device-toggle .em-collapsible-icon { border-color: rgba(33, 150, 243, 0.5); color: rgba(33, 150, 243, 0.8); }
+.em-sug-primary .entity-list-group-title                      { background: color-mix(in srgb, var(--em-primary) 7%, transparent); border-color: color-mix(in srgb, var(--em-primary) 35%, transparent); color: var(--em-primary); }
+.em-sug-primary .em-group-body                                { background: color-mix(in srgb, var(--em-primary) 2%, transparent); }
+.em-sug-primary .em-naming-device-group                       { border-color: color-mix(in srgb, var(--em-primary) 30%, transparent); }
+.em-sug-primary .em-naming-device-toggle                      { border-bottom-color: color-mix(in srgb, var(--em-primary) 30%, transparent); }
+.em-sug-primary .em-naming-device-toggle .em-collapsible-icon { border-color: color-mix(in srgb, var(--em-primary) 50%, transparent); color: color-mix(in srgb, var(--em-primary) 80%, transparent); }
 .em-sug-primary .em-sug-row,
-.em-sug-primary .em-mini-card                                 { border-color: rgba(33, 150, 243, 0.2); }
-.em-sug-primary .em-group-body .em-mini-card:nth-child(even)  { background: rgba(33, 150, 243, 0.03); }
+.em-sug-primary .em-mini-card                                 { border-color: color-mix(in srgb, var(--em-primary) 20%, transparent); }
+.em-sug-primary .em-group-body .em-mini-card:nth-child(even)  { background: color-mix(in srgb, var(--em-primary) 3%, transparent); }
 
 /* Alternating mini card row tint within stat dialog sections — color cycle effect */
 .em-sug-health  .em-group-body .em-mini-card:nth-child(even) { background: rgba(156, 39, 176, 0.03); }
@@ -6517,9 +6540,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 8px 10px; border-radius: 6px; cursor: pointer;
   border: 1.5px solid transparent; transition: background 0.15s, opacity 0.15s;
 }
-.em-history-undo { border-color: rgba(33, 150, 243, 0.3); }
+.em-history-undo { border-color: color-mix(in srgb, var(--em-primary) 30%, transparent); }
 .em-history-redo { border-color: rgba(128, 128, 128, 0.25); opacity: 0.65; }
-.em-history-row:hover { background: rgba(33, 150, 243, 0.08); opacity: 1; }
+.em-history-row:hover { background: color-mix(in srgb, var(--em-primary) 8%, transparent); opacity: 1; }
 .em-history-icon { font-size: 14px; flex-shrink: 0; }
 .em-history-label { flex: 1; font-size: 13px; }
 .em-history-row-btn {
@@ -6721,7 +6744,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 .em-at-filter:hover { border-color: var(--em-primary); color: var(--em-primary); }
 .em-at-filter.active {
-  border-color: var(--em-primary); background: rgba(33,150,243,0.12);
+  border-color: var(--em-primary); background: color-mix(in srgb, var(--em-primary) 12%, transparent);
   color: var(--em-primary); font-weight: 600;
 }
 .em-at-filter.never-filter.active {

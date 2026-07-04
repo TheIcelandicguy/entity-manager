@@ -20,7 +20,9 @@ const HA_LABEL_COLORS = [
   ['blue-grey', '#607d8b'],
 ];
 
-// Predefined themes (inlined for reliable loading)
+// Predefined themes (inlined for reliable loading).
+// Light/Dark carry the "Refined" (v3.0) palette; keep in sync with the
+// CSS :root fallbacks and [data-theme] blocks in entity-manager-panel.css.
 const PREDEFINED_THEMES = {
   'Light': {
     mode: 'light',
@@ -28,42 +30,44 @@ const PREDEFINED_THEMES = {
       '--em-primary': '#2196f3',
       '--em-primary-dark': '#1565c0',
       '--em-primary-light': '#64b5f6',
-      '--em-success': '#4caf50',
-      '--em-success-dark': '#388e3c',
-      '--em-danger': '#f44336',
-      '--em-danger-dark': '#d32f2f',
-      '--em-warning': '#ff9800',
-      '--em-warning-dark': '#f57c00',
-      '--em-text-primary': '#212121',
-      '--em-text-secondary': '#757575',
-      '--em-text-disabled': '#9e9e9e',
+      '--em-success': '#2e9e4f',
+      '--em-success-dark': '#23803f',
+      '--em-danger': '#e0473a',
+      '--em-danger-dark': '#c03428',
+      '--em-warning': '#e08a1e',
+      '--em-warning-dark': '#bf7112',
+      '--em-text-primary': '#1a2027',
+      '--em-text-secondary': '#5b6472',
+      '--em-text-disabled': '#9aa3ad',
       '--em-bg-primary': '#ffffff',
-      '--em-bg-secondary': '#f5f5f5',
-      '--em-bg-hover': 'rgba(0,0,0,0.04)',
-      '--em-border': '#e0e0e0',
-      '--em-border-light': '#eeeeee'
+      '--em-bg-secondary': '#f7f9fc',
+      '--em-bg-hover': '#eef2f7',
+      '--em-canvas': '#eef1f6',
+      '--em-border': 'rgba(30,41,59,0.16)',
+      '--em-border-light': 'rgba(30,41,59,0.09)'
     }
   },
   'Dark': {
     mode: 'dark',
     variables: {
-      '--em-primary': '#42a5f5',
-      '--em-primary-dark': '#1e88e5',
-      '--em-primary-light': '#90caf9',
-      '--em-success': '#66bb6a',
-      '--em-success-dark': '#43a047',
-      '--em-danger': '#ef5350',
-      '--em-danger-dark': '#e53935',
-      '--em-warning': '#ffa726',
-      '--em-warning-dark': '#fb8c00',
-      '--em-text-primary': '#e0e0e0',
-      '--em-text-secondary': '#9e9e9e',
-      '--em-text-disabled': '#616161',
-      '--em-bg-primary': '#1e1e1e',
-      '--em-bg-secondary': '#121212',
-      '--em-bg-hover': 'rgba(255,255,255,0.08)',
-      '--em-border': '#333333',
-      '--em-border-light': '#2c2c2c'
+      '--em-primary': '#2196f3',
+      '--em-primary-dark': '#1565c0',
+      '--em-primary-light': '#64b5f6',
+      '--em-success': '#2e9e4f',
+      '--em-success-dark': '#23803f',
+      '--em-danger': '#e0473a',
+      '--em-danger-dark': '#c03428',
+      '--em-warning': '#e08a1e',
+      '--em-warning-dark': '#bf7112',
+      '--em-text-primary': '#e7ebf0',
+      '--em-text-secondary': '#93a0af',
+      '--em-text-disabled': '#5d6773',
+      '--em-bg-primary': '#181c22',
+      '--em-bg-secondary': '#14171c',
+      '--em-bg-hover': '#20252c',
+      '--em-canvas': '#0f1216',
+      '--em-border': 'rgba(255,255,255,0.12)',
+      '--em-border-light': 'rgba(255,255,255,0.07)'
     }
   },
   'High Contrast': {
@@ -84,6 +88,7 @@ const PREDEFINED_THEMES = {
       '--em-bg-primary': '#000000',
       '--em-bg-secondary': '#0a0a0a',
       '--em-bg-hover': 'rgba(255,255,255,0.15)',
+      '--em-canvas': '#000000',
       '--em-border': '#ffffff',
       '--em-border-light': '#666666'
     }
@@ -106,11 +111,24 @@ const PREDEFINED_THEMES = {
       '--em-bg-primary': '#000000',
       '--em-bg-secondary': '#000000',
       '--em-bg-hover': 'rgba(255,255,255,0.1)',
+      '--em-canvas': '#000000',
       '--em-border': '#1f1f1f',
       '--em-border-light': '#121212'
     }
   }
 };
+
+// Single source of truth for every themeable --em-* variable that
+// _applyCustomTheme may set inline and _clearCustomThemeOverrides must clear.
+const EM_THEME_VARS = [
+  '--em-primary', '--em-primary-dark', '--em-primary-light',
+  '--em-success', '--em-success-dark',
+  '--em-danger', '--em-danger-dark',
+  '--em-warning', '--em-warning-dark',
+  '--em-text-primary', '--em-text-secondary', '--em-text-disabled',
+  '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
+  '--em-canvas', '--em-border', '--em-border-light',
+];
 
 // Load external CSS
 if (!document.querySelector('link[href*="entity-manager-panel.css"]')) {
@@ -1193,12 +1211,18 @@ class EntityManagerPanel extends HTMLElement {
   _applyCustomTheme(theme) {
     // Set base theme mode
     this.setAttribute('data-theme', theme.mode || 'light');
-    
+
     // Apply custom CSS variable overrides
     if (theme.variables) {
       Object.entries(theme.variables).forEach(([key, value]) => {
         this.style.setProperty(key, value);
       });
+      // Back-compat: themes saved before v3.0 have no --em-canvas — derive it
+      // from their bg-secondary so the page canvas stays coherent instead of
+      // falling through to the Refined default.
+      if (!theme.variables['--em-canvas'] && theme.variables['--em-bg-secondary']) {
+        this.style.setProperty('--em-canvas', theme.variables['--em-bg-secondary']);
+      }
     }
     
     // Apply background image if set
@@ -1218,11 +1242,8 @@ class EntityManagerPanel extends HTMLElement {
   _clearCustomThemeOverrides() {
     // Remove any custom CSS variables set on this element
     const customVars = [
-      '--em-primary', '--em-primary-dark', '--em-primary-light',
-      '--em-success', '--em-success-dark', '--em-danger', '--em-danger-dark',
-      '--em-warning', '--em-warning-dark', '--em-text-primary', '--em-text-secondary',
-      '--em-text-disabled', '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
-      '--em-border', '--em-border-light', '--em-shadow', '--em-shadow-hover',
+      ...EM_THEME_VARS,
+      '--em-shadow', '--em-shadow-hover',
       '--em-bg-image', '--em-bg-overlay'
     ];
     customVars.forEach(v => this.style.removeProperty(v));
@@ -1348,14 +1369,8 @@ class EntityManagerPanel extends HTMLElement {
     // Capture current computed CSS variables as a theme
     const computedStyle = getComputedStyle(this);
     const variables = {};
-    const varNames = [
-      '--em-primary', '--em-primary-dark', '--em-primary-light',
-      '--em-success', '--em-success-dark', '--em-danger', '--em-danger-dark',
-      '--em-warning', '--em-warning-dark', '--em-text-primary', '--em-text-secondary',
-      '--em-text-disabled', '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
-      '--em-border', '--em-border-light'
-    ];
-    
+    const varNames = EM_THEME_VARS;
+
     varNames.forEach(name => {
       const value = computedStyle.getPropertyValue(name).trim();
       if (value) {
@@ -1612,13 +1627,13 @@ class EntityManagerPanel extends HTMLElement {
       'te-primary': '#2196f3',
       'te-primary-dark': '#1565c0',
       'te-primary-light': '#64b5f6',
-      'te-success': '#4caf50',
-      'te-danger': '#f44336',
-      'te-warning': '#ff9800',
+      'te-success': '#2e9e4f',
+      'te-danger': '#e0473a',
+      'te-warning': '#e08a1e',
       'te-bg-primary': '#ffffff',
-      'te-bg-secondary': '#f5f5f5',
-      'te-text-primary': '#212121',
-      'te-border': '#e0e0e0'
+      'te-bg-secondary': '#f7f9fc',
+      'te-text-primary': '#1a2027',
+      'te-border': '#dbdde0'
     };
     
     Object.entries(defaults).forEach(([id, value]) => {
@@ -1637,12 +1652,12 @@ class EntityManagerPanel extends HTMLElement {
     
     const isDark = this.querySelector('#theme-mode-dark')?.checked;
     const primary = this.querySelector('#te-primary')?.value || '#2196f3';
-    const success = this.querySelector('#te-success')?.value || '#4caf50';
-    const danger = this.querySelector('#te-danger')?.value || '#f44336';
-    const warning = this.querySelector('#te-warning')?.value || '#ff9800';
+    const success = this.querySelector('#te-success')?.value || '#2e9e4f';
+    const danger = this.querySelector('#te-danger')?.value || '#e0473a';
+    const warning = this.querySelector('#te-warning')?.value || '#e08a1e';
     const bgPrimary = this.querySelector('#te-bg-primary')?.value || '#ffffff';
-    const textPrimary = this.querySelector('#te-text-primary')?.value || '#212121';
-    
+    const textPrimary = this.querySelector('#te-text-primary')?.value || '#1a2027';
+
     preview.style.background = bgPrimary;
     preview.style.color = textPrimary;
     
@@ -1698,14 +1713,14 @@ class EntityManagerPanel extends HTMLElement {
     
     const isDark = this.querySelector('#theme-mode-dark')?.checked;
     const primary = this.querySelector('#te-primary')?.value || '#2196f3';
-    const success = this.querySelector('#te-success')?.value || '#4caf50';
-    const danger = this.querySelector('#te-danger')?.value || '#f44336';
-    const warning = this.querySelector('#te-warning')?.value || '#ff9800';
+    const success = this.querySelector('#te-success')?.value || '#2e9e4f';
+    const danger = this.querySelector('#te-danger')?.value || '#e0473a';
+    const warning = this.querySelector('#te-warning')?.value || '#e08a1e';
     const bgPrimary = this.querySelector('#te-bg-primary')?.value || '#ffffff';
-    const bgSecondary = this.querySelector('#te-bg-secondary')?.value || '#f5f5f5';
-    const textPrimary = this.querySelector('#te-text-primary')?.value || '#212121';
-    const border = this.querySelector('#te-border')?.value || '#e0e0e0';
-    
+    const bgSecondary = this.querySelector('#te-bg-secondary')?.value || '#f7f9fc';
+    const textPrimary = this.querySelector('#te-text-primary')?.value || '#1a2027';
+    const border = this.querySelector('#te-border')?.value || '#dbdde0';
+
     const theme = {
       mode: isDark ? 'dark' : 'light',
       variables: {
@@ -1724,6 +1739,8 @@ class EntityManagerPanel extends HTMLElement {
         '--em-bg-primary': bgPrimary,
         '--em-bg-secondary': bgSecondary,
         '--em-bg-hover': isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+        // Page canvas sits one step behind bg-secondary; derived, no editor field
+        '--em-canvas': isDark ? this._darkenColor(bgSecondary, 0.1) : this._darkenColor(bgSecondary, 0.04),
         '--em-border': border,
         '--em-border-light': this._lightenColor(border, 0.05)
       }
@@ -1804,25 +1821,26 @@ class EntityManagerPanel extends HTMLElement {
     modeInputs.forEach(input => {
       input.addEventListener('change', () => {
         const isDark = this.querySelector('#theme-mode-dark')?.checked;
-        // Update default colors based on mode
+        // Update default colors based on mode (Refined light ↔ dark defaults;
+        // only swaps when the field still holds the other mode's default)
         if (isDark) {
           const bgInput = this.querySelector('#te-bg-primary');
           const bgSecInput = this.querySelector('#te-bg-secondary');
           const textInput = this.querySelector('#te-text-primary');
           const borderInput = this.querySelector('#te-border');
-          if (bgInput && bgInput.value === '#ffffff') bgInput.value = '#1e1e1e';
-          if (bgSecInput && bgSecInput.value === '#f5f5f5') bgSecInput.value = '#2d2d2d';
-          if (textInput && textInput.value === '#212121') textInput.value = '#e0e0e0';
-          if (borderInput && borderInput.value === '#e0e0e0') borderInput.value = '#424242';
+          if (bgInput && bgInput.value === '#ffffff') bgInput.value = '#181c22';
+          if (bgSecInput && bgSecInput.value === '#f7f9fc') bgSecInput.value = '#14171c';
+          if (textInput && textInput.value === '#1a2027') textInput.value = '#e7ebf0';
+          if (borderInput && borderInput.value === '#dbdde0') borderInput.value = '#3a4046';
         } else {
           const bgInput = this.querySelector('#te-bg-primary');
           const bgSecInput = this.querySelector('#te-bg-secondary');
           const textInput = this.querySelector('#te-text-primary');
           const borderInput = this.querySelector('#te-border');
-          if (bgInput && bgInput.value === '#1e1e1e') bgInput.value = '#ffffff';
-          if (bgSecInput && bgSecInput.value === '#2d2d2d') bgSecInput.value = '#f5f5f5';
-          if (textInput && textInput.value === '#e0e0e0') textInput.value = '#212121';
-          if (borderInput && borderInput.value === '#424242') borderInput.value = '#e0e0e0';
+          if (bgInput && bgInput.value === '#181c22') bgInput.value = '#ffffff';
+          if (bgSecInput && bgSecInput.value === '#14171c') bgSecInput.value = '#f7f9fc';
+          if (textInput && textInput.value === '#e7ebf0') textInput.value = '#1a2027';
+          if (borderInput && borderInput.value === '#3a4046') borderInput.value = '#dbdde0';
         }
         // Update hex displays
         colorInputs.forEach(ci => {
@@ -7046,18 +7064,18 @@ class EntityManagerPanel extends HTMLElement {
             <div class="theme-editor-section-title">Status Colors</div>
             <div class="theme-editor-row">
               <label>Success</label>
-              <input type="color" id="te-success" value="#4caf50">
-              <span class="color-hex" data-for="te-success">#4caf50</span>
+              <input type="color" id="te-success" value="#2e9e4f">
+              <span class="color-hex" data-for="te-success">#2e9e4f</span>
             </div>
             <div class="theme-editor-row">
               <label>Danger</label>
-              <input type="color" id="te-danger" value="#f44336">
-              <span class="color-hex" data-for="te-danger">#f44336</span>
+              <input type="color" id="te-danger" value="#e0473a">
+              <span class="color-hex" data-for="te-danger">#e0473a</span>
             </div>
             <div class="theme-editor-row">
               <label>Warning</label>
-              <input type="color" id="te-warning" value="#ff9800">
-              <span class="color-hex" data-for="te-warning">#ff9800</span>
+              <input type="color" id="te-warning" value="#e08a1e">
+              <span class="color-hex" data-for="te-warning">#e08a1e</span>
             </div>
           </div>
           
@@ -7070,18 +7088,18 @@ class EntityManagerPanel extends HTMLElement {
             </div>
             <div class="theme-editor-row">
               <label>Secondary BG</label>
-              <input type="color" id="te-bg-secondary" value="#f5f5f5">
-              <span class="color-hex" data-for="te-bg-secondary">#f5f5f5</span>
+              <input type="color" id="te-bg-secondary" value="#f7f9fc">
+              <span class="color-hex" data-for="te-bg-secondary">#f7f9fc</span>
             </div>
             <div class="theme-editor-row">
               <label>Text</label>
-              <input type="color" id="te-text-primary" value="#212121">
-              <span class="color-hex" data-for="te-text-primary">#212121</span>
+              <input type="color" id="te-text-primary" value="#1a2027">
+              <span class="color-hex" data-for="te-text-primary">#1a2027</span>
             </div>
             <div class="theme-editor-row">
               <label>Border</label>
-              <input type="color" id="te-border" value="#e0e0e0">
-              <span class="color-hex" data-for="te-border">#e0e0e0</span>
+              <input type="color" id="te-border" value="#dbdde0">
+              <span class="color-hex" data-for="te-border">#dbdde0</span>
             </div>
           </div>
           
@@ -15361,13 +15379,7 @@ class EntityManagerPanel extends HTMLElement {
     // Copy --em-* variables from the panel's inline style to the overlay so that
     // dialogs (appended to document.body, outside the panel's cascade) resolve
     // the correct colours when EM light mode is active with HA dark theme.
-    [
-      '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
-      '--em-text-primary', '--em-text-secondary', '--em-text-disabled',
-      '--em-border', '--em-border-light',
-      '--em-primary', '--em-primary-dark', '--em-primary-light',
-      '--em-success', '--em-danger', '--em-warning',
-    ].forEach(v => {
+    EM_THEME_VARS.forEach(v => {
       const val = this.style.getPropertyValue(v);
       if (val) overlay.style.setProperty(v, val);
     });
