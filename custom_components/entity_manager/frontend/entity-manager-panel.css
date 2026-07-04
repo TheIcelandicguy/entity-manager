@@ -127,14 +127,13 @@ entity-manager-panel :focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
-  padding: 0 24px;
+  height: var(--em-header-h);
+  padding: 0 18px;
   box-sizing: border-box;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: var(--em-shadow);
-  border-bottom: 2px solid var(--em-primary-dark);
+  border-bottom: 1.5px solid var(--em-primary-dark);
   width: 100%;
   max-width: 100%;
   overflow: visible;
@@ -142,10 +141,10 @@ entity-manager-panel :focus-visible {
 
 .menu-btn {
   background: transparent;
-  border: 2px solid var(--em-primary-dark);
+  border: 1.5px solid var(--em-primary-dark);
   color: var(--em-text-primary);
   cursor: pointer;
-  padding: 8px;
+  padding: 7px;
   border-radius: 8px;
   transition: all 0.2s ease;
   display: flex;
@@ -167,10 +166,10 @@ entity-manager-panel :focus-visible {
 .mobile-sidebar-btn {
   display: none;
   background: transparent;
-  border: 2px solid var(--em-primary-dark);
+  border: 1.5px solid var(--em-primary-dark);
   color: var(--em-text-primary);
   cursor: pointer;
-  padding: 8px;
+  padding: 7px;
   border-radius: 8px;
   transition: all 0.2s ease;
   align-items: center;
@@ -196,9 +195,9 @@ entity-manager-panel :focus-visible {
 }
 
 .app-header-title {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
   color: var(--em-text-primary);
   display: flex;
   align-items: baseline;
@@ -206,14 +205,13 @@ entity-manager-panel :focus-visible {
 }
 
 .em-version-badge {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   color: var(--em-primary);
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   border-radius: 5px;
   padding: 2px 7px;
-  opacity: 0.85;
   vertical-align: middle;
 }
 
@@ -229,17 +227,17 @@ entity-manager-panel :focus-visible {
 
 .theme-dropdown-btn {
   background: transparent;
-  border: 2px solid var(--em-primary-dark);
+  border: 1.5px solid var(--em-primary-dark);
   color: var(--em-text-primary);
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 7px 11px;
   border-radius: 8px;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .theme-dropdown-btn:hover {
@@ -255,7 +253,7 @@ entity-manager-panel :focus-visible {
 
 .theme-dropdown-menu {
   position: fixed;
-  top: 68px;
+  top: calc(var(--em-header-h) + 6px);
   right: 24px;
   background: var(--em-bg-primary);
   border: 1px solid var(--em-border);
@@ -2695,11 +2693,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   
   .app-header {
     padding: 0 8px;
-    height: 56px;
-  }
-  
-  .app-header-title {
-    font-size: 18px;
   }
   
   .header {
@@ -4500,7 +4493,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   display: flex;
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 64px); /* Fallback height (viewport minus header) */
+  height: calc(100vh - var(--em-header-h)); /* Fallback height (viewport minus header) */
   overflow: hidden;
   width: 100%;
   max-width: 100%;
@@ -4642,9 +4635,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .em-sidebar {
     position: fixed;
     left: 0;
-    top: 64px;
-    height: calc(100vh - 64px);
-    max-height: calc(100vh - 64px);
+    top: var(--em-header-h);
+    height: calc(100vh - var(--em-header-h));
+    max-height: calc(100vh - var(--em-header-h));
     z-index: 1000;
     transform: translateX(-100%);
     width: 280px;
@@ -4675,7 +4668,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .em-layout:has(.em-sidebar:not(.collapsed)) #main-content::before {
     content: '';
     position: fixed;
-    top: 64px;
+    top: var(--em-header-h);
     left: 0;
     right: 0;
     bottom: 0;
@@ -6810,16 +6803,17 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 .em-notif-btn {
   position: relative;
-  background: none;
-  border: none;
+  background: transparent;
+  border: 1.5px solid var(--em-primary-dark);
   cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
+  padding: 7px;
+  border-radius: 8px;
   color: var(--em-text-primary);
   display: flex;
   align-items: center;
+  transition: all 0.2s ease;
 }
-.em-notif-btn:hover { background: var(--em-bg-secondary); }
+.em-notif-btn:hover { background: var(--em-bg-secondary); border-color: var(--em-primary); }
 .em-notif-badge {
   position: absolute;
   top: 0;
@@ -6848,9 +6842,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   max-height: 480px;
   overflow-y: auto;
   background: var(--em-bg-primary);
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
   border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--em-shadow-hover);
 }
 .em-notif-dropdown.active { display: block; }
 .em-notif-hdr {
