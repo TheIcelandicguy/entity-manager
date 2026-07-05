@@ -1017,7 +1017,8 @@ body.em-dialog-open {
   font-size: 13px;
   color: var(--em-text-primary);
   background: var(--em-bg-secondary);
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
+  border-left: 3px solid var(--em-primary);
   border-radius: 8px;
   margin: 4px 0;
 }
@@ -1041,7 +1042,7 @@ body.em-dialog-open {
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border: 1px solid var(--em-primary);
+  border: 1px solid var(--em-border);
   border-radius: 6px;
   background: var(--em-bg-primary);
   width: 100%;
@@ -1059,7 +1060,7 @@ body.em-dialog-open {
 
 .entity-list-id-inline {
   font-size: 12px;
-  color: var(--secondary-text-color, #757575);
+  color: var(--em-text-secondary, #757575);
   font-family: monospace;
   margin-left: 8px;
   white-space: normal;
@@ -6418,8 +6419,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-bottom: 2px solid var(--em-primary);
-  background: var(--em-bg-secondary);
+  border-bottom: 1.5px solid var(--em-border);
+  background: var(--em-bg-primary);
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -6432,11 +6433,11 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   gap: 4px;
   padding: 6px 12px;
   border-radius: 8px;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   background: transparent;
   color: var(--em-primary);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.15s;
@@ -6451,7 +6452,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   justify-content: center;
   padding: 6px 8px;
   border-radius: 8px;
-  border: 2px solid var(--em-border);
+  border: 1.5px solid var(--em-border);
   background: transparent;
   color: var(--em-text-secondary);
   cursor: pointer;
