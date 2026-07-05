@@ -312,6 +312,8 @@ class EntityManagerPanel extends HTMLElement {
     this.deviceTypeFilter = localStorage.getItem('em-device-type-filter') || 'all';
     // Manual device-type assignments (deviceId → type) — beats getDeviceType() heuristics
     this.deviceTypeOverrides = this._loadFromStorage('em-device-type-overrides', {});
+    // User-created device types (id → {label, color}) — merged into _deviceTypeMeta()
+    this.customDeviceTypes = this._loadFromStorage('em-custom-device-types', {});
     this.backupBeforeUpdate = localStorage.getItem('em-backup-before-update') === 'true';
     this.haAutoBackup = null; // null = unavailable/unknown, {core,addon} = loaded from hassio
     this._restartAfterUpdates = false;
@@ -7044,35 +7046,54 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   _deviceTypeMeta() {
-    return {
+    const meta = {
       hardware: { label: 'Hardware', color: 'var(--em-success)', emoji: '⚡' },
       virtual:  { label: 'Virtual',  color: 'var(--em-primary)', emoji: '🔧' },
       mobile:   { label: 'Mobile',   color: '#9c27b0', emoji: '📱' },
       system:   { label: 'System',   color: 'var(--em-warning)', emoji: '🏠' },
       cloud:    { label: 'Cloud',    color: '#00bcd4', emoji: '☁️' },
-      unknown:  { label: 'Unknown',   color: 'var(--em-text-secondary)', emoji: '❓' },
     };
+    // User-created types slot in before Unknown so header chips keep Unknown last
+    Object.entries(this.customDeviceTypes || {}).forEach(([id, t]) => {
+      meta[id] = { label: t.label, color: t.color || 'var(--em-primary)', emoji: '📦', custom: true };
+    });
+    meta.unknown = { label: 'Unknown', color: 'var(--em-text-secondary)', emoji: '❓' };
+    return meta;
+  }
+
+  // Rebuild the Devices-view type filter options in place (the toolbar renders once, so
+  // custom types created/deleted after that would otherwise be missing until a full render)
+  _refreshDeviceTypeSelect() {
+    const sel = this.querySelector('#device-type-select');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="all">All Types</option>` +
+      Object.entries(this._deviceTypeMeta()).map(([id, m]) =>
+        `<option value="${this._escapeAttr(id)}">${m.emoji} ${this._escapeHtml(id === 'system' ? 'HA System' : m.label)}</option>`).join('');
+    sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'all';
   }
 
   // Type-picker for manual device-type assignment. deviceIds: one (card badge) or many
-  // (integration header's Unknown chip). "Auto" clears the override so heuristics apply again.
-  _showDeviceTypePickerDialog(deviceIds, { title } = {}) {
+  // (integration header's Unknown chip). "Auto" clears the override so heuristics apply
+  // again. Also hosts create/delete of user-defined types (em-custom-device-types).
+  _showDeviceTypePickerDialog(deviceIds, { title, preselect } = {}) {
     if (!deviceIds?.length) return;
     const meta = this._deviceTypeMeta();
-    const assignable = ['hardware', 'cloud', 'virtual', 'mobile', 'system'];
+    const assignable = ['hardware', 'cloud', 'virtual', 'mobile', 'system', ...Object.keys(this.customDeviceTypes || {})];
     const single = deviceIds.length === 1;
-    const currentOverride = single ? this.deviceTypeOverrides?.[deviceIds[0]] : null;
+    const selected = preselect ?? (single ? this.deviceTypeOverrides?.[deviceIds[0]] : null) ?? '';
     const deviceList = single
       ? `<div class="em-dtp-subject">${this._escapeHtml(this.getDeviceName(deviceIds[0]))}</div>`
       : `<div class="em-dtp-subject">${deviceIds.length} devices${deviceIds.length <= 6
           ? ` — ${deviceIds.map(id => this._escapeHtml(this.getDeviceName(id))).join(', ')}` : ''}</div>`;
 
-    const rowHtml = (val, emoji, label, color, sub) => `
-      <label class="em-dtp-row${val === (currentOverride || '') ? ' em-dtp-active' : ''}">
-        <input type="radio" name="em-dtp-type" value="${val}" ${val === (currentOverride || '') ? 'checked' : ''}>
+    const rowHtml = (val, emoji, label, color, sub, custom = false) => `
+      <label class="em-dtp-row${val === selected ? ' em-dtp-active' : ''}">
+        <input type="radio" name="em-dtp-type" value="${this._escapeAttr(val)}" ${val === selected ? 'checked' : ''}>
         <span class="em-dtp-emoji">${emoji}</span>
-        <span class="em-dtp-label" style="color:${color}">${label}</span>
+        <span class="em-dtp-label" style="color:${color}">${this._escapeHtml(label)}</span>
         ${sub ? `<span class="em-dtp-sub">${sub}</span>` : ''}
+        ${custom ? `<button type="button" class="em-dtp-delete" data-type-id="${this._escapeAttr(val)}" title="Delete this custom type">✕</button>` : ''}
       </label>`;
 
     const { overlay, closeDialog } = this.createDialog({
@@ -7081,8 +7102,17 @@ class EntityManagerPanel extends HTMLElement {
       contentHtml: `<div style="padding:4px 2px">
         ${deviceList}
         <div class="em-dtp-list">
-          ${assignable.map(t => rowHtml(t, meta[t].emoji, meta[t].label, meta[t].color)).join('')}
+          ${assignable.map(t => rowHtml(t, meta[t].emoji, meta[t].label, meta[t].color, '', !!meta[t].custom)).join('')}
           ${rowHtml('', '✨', 'Auto', 'var(--em-text-secondary)', 'detected from registry data')}
+        </div>
+        <div class="em-dtp-create">
+          <div class="em-dtp-create-title">Create a new type</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="em-dtp-new-name" placeholder="Type name…"
+              style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary)">
+            <button class="em-mini-btn" id="em-dtp-create-btn">${this._icon('mdi:plus', '14px')} Create</button>
+          </div>
+          <div style="margin-top:8px">${this._renderLabelColorPickerHtml('em-dtp-new-color', 'blue')}</div>
         </div>
       </div>`,
       actionsHtml: `
@@ -7096,6 +7126,50 @@ class EntityManagerPanel extends HTMLElement {
       overlay.querySelectorAll('.em-dtp-row').forEach(r =>
         r.classList.toggle('em-dtp-active', r.querySelector('input').checked));
     });
+
+    // Create a custom type → persist, reopen with it preselected
+    this._attachLabelColorPicker(overlay.querySelector('#em-dtp-new-color'));
+    overlay.querySelector('#em-dtp-create-btn').addEventListener('click', () => {
+      const name = overlay.querySelector('#em-dtp-new-name').value.trim();
+      if (!name) { this._showToast('Enter a type name first', 'warning'); return; }
+      const id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      if (!id.replace('custom_', '')) { this._showToast('Enter a usable type name', 'warning'); return; }
+      if (this._deviceTypeMeta()[id]) { this._showToast(`Type "${name}" already exists`, 'warning'); return; }
+      const colorVal = overlay.querySelector('#em-dtp-new-color')?.dataset.value || 'blue';
+      this.customDeviceTypes[id] = { label: name, color: this._labelColorCss(colorVal) };
+      this._saveToStorage('em-custom-device-types', this.customDeviceTypes);
+      this._refreshDeviceTypeSelect();
+      this._showToast(`Type "${name}" created`, 'success');
+      closeDialog();
+      this._showDeviceTypePickerDialog(deviceIds, { title, preselect: id });
+    });
+
+    // Delete a custom type → devices assigned to it fall back to Auto
+    overlay.querySelectorAll('.em-dtp-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const typeId = btn.dataset.typeId;
+        const label = this.customDeviceTypes[typeId]?.label || typeId;
+        const used = Object.values(this.deviceTypeOverrides).filter(v => v === typeId).length;
+        if (!(await this._confirmAsync('Delete type', `Delete the custom type "${label}"?${used ? ` ${used} device${used !== 1 ? 's' : ''} assigned to it will return to Auto.` : ''}`))) return;
+        delete this.customDeviceTypes[typeId];
+        Object.keys(this.deviceTypeOverrides).forEach(id => {
+          if (this.deviceTypeOverrides[id] === typeId) delete this.deviceTypeOverrides[id];
+        });
+        this._saveToStorage('em-custom-device-types', this.customDeviceTypes);
+        this._saveToStorage('em-device-type-overrides', this.deviceTypeOverrides);
+        if (this.deviceTypeFilter === typeId) {
+          this.deviceTypeFilter = 'all';
+          localStorage.setItem('em-device-type-filter', 'all');
+        }
+        this._refreshDeviceTypeSelect();
+        this._showToast(`Type "${label}" deleted`, 'success');
+        closeDialog();
+        this.updateView();
+      });
+    });
+
     overlay.querySelector('#em-dtp-apply').addEventListener('click', () => {
       const val = overlay.querySelector('input[name="em-dtp-type"]:checked')?.value;
       if (val === undefined) { this._showToast('Pick a type first', 'warning'); return; }
@@ -7105,7 +7179,7 @@ class EntityManagerPanel extends HTMLElement {
       });
       this._saveToStorage('em-device-type-overrides', this.deviceTypeOverrides);
       closeDialog();
-      const label = val ? this._deviceTypeMeta()[val].label : 'Auto';
+      const label = val ? (this._deviceTypeMeta()[val]?.label || val) : 'Auto';
       this._showToast(`${deviceIds.length === 1 ? this.getDeviceName(deviceIds[0]) : `${deviceIds.length} devices`} → ${label}`, 'success');
       this.updateView();
     });
@@ -7444,12 +7518,8 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         <select id="device-type-select" class="toolbar-select" style="display: none;">
           <option value="all">All Types</option>
-          <option value="hardware">⚡ Hardware</option>
-          <option value="cloud">☁️ Cloud</option>
-          <option value="virtual">🔧 Virtual</option>
-          <option value="mobile">📱 Mobile</option>
-          <option value="system">🏠 HA System</option>
-          <option value="unknown">❓ Unknown</option>
+          ${Object.entries(this._deviceTypeMeta()).map(([id, m]) =>
+            `<option value="${this._escapeAttr(id)}">${m.emoji} ${this._escapeHtml(id === 'system' ? 'HA System' : m.label)}</option>`).join('')}
         </select>
         <label class="hide-uptodate-label" id="hide-unavailable-label" style="display: none;">
           <input type="checkbox" id="hide-unavailable-checkbox" ${this.showOfflineOnly ? 'checked' : ''} />
@@ -8872,6 +8942,7 @@ class EntityManagerPanel extends HTMLElement {
     return this._buildDeviceCard(deviceId, device, integration, {
       showSelectCheckbox: true,
       showViewFilters: true,
+      richHeader: true,
       filterClass,
       filterAttr: this._escapeAttr(deviceId),
     });
@@ -9244,6 +9315,7 @@ class EntityManagerPanel extends HTMLElement {
     const {
       showSelectCheckbox = false,
       showViewFilters = false,
+      richHeader = false,
       filterClass = '',
       filterAttr = '',
     } = opts;
@@ -9280,8 +9352,9 @@ class EntityManagerPanel extends HTMLElement {
 
     const devType = this.getDeviceType(deviceId);
     const { label: typeLabel, color: typeColor } = (this._deviceTypeMeta()[devType] || this._deviceTypeMeta().unknown);
-    // Editable when Unknown (assign a type) or already manually assigned (change/reset it)
-    const typeEditable = devType === 'unknown' || !!this.deviceTypeOverrides?.[deviceId];
+    // Editable when Unknown (assign a type) or already manually assigned (change/reset it).
+    // Never for the no_device pseudo-entry — its id is shared across integrations.
+    const typeEditable = deviceId !== 'no_device' && (devType === 'unknown' || !!this.deviceTypeOverrides?.[deviceId]);
     const typeBadge = `<span class="device-type-badge${typeEditable ? ' device-type-badge-editable' : ''}"
       ${typeEditable ? `data-type-device-id="${this._escapeAttr(deviceId)}" title="${devType === 'unknown' ? 'Unknown type — click to assign' : 'Manually assigned — click to change'}"` : ''}
       style="font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid ${typeColor};color:${typeColor};white-space:nowrap;flex-shrink:0${typeEditable ? ';cursor:pointer' : ''}">${typeLabel}${typeEditable ? ' ✎' : ''}</span>`;
@@ -9290,27 +9363,93 @@ class EntityManagerPanel extends HTMLElement {
             <button class="em-mini-btn em-mini-good view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities">View Enabled</button>
             <button class="em-mini-btn em-mini-bad view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities">View Disabled</button>` : '';
 
-    return `
-      <div class="device-item ${isExpanded ? 'device-expanded' : ''} ${filterClass}" ${filterAttr ? `data-device-id-filter="${filterAttr}"` : ''}>
-        <div class="device-header" data-device="${deviceIdEsc}">
-          ${showSelectCheckbox ? `<label class="device-select-label" title="Select all entities in this device">
+    // Shared header fragments
+    const areaChipHtml = `<span class="device-area-chip em-chip-clickable${areaName ? '' : ' em-area-unset'}" data-device-id="${deviceIdEsc}" title="${areaName ? `${this._escapeAttr(areaName)} — click to change area` : 'No area assigned — click to assign'}">${this._icon(EM_ICONS.area, '13px')} ${areaName ? this._escapeHtml(areaName) : '<span class="em-area-placeholder">No area</span>'}</span>`;
+    const labelChipsHtml = this._renderLabelChips(this._effectiveDeviceLabels(deviceId, areaId), `data-device-id="${deviceIdEsc}"`);
+    const selectLabelHtml = showSelectCheckbox ? `<label class="device-select-label" title="Select all entities in this device">
             <input type="checkbox" class="device-select-checkbox" data-device-id="${deviceIdEsc}"
               ${selectedCount === totalCount && totalCount > 0 ? 'checked' : ''}
               ${selectedCount > 0 && selectedCount < totalCount ? 'data-indeterminate="true"' : ''}>
-          </label>` : ''}
-          <span class="device-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </label>` : '';
+    const chevronHtml = `<span class="device-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>`;
+
+    // Rich header (Devices view) — mirrors the integration header: Categories / Hardware /
+    // Areas & Labels boxes plus a ⋯ actions menu. Functional classes on the menu items
+    // (view-device-*, device-enable-all/-disable-all) are unchanged so all existing
+    // listeners and in-place filter updates keep working.
+    let headerHtml;
+    if (richHeader) {
+      const categoryCounts = new Map();
+      device.entities.forEach(e => {
+        const c = this._categorizeEntity(e);
+        categoryCounts.set(c, (categoryCounts.get(c) || 0) + 1);
+      });
+      const catBadges = this._categoryMeta()
+        .filter(m => categoryCounts.get(m.key) > 0)
+        .map(m => `<span class="integration-cat-badge ${m.cls}">${m.label}: ${categoryCounts.get(m.key)}</span>`)
+        .join('');
+      const catsBox = catBadges ? `
+          <div class="integration-box integration-box-cats">
+            <div class="integration-box-title">Categories</div>
+            <div class="integration-box-chips">${catBadges}</div>
+          </div>` : '';
+      const hwBox = deviceId !== 'no_device' ? `
+          <div class="integration-box integration-box-hw">
+            <div class="integration-box-title">Hardware</div>
+            <div class="integration-box-chips">${typeBadge}</div>
+          </div>` : '';
+      const floorName = areaId ? this.areaLookup?.get(areaId)?.floorName : null;
+      const floorChipHtml = floorName ? `<span class="integration-floor-chip">${this._icon(EM_ICONS.floor, '11px')} ${this._escapeHtml(floorName)}</span>` : '';
+      const metaBox = `
+          <div class="integration-box integration-box-meta">
+            <div class="integration-box-title">Areas &amp; Labels</div>
+            <div class="integration-box-chips">${areaChipHtml}${floorChipHtml}${labelChipsHtml}</div>
+          </div>`;
+      headerHtml = `
+        <div class="device-header device-header-rich" data-device="${deviceIdEsc}">
+          ${selectLabelHtml}
+          ${chevronHtml}
+          <div class="integration-info">
+            <div class="device-name-wrap device-name-rich">
+              <span class="device-name">${this._escapeHtml(devName)}</span>${selectionIndicator}
+            </div>
+            <div class="integration-stats">${this._escapeHtml(integration)} • ${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
+          </div>
+          ${catsBox}
+          ${hwBox}
+          ${metaBox}
+          <div class="integration-menu-wrap device-bulk-actions" data-device-entities="${deviceEntityIds}">
+            <button class="em-mini-btn integration-menu-btn device-menu-btn ${filterClass ? 'btn-primary' : ''}" data-device-id="${deviceIdEsc}" title="Device actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
+            <div class="integration-menu">
+              <button class="integration-menu-item view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities">View Enabled</button>
+              <button class="integration-menu-item view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities">View Disabled</button>
+              <button class="integration-menu-item integration-menu-good device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
+              <button class="integration-menu-item integration-menu-bad device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      headerHtml = `
+        <div class="device-header" data-device="${deviceIdEsc}">
+          ${selectLabelHtml}
+          ${chevronHtml}
           <span class="device-name-wrap">
             <span class="device-name">${this._escapeHtml(devName)}</span>${selectionIndicator}
           </span>
           ${typeBadge}
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span class="count-enabled">${enabledCount}</span>/<span class="count-disabled">${disabledCount}</span>)</span>
-          <span class="device-area-chip em-chip-clickable${areaName ? '' : ' em-area-unset'}" data-device-id="${deviceIdEsc}" title="${areaName ? `${this._escapeAttr(areaName)} — click to change area` : 'No area assigned — click to assign'}">${this._icon(EM_ICONS.area, '13px')} ${areaName ? this._escapeHtml(areaName) : '<span class="em-area-placeholder">No area</span>'}</span>
-          ${this._renderLabelChips(this._effectiveDeviceLabels(deviceId, areaId), `data-device-id="${deviceIdEsc}"`)}
+          ${areaChipHtml}
+          ${labelChipsHtml}
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">${viewFilterBtns}
             <button class="device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
             <button class="device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
           </div>
-        </div>
+        </div>`;
+    }
+
+    return `
+      <div class="device-item ${isExpanded ? 'device-expanded' : ''} ${filterClass}" ${filterAttr ? `data-device-id-filter="${filterAttr}"` : ''}>
+        ${headerHtml}
         ${deviceAreaSuggestion ? `
         <div class="device-suggestion-row" data-device-id="${deviceIdEsc}">
           <span class="device-suggestion-icon">${this._icon(EM_ICONS.area, '18px')}</span>
@@ -9966,6 +10105,8 @@ class EntityManagerPanel extends HTMLElement {
           container.querySelector('.view-device-enabled')?.classList.toggle('btn-secondary', this.deviceViewFilter[deviceId] !== 'enabled');
           container.querySelector('.view-device-disabled')?.classList.toggle('btn-primary', this.deviceViewFilter[deviceId] === 'disabled');
           container.querySelector('.view-device-disabled')?.classList.toggle('btn-secondary', this.deviceViewFilter[deviceId] !== 'disabled');
+          // Tint the ⋯ menu button while any view filter is active (rich header)
+          container.querySelector('.device-menu-btn')?.classList.toggle('btn-primary', !!this.deviceViewFilter[deviceId]);
         } else {
           this.updateView();
         }

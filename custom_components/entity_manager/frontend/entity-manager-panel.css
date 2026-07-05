@@ -2111,10 +2111,65 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-dtp-emoji { font-size: 15px; line-height: 1; }
 .em-dtp-label { font-size: 13px; font-weight: 600; }
 .em-dtp-sub { font-size: 11px; color: var(--em-text-secondary); }
+.em-dtp-delete {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--em-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.em-dtp-delete:hover {
+  color: var(--em-danger);
+  background: color-mix(in srgb, var(--em-danger) 10%, transparent);
+}
+.em-dtp-create {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--em-border);
+}
+.em-dtp-create-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--em-text-secondary);
+  margin-bottom: 8px;
+}
 
 /* Editable device-type badge (Unknown / manually assigned) */
 .device-type-badge-editable:hover {
   background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Devices-view rich header — integration-style boxes + ⋯ menu on device cards */
+.device-header-rich {
+  gap: 10px;
+  align-items: center;
+}
+.device-header-rich .integration-info {
+  flex: 1;
+  min-width: 0;
+}
+.device-header-rich .device-name-rich .device-name {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.device-header-rich .integration-stats {
+  font-size: 11.5px;
+  color: var(--em-text-secondary);
+  text-transform: capitalize;
+}
+.device-header-rich .integration-box {
+  flex-shrink: 0;
+}
+/* Popover must not be clipped by the device card */
+.device-item:has(.integration-menu.open) {
+  overflow: visible;
+  z-index: 5;
+  position: relative;
 }
 
 /* Integration-level HA Label rollup — display-only, no click target */
