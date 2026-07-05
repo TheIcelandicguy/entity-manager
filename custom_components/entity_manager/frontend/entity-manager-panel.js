@@ -1152,17 +1152,17 @@ class EntityManagerPanel extends HTMLElement {
     }
     banner.dataset.renderedCount = String(unavail);
     banner.style.display = '';
+    // Compact pill — the unavailable count is a chronic condition, not an incident;
+    // the whole pill opens the Unavailable dialog.
     banner.innerHTML = `
-      <div class="em-health-banner">
-        <span class="em-health-banner-icon">${this._icon(EM_ICONS.warning)}</span>
-        <span class="em-health-banner-msg">
-          <strong>${unavail} entities unavailable</strong> — exceeds your alert threshold of ${threshold}.
-          <button class="em-health-banner-link" data-action="view-unavailable">View Unavailable</button>
-        </span>
-        <button class="em-health-banner-settings" title="Change alert threshold">${this._icon(EM_ICONS.columns, '16px')}</button>
-        <button class="em-health-banner-dismiss" title="Dismiss">${this._icon(EM_ICONS.close, '16px')}</button>
+      <div class="em-health-pill" role="button" title="Click to view unavailable entities">
+        <span class="em-health-pill-icon">${this._icon(EM_ICONS.warning, '14px')}</span>
+        <span class="em-health-pill-msg"><b>${unavail}</b> unavailable</span>
+        <button class="em-health-banner-settings" title="Change alert threshold (currently ${threshold})">${this._icon(EM_ICONS.columns, '13px')}</button>
+        <button class="em-health-banner-dismiss" title="Dismiss">${this._icon(EM_ICONS.close, '13px')}</button>
       </div>`;
-    banner.querySelector('[data-action="view-unavailable"]')?.addEventListener('click', () => {
+    banner.querySelector('.em-health-pill')?.addEventListener('click', (e) => {
+      if (e.target.closest('.em-health-banner-settings, .em-health-banner-dismiss')) return;
       this.showEntityListDialog('unavailable');
     });
     banner.querySelector('.em-health-banner-settings')?.addEventListener('click', () => {
