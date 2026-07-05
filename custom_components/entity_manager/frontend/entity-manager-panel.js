@@ -4697,9 +4697,9 @@ class EntityManagerPanel extends HTMLElement {
     if (!container) return;
     
     container.innerHTML = this.filterPresets.map(preset => `
-      <div class="filter-preset-item" data-preset-id="${preset.id}">
-        <span class="preset-name">${preset.name}</span>
-        <button class="preset-delete" data-delete="${preset.id}">&times;</button>
+      <div class="filter-preset-item" data-preset-id="${this._escapeAttr(String(preset.id))}">
+        <span class="preset-name">${this._escapeHtml(preset.name)}</span>
+        <button class="preset-delete" data-delete="${this._escapeAttr(String(preset.id))}">&times;</button>
       </div>
     `).join('');
   }
