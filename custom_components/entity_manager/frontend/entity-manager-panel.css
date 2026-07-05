@@ -6506,6 +6506,30 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .em-inline-section { margin-bottom: 12px; }
 
+/* Multi-column card grids for the three inline views on desktop.
+   Wrapped in min-width so mobile keeps its current single-column flow.
+   Scoped to .em-inline-view[data-view] — .em-group-body/.em-sug-* are shared
+   by dialogs and must not be gridded globally. */
+@media (min-width: 769px) {
+  .em-inline-view[data-view="automations-helpers"] .entity-list-content > .em-sug-section,
+  .em-inline-view[data-view="template"] .em-group-body,
+  .em-inline-view[data-view="health-cleanup"] .em-group-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 8px;
+    align-items: start; /* variable-height cards must not stretch to row height */
+  }
+
+  /* Non-card children span the full row: helper domain labels, orphaned's
+     intro <p> and nested .entity-list-group sub-sections, unavailable's
+     filter bar and ignored-list wrap, etc. */
+  .em-inline-view[data-view="automations-helpers"] .entity-list-content > .em-sug-section > :not(.em-mini-card),
+  .em-inline-view[data-view="template"] .em-group-body > :not(.em-mini-card),
+  .em-inline-view[data-view="health-cleanup"] .em-group-body > :not(.em-mini-card) {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 600px) {
   .em-inline-view-header { flex-wrap: wrap; gap: 8px; }
   .em-inline-search { width: 100%; }
