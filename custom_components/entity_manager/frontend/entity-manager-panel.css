@@ -1522,42 +1522,38 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
   border-radius: 12px;
   margin-bottom: 12px;
   overflow: hidden;
-  border: 2px solid var(--em-primary);
-  border-left: 5px solid var(--em-primary);
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--em-primary) 30%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--em-primary) 20%, transparent);
+  border-left: 4px solid var(--em-primary);
+  transition: box-shadow 0.2s ease;
+  box-shadow: var(--em-shadow);
   max-width: 100%;
 }
 
 .integration-group:hover {
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--em-primary) 40%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--em-primary) 30%, transparent);
-  border-color: var(--em-primary);
-  border-left-color: var(--em-primary);
-  filter: brightness(1.1);
+  box-shadow: var(--em-shadow-hover);
 }
 
 .integration-logo-container {
-  width: 48px;
-  height: 48px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--em-primary) 10%, transparent);
-  margin-right: 16px;
+  margin-right: 12px;
   flex-shrink: 0;
 }
 
 .integration-logo {
-  width: 40px;
-  height: 40px;
+  width: 26px;
+  height: 26px;
   object-fit: contain;
 }
 
 .integration-header {
   display: flex;
   align-items: center;
-  padding: 18px 20px;
+  padding: 13px 15px;
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid var(--em-border);
@@ -1699,9 +1695,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .integration-name {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 4px;
+  font-size: 15.5px;
+  font-weight: 700;
+  margin-bottom: 2px;
   color: var(--em-text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -1709,15 +1705,66 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .integration-stats {
-  font-size: 15px;
+  font-size: 12px;
   color: var(--em-text-secondary);
   font-weight: 500;
 }
 
 .integration-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+/* Refined outlined mini action buttons (integration/device header rows) */
+.em-mini-btn {
+  border: 1.5px solid var(--em-border);
+  background: var(--em-bg-secondary);
+  color: var(--em-text-primary);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.em-mini-btn:hover {
+  border-color: var(--em-primary);
+  color: var(--em-primary);
+}
+
+.em-mini-btn.em-mini-good {
+  border-color: var(--em-success);
+  color: var(--em-success);
+}
+
+.em-mini-btn.em-mini-good:hover {
+  background: var(--em-success);
+  color: #fff;
+}
+
+.em-mini-btn.em-mini-bad {
+  border-color: var(--em-danger);
+  color: var(--em-danger);
+}
+
+.em-mini-btn.em-mini-bad:hover {
+  background: var(--em-danger);
+  color: #fff;
+}
+
+.em-mini-btn { box-shadow: none; }
+
+/* Active view-filter state (btn-primary toggled at runtime) — must out-!important .btn-primary */
+.em-mini-btn.btn-primary {
+  background: var(--em-primary) !important;
+  border: 1.5px solid var(--em-primary) !important;
+  color: #fff !important;
+}
+.em-mini-btn.btn-primary:hover {
+  box-shadow: none !important;
 }
 
 /* Per-integration entity state filters */

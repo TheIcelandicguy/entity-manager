@@ -8766,10 +8766,10 @@ class EntityManagerPanel extends HTMLElement {
             ${labelRollupHtml}
           </div>
           <div class="integration-actions">
-            <button class="btn view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities" style="${_ivf === 'enabled' ? '' : 'color:var(--em-success);border-color:var(--em-success)'}">View Enabled</button>
-            <button class="btn view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities" style="${_ivf === 'disabled' ? '' : 'color:var(--em-danger);border-color:var(--em-danger)'}">View Disabled</button>
-            <button class="btn btn-secondary enable-integration" data-integration="${intName}">Enable All</button>
-            <button class="btn btn-secondary disable-integration" data-integration="${intName}">Disable All</button>
+            <button class="em-mini-btn em-mini-good view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities">View Enabled</button>
+            <button class="em-mini-btn em-mini-bad view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities">View Disabled</button>
+            <button class="em-mini-btn em-mini-good enable-integration" data-integration="${intName}">Enable All</button>
+            <button class="em-mini-btn em-mini-bad disable-integration" data-integration="${intName}">Disable All</button>
           </div>
         </div>
         ${isExpanded ? `
@@ -9003,8 +9003,8 @@ class EntityManagerPanel extends HTMLElement {
     const typeBadge = `<span class="device-type-badge" style="font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid ${typeColor};color:${typeColor};white-space:nowrap;flex-shrink:0">${typeLabel}</span>`;
 
     const viewFilterBtns = showViewFilters ? `
-            <button class="btn view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities" style="${filterClass === 'em-filter-enabled' ? '' : 'color:var(--em-success);border-color:var(--em-success)'}">View Enabled</button>
-            <button class="btn view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities" style="${filterClass === 'em-filter-disabled' ? '' : 'color:var(--em-danger);border-color:var(--em-danger)'}">View Disabled</button>` : '';
+            <button class="em-mini-btn em-mini-good view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities">View Enabled</button>
+            <button class="em-mini-btn em-mini-bad view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities">View Disabled</button>` : '';
 
     return `
       <div class="device-item ${isExpanded ? 'device-expanded' : ''} ${filterClass}" ${filterAttr ? `data-device-id-filter="${filterAttr}"` : ''}>
