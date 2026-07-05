@@ -1553,15 +1553,16 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 .integration-select-wrapper {
   display: flex;
   align-items: center;
-  padding-right: 12px;
+  padding-right: 8px;
   flex-shrink: 0;
   z-index: 1;
 }
 
 .integration-select-label {
   display: flex;
+  flex-direction: column-reverse; /* DOM has checkbox first — text renders above it */
   align-items: center;
-  gap: 6px;
+  gap: 3px;
   cursor: pointer;
   user-select: none;
 }
@@ -1579,7 +1580,10 @@ entity-manager-panel[data-theme="dark"] .integration-select-checkbox {
 }
 
 .integration-select-text {
-  font-size: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
   color: var(--em-text-secondary);
   white-space: nowrap;
 }
@@ -6595,6 +6599,18 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .em-inline-view[data-view="automations-helpers"] .entity-list-content > .em-sug-section > :not(.em-mini-card),
   .em-inline-view[data-view="template"] .em-group-body > :not(.em-mini-card),
   .em-inline-view[data-view="health-cleanup"] .em-group-body > :not(.em-mini-card) {
+    grid-column: 1 / -1;
+  }
+
+  /* HACS store: grid the store items; summary rows, filters, group titles
+     and the no-results note span the full row */
+  .em-inline-view[data-view="hacs"] .entity-list-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 8px;
+    align-items: start;
+  }
+  .em-inline-view[data-view="hacs"] .entity-list-group > :not(.hacs-store-item) {
     grid-column: 1 / -1;
   }
 }

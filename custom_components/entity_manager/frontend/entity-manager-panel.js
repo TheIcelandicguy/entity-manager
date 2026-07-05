@@ -8238,7 +8238,10 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         <div class="stat-nav-tile clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
           <span class="stat-nav-label">Suggestions</span>
-          <span class="stat-nav-value">${this._icon(EM_ICONS.suggestions, '16px')}</span>
+          <span class="stat-nav-value">${this._icon(EM_ICONS.suggestions, '16px')}${(() => {
+            const c = this._suggestionsCount ?? this._loadFromStorage('em-suggestions-count', null);
+            return c != null ? ` ${c}` : '';
+          })()}</span>
         </div>
         ${(() => {
           const bm = (this.data || []).find(i => i.integration === 'browser_mod');
@@ -12354,6 +12357,9 @@ class EntityManagerPanel extends HTMLElement {
     labelGroups.sort((a, b) => (a.deviceName || a.label || '').localeCompare(b.deviceName || b.label || ''));
 
     const total = health.length + disable.length + naming.length + area.length + mismatch.length + labelGroups.length;
+    // Cache for the Suggestions nav tile (computed lazily, shown once known)
+    this._suggestionsCount = total;
+    this._saveToStorage('em-suggestions-count', total);
 
     const svgChev = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
