@@ -1273,6 +1273,7 @@ entity-manager-panel[data-theme="dark"] .confirm-no:hover {
 
 .rename-input {
   width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1.5px solid var(--em-border);
   border-radius: 8px;
