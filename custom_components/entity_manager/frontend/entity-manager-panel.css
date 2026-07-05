@@ -69,7 +69,11 @@ entity-manager-panel *::after {
    HA dark mode sets --secondary-background-color to a dark value on <html>;
    without this block, var(--secondary-background-color) inside the panel
    would resolve to that dark color even when EM is set to light. */
-entity-manager-panel[data-theme="light"] {
+/* Also scoped to body-appended overlays (dialogs, outside the panel's cascade) —
+   they carry the same data-theme attribute and would otherwise resolve --em-*
+   from :root, where HA themes can set e.g. --divider-color: transparent. */
+entity-manager-panel[data-theme="light"],
+.confirm-dialog-overlay[data-theme="light"] {
   --em-text-primary: #1a2027;
   --em-text-secondary: #5b6472;
   --em-text-disabled: #9aa3ad;
@@ -84,7 +88,8 @@ entity-manager-panel[data-theme="light"] {
 }
 
 /* Dark mode — scoped to panel's own data-theme so EM light mode overrides HA dark */
-entity-manager-panel[data-theme="dark"] {
+entity-manager-panel[data-theme="dark"],
+.confirm-dialog-overlay[data-theme="dark"] {
   --em-text-primary: #e7ebf0;
   --em-text-secondary: #93a0af;
   --em-text-disabled: #5d6773;
@@ -994,9 +999,9 @@ body.em-dialog-open {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  border: 2px solid var(--em-primary) !important;
+  border: 1px solid var(--em-border) !important;
   background: var(--em-bg-primary) !important;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3) !important;
 }
 
 .entity-list-content {
@@ -6026,24 +6031,23 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Stat dialog tinting: mini cards inside an em-sug-section inherit .em-sug-row styling */
 .em-sug-section { margin-bottom: 6px; border-radius: 8px; overflow: hidden; }
-.em-sug-section .em-mini-card { border: 2px solid var(--em-primary); border-radius: 6px; font-size: 12px; }
+.em-sug-section .em-mini-card { border: 1px solid var(--em-border); border-radius: 6px; font-size: 12px; }
 
 /* Mini card — HA entity link button in header */
 .em-mini-card-link {
   flex-shrink: 0;
   background: none;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-border);
   cursor: pointer;
   padding: 3px 8px;
   border-radius: 6px;
-  font-size: 15px;
-  opacity: 0.7;
+  font-size: 13px;
   color: var(--em-primary);
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .em-mini-card-link:hover {
-  opacity: 1;
   background: var(--em-primary);
+  border-color: var(--em-primary);
   color: #fff;
 }
 
