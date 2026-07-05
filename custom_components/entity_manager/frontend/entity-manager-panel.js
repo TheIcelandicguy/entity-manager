@@ -8886,7 +8886,7 @@ class EntityManagerPanel extends HTMLElement {
           ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
           ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
-        ${col('status') ? `<span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
+        ${col('status') ? `<span class="entity-badge ${entity.is_disabled ? 'entity-badge--disabled' : 'entity-badge--enabled'}">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
         ${hasBottom ? `<div class="entity-item-bottom">
           <div class="entity-bottom-left">
             ${col('checkbox') ? `<input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}" data-device-id="${this._escapeAttr(entity.device_id || '')}"${this.selectedEntities.has(entity.entity_id) ? ' checked' : ''}>` : ''}

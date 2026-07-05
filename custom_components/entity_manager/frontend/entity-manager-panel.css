@@ -1938,22 +1938,21 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .entity-item {
   display: flex;
   flex-direction: column;
-  padding: 12px 10px;
-  border-radius: 8px;
-  border: 2px solid var(--em-primary);
+  position: relative;
+  padding: 10px 9px 9px;
+  border-radius: 9px;
+  border: 1.5px solid var(--em-border);
   background: var(--em-bg-primary);
-  transition: all 0.2s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
   flex: 1 1 300px;
   gap: 0;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
 }
 
 .entity-item.entity-is-on {
   border-color: var(--em-success) !important;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--em-success) 30%, transparent),
-              0 2px 8px color-mix(in srgb, var(--em-success) 20%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--em-success) 25%, transparent);
 }
 
 /* Dialog detail grid: smaller cards so ~3 fit per row */
@@ -1969,18 +1968,18 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 6px 6px 4px;
 }
 
-/* Top dark header band: device name + state + time */
+/* Top header band: device name + state + time */
 .entity-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   background: var(--em-bg-secondary);
-  margin: -12px -10px 10px;
-  padding: 7px 10px;
-  border-radius: 6px 6px 0 0;
+  margin: -10px -9px 9px;
+  padding: 6px 9px;
+  border-radius: 7.5px 7.5px 0 0;
   border-bottom: 1px solid var(--em-border-light);
-  min-height: 30px;
+  min-height: 28px;
 }
 
 .em-label-color-picker {
@@ -2061,13 +2060,13 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .entity-header-state {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--em-text-primary);
-  background: var(--em-bg-secondary);
-  border: 2px solid var(--em-primary);
-  border-radius: 6px;
-  padding: 3px 10px;
+  background: var(--em-bg-primary);
+  border: 1.5px solid var(--em-border);
+  border-radius: 100px;
+  padding: 2px 9px;
   white-space: nowrap;
   flex-shrink: 0;
   letter-spacing: 0.3px;
@@ -2082,11 +2081,12 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .entity-header-area {
   font-size: 11px;
+  font-weight: 600;
   color: var(--em-text-secondary);
-  background: var(--em-bg-secondary);
+  background: var(--em-bg-primary);
   border: 1px solid var(--em-border);
-  border-radius: 5px;
-  padding: 2px 7px;
+  border-radius: 100px;
+  padding: 2px 8px;
   white-space: nowrap;
   flex-shrink: 0;
   display: inline-flex;
@@ -2119,9 +2119,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--em-border-light);
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--em-border);
 }
 
 .entity-bottom-left {
@@ -2131,8 +2131,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .entity-item:hover {
-  background: var(--em-bg-secondary);
   border-color: var(--em-primary);
+  box-shadow: var(--em-shadow);
 }
 
 .entity-checkbox {
@@ -2151,8 +2151,9 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .entity-id {
-  font-size: 16px;
-  font-weight: 500;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--em-text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -2160,7 +2161,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .entity-name {
-  font-size: 14px;
+  font-size: 12.5px;
   color: var(--em-text-secondary);
   margin-top: 2px;
   white-space: nowrap;
@@ -2168,16 +2169,32 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   text-overflow: ellipsis;
 }
 
+/* Floating state badge — top-right corner of the card */
 .entity-badge {
-  font-size: 10px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--em-primary) !important;
-  color: white !important;
-  margin-top: 8px;
-  font-weight: 600;
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  z-index: 1;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 2px 7px;
+  border-radius: 100px;
+  background: var(--em-bg-primary);
+  border: 1.5px solid var(--em-border);
+  color: var(--em-text-secondary);
   flex-shrink: 0;
-  align-self: flex-start;
+}
+
+.entity-badge--enabled {
+  color: var(--em-success);
+  border-color: var(--em-success);
+}
+
+.entity-badge--disabled {
+  color: var(--em-danger);
+  border-color: var(--em-danger);
 }
 
 .entity-actions {
@@ -2187,15 +2204,25 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .icon-btn {
-  padding: 8px 12px;
-  border: 2px solid var(--em-border);
-  background: var(--em-bg-hover) !important;
-  color: var(--em-text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  border: 1.5px solid var(--em-border);
+  background: var(--em-bg-secondary) !important;
+  color: var(--em-text-secondary);
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   font-weight: 600;
-  transition: all 0.2s ease;
-  font-size: 14px;
+  transition: all 0.15s ease;
+  font-size: 12px;
+}
+
+.icon-btn:hover {
+  border-color: var(--em-primary);
+  color: var(--em-primary);
 }
 
 .icon-btn.rename-entity {
