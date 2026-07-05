@@ -20,14 +20,6 @@ const HA_LABEL_COLORS = [
   ['blue-grey', '#607d8b'],
 ];
 
-// Auto-accent palette for per-integration colors (name-hashed, user-overridable).
-// Hues chosen to read on both Refined light and dark surfaces.
-const EM_ACCENT_PALETTE = [
-  '#2196f3', '#e0473a', '#2e9e4f', '#e08a1e', '#9c27b0', '#00bcd4',
-  '#3f51b5', '#e91e63', '#009688', '#ff5722', '#8bc34a', '#673ab7',
-  '#03a9f4', '#f06292', '#4db6ac', '#7986cb',
-];
-
 // Predefined themes (inlined for reliable loading).
 // Light/Dark carry the "Refined" (v3.0) palette; keep in sync with the
 // CSS :root fallbacks and [data-theme] blocks in entity-manager-panel.css.
@@ -5671,30 +5663,28 @@ class EntityManagerPanel extends HTMLElement {
     this._saveToStorage('em-integration-colors', this.integrationColors);
   }
 
-  /** User override first, else a stable name-hashed pick from the accent palette. */
+  /** User-set accent or null — the default is None, so only integrations the user
+   *  deliberately colored stand out. (The old name-hash auto palette was removed.) */
   _integrationAccent(name) {
-    const override = this.integrationColors?.[name];
-    if (override) return override;
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = ((h * 31) + name.charCodeAt(i)) >>> 0;
-    return EM_ACCENT_PALETTE[h % EM_ACCENT_PALETTE.length];
+    return this.integrationColors?.[name] || null;
   }
 
   _showIntegrationColorDialog(integration) {
-    const current = this.integrationColors[integration] || this._integrationAccent(integration);
+    const current = this.integrationColors[integration] || 'blue';
     const { overlay, closeDialog } = this.createDialog({
       title: `Accent color — ${integration}`,
       color: 'var(--em-primary)',
       contentHtml: `
         <div style="padding: 14px 18px;">
           <p style="margin: 0 0 10px; font-size: 12.5px; color: var(--em-text-secondary);">
-            Pick an accent for this integration's bar and logo tile, or reset to the automatic color.
+            Pick an accent for this integration's bar and logo tile. Integrations without a
+            color stay neutral — set one only where it matters.
           </p>
           ${this._renderLabelColorPickerHtml('em-int-color', current)}
         </div>
       `,
       actionsHtml: `
-        <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-reset">Reset to auto</button>
+        <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-reset">None</button>
         <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-cancel">Cancel</button>
         <button class="em-dialog-btn em-dialog-btn-primary em-int-color-save">Save</button>
       `,
@@ -5706,7 +5696,7 @@ class EntityManagerPanel extends HTMLElement {
       this._saveIntegrationColors();
       closeDialog();
       this.updateView();
-      this._showToast(`Accent color for ${integration} reset to automatic`, 'info');
+      this._showToast(`Accent color removed for ${integration}`, 'info');
     });
     overlay.querySelector('.em-int-color-save')?.addEventListener('click', () => {
       const value = overlay.querySelector('#em-int-color')?.dataset.value;
@@ -9087,7 +9077,7 @@ class EntityManagerPanel extends HTMLElement {
     const accent = this._integrationAccent(integration.integration);
 
     return `
-      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}" style="border-left-color: ${accent};">
+      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}"${accent ? ` style="border-left-color: ${accent};"` : ''}>
         <div class="integration-header" data-integration="${intName}">
           <div class="integration-select-wrapper" title="Select all in this integration">
             <label class="integration-select-label">
@@ -9100,7 +9090,7 @@ class EntityManagerPanel extends HTMLElement {
               <span class="integration-select-text">Select all</span>
             </label>
           </div>
-          <div class="integration-logo-container" style="background: color-mix(in srgb, ${accent} 14%, transparent);">
+          <div class="integration-logo-container"${accent ? ` style="background: color-mix(in srgb, ${accent} 14%, transparent);"` : ''}>
             <img class="integration-logo" src="${this._brandIconUrl(integration.integration)}" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>

@@ -1555,7 +1555,8 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
   border-radius: 12px;
   margin-bottom: 12px;
   overflow: hidden;
-  border-left: 4px solid var(--em-primary);
+  /* Neutral by default — a colored bar only appears when the user sets an accent */
+  border-left: 4px solid var(--em-border);
   transition: box-shadow 0.2s ease;
   box-shadow: var(--em-shadow);
   max-width: 100%;
@@ -1572,7 +1573,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
+  background: var(--em-bg-hover); /* neutral; user accent overrides inline */
   margin-right: 12px;
   flex-shrink: 0;
 }

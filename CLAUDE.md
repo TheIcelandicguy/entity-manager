@@ -226,7 +226,7 @@ Most state is persisted to `localStorage` via `_loadFromStorage()`/`_saveToStora
 | Unavailable-entities time filter | `em-unavail-time-filter` | Health & Cleanup |
 | Activity Log filter | `em-at-filter` | Activity Log dialog |
 | Known entity IDs snapshot | `em-known-entity-ids` | Used to detect newly-added entities |
-| Integration accent overrides | `em-integration-colors` | User color-picker overrides for per-integration accents (default = name-hash palette) |
+| Integration accent overrides | `em-integration-colors` | User-set per-integration accent colors (default = None/neutral — no auto palette) |
 | Device-type overrides | `em-device-type-overrides` | Manual deviceId→type assignments; checked first by `getDeviceType()` before heuristics |
 | Custom device types | `em-custom-device-types` | User-created types (id → {label, color}), merged into `_deviceTypeMeta()`; created/deleted from the type-picker dialog |
 | Suggestions tile count cache | `em-suggestions-count` | Last computed suggestions total, shown on the stat tile; refreshed by `_showSuggestionsDialog` |
