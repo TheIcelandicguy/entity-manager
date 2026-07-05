@@ -1537,6 +1537,8 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 .integration-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   padding: 13px 15px;
   cursor: pointer;
   user-select: none;
@@ -1694,12 +1696,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-weight: 500;
 }
 
-.integration-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
 /* Refined outlined mini action buttons (integration/device header rows) */
 .em-mini-btn {
   border: 1.5px solid var(--em-border);
@@ -1749,6 +1745,119 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 .em-mini-btn.btn-primary:hover {
   box-shadow: none !important;
+}
+
+/* ── Integration header boxes (Categories / Areas & Labels) ── */
+.integration-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--em-bg-secondary);
+  border: 1px solid var(--em-border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  min-width: 0;
+  max-width: 360px;
+  flex: 0 1 auto;
+}
+
+.integration-box-title {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--em-text-secondary);
+}
+
+.integration-box-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* The label rollup wrapper flows its chips inline with area/floor chips */
+.integration-box-chips .integration-label-rollup {
+  display: contents;
+}
+
+.integration-area-chip,
+.integration-floor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--em-border);
+  color: var(--em-text-secondary);
+  background: var(--em-bg-primary);
+  white-space: nowrap;
+}
+
+.integration-chip-more {
+  opacity: 0.7;
+}
+
+/* ── Integration ⋯ actions menu ── */
+.integration-menu-wrap {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.integration-menu-btn {
+  min-width: 34px;
+}
+
+.integration-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 300;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+  padding: 4px;
+  background: var(--em-bg-primary);
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
+  box-shadow: var(--em-shadow-hover);
+}
+
+.integration-menu.open {
+  display: flex;
+}
+
+.integration-menu .integration-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--em-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease;
+}
+
+.integration-menu .integration-menu-item:hover {
+  background: var(--em-bg-secondary);
+}
+
+.integration-menu .integration-menu-item.integration-menu-good { color: var(--em-success); }
+.integration-menu .integration-menu-item.integration-menu-bad  { color: var(--em-danger); }
+
+.integration-menu .integration-menu-item.btn-primary {
+  background: var(--em-primary) !important;
+  color: #fff !important;
+  border: none !important;
 }
 
 /* Per-integration entity state filters */
@@ -2830,18 +2939,10 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     font-size: 11.5px;
   }
 
-  .integration-actions {
+  /* Header boxes wrap under the name on tablets/phones */
+  .integration-box {
     flex-basis: 100%;
-    margin-top: 8px;
-    gap: 6px;
-    flex-wrap: nowrap;
-  }
-
-  .integration-actions .em-mini-btn {
-    flex: 1;
-    font-size: 11px;
-    padding: 6px 8px;
-    white-space: nowrap;
+    max-width: none;
   }
   
   .device-list {
@@ -3207,10 +3308,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     font-size: 10px;
   }
 
-  /* Small phones: header Enable/Disable All hidden — device-level actions remain */
-  .integration-actions {
-    display: none;
-  }
+  /* Small phones: the single ⋯ menu button fits fine — no need to hide actions anymore */
 
   .device-enable-all,
   .device-disable-all {
@@ -4992,11 +5090,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-size: 12px;
   padding: 4px 10px;
 }
-.integration-actions .em-assign-btn {
-  font-size: 12px;
-  padding: 6px 12px;
-}
-
 /* Chip label text (State, Last active, etc.) */
 .entity-header-chip-label {
   font-size: 10px;
@@ -6599,9 +6692,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* ===== MOBILE OVERRIDES — group controls ===== */
 @media (max-width: 768px) {
-  .integration-actions {
-    flex-wrap: wrap;
-  }
   .smart-group-actions {
     flex-wrap: wrap;
   }

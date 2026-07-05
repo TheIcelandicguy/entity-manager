@@ -8688,10 +8688,14 @@ class EntityManagerPanel extends HTMLElement {
     let disabledCount = 0;
     let enabledCount = 0;
 
-    // Collect all entities from all devices, tallying category counts alongside
+    // Collect all entities from all devices, tallying category counts alongside.
+    // Also aggregate the unique areas the integration's devices/entities span.
     const allEntities = [];
     const categoryCounts = new Map();
+    const areaIds = new Set();
     Object.entries(integration.devices).forEach(([deviceId, device]) => {
+      const devAreaId = this.deviceInfo?.[deviceId]?.area_id;
+      if (devAreaId) areaIds.add(devAreaId);
       device.entities.forEach(entity => {
         entityCount++;
         if (entity.is_disabled) {
@@ -8706,7 +8710,18 @@ class EntityManagerPanel extends HTMLElement {
         });
         const cat = this._categorizeEntity(entity);
         categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+        const entAreaId = this.entityAreaMap?.get?.(entity.entity_id);
+        if (entAreaId) areaIds.add(entAreaId);
       });
+    });
+
+    // Resolve area ids to unique area/floor names for the header meta box
+    const areaNames = new Set();
+    const floorNames = new Set();
+    areaIds.forEach(id => {
+      const a = this.areaLookup?.get?.(id);
+      if (a?.areaName) areaNames.add(a.areaName);
+      if (a?.floorName) floorNames.add(a.floorName);
     });
 
     const categoryBadgesHtml = this._categoryMeta()
@@ -8733,6 +8748,29 @@ class EntityManagerPanel extends HTMLElement {
           .replace(/ em-chip-clickable/g, '')
           .replace(/ — click to manage/g, '')}</div>`
       : '';
+
+    // Area/floor chips for the meta box — capped so sprawling integrations don't flood the header
+    const capChips = (names, cls, icon, cap = 4) => {
+      const sorted = [...names].sort((a, b) => a.localeCompare(b));
+      const shown = sorted.slice(0, cap)
+        .map(n => `<span class="${cls}">${this._icon(icon, '11px')} ${this._escapeHtml(n)}</span>`)
+        .join('');
+      const extra = sorted.length - cap;
+      return shown + (extra > 0 ? `<span class="${cls} integration-chip-more">+${extra}</span>` : '');
+    };
+    const areaChipsHtml = areaNames.size ? capChips(areaNames, 'integration-area-chip', EM_ICONS.area) : '';
+    const floorChipsHtml = floorNames.size ? capChips(floorNames, 'integration-floor-chip', EM_ICONS.floor) : '';
+
+    const catsBoxHtml = categoryBadgesHtml ? `
+      <div class="integration-box integration-box-cats">
+        <div class="integration-box-title">Categories</div>
+        <div class="integration-box-chips">${categoryBadgesHtml}</div>
+      </div>` : '';
+    const metaBoxHtml = (areaChipsHtml || floorChipsHtml || labelRollupHtml) ? `
+      <div class="integration-box integration-box-meta">
+        <div class="integration-box-title">Areas &amp; Labels</div>
+        <div class="integration-box-chips">${areaChipsHtml}${floorChipsHtml}${labelRollupHtml}</div>
+      </div>` : '';
 
     const intName = this._escapeAttr(integration.integration);
     const intDisplay = this._escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1));
@@ -8762,14 +8800,17 @@ class EntityManagerPanel extends HTMLElement {
           <div class="integration-info">
             <div class="integration-name">${intDisplay}</div>
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
-            ${categoryBadgesHtml ? `<div class="integration-cat-badges">${categoryBadgesHtml}</div>` : ''}
-            ${labelRollupHtml}
           </div>
-          <div class="integration-actions">
-            <button class="em-mini-btn em-mini-good view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities">View Enabled</button>
-            <button class="em-mini-btn em-mini-bad view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities">View Disabled</button>
-            <button class="em-mini-btn em-mini-good enable-integration" data-integration="${intName}">Enable All</button>
-            <button class="em-mini-btn em-mini-bad disable-integration" data-integration="${intName}">Disable All</button>
+          ${catsBoxHtml}
+          ${metaBoxHtml}
+          <div class="integration-menu-wrap">
+            <button class="em-mini-btn integration-menu-btn ${_ivf ? 'btn-primary' : ''}" data-integration="${intName}" title="Integration actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
+            <div class="integration-menu">
+              <button class="integration-menu-item view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities">View Enabled</button>
+              <button class="integration-menu-item view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities">View Disabled</button>
+              <button class="integration-menu-item integration-menu-good enable-integration" data-integration="${intName}">Enable All</button>
+              <button class="integration-menu-item integration-menu-bad disable-integration" data-integration="${intName}">Disable All</button>
+            </div>
           </div>
         </div>
         ${isExpanded ? `
@@ -9531,6 +9572,37 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    // Integration ⋯ actions menu: toggle per row, one open at a time
+    this.content.querySelectorAll('.integration-menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = btn.parentElement.querySelector('.integration-menu');
+        const wasOpen = menu.classList.contains('open');
+        this.content.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
+        if (!wasOpen) menu.classList.add('open');
+      });
+    });
+    // Any menu item click closes its menu (the item's own handler still runs)
+    this.content.querySelectorAll('.integration-menu .integration-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        item.closest('.integration-menu')?.classList.remove('open');
+      });
+    });
+    // One-time global closers: outside click + Escape
+    if (!this._intMenuCloserAttached) {
+      this._intMenuCloserAttached = true;
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest?.('.integration-menu-wrap')) {
+          this.content?.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          this.content?.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
+        }
+      });
+    }
+
     this.content.querySelectorAll('.enable-integration').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -9585,6 +9657,8 @@ class EntityManagerPanel extends HTMLElement {
           container.querySelector('.view-integration-enabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'enabled');
           container.querySelector('.view-integration-disabled')?.classList.toggle('btn-primary', this.integrationViewFilter[integration] === 'disabled');
           container.querySelector('.view-integration-disabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'disabled');
+          // Tint the ⋯ menu button while any view filter is active
+          container.querySelector('.integration-menu-btn')?.classList.toggle('btn-primary', !!this.integrationViewFilter[integration]);
         } else {
           // Integration was collapsed, or the lone device just became expanded — re-render fully
           this.updateView();
