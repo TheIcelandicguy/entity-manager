@@ -1020,11 +1020,7 @@ class EntityManagerPanel extends HTMLElement {
     return `<div style="margin-bottom:12px">
       <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:5px">Apply label to</label>
       <div id="${id}" style="display:flex;gap:5px">
-        ${opts.map(o => `<button class="em-target-btn${o.val === defaultTarget ? ' active' : ''}" data-target="${o.val}" title="${o.title}"
-          style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--em-border);cursor:pointer;font-size:12px;
-                 background:${o.val === defaultTarget ? 'var(--em-primary)' : 'var(--em-bg-hover)'};
-                 color:${o.val === defaultTarget ? 'white' : 'var(--em-text-primary)'};
-                 font-weight:${o.val === defaultTarget ? '600' : '400'}">${o.label}</button>`).join('')}
+        ${opts.map(o => `<button class="em-target-btn${o.val === defaultTarget ? ' active' : ''}" data-target="${o.val}" title="${o.title}">${o.label}</button>`).join('')}
       </div>
     </div>`;
   }
@@ -1034,13 +1030,7 @@ class EntityManagerPanel extends HTMLElement {
       const btn = e.target.closest('.em-target-btn');
       if (!btn) return;
       const parent = btn.closest(`#${id}`);
-      parent.querySelectorAll('.em-target-btn').forEach(b => {
-        const active = b === btn;
-        b.classList.toggle('active', active);
-        b.style.background = active ? 'var(--em-primary)' : 'var(--em-bg-hover)';
-        b.style.color      = active ? 'white' : 'var(--em-text-primary)';
-        b.style.fontWeight = active ? '600' : '400';
-      });
+      parent.querySelectorAll('.em-target-btn').forEach(b => b.classList.toggle('active', b === btn));
     });
   }
 
@@ -3495,18 +3485,18 @@ class EntityManagerPanel extends HTMLElement {
     // ── Hero header ────────────────────────────────────────────────
     const attrs = state?.attributes || {};
     const heroHtml = `<div class="em-ed-hero">
-      <div class="em-ed-hero-name" title="Click to rename" style="cursor:pointer">${this._escapeHtml(friendlyTitle)} <span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span></div>
-      ${friendlyTitle !== entityId ? `<div class="em-ed-hero-id">${this._escapeHtml(entityId)}</div>` : ''}
       <div class="em-ed-hero-chips">
         <span class="em-ed-chip em-ed-chip-domain">${this._escapeHtml(domain)}</span>
-        ${e.platform ? `<span class="em-ed-chip em-ed-chip-platform">${this._escapeHtml(e.platform)}</span>` : ''}
+        ${e.platform && e.platform !== domain ? `<span class="em-ed-chip em-ed-chip-platform">${this._escapeHtml(e.platform)}</span>` : ''}
         ${isDisabled ? `<span class="em-ed-chip em-ed-chip-disabled">Disabled</span>` : ''}
         ${area ? `<span class="em-ed-chip em-ed-chip-area">${this._icon('mdi:map-marker-outline', '12px')} ${this._escapeHtml(area.name)}</span>` : ''}
       </div>
+      <div class="em-ed-hero-name" title="Click to rename" style="cursor:pointer">${this._escapeHtml(friendlyTitle)} <span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span></div>
+      ${friendlyTitle !== entityId ? `<div class="em-ed-hero-id">${this._escapeHtml(entityId)}</div>` : ''}
       ${state ? `<div class="em-ed-hero-state">
         <span style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.4px;font-weight:600">State</span>
         <span class="em-ed-state-val" style="color:${stateColor(state.state)}">${this._escapeHtml(state.state)}</span>
-        ${attrs.unit_of_measurement ? `<span style="font-size:16px;color:var(--em-text-secondary)">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
+        ${attrs.unit_of_measurement ? `<span style="font-size:13px;color:var(--em-text-secondary)">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
         ${(isControllable || isPressable) ? `<button id="em-edd-toggle-btn" class="em-dialog-btn em-dialog-btn-outline-primary" style="font-size:12px;padding:4px 10px;margin-left:4px">${isPressable ? 'Press' : (isOn ? 'Turn Off' : 'Turn On')}</button>` : ''}
         <span class="em-ed-hero-times">Changed ${this._escapeHtml(this._fmtAbsDate(state.last_changed))} &nbsp;·&nbsp; Updated ${this._escapeHtml(this._fmtAbsDate(state.last_updated))}</span>
       </div>` : `<div style="font-size:13px;color:var(--em-text-secondary);margin-top:6px">No state available (entity may be disabled)</div>`}
@@ -3568,11 +3558,10 @@ class EntityManagerPanel extends HTMLElement {
     const labelChipHtml = (labelObjs) => labelObjs.length
       ? labelObjs.map(l => `<span style="background:${this._escapeAttr(this._labelColorCss(l.color))};color:white;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600">${this._escapeHtml(l.name)}</span>`).join('')
       : `<span style="color:var(--em-text-secondary);font-size:13px">None</span>`;
-    const manageBtnStyle = 'padding:5px 12px;border-radius:6px;border:1px solid var(--em-border);background:var(--em-bg-hover);color:var(--em-text-primary);cursor:pointer;font-size:12px';
     const labelSubHead = (text) => `<div style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">${text}</div>`;
 
-    const areaLabelsHtml = `<div style="padding:8px 0;display:flex;flex-direction:column;gap:14px">
-      ${area ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 12px">
+    const areaLabelsHtml = `<div style="padding:4px 0 0;display:flex;flex-direction:column;gap:12px">
+      ${area ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         <span class="em-ed-chip em-ed-chip-domain">Area</span>
         <span class="em-ed-chip" style="color:var(--em-primary);border:1px solid var(--em-primary)">${this._escapeHtml(area.name)}</span>
         ${area.aliases?.length ? area.aliases.map(a => `<span class="em-ed-chip">${this._escapeHtml(a)}</span>`).join('') : ''}
@@ -3580,12 +3569,12 @@ class EntityManagerPanel extends HTMLElement {
       <div>
         ${labelSubHead('Entity Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Entities</span>')}
         <div id="em-edd-entity-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(entityLabels)}</div>
-        <button id="em-edd-manage-entity-labels" style="${manageBtnStyle}">${this._icon(EM_ICONS.bookmark, '14px')} ${entityLabels.length ? 'Edit' : 'Add'}</button>
+        <button id="em-edd-manage-entity-labels" class="em-mini-btn">${this._icon(EM_ICONS.bookmark, '14px')} ${entityLabels.length ? 'Edit' : 'Add'}</button>
       </div>
       ${d ? `<div>
         ${labelSubHead('Device Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Devices</span>')}
         <div id="em-edd-device-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(deviceLabels)}</div>
-        <button id="em-edd-manage-device-labels" style="${manageBtnStyle}">${this._icon(EM_ICONS.bookmark, '14px')} ${deviceLabels.length ? 'Edit' : 'Add'}</button>
+        <button id="em-edd-manage-device-labels" class="em-mini-btn">${this._icon(EM_ICONS.bookmark, '14px')} ${deviceLabels.length ? 'Edit' : 'Add'}</button>
       </div>` : ''}
     </div>`;
 
@@ -3633,21 +3622,75 @@ class EntityManagerPanel extends HTMLElement {
     // ── Section: Automation Impact placeholder ─────────────────────
     const impactPlaceholder = `<div id="em-impact-placeholder" style="padding:12px;text-align:center;color:var(--em-text-secondary);font-size:13px">Scanning automations…</div>`;
 
-    // ── Assemble sections ──────────────────────────────────────────
+    // ── Assemble: pinned hero + tab strip + panels ─────────────────
+    const ovCard = (title, inner) => `<div class="em-ed-card"><div class="em-ed-card-title">${title}</div>${inner}</div>`;
+    const subhead = (t) => `<div class="em-ed-subhead">${t}</div>`;
     const totalLabelCount = entityLabels.length + deviceLabels.length;
-    let sectionsHtml = this._collGroup('Attributes', stateHtml, true);
-    sectionsHtml += this._collGroup('Registry', registryHtml);
-    if (d)  sectionsHtml += this._collGroup('Device', deviceHtml);
-    if (ce) sectionsHtml += this._collGroup('Integration', integrationHtml);
-    const areaLabelsTitle = [area ? `Area: ${this._escapeHtml(area.name)}` : '', totalLabelCount ? `Labels (${totalLabelCount})` : 'Labels'].filter(Boolean).join(' · ');
-    sectionsHtml += this._collGroup(areaLabelsTitle, areaLabelsHtml);
-    sectionsHtml += this._collGroup(`Other entities on device (${sameDeviceEntities.length})`, depHtml);
-    sectionsHtml += this._collGroup('Automation Impact', impactPlaceholder);
-    sectionsHtml += this._collGroup('State History', histHtml);
 
-    // Update dialog content
-    overlay.querySelector('#em-edd-body').innerHTML = `<div style="padding:4px 8px 0">${heroHtml}${sectionsHtml}</div>`;
+    // Overview tab: 2-col card grid (State · Area & Labels · Device · Integration)
+    const stateCardHtml = `<div class="em-ed-rows">
+      ${row('Status', isDisabled
+        ? `<span style="color:var(--em-danger);font-weight:600">Disabled</span> <span style="color:var(--em-text-secondary);font-size:12px">(by ${this._escapeHtml(e.disabled_by)})</span>`
+        : `<span style="color:var(--em-success);font-weight:600">Enabled</span>`)}
+      ${state ? row('State', `<span style="color:${stateColor(state.state)};font-weight:700">${this._escapeHtml(state.state)}</span>${attrs.unit_of_measurement ? ` <span style="color:var(--em-text-secondary);font-size:12px">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}`) : ''}
+      ${state ? row('Changed', this._escapeHtml(this._fmtAbsDate(state.last_changed))) : ''}
+      ${state ? row('Updated', this._escapeHtml(this._fmtAbsDate(state.last_updated))) : ''}
+      ${row('Category', this._escapeHtml(e.entity_category || '—'))}
+    </div>`;
+    const deviceCardHtml = d ? `<div class="em-ed-rows">
+      ${row('Name', this._escapeHtml(d.name_by_user || d.name || '—'))}
+      ${row('Manufacturer', this._escapeHtml(d.manufacturer || '—'))}
+      ${row('Model', this._escapeHtml(d.model || '—'))}
+      ${d.sw_version ? row('SW version', this._escapeHtml(d.sw_version)) : ''}
+    </div>` : '';
+    const integrationCardHtml = ce ? `<div class="em-ed-rows">
+      ${row('Title', this._escapeHtml(ce.title || '—'))}
+      ${row('Domain', this._escapeHtml(ce.domain || '—'))}
+      ${row('Version', ce.version != null ? String(ce.version) : '—')}
+      ${row('State', this._escapeHtml(ce.state || '—'))}
+    </div>` : '';
+    const overviewHtml = `<div class="em-ed-ov-grid">
+      ${ovCard('State', stateCardHtml)}
+      ${ovCard(area ? 'Area &amp; Labels' : `Labels${totalLabelCount ? ` (${totalLabelCount})` : ''}`, areaLabelsHtml)}
+      ${d ? ovCard('Device', deviceCardHtml) : ''}
+      ${ce ? ovCard('Integration', integrationCardHtml) : ''}
+    </div>`;
+
+    // Registry tab: full registry + device + integration detail rows
+    const registryPanelHtml = `${subhead('Entity registry')}${registryHtml}
+      ${d ? `${subhead('Device')}${deviceHtml}` : ''}
+      ${ce ? `${subhead('Integration')}${integrationHtml}` : ''}`;
+
+    // Related tab: same-device entities + automation impact
+    const relatedPanelHtml = `${subhead(`Other entities on device (${sameDeviceEntities.length})`)}${depHtml}
+      ${subhead('Automation impact')}${impactPlaceholder}`;
+
+    const histCount = histItems?.length ? Math.min(histItems.length, 30) : 0;
+    const tabBadge = (n) => n ? `<span class="em-ed-tab-badge">${n}</span>` : '';
+    const tabsHtml = `<div class="em-ed-tabs">
+      <button type="button" class="em-ed-tab active" data-tab="overview">Overview</button>
+      <button type="button" class="em-ed-tab" data-tab="attributes">Attributes ${tabBadge(attrEntries.length)}</button>
+      <button type="button" class="em-ed-tab" data-tab="registry">Registry</button>
+      <button type="button" class="em-ed-tab" data-tab="related">Related ${tabBadge(sameDeviceEntities.length)}<span class="em-ed-tab-badge em-ed-badge-impact" id="em-edd-impact-badge" style="display:none"></span></button>
+      <button type="button" class="em-ed-tab" data-tab="history">History ${tabBadge(histCount)}</button>
+    </div>`;
+    const panelsHtml = `<div class="em-ed-panels">
+      <div class="em-ed-panel active" data-panel="overview">${overviewHtml}</div>
+      <div class="em-ed-panel" data-panel="attributes">${stateHtml}</div>
+      <div class="em-ed-panel" data-panel="registry">${registryPanelHtml}</div>
+      <div class="em-ed-panel" data-panel="related">${relatedPanelHtml}</div>
+      <div class="em-ed-panel" data-panel="history">${histHtml}</div>
+    </div>`;
+
+    // Update dialog content (body is a flex column: hero + tabs pinned, panels scroll)
+    overlay.querySelector('#em-edd-body').innerHTML = `${heroHtml}${tabsHtml}${panelsHtml}`;
     overlay.querySelector('.confirm-dialog-header h2').textContent = friendlyTitle;
+
+    // Tab switching
+    overlay.querySelectorAll('.em-ed-tab').forEach(tab => tab.addEventListener('click', () => {
+      overlay.querySelectorAll('.em-ed-tab').forEach(t => t.classList.toggle('active', t === tab));
+      overlay.querySelectorAll('.em-ed-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab.dataset.tab));
+    }));
 
     // ── Actions row ────────────────────────────────────────────────
     overlay.querySelector('.confirm-dialog-actions').innerHTML = `
@@ -3740,6 +3783,8 @@ class EntityManagerPanel extends HTMLElement {
           : '<div style="padding:12px 0;font-size:13px;color:var(--em-text-secondary)">No automations or scripts appear to reference this entity</div>';
         const ph = overlay.querySelector('#em-impact-placeholder');
         if (ph) ph.outerHTML = impactContent;
+        const badge = overlay.querySelector('#em-edd-impact-badge');
+        if (badge && affected.length) { badge.textContent = affected.length; badge.style.display = ''; }
       } catch (err) {
         const ph = overlay.querySelector('#em-impact-placeholder');
         if (ph) ph.textContent = 'Failed to load automation impact';
@@ -3771,9 +3816,6 @@ class EntityManagerPanel extends HTMLElement {
         if (btn) btn.innerHTML = `${this._icon(EM_ICONS.bookmark, '14px')} ${updatedIds.length ? 'Edit' : 'Add'}`;
       });
     });
-
-    // Collapsible toggle listeners
-    this._reAttachCollapsibles(overlay);
   }
 
   _showContextMenu(e, entityId) {
@@ -5308,7 +5350,7 @@ class EntityManagerPanel extends HTMLElement {
             <strong>Create New Label:</strong>
             <div style="display:flex;gap:8px;margin-top:8px">
               <input type="text" id="new-label-name" placeholder="Label name"
-                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:4px;background:var(--em-bg-primary);color:var(--em-text-primary)">
+                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary)">
             </div>
             <div style="margin-top:8px">${this._renderLabelColorPickerHtml('new-label-color', 'blue')}</div>
             <div style="display:flex;justify-content:flex-end;margin-top:8px">
@@ -5457,11 +5499,11 @@ class EntityManagerPanel extends HTMLElement {
           <div class="create-label" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--em-border);">
             <strong>Create New Label:</strong>
             <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
-              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-bg-primary); color: var(--em-text-primary);">
+              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 6px; background: var(--em-bg-primary); color: var(--em-text-primary);">
             </div>
             <div style="margin-top:8px">${this._renderLabelColorPickerHtml('new-label-color', 'blue')}</div>
             <div style="display:flex;justify-content:flex-end;margin-top:8px">
-              <button class="btn btn-secondary" id="create-label-btn">Create</button>
+              <button class="btn btn-primary" id="create-label-btn">Create</button>
             </div>
           </div>
         </div>
@@ -11712,11 +11754,7 @@ class EntityManagerPanel extends HTMLElement {
     const targetSelectorHtml = `<div style="margin-bottom:12px">
       <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:5px">Apply label to</label>
       <div id="em-asn-target" style="display:flex;gap:5px;flex-wrap:wrap">
-        ${targetOpts.map(o => `<button class="em-target-btn${o.val === labelTarget ? ' active' : ''}" data-target="${o.val}"
-          style="flex:1;min-width:64px;padding:5px 8px;border-radius:6px;border:1px solid var(--em-border);cursor:pointer;font-size:12px;
-                 background:${o.val === labelTarget ? 'var(--em-primary)' : 'var(--em-bg-hover)'};
-                 color:${o.val === labelTarget ? 'white' : 'var(--em-text-primary)'};
-                 font-weight:${o.val === labelTarget ? '600' : '400'}">${this._escapeHtml(o.label)}</button>`).join('')}
+        ${targetOpts.map(o => `<button class="em-target-btn${o.val === labelTarget ? ' active' : ''}" data-target="${o.val}">${this._escapeHtml(o.label)}</button>`).join('')}
       </div>
     </div>`;
 
@@ -12076,8 +12114,8 @@ class EntityManagerPanel extends HTMLElement {
             ${model}
           </div>`;
         }).join('');
-        return `<div style="border:2px solid var(--em-primary);border-radius:8px;margin:6px 10px;overflow:hidden">
-          <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
+        return `<div style="border:1px solid var(--em-border);border-radius:8px;margin:6px 10px;overflow:hidden">
+          <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:1px solid var(--em-border)">
             ${this._escapeHtml(label)} <span style="font-weight:400;opacity:0.7">(${items.length})</span>
           </div>
           ${itemsHtml}
@@ -12131,8 +12169,8 @@ class EntityManagerPanel extends HTMLElement {
         contentHtml: `
           <div style="padding:8px 4px 4px">
             <p style="margin:0 0 12px">Assign <strong>${this._escapeHtml(entityId)}</strong> to:</p>
-            <div style="border:2px solid var(--em-primary);border-radius:8px;overflow:hidden;margin-bottom:4px">
-              <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
+            <div style="border:1px solid var(--em-border);border-radius:8px;overflow:hidden;margin-bottom:4px">
+              <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:1px solid var(--em-border)">
                 ${this._escapeHtml(integLabel)}
               </div>
               <div style="padding:10px 14px;font-weight:600;font-size:13px">${this._escapeHtml(deviceName)}</div>
@@ -15752,7 +15790,7 @@ class EntityManagerPanel extends HTMLElement {
       <div class="em-atg-mode-row${disabled ? ' em-atg-disabled' : ''}"
            data-atg-action="${this._escapeAttr(action || '')}"
            style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;
-                  border:2px solid var(--em-border);margin:4px 0;
+                  border:1px solid var(--em-border);margin:4px 0;
                   cursor:${disabled ? 'default' : 'pointer'};opacity:${disabled ? '0.45' : '1'};
                   transition:border-color 0.15s,background 0.15s">
         <span style="font-size:18px;line-height:1">${this._icon(icon, '20px')}</span>
@@ -15768,7 +15806,7 @@ class EntityManagerPanel extends HTMLElement {
       const newCount = entityIds.length - alreadyIn;
       return `<div class="em-atg-row" data-group-id="${this._escapeAttr(g.id)}"
         style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;
-               border:2px solid var(--em-border);margin:4px 0;
+               border:1px solid var(--em-border);margin:4px 0;
                cursor:${newCount > 0 ? 'pointer' : 'default'};transition:border-color 0.15s,background 0.15s">
         <span style="font-size:16px">${this._icon(EM_ICONS.customGroup, '16px')}</span>
         <span style="flex:1;font-weight:500">${this._escapeHtml(g.name)}</span>
@@ -16144,7 +16182,7 @@ class EntityManagerPanel extends HTMLElement {
       contentHtml: `
         <div class="confirm-dialog-content">
           <p style="margin-bottom: 12px;">Current Entity ID: <strong>${this._escapeHtml(entityId)}</strong></p>
-          <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
+          <p style="margin-bottom: 8px; color: var(--em-text-secondary);">Enter new entity ID (without domain prefix):</p>
           <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${this._escapeAttr(entityId.split('.')[1])}" pattern="[a-z0-9_]+" title="Only lowercase letters, numbers, and underscores">
           <p style="margin-top: 8px; font-size: 14px; color:var(--em-danger);">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
         </div>

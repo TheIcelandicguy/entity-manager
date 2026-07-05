@@ -338,7 +338,8 @@ entity-manager-panel :focus-visible {
 
 .theme-editor {
   background: var(--em-bg-primary);
-  border-radius: 16px;
+  border: 1px solid var(--em-border);
+  border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.3);
   width: 90%;
   max-width: 500px;
@@ -358,7 +359,8 @@ entity-manager-panel :focus-visible {
 
 .theme-editor-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--em-text-primary);
 }
 
@@ -387,7 +389,8 @@ entity-manager-panel :focus-visible {
 }
 
 .theme-editor-section-title {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--em-text-secondary);
@@ -403,14 +406,14 @@ entity-manager-panel :focus-visible {
 
 .theme-editor-row label {
   flex: 1;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--em-text-primary);
 }
 
 .theme-editor-row input[type="color"] {
   width: 40px;
   height: 32px;
-  border: 2px solid var(--em-border);
+  border: 1px solid var(--em-border);
   border-radius: 6px;
   cursor: pointer;
   padding: 2px;
@@ -438,8 +441,10 @@ entity-manager-panel :focus-visible {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  padding: 12px 16px;
-  border: 2px solid var(--em-border);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--em-border);
   border-radius: 8px;
   flex: 1;
   justify-content: center;
@@ -464,10 +469,10 @@ entity-manager-panel :focus-visible {
 
 .theme-editor-name {
   width: 100%;
-  padding: 12px 16px;
-  border: 2px solid var(--em-border);
+  padding: 10px 14px;
+  border: 1px solid var(--em-border);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   background: var(--em-bg-secondary);
   color: var(--em-text-primary);
   margin-bottom: 16px;
@@ -487,17 +492,17 @@ entity-manager-panel :focus-visible {
 }
 
 .theme-editor-btn {
-  padding: 10px 20px;
+  padding: 8px 16px;
   border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .theme-editor-btn.cancel {
   background: transparent;
-  border: 2px solid var(--em-border);
+  border: 1px solid var(--em-border);
   color: var(--em-text-primary);
 }
 
@@ -520,7 +525,7 @@ entity-manager-panel :focus-visible {
   padding: 16px;
   border-radius: 8px;
   margin-top: 16px;
-  border: 2px solid var(--em-border);
+  border: 1px solid var(--em-border);
 }
 
 .theme-editor-preview-title {
@@ -916,11 +921,14 @@ body.em-dialog-open {
   max-height: 90vh;
 }
 
+/* Body is a flex column: hero + tab strip stay pinned, .em-ed-panels scrolls */
 .confirm-dialog-box.em-entity-detail #em-edd-body {
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  min-height: 0;
-  padding: 0 16px;
+  min-height: min(420px, 55vh);
+  padding: 12px 16px 0;
 }
 
 @keyframes slideUp {
@@ -1265,10 +1273,10 @@ entity-manager-panel[data-theme="dark"] .confirm-no:hover {
 
 .rename-input {
   width: 100%;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1.5px solid var(--em-border);
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 13.5px;
   font-family: monospace;
   background: var(--em-bg-secondary);
   color: var(--em-text-primary);
@@ -1400,6 +1408,46 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 
 .btn-danger:hover {
   opacity: 0.8;
+}
+
+/* Apply-to target selector (label editors + Assign dialog) */
+.em-target-btn {
+  flex: 1;
+  min-width: 64px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--em-border);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 400;
+  background: var(--em-bg-hover);
+  color: var(--em-text-primary);
+  transition: all 0.15s ease;
+}
+.em-target-btn:hover { border-color: var(--em-primary); }
+.em-target-btn.active {
+  background: var(--em-primary);
+  border-color: var(--em-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Small button modifier (Suggestions/Area-Assignment Apply, mapping rules, bulk bars).
+   Bare .btn.btn-sm (no variant class) gets an outline-primary look — the base .btn alone
+   would render a transparent ghost. Variant classes (.btn-primary etc.) still win. */
+.btn-sm {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 7px;
+}
+.btn.btn-sm:not(.btn-primary):not(.btn-secondary):not(.btn-danger):not(.btn-success) {
+  border-color: var(--em-primary);
+  color: var(--em-primary);
+  background: transparent;
+}
+.btn.btn-sm:not(.btn-primary):not(.btn-secondary):not(.btn-danger):not(.btn-success):hover {
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
 }
 
 .stats {
@@ -3209,7 +3257,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     --dialog-gap: 8px;
   }
   .confirm-dialog-box.em-entity-detail #em-edd-body {
-    padding: 0 12px;
+    padding: 10px 12px 0;
   }
 }
 
@@ -3432,7 +3480,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     --dialog-gap: 6px;
   }
   .confirm-dialog-box.em-entity-detail #em-edd-body {
-    padding: 0 8px;
+    padding: 8px 8px 0;
   }
 }
 
@@ -7041,13 +7089,13 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* ===== ENTITY DETAILS DIALOG REDESIGN ===== */
 
-/* Hero header */
+/* Hero header (pinned above the tab strip) */
 .em-ed-hero {
-  padding: 14px 16px 12px;
+  padding: 12px 16px 10px;
   border-radius: 10px;
   background: var(--em-bg-secondary);
-  border: 1px solid var(--em-primary);
-  margin-bottom: 10px;
+  border: 1px solid var(--em-border);
+  flex-shrink: 0;
 }
 .em-ed-hero-name { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
 .em-ed-hero-id   { font-size: 12px; font-family: monospace; color: var(--em-text-secondary); margin-bottom: 8px; word-break: break-all; }
@@ -7061,21 +7109,111 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-ed-chip-disabled { color: var(--em-danger);  background: transparent; border: 1px solid var(--em-danger); }
 .em-ed-chip-area     { color: var(--em-success); }
 .em-ed-hero-state { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
-.em-ed-state-val  { font-size: 15px; font-weight: 700; border: 2px solid currentColor; border-radius: 8px; padding: 3px 12px; }
+.em-ed-state-val  { font-size: 15px; font-weight: 700; border: 1.5px solid currentColor; border-radius: 8px; padding: 3px 12px; }
 .em-ed-hero-times { font-size: 11px; color: var(--em-text-secondary); margin-left: auto; }
+
+/* Tab strip (pinned) */
+.em-ed-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 10px;
+  border-bottom: 1px solid var(--em-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+.em-ed-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 9px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--em-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s ease;
+}
+.em-ed-tab:hover { color: var(--em-text-primary); }
+.em-ed-tab.active { color: var(--em-primary); border-bottom-color: var(--em-primary); }
+.em-ed-tab-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--em-bg-hover);
+  color: var(--em-text-secondary);
+}
+.em-ed-tab.active .em-ed-tab-badge {
+  background: color-mix(in srgb, var(--em-primary) 14%, transparent);
+  color: var(--em-primary);
+}
+.em-ed-tab-badge.em-ed-badge-impact {
+  background: color-mix(in srgb, var(--em-warning) 16%, transparent);
+  color: var(--em-warning);
+}
+
+/* Tab panels — the scrolling region */
+.em-ed-panels {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 12px 2px 10px;
+  text-align: left; /* dialog content is center-aligned by default */
+}
+.em-ed-panel { display: none; }
+.em-ed-panel.active { display: block; }
+
+/* Overview card grid */
+.em-ed-ov-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.em-ed-card {
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
+  background: var(--em-bg-secondary);
+  padding: 10px 14px 12px;
+}
+.em-ed-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--em-text-secondary);
+  margin-bottom: 2px;
+}
+
+/* Registry/Related panel subheads */
+.em-ed-subhead {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--em-text-secondary);
+  margin: 14px 0 2px;
+}
+.em-ed-subhead:first-child { margin-top: 0; }
 
 /* Flat label/value rows */
 .em-ed-rows { padding: 4px 0; }
 .em-ed-row  {
   display: flex; justify-content: space-between; align-items: baseline;
-  padding: 7px 0; border-bottom: 1px solid var(--em-primary); gap: 12px;
+  padding: 7px 0; border-bottom: 1px solid var(--em-border); gap: 12px;
 }
 .em-ed-row:last-child { border-bottom: none; }
 .em-ed-label {
   font-size: 11px; color: var(--em-text-secondary); text-transform: uppercase;
   letter-spacing: 0.4px; flex-shrink: 0; min-width: 90px;
 }
-.em-ed-value { font-size: 13px; font-weight: 500; text-align: right; word-break: break-all; }
+.em-ed-value { font-size: 13px; font-weight: 500; text-align: right; overflow-wrap: anywhere; min-width: 0; }
 
 /* Attribute grid */
 .em-ed-attr-grid {
@@ -7095,7 +7233,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-ed-hist-list { padding: 4px 0; }
 .em-ed-hist-row  {
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 0; border-bottom: 1px solid var(--em-primary);
+  padding: 6px 0; border-bottom: 1px solid var(--em-border);
 }
 .em-ed-hist-row:last-child { border-bottom: none; }
 .em-ed-hist-dot   { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -7106,7 +7244,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-ed-dep-list { padding: 4px 0; }
 .em-ed-dep-row  {
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 0; border-bottom: 1px solid var(--em-primary);
+  padding: 6px 0; border-bottom: 1px solid var(--em-border);
 }
 .em-ed-dep-row:last-child { border-bottom: none; }
 .em-ed-dep-state {
@@ -7117,10 +7255,14 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-ed-dep-name { font-size: 11px; color: var(--em-text-secondary); flex-shrink: 0; }
 
 /* Responsive */
+@media (max-width: 600px) {
+  .em-ed-ov-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 480px) {
   .em-ed-attr-grid { grid-template-columns: 1fr; }
   .em-ed-hero-times { margin-left: 0; width: 100%; }
   .em-ed-hist-time  { text-align: left; }
+  .em-ed-tab { padding: 9px 10px; font-size: 12.5px; }
 }
 
 /* ===== MOBILE OVERRIDES — Area Assignment ===== */
