@@ -8407,11 +8407,11 @@ class EntityManagerPanel extends HTMLElement {
               <span style="color:var(--em-danger)">${disabledCount}</span>
             </span>
             <div class="smart-group-actions">
-              <button class="btn btn-secondary smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
-              <button class="btn btn-secondary smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
-              <button class="btn btn-secondary smart-group-assign-area" data-group-key="${this._escapeAttr(groupKey)}" title="Assign area to all entities in this group" style="color:var(--em-primary);border-color:var(--em-primary)">${this._icon(EM_ICONS.area, '16px')} Assign Area</button>
+              <button class="em-mini-btn em-mini-good smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
+              <button class="em-mini-btn em-mini-bad smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
+              <button class="em-mini-btn smart-group-assign-area" data-group-key="${this._escapeAttr(groupKey)}" title="Assign area to all entities in this group" style="color:var(--em-primary);border-color:var(--em-primary)">${this._icon(EM_ICONS.area, '16px')} Assign Area</button>
               ${this.smartGroupMode === 'custom' && groupKey !== '📦 Ungrouped' ? `
-                <button class="btn btn-secondary smart-group-delete-custom" data-group-key="${this._escapeAttr(groupKey)}" title="Delete this custom group" style="color:var(--em-danger);border-color:var(--em-danger)">${this._icon(EM_ICONS.delete, '16px')} Delete</button>
+                <button class="em-mini-btn em-mini-bad smart-group-delete-custom" data-group-key="${this._escapeAttr(groupKey)}" title="Delete this custom group">${this._icon(EM_ICONS.delete, '16px')} Delete</button>
               ` : ''}
             </div>
             <span class="smart-group-expand"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
