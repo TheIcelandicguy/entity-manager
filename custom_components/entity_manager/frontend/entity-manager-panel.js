@@ -8114,80 +8114,92 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Render stats
+    // Render stats — data stats row + compact view-launcher nav strip
     statsEl.innerHTML = `
-      <div class="stat-card" data-stat-type="integrations">
-        <div class="stat-label">Integrations</div>
-        <div class="stat-value">${totalIntegrations}</div>
-      </div>
-      ${(() => {
-        if (this.viewMode === 'devices' && this.deviceTypeFilter !== 'all') {
-          const typeMeta = this._deviceTypeMeta();
-          const m = typeMeta[this.deviceTypeFilter] || typeMeta.unknown;
-          const typeCount = Object.keys(this.deviceInfo).filter(id => this.getDeviceType(id) === this.deviceTypeFilter).length;
+      <div class="stats-data">
+        <div class="stat-card" data-stat-type="integrations">
+          <div class="stat-label">Integrations</div>
+          <div class="stat-value">${totalIntegrations}</div>
+        </div>
+        ${(() => {
+          if (this.viewMode === 'devices' && this.deviceTypeFilter !== 'all') {
+            const typeMeta = this._deviceTypeMeta();
+            const m = typeMeta[this.deviceTypeFilter] || typeMeta.unknown;
+            const typeCount = Object.keys(this.deviceInfo).filter(id => this.getDeviceType(id) === this.deviceTypeFilter).length;
+            return `<div class="stat-card" data-stat-type="devices">
+              <div class="stat-label">Devices · <span style="color:${m.color}">${m.label}</span></div>
+              <div class="stat-value">${typeCount}</div>
+            </div>`;
+          }
           return `<div class="stat-card" data-stat-type="devices">
-            <div class="stat-label">Devices · <span style="color:${m.color}">${m.label}</span></div>
-            <div class="stat-value">${typeCount}</div>
+            <div class="stat-label">Devices</div>
+            <div class="stat-value">${totalDevices}</div>
           </div>`;
-        }
-        return `<div class="stat-card" data-stat-type="devices">
-          <div class="stat-label">Devices</div>
-          <div class="stat-value">${totalDevices}</div>
-        </div>`;
-      })()}
-      <div class="stat-card" data-stat-type="entities">
-        <div class="stat-label">Total Entities</div>
-        <div class="stat-value">${totalEntities}</div>
+        })()}
+        <div class="stat-card" data-stat-type="entities">
+          <div class="stat-label">Total Entities</div>
+          <div class="stat-value">${totalEntities}</div>
+        </div>
+        <div class="stat-card" data-t="g" data-stat-type="enabled">
+          <div class="stat-label">Enabled</div>
+          <div class="stat-value">${enabledEntities}</div>
+        </div>
+        <div class="stat-card" data-t="b" data-stat-type="disabled">
+          <div class="stat-label">Disabled</div>
+          <div class="stat-value">${disabledEntities}</div>
+        </div>
       </div>
-      <div class="stat-card clickable-stat" data-stat-type="automations-helpers" title="Click to view automations, scripts &amp; helpers">
-        <div class="stat-label">Auto / Scripts / Helpers</div>
-        <div class="stat-value">${(this.automationCount || 0) + (this.scriptCount || 0) + (this.helperCount || 0)}</div>
+      <div class="stats-nav">
+        <div class="stat-nav-tile clickable-stat" data-stat-type="automations-helpers" title="Click to view automations, scripts &amp; helpers">
+          <span class="stat-nav-label">Auto / Scripts / Helpers</span>
+          <span class="stat-nav-value">${(this.automationCount || 0) + (this.scriptCount || 0) + (this.helperCount || 0)}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="template" title="Click to view templates">
+          <span class="stat-nav-label">Templates</span>
+          <span class="stat-nav-value">${this.templateCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="health-cleanup" title="Click to view health &amp; cleanup">
+          <span class="stat-nav-label">Health &amp; Cleanup</span>
+          <span class="stat-nav-value" style="color: ${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0) > 0 ? 'var(--em-danger)' : 'var(--em-success)'};">${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0)}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
+          <span class="stat-nav-label">HACS Store</span>
+          <span class="stat-nav-value">${this.hacsCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
+          <span class="stat-nav-label">Card Types</span>
+          <span class="stat-nav-value stat-value-lovelace">${this.lovelaceCardCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
+          <span class="stat-nav-label">Suggestions</span>
+          <span class="stat-nav-value">${this._icon(EM_ICONS.suggestions, '16px')}</span>
+        </div>
+        ${(() => {
+          const bm = (this.data || []).find(i => i.integration === 'browser_mod');
+          if (!bm) return '';
+          const browserEntries = Object.entries(bm.devices).filter(([k]) => k !== 'no_device');
+          const browserCount = browserEntries.length;
+          const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          let hasStale = false;
+          let activeCount = 0;
+          browserEntries.forEach(([, device]) => {
+            const lastActive = device.entities.reduce((max, e) => {
+              const t = this._hass?.states[e.entity_id]?.last_changed;
+              return t ? Math.max(max, new Date(t).getTime()) : max;
+            }, 0);
+            if (lastActive && lastActive < staleThreshold) hasStale = true;
+            const activeEnt = device.entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
+            if (activeEnt && this._hass?.states[activeEnt.entity_id]?.state === 'on') activeCount++;
+          });
+          const activeLabel = activeCount > 0 ? `<span class="stat-nav-extra">● ${activeCount} active</span>` : '';
+          return `
+            <div class="stat-nav-tile clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
+              <span class="stat-nav-label">Browsers${hasStale ? ` ${this._icon(EM_ICONS.warning, '14px')}` : ''}</span>
+              <span class="stat-nav-value">${browserCount}</span>
+              ${activeLabel}
+            </div>`;
+        })()}
       </div>
-      <div class="stat-card clickable-stat" data-stat-type="template" title="Click to view templates">
-        <div class="stat-label">Templates</div>
-        <div class="stat-value">${this.templateCount}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="health-cleanup" title="Click to view health &amp; cleanup">
-        <div class="stat-label">Health &amp; Cleanup</div>
-        <div class="stat-value" style="color: ${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0) > 0 ? 'var(--em-danger)' : 'var(--em-success)'} !important;">${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0)}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
-        <div class="stat-label">HACS Store</div>
-        <div class="stat-value">${this.hacsCount}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
-        <div class="stat-label">Card Types</div>
-        <div class="stat-value stat-value-lovelace">${this.lovelaceCardCount}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
-        <div class="stat-label">Suggestions</div>
-        <div class="stat-value">${this._icon(EM_ICONS.suggestions, '24px')}</div>
-      </div>
-      ${(() => {
-        const bm = (this.data || []).find(i => i.integration === 'browser_mod');
-        if (!bm) return '';
-        const browserEntries = Object.entries(bm.devices).filter(([k]) => k !== 'no_device');
-        const browserCount = browserEntries.length;
-        const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
-        let hasStale = false;
-        let activeCount = 0;
-        browserEntries.forEach(([, device]) => {
-          const lastActive = device.entities.reduce((max, e) => {
-            const t = this._hass?.states[e.entity_id]?.last_changed;
-            return t ? Math.max(max, new Date(t).getTime()) : max;
-          }, 0);
-          if (lastActive && lastActive < staleThreshold) hasStale = true;
-          const activeEnt = device.entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
-          if (activeEnt && this._hass?.states[activeEnt.entity_id]?.state === 'on') activeCount++;
-        });
-        const activeLabel = activeCount > 0 ? `<div style="font-size:0.72em;color:var(--em-success);margin-top:2px">● ${activeCount} active</div>` : '';
-        return `
-          <div class="stat-card clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
-            <div class="stat-label">Browsers${hasStale ? ` ${this._icon(EM_ICONS.warning, '14px')}` : ''}</div>
-            <div class="stat-value">${browserCount}</div>
-            ${activeLabel}
-          </div>`;
-      })()}
     `;
 
     // Entity health alert banner — shown above stat cards when unavailable count exceeds threshold
@@ -8217,9 +8229,9 @@ class EntityManagerPanel extends HTMLElement {
     // Option B: animate stat counters; Option C: stagger stat cards (only on panel load/navigation)
     if (this._playAnimations) {
       this._animateStatCounters(statsEl);
-      statsEl.querySelectorAll('.stat-card').forEach((card, i) => {
+      statsEl.querySelectorAll('.stat-card, .stat-nav-tile').forEach((card, i) => {
         card.style.animation = `em-stagger-in 1.05s ease both`;
-        card.style.animationDelay = `${i * 105}ms`;
+        card.style.animationDelay = `${i * 80}ms`;
       });
       this._playAnimations = false;
     }
