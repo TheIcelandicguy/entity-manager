@@ -2422,7 +2422,7 @@ class EntityManagerPanel extends HTMLElement {
           titleEl.innerHTML = `${chevronHtml}${this._icon(sectionEmojis[t], '16px')} ${sectionTitles[t]} <span style="opacity:0.55;font-weight:400;font-size:12px">(${count})</span>`;
         }
       } catch (e) {
-        groupBody.innerHTML = `<div style="padding:12px;color:var(--em-danger)">Failed to load ${sectionTitles[t]}: ${e.message}</div>`;
+        groupBody.innerHTML = `<div style="padding:12px;color:var(--em-danger)">Failed to load ${sectionTitles[t]}: ${this._escapeHtml(e?.message || String(e))}</div>`;
       }
     }
   }
@@ -7989,7 +7989,7 @@ class EntityManagerPanel extends HTMLElement {
         const cgId = cgDelBtn.dataset.cgId;
         const grp = (this.customGroups || []).find(g => g.id === cgId);
         if (!grp) return;
-        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+        this.showConfirmDialog(`Delete group "${this._escapeHtml(grp.name)}"?`, 'This only removes the grouping — entities are not affected.', () => {
           this.customGroups = (this.customGroups || []).filter(g => g.id !== cgId);
           localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
           this._reRenderSidebar();
@@ -8445,8 +8445,9 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-nav-tile clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
           <span class="stat-nav-label">Suggestions</span>
           <span class="stat-nav-value">${(() => {
-            const c = this._suggestionsCount ?? this._loadFromStorage('em-suggestions-count', null);
-            return c != null ? c : '–';
+            // Number() coercion so a tampered localStorage value can never carry markup
+            const c = Number(this._suggestionsCount ?? this._loadFromStorage('em-suggestions-count', null));
+            return Number.isFinite(c) ? c : '–';
           })()}</span>
         </div>
         ${(() => {
@@ -9604,7 +9605,7 @@ class EntityManagerPanel extends HTMLElement {
         const groupName = btn.dataset.groupKey;
         const grp = (this.customGroups || []).find(g => g.name === groupName);
         if (!grp) return;
-        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+        this.showConfirmDialog(`Delete group "${this._escapeHtml(grp.name)}"?`, 'This only removes the grouping — entities are not affected.', () => {
           this.customGroups = (this.customGroups || []).filter(g => g.id !== grp.id);
           localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
           this._reRenderSidebar();
