@@ -310,6 +310,8 @@ class EntityManagerPanel extends HTMLElement {
     this.cleanupCount = 0;
     this.showOfflineOnly = localStorage.getItem('em-show-offline-only') === 'true';
     this.deviceTypeFilter = localStorage.getItem('em-device-type-filter') || 'all';
+    // Manual device-type assignments (deviceId → type) — beats getDeviceType() heuristics
+    this.deviceTypeOverrides = this._loadFromStorage('em-device-type-overrides', {});
     this.backupBeforeUpdate = localStorage.getItem('em-backup-before-update') === 'true';
     this.haAutoBackup = null; // null = unavailable/unknown, {core,addon} = loaded from hassio
     this._restartAfterUpdates = false;
@@ -7027,6 +7029,9 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   getDeviceType(deviceId) {
+    // Manual assignment wins over heuristics (set via the type-picker on Unknown badges/chips)
+    const override = this.deviceTypeOverrides?.[deviceId];
+    if (override) return override;
     const dev = this.deviceInfo[deviceId];
     if (!dev) return 'unknown';
     const identifiers = (dev.identifiers || []).map(id => id[0]);
@@ -7040,13 +7045,70 @@ class EntityManagerPanel extends HTMLElement {
 
   _deviceTypeMeta() {
     return {
-      hardware: { label: 'Hardware', color: 'var(--em-success)' },
-      virtual:  { label: 'Virtual',  color: 'var(--em-primary)' },
-      mobile:   { label: 'Mobile',   color: '#9c27b0' },
-      system:   { label: 'System',   color: 'var(--em-warning)' },
-      cloud:    { label: 'Cloud',    color: '#00bcd4' },
-      unknown:  { label: 'Unknown',   color: 'var(--em-text-secondary)' },
+      hardware: { label: 'Hardware', color: 'var(--em-success)', emoji: '⚡' },
+      virtual:  { label: 'Virtual',  color: 'var(--em-primary)', emoji: '🔧' },
+      mobile:   { label: 'Mobile',   color: '#9c27b0', emoji: '📱' },
+      system:   { label: 'System',   color: 'var(--em-warning)', emoji: '🏠' },
+      cloud:    { label: 'Cloud',    color: '#00bcd4', emoji: '☁️' },
+      unknown:  { label: 'Unknown',   color: 'var(--em-text-secondary)', emoji: '❓' },
     };
+  }
+
+  // Type-picker for manual device-type assignment. deviceIds: one (card badge) or many
+  // (integration header's Unknown chip). "Auto" clears the override so heuristics apply again.
+  _showDeviceTypePickerDialog(deviceIds, { title } = {}) {
+    if (!deviceIds?.length) return;
+    const meta = this._deviceTypeMeta();
+    const assignable = ['hardware', 'cloud', 'virtual', 'mobile', 'system'];
+    const single = deviceIds.length === 1;
+    const currentOverride = single ? this.deviceTypeOverrides?.[deviceIds[0]] : null;
+    const deviceList = single
+      ? `<div class="em-dtp-subject">${this._escapeHtml(this.getDeviceName(deviceIds[0]))}</div>`
+      : `<div class="em-dtp-subject">${deviceIds.length} devices${deviceIds.length <= 6
+          ? ` — ${deviceIds.map(id => this._escapeHtml(this.getDeviceName(id))).join(', ')}` : ''}</div>`;
+
+    const rowHtml = (val, emoji, label, color, sub) => `
+      <label class="em-dtp-row${val === (currentOverride || '') ? ' em-dtp-active' : ''}">
+        <input type="radio" name="em-dtp-type" value="${val}" ${val === (currentOverride || '') ? 'checked' : ''}>
+        <span class="em-dtp-emoji">${emoji}</span>
+        <span class="em-dtp-label" style="color:${color}">${label}</span>
+        ${sub ? `<span class="em-dtp-sub">${sub}</span>` : ''}
+      </label>`;
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: title || 'Assign device type',
+      color: 'var(--em-primary)',
+      contentHtml: `<div style="padding:4px 2px">
+        ${deviceList}
+        <div class="em-dtp-list">
+          ${assignable.map(t => rowHtml(t, meta[t].emoji, meta[t].label, meta[t].color)).join('')}
+          ${rowHtml('', '✨', 'Auto', 'var(--em-text-secondary)', 'detected from registry data')}
+        </div>
+      </div>`,
+      actionsHtml: `
+        <button class="btn btn-secondary" id="em-dtp-cancel">Cancel</button>
+        <button class="btn btn-primary" id="em-dtp-apply">Assign</button>`,
+    });
+
+    overlay.querySelector('#em-dtp-cancel').addEventListener('click', closeDialog);
+    overlay.addEventListener('change', (e) => {
+      if (e.target.name !== 'em-dtp-type') return;
+      overlay.querySelectorAll('.em-dtp-row').forEach(r =>
+        r.classList.toggle('em-dtp-active', r.querySelector('input').checked));
+    });
+    overlay.querySelector('#em-dtp-apply').addEventListener('click', () => {
+      const val = overlay.querySelector('input[name="em-dtp-type"]:checked')?.value;
+      if (val === undefined) { this._showToast('Pick a type first', 'warning'); return; }
+      deviceIds.forEach(id => {
+        if (val) this.deviceTypeOverrides[id] = val;
+        else delete this.deviceTypeOverrides[id];
+      });
+      this._saveToStorage('em-device-type-overrides', this.deviceTypeOverrides);
+      closeDialog();
+      const label = val ? this._deviceTypeMeta()[val].label : 'Auto';
+      this._showToast(`${deviceIds.length === 1 ? this.getDeviceName(deviceIds[0]) : `${deviceIds.length} devices`} → ${label}`, 'success');
+      this.updateView();
+    });
   }
 
   extractDomains(data) {
@@ -7387,6 +7449,7 @@ class EntityManagerPanel extends HTMLElement {
           <option value="virtual">🔧 Virtual</option>
           <option value="mobile">📱 Mobile</option>
           <option value="system">🏠 HA System</option>
+          <option value="unknown">❓ Unknown</option>
         </select>
         <label class="hide-uptodate-label" id="hide-unavailable-label" style="display: none;">
           <input type="checkbox" id="hide-unavailable-checkbox" ${this.showOfflineOnly ? 'checked' : ''} />
@@ -8321,9 +8384,9 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         <div class="stat-nav-tile clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
           <span class="stat-nav-label">Suggestions</span>
-          <span class="stat-nav-value">${this._icon(EM_ICONS.suggestions, '16px')}${(() => {
+          <span class="stat-nav-value">${(() => {
             const c = this._suggestionsCount ?? this._loadFromStorage('em-suggestions-count', null);
-            return c != null ? ` ${c}` : '';
+            return c != null ? c : '–';
           })()}</span>
         </div>
         ${(() => {
@@ -8845,7 +8908,12 @@ class EntityManagerPanel extends HTMLElement {
     const allEntities = [];
     const categoryCounts = new Map();
     const areaIds = new Set();
+    const typeCounts = new Map();
     Object.entries(integration.devices).forEach(([deviceId, device]) => {
+      if (deviceId !== 'no_device') {
+        const dtype = this.getDeviceType(deviceId);
+        typeCounts.set(dtype, (typeCounts.get(dtype) || 0) + 1);
+      }
       const devAreaId = this.deviceInfo?.[deviceId]?.area_id;
       if (devAreaId) areaIds.add(devAreaId);
       device.entities.forEach(entity => {
@@ -8918,6 +8986,21 @@ class EntityManagerPanel extends HTMLElement {
         <div class="integration-box-title">Categories</div>
         <div class="integration-box-chips">${categoryBadgesHtml}</div>
       </div>` : '';
+    // Hardware box — device-type counts; the Unknown chip is clickable to bulk-assign a type
+    const typeMeta = this._deviceTypeMeta();
+    const hwChipsHtml = Object.keys(typeMeta)
+      .filter(t => typeCounts.get(t) > 0)
+      .map(t => t === 'unknown'
+        ? `<span class="integration-hw-chip integration-hw-unknown" data-integration="${this._escapeAttr(integration.integration)}"
+             style="color:${typeMeta[t].color};border-color:${typeMeta[t].color}"
+             title="Click to assign a type to the unknown devices">${typeMeta[t].emoji} ${typeMeta[t].label}: ${typeCounts.get(t)}</span>`
+        : `<span class="integration-hw-chip" style="color:${typeMeta[t].color};border-color:${typeMeta[t].color}">${typeMeta[t].emoji} ${typeMeta[t].label}: ${typeCounts.get(t)}</span>`)
+      .join('');
+    const hwBoxHtml = hwChipsHtml ? `
+      <div class="integration-box integration-box-hw">
+        <div class="integration-box-title">Hardware</div>
+        <div class="integration-box-chips">${hwChipsHtml}</div>
+      </div>` : '';
     const metaBoxHtml = (areaChipsHtml || floorChipsHtml || labelRollupHtml) ? `
       <div class="integration-box integration-box-meta">
         <div class="integration-box-title">Areas &amp; Labels</div>
@@ -8955,6 +9038,7 @@ class EntityManagerPanel extends HTMLElement {
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
           </div>
           ${catsBoxHtml}
+          ${hwBoxHtml}
           ${metaBoxHtml}
           <div class="integration-menu-wrap">
             <button class="em-mini-btn integration-menu-btn ${_ivf ? 'btn-primary' : ''}" data-integration="${intName}" title="Integration actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
@@ -9194,8 +9278,13 @@ class EntityManagerPanel extends HTMLElement {
       .map(b => this._renderCatCard(devName, b.label, b.cls, b.entities, deviceId))
       .join('') : '';
 
-    const { label: typeLabel, color: typeColor } = (this._deviceTypeMeta()[this.getDeviceType(deviceId)] || this._deviceTypeMeta().unknown);
-    const typeBadge = `<span class="device-type-badge" style="font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid ${typeColor};color:${typeColor};white-space:nowrap;flex-shrink:0">${typeLabel}</span>`;
+    const devType = this.getDeviceType(deviceId);
+    const { label: typeLabel, color: typeColor } = (this._deviceTypeMeta()[devType] || this._deviceTypeMeta().unknown);
+    // Editable when Unknown (assign a type) or already manually assigned (change/reset it)
+    const typeEditable = devType === 'unknown' || !!this.deviceTypeOverrides?.[deviceId];
+    const typeBadge = `<span class="device-type-badge${typeEditable ? ' device-type-badge-editable' : ''}"
+      ${typeEditable ? `data-type-device-id="${this._escapeAttr(deviceId)}" title="${devType === 'unknown' ? 'Unknown type — click to assign' : 'Manually assigned — click to change'}"` : ''}
+      style="font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid ${typeColor};color:${typeColor};white-space:nowrap;flex-shrink:0${typeEditable ? ';cursor:pointer' : ''}">${typeLabel}${typeEditable ? ' ✎' : ''}</span>`;
 
     const viewFilterBtns = showViewFilters ? `
             <button class="em-mini-btn em-mini-good view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities">View Enabled</button>
@@ -9399,6 +9488,7 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.integration-header').forEach(header => {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.integration-select-wrapper')) return;
+        if (e.target.closest('.integration-hw-unknown')) return; // handled by the type-picker listener
         const integration = header.dataset.integration;
         if (this.expandedIntegrations.has(integration)) {
           this.expandedIntegrations.delete(integration);
@@ -9461,6 +9551,7 @@ class EntityManagerPanel extends HTMLElement {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.device-bulk-actions')) return;
         if (e.target.closest('.device-select-label')) return;
+        if (e.target.closest('.device-type-badge-editable')) return; // handled by the type-picker listener
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
           this.expandedDevices.delete(deviceId);
@@ -9546,6 +9637,29 @@ class EntityManagerPanel extends HTMLElement {
         e.stopPropagation();
         const ents = this._deviceEntitiesById(chip.dataset.deviceId);
         if (ents.length) this._showAssignDialog(ents, { focus: 'labels', labelTarget: 'device' });
+      });
+    });
+
+    // Device-type picker — editable badges (Unknown or manually assigned; both views)
+    this.content.querySelectorAll('.device-type-badge-editable').forEach(badge => {
+      badge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showDeviceTypePickerDialog([badge.dataset.typeDeviceId]);
+      });
+    });
+    // Integration Hardware box's Unknown chip — bulk-assign that integration's unknown devices
+    this.content.querySelectorAll('.integration-hw-unknown').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const intData = (this.data || []).find(i => i.integration === chip.dataset.integration);
+        if (!intData) return;
+        const unknownIds = Object.keys(intData.devices).filter(id =>
+          id !== 'no_device' && this.getDeviceType(id) === 'unknown');
+        if (unknownIds.length) {
+          this._showDeviceTypePickerDialog(unknownIds, {
+            title: `Assign type — ${unknownIds.length} unknown device${unknownIds.length !== 1 ? 's' : ''}`,
+          });
+        }
       });
     });
 

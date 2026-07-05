@@ -227,6 +227,7 @@ Most state is persisted to `localStorage` via `_loadFromStorage()`/`_saveToStora
 | Activity Log filter | `em-at-filter` | Activity Log dialog |
 | Known entity IDs snapshot | `em-known-entity-ids` | Used to detect newly-added entities |
 | Integration accent overrides | `em-integration-colors` | User color-picker overrides for per-integration accents (default = name-hash palette) |
+| Device-type overrides | `em-device-type-overrides` | Manual deviceId→type assignments; checked first by `getDeviceType()` before heuristics |
 | Suggestions tile count cache | `em-suggestions-count` | Last computed suggestions total, shown on the stat tile; refreshed by `_showSuggestionsDialog` |
 | Last-activity cache | `em_lastActivityCache` | Legacy camelCase key, unlike the rest of this table |
 

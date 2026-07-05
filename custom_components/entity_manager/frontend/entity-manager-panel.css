@@ -2063,6 +2063,60 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .integration-cat-badge.cat-diagnostic   { color: var(--em-warning); border-color: var(--em-warning); }
 .integration-cat-badge.cat-connectivity { color: var(--em-success); border-color: var(--em-success); }
 
+/* Integration header Hardware box — device-type counts (colors set inline per _deviceTypeMeta) */
+.integration-hw-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.integration-hw-unknown {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.integration-hw-unknown:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Device-type picker dialog */
+.em-dtp-subject {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--em-text-secondary);
+  margin-bottom: 10px;
+}
+.em-dtp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.em-dtp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--em-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.em-dtp-row:hover { border-color: var(--em-primary); }
+.em-dtp-row.em-dtp-active {
+  border-color: var(--em-primary);
+  background: color-mix(in srgb, var(--em-primary) 8%, transparent);
+}
+.em-dtp-row input[type="radio"] { accent-color: var(--em-primary); }
+.em-dtp-emoji { font-size: 15px; line-height: 1; }
+.em-dtp-label { font-size: 13px; font-weight: 600; }
+.em-dtp-sub { font-size: 11px; color: var(--em-text-secondary); }
+
+/* Editable device-type badge (Unknown / manually assigned) */
+.device-type-badge-editable:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
 /* Integration-level HA Label rollup — display-only, no click target */
 .integration-label-rollup {
   display: flex;
