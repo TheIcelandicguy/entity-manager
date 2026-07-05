@@ -1376,28 +1376,6 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
   border-color: var(--em-primary);
 }
 
-.btn-secondary.enable-integration {
-  color: var(--em-success) !important;
-  border: 2px solid var(--em-success) !important;
-}
-
-.btn-secondary.enable-integration:hover {
-  background: var(--em-success) !important;
-  color: white !important;
-  border-color: var(--em-success) !important;
-}
-
-.btn-secondary.disable-integration {
-  color: var(--em-danger) !important;
-  border: 2px solid var(--em-danger) !important;
-}
-
-.btn-secondary.disable-integration:hover {
-  background: var(--em-danger) !important;
-  color: white !important;
-  border-color: var(--em-danger) !important;
-}
-
 .btn-success {
   background: var(--em-success) !important;
   color: white !important;
