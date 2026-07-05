@@ -1358,4 +1358,4 @@ Card extraction is recursive across `views[]` → `cards[]` and `sections[]`. Pa
 
 ---
 
-*This document covers the code architecture as of v2.22.0. For project setup, services, WebSocket backend (Python), and git workflow see [CLAUDE.md](CLAUDE.md).*
+*This document covers the code architecture as of v3.0.0. For project setup, services, WebSocket backend (Python), and git workflow see [CLAUDE.md](CLAUDE.md).*

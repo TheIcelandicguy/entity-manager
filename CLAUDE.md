@@ -5,7 +5,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Entity Manager** is a custom Home Assistant integration (v2.22.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
+**Entity Manager** is a custom Home Assistant integration (v3.0.0) that provides a centralized interface for managing entities across all integrations and devices. It solves the common pain point of navigating through multiple settings pages to manage entities.
 
 ### Key Value Proposition
 - Bulk enable/disable entities in seconds instead of minutes
@@ -24,7 +24,7 @@ entity-manager/
 │   ├── __init__.py                     # Entry point, service registration, panel setup
 │   ├── config_flow.py                  # UI-based configuration flow
 │   ├── const.py                        # Constants (DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID)
-│   ├── manifest.json                   # Integration metadata (v2.22.0)
+│   ├── manifest.json                   # Integration metadata (v3.0.0)
 │   ├── services.yaml                   # Service schema for HA UI
 │   ├── strings.json                    # UI strings for config flow
 │   ├── voice_assistant.py              # Voice intent handlers
@@ -226,6 +226,10 @@ Most state is persisted to `localStorage` via `_loadFromStorage()`/`_saveToStora
 | Unavailable-entities time filter | `em-unavail-time-filter` | Health & Cleanup |
 | Activity Log filter | `em-at-filter` | Activity Log dialog |
 | Known entity IDs snapshot | `em-known-entity-ids` | Used to detect newly-added entities |
+| Integration accent overrides | `em-integration-colors` | User-set per-integration accent colors (default = None/neutral — no auto palette) |
+| Device-type overrides | `em-device-type-overrides` | Manual deviceId→type assignments; checked first by `getDeviceType()` before heuristics |
+| Custom device types | `em-custom-device-types` | User-created types (id → {label, color}), merged into `_deviceTypeMeta()`; created/deleted from the type-picker dialog |
+| Suggestions tile count cache | `em-suggestions-count` | Last computed suggestions total, shown on the stat tile; refreshed by `_showSuggestionsDialog` |
 | Last-activity cache | `em_lastActivityCache` | Legacy camelCase key, unlike the rest of this table |
 
 Note: there is no `entityTags`/custom `#tagname` feature in this codebase — see "No custom tags — uses HA native Labels exclusively" further down.
@@ -453,7 +457,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 2.22.0
+- **Current Version**: 3.0.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes

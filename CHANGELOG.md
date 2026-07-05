@@ -1,5 +1,56 @@
 # Changelog
 
+## Version 3.0.0 - "Refined" UI Redesign
+
+A full visual redesign of the panel — every surface, dialog, and view — plus a safety and security hardening pass.
+
+### 🎨 The Refined Design System
+
+- **New design language across the whole panel**: hairline 1px/1.5px borders replace the heavy 2px-primary boxes everywhere, a calmer light/dark palette (`#ffffff`/`#181c22` surfaces on an `#eef1f6`/`#0f1216` canvas), tighter radius scale (6–14px), and `color-mix()` tints instead of flat fills
+- **Stat wall split in two**: real data stats (Integrations / Devices / Entities / Enabled / Disabled) on top, a navigation strip (Auto/Scripts/Helpers, Templates, Health & Cleanup, HACS, Card Types, Suggestions, Browsers) below — the Suggestions tile shows a live count
+- **Integration rows redesigned**: a three-box header — **Categories** (Controls / Sensors / Configuration / Diagnostic / Connectivity counts), **Hardware** (device-type counts: ⚡ Hardware, ☁️ Cloud, 🔧 Virtual, 📱 Mobile, 🏠 System, ❓ Unknown), and **Areas & Labels** (area/floor/label chips, capped with +N overflow) — with the four row actions collapsed into a **⋯ menu**
+- **Devices view matches**: every device card gets the same header anatomy — Categories / Hardware / Areas & Labels boxes plus the ⋯ actions menu — instead of the old inline chip-and-button row
+- **Per-integration accent colors, opt-in**: integrations stay neutral by default; pick an accent (left border + tinted logo backdrop) from the ⋯ menu's color picker for just the ones that matter, with a **None** option to remove it
+- **Chronic-unavailable banner** is now a compact amber pill with threshold settings and dismiss
+- **Multi-column desktop grids** for the Auto/Scripts/Helpers, Templates, and Health & Cleanup inline views, and a real card grid for the HACS store (mobile keeps the single-column layout)
+- **Refined dialogs everywhere**: unified chrome, hairline internals, theme-scoped overlays (dialog borders no longer vanish under HA themes that blank `--divider-color`), Theme Editor modal refreshed to match
+
+### 🔩 Device Types — Assign & Create
+
+- **Assign a type to Unknown devices**: click the ❓ Unknown chip on an integration header to bulk-assign a type to all of its unknown devices, or click any Unknown badge on a device card. Manually assigned badges show a ✎ and can be changed or reset to **Auto** (heuristic detection) at any time
+- **Create your own device types**: the type picker has a "Create a new type" section — name + color — and custom types appear everywhere the built-ins do (header chips, card badges, the Devices-view type filter). Deleting a custom type returns its devices to Auto
+- The Devices-view type filter also gained a **❓ Unknown** option so unclassified devices are easy to find
+
+### ✨ Entity Details — Tabbed Redesign
+
+- The Entity Details dialog is rebuilt from a collapsible-section stack into a **pinned hero + 5 tabs**: **Overview · Attributes · Registry · Related · History**
+- Hero: entity type/platform/area chips top-left, centered friendly name (click to rename) and entity id, state pill with Turn On/Off/Press and Changed/Updated times
+- Overview tab: card grid — State, Area & Labels (with manage buttons), Device, Integration
+- Related tab: same-device entities + Automation Impact, with live count badges on the tabs
+- Hero and tab strip stay pinned while the tab content scrolls
+
+### 🛡️ Safety & Accuracy
+
+- Bulk rename and Cleanup's "Remove All" now report **real** success/failure counts instead of assuming success
+- Adding labels is now undoable (matching label removal); Import Config pushes a single reversible undo step
+- Confirmations unified: sidebar Enable/Disable Selected, device & group Enable/Disable All, preset Enable/Disable, Unavailable bulk Disable, Clear History, and Clear all notifications all confirm first
+- The last native `prompt()` (health alert threshold) replaced with the styled dialog
+
+### 🔒 Security
+
+- The `entity_manager.enable_entity` / `disable_entity` **services** now require admin, matching their WebSocket equivalents
+- YAML tools never touch `secrets.yaml` and write a `.em-bak` backup before modifying any file
+- `import_entity_states` capped at 500 entries; escaped the one remaining unescaped render path (Saved Views list)
+
+### 🐛 Bug Fixes
+
+- Favorites sidebar filter could never be toggled off
+- Rename dialog input overflowed its dialog (horizontal scrollbar)
+- Suggestions/Area-Assignment Apply buttons rendered as unstyled ghosts (missing `.btn-sm` style)
+- Assign dialog "Apply label to" buttons and Device Picker/Add-to-Group rows brought in line with the design system
+
+---
+
 ## Version 2.22.0 - One-Click Integration Reveal, Category/Label Rollup & Bulk-Action Fixes
 
 ### ✨ New Features

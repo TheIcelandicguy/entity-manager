@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '2.22.0';
+const EM_VERSION = '3.0.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -20,7 +20,9 @@ const HA_LABEL_COLORS = [
   ['blue-grey', '#607d8b'],
 ];
 
-// Predefined themes (inlined for reliable loading)
+// Predefined themes (inlined for reliable loading).
+// Light/Dark carry the "Refined" (v3.0) palette; keep in sync with the
+// CSS :root fallbacks and [data-theme] blocks in entity-manager-panel.css.
 const PREDEFINED_THEMES = {
   'Light': {
     mode: 'light',
@@ -28,42 +30,44 @@ const PREDEFINED_THEMES = {
       '--em-primary': '#2196f3',
       '--em-primary-dark': '#1565c0',
       '--em-primary-light': '#64b5f6',
-      '--em-success': '#4caf50',
-      '--em-success-dark': '#388e3c',
-      '--em-danger': '#f44336',
-      '--em-danger-dark': '#d32f2f',
-      '--em-warning': '#ff9800',
-      '--em-warning-dark': '#f57c00',
-      '--em-text-primary': '#212121',
-      '--em-text-secondary': '#757575',
-      '--em-text-disabled': '#9e9e9e',
+      '--em-success': '#2e9e4f',
+      '--em-success-dark': '#23803f',
+      '--em-danger': '#e0473a',
+      '--em-danger-dark': '#c03428',
+      '--em-warning': '#e08a1e',
+      '--em-warning-dark': '#bf7112',
+      '--em-text-primary': '#1a2027',
+      '--em-text-secondary': '#5b6472',
+      '--em-text-disabled': '#9aa3ad',
       '--em-bg-primary': '#ffffff',
-      '--em-bg-secondary': '#f5f5f5',
-      '--em-bg-hover': 'rgba(0,0,0,0.04)',
-      '--em-border': '#e0e0e0',
-      '--em-border-light': '#eeeeee'
+      '--em-bg-secondary': '#f7f9fc',
+      '--em-bg-hover': '#eef2f7',
+      '--em-canvas': '#eef1f6',
+      '--em-border': 'rgba(30,41,59,0.16)',
+      '--em-border-light': 'rgba(30,41,59,0.09)'
     }
   },
   'Dark': {
     mode: 'dark',
     variables: {
-      '--em-primary': '#42a5f5',
-      '--em-primary-dark': '#1e88e5',
-      '--em-primary-light': '#90caf9',
-      '--em-success': '#66bb6a',
-      '--em-success-dark': '#43a047',
-      '--em-danger': '#ef5350',
-      '--em-danger-dark': '#e53935',
-      '--em-warning': '#ffa726',
-      '--em-warning-dark': '#fb8c00',
-      '--em-text-primary': '#e0e0e0',
-      '--em-text-secondary': '#9e9e9e',
-      '--em-text-disabled': '#616161',
-      '--em-bg-primary': '#1e1e1e',
-      '--em-bg-secondary': '#121212',
-      '--em-bg-hover': 'rgba(255,255,255,0.08)',
-      '--em-border': '#333333',
-      '--em-border-light': '#2c2c2c'
+      '--em-primary': '#2196f3',
+      '--em-primary-dark': '#1565c0',
+      '--em-primary-light': '#64b5f6',
+      '--em-success': '#2e9e4f',
+      '--em-success-dark': '#23803f',
+      '--em-danger': '#e0473a',
+      '--em-danger-dark': '#c03428',
+      '--em-warning': '#e08a1e',
+      '--em-warning-dark': '#bf7112',
+      '--em-text-primary': '#e7ebf0',
+      '--em-text-secondary': '#93a0af',
+      '--em-text-disabled': '#5d6773',
+      '--em-bg-primary': '#181c22',
+      '--em-bg-secondary': '#14171c',
+      '--em-bg-hover': '#20252c',
+      '--em-canvas': '#0f1216',
+      '--em-border': 'rgba(255,255,255,0.12)',
+      '--em-border-light': 'rgba(255,255,255,0.07)'
     }
   },
   'High Contrast': {
@@ -84,6 +88,7 @@ const PREDEFINED_THEMES = {
       '--em-bg-primary': '#000000',
       '--em-bg-secondary': '#0a0a0a',
       '--em-bg-hover': 'rgba(255,255,255,0.15)',
+      '--em-canvas': '#000000',
       '--em-border': '#ffffff',
       '--em-border-light': '#666666'
     }
@@ -106,11 +111,24 @@ const PREDEFINED_THEMES = {
       '--em-bg-primary': '#000000',
       '--em-bg-secondary': '#000000',
       '--em-bg-hover': 'rgba(255,255,255,0.1)',
+      '--em-canvas': '#000000',
       '--em-border': '#1f1f1f',
       '--em-border-light': '#121212'
     }
   }
 };
+
+// Single source of truth for every themeable --em-* variable that
+// _applyCustomTheme may set inline and _clearCustomThemeOverrides must clear.
+const EM_THEME_VARS = [
+  '--em-primary', '--em-primary-dark', '--em-primary-light',
+  '--em-success', '--em-success-dark',
+  '--em-danger', '--em-danger-dark',
+  '--em-warning', '--em-warning-dark',
+  '--em-text-primary', '--em-text-secondary', '--em-text-disabled',
+  '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
+  '--em-canvas', '--em-border', '--em-border-light',
+];
 
 // Load external CSS
 if (!document.querySelector('link[href*="entity-manager-panel.css"]')) {
@@ -284,6 +302,10 @@ class EntityManagerPanel extends HTMLElement {
     this.cleanupCount = 0;
     this.showOfflineOnly = localStorage.getItem('em-show-offline-only') === 'true';
     this.deviceTypeFilter = localStorage.getItem('em-device-type-filter') || 'all';
+    // Manual device-type assignments (deviceId → type) — beats getDeviceType() heuristics
+    this.deviceTypeOverrides = this._loadFromStorage('em-device-type-overrides', {});
+    // User-created device types (id → {label, color}) — merged into _deviceTypeMeta()
+    this.customDeviceTypes = this._loadFromStorage('em-custom-device-types', {});
     this.backupBeforeUpdate = localStorage.getItem('em-backup-before-update') === 'true';
     this.haAutoBackup = null; // null = unavailable/unknown, {core,addon} = loaded from hassio
     this._restartAfterUpdates = false;
@@ -335,6 +357,9 @@ class EntityManagerPanel extends HTMLElement {
     
     // Entity aliases
     this.entityAliases = this._loadEntityAliases();
+
+    // Per-integration accent color overrides (name-hash palette when absent)
+    this.integrationColors = this._loadFromStorage('em-integration-colors', {});
     
     // Groups state
     this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name, custom
@@ -991,11 +1016,7 @@ class EntityManagerPanel extends HTMLElement {
     return `<div style="margin-bottom:12px">
       <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:5px">Apply label to</label>
       <div id="${id}" style="display:flex;gap:5px">
-        ${opts.map(o => `<button class="em-target-btn${o.val === defaultTarget ? ' active' : ''}" data-target="${o.val}" title="${o.title}"
-          style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--em-border);cursor:pointer;font-size:12px;
-                 background:${o.val === defaultTarget ? 'var(--em-primary)' : 'var(--em-bg-hover)'};
-                 color:${o.val === defaultTarget ? 'white' : 'var(--em-text-primary)'};
-                 font-weight:${o.val === defaultTarget ? '600' : '400'}">${o.label}</button>`).join('')}
+        ${opts.map(o => `<button class="em-target-btn${o.val === defaultTarget ? ' active' : ''}" data-target="${o.val}" title="${o.title}">${o.label}</button>`).join('')}
       </div>
     </div>`;
   }
@@ -1005,13 +1026,7 @@ class EntityManagerPanel extends HTMLElement {
       const btn = e.target.closest('.em-target-btn');
       if (!btn) return;
       const parent = btn.closest(`#${id}`);
-      parent.querySelectorAll('.em-target-btn').forEach(b => {
-        const active = b === btn;
-        b.classList.toggle('active', active);
-        b.style.background = active ? 'var(--em-primary)' : 'var(--em-bg-hover)';
-        b.style.color      = active ? 'white' : 'var(--em-text-primary)';
-        b.style.fontWeight = active ? '600' : '400';
-      });
+      parent.querySelectorAll('.em-target-btn').forEach(b => b.classList.toggle('active', b === btn));
     });
   }
 
@@ -1134,28 +1149,35 @@ class EntityManagerPanel extends HTMLElement {
     }
     banner.dataset.renderedCount = String(unavail);
     banner.style.display = '';
+    // Compact pill — the unavailable count is a chronic condition, not an incident;
+    // the whole pill opens the Unavailable dialog.
     banner.innerHTML = `
-      <div class="em-health-banner">
-        <span class="em-health-banner-icon">${this._icon(EM_ICONS.warning)}</span>
-        <span class="em-health-banner-msg">
-          <strong>${unavail} entities unavailable</strong> — exceeds your alert threshold of ${threshold}.
-          <button class="em-health-banner-link" data-action="view-unavailable">View Unavailable</button>
-        </span>
-        <button class="em-health-banner-settings" title="Change alert threshold">${this._icon(EM_ICONS.columns, '16px')}</button>
-        <button class="em-health-banner-dismiss" title="Dismiss">${this._icon(EM_ICONS.close, '16px')}</button>
+      <div class="em-health-pill" role="button" title="Click to view unavailable entities">
+        <span class="em-health-pill-icon">${this._icon(EM_ICONS.warning, '14px')}</span>
+        <span class="em-health-pill-msg"><b>${unavail}</b> unavailable</span>
+        <button class="em-health-banner-settings" title="Change alert threshold (currently ${threshold})">${this._icon(EM_ICONS.columns, '13px')}</button>
+        <button class="em-health-banner-dismiss" title="Dismiss">${this._icon(EM_ICONS.close, '13px')}</button>
       </div>`;
-    banner.querySelector('[data-action="view-unavailable"]')?.addEventListener('click', () => {
+    banner.querySelector('.em-health-pill')?.addEventListener('click', (e) => {
+      if (e.target.closest('.em-health-banner-settings, .em-health-banner-dismiss')) return;
       this.showEntityListDialog('unavailable');
     });
     banner.querySelector('.em-health-banner-settings')?.addEventListener('click', () => {
-      const newVal = prompt(`Entity health alert threshold (currently ${threshold}):\nSet to 0 to disable.`, String(threshold));
-      if (newVal === null) return;
-      const n = parseInt(newVal, 10);
-      if (!isNaN(n) && n >= 0) {
-        this._saveToStorage('em-health-alert-threshold', String(n));
-        delete banner.dataset.renderedCount; // force re-render with new threshold
-        this._updateHealthBanner();
-      }
+      this._showPromptDialog(
+        'Health alert threshold',
+        `Alert when this many entities are unavailable (currently ${threshold}). Set to 0 to disable.`,
+        String(threshold),
+        (newVal) => {
+          const n = parseInt(newVal, 10);
+          if (!isNaN(n) && n >= 0) {
+            this._saveToStorage('em-health-alert-threshold', String(n));
+            delete banner.dataset.renderedCount; // force re-render with new threshold
+            this._updateHealthBanner();
+          } else {
+            this._showToast('Enter a number of 0 or more', 'warning');
+          }
+        },
+      );
     });
     banner.querySelector('.em-health-banner-dismiss')?.addEventListener('click', () => {
       this._saveToStorage('em-health-banner-dismissed', String(unavail));
@@ -1193,12 +1215,18 @@ class EntityManagerPanel extends HTMLElement {
   _applyCustomTheme(theme) {
     // Set base theme mode
     this.setAttribute('data-theme', theme.mode || 'light');
-    
+
     // Apply custom CSS variable overrides
     if (theme.variables) {
       Object.entries(theme.variables).forEach(([key, value]) => {
         this.style.setProperty(key, value);
       });
+      // Back-compat: themes saved before v3.0 have no --em-canvas — derive it
+      // from their bg-secondary so the page canvas stays coherent instead of
+      // falling through to the Refined default.
+      if (!theme.variables['--em-canvas'] && theme.variables['--em-bg-secondary']) {
+        this.style.setProperty('--em-canvas', theme.variables['--em-bg-secondary']);
+      }
     }
     
     // Apply background image if set
@@ -1218,11 +1246,8 @@ class EntityManagerPanel extends HTMLElement {
   _clearCustomThemeOverrides() {
     // Remove any custom CSS variables set on this element
     const customVars = [
-      '--em-primary', '--em-primary-dark', '--em-primary-light',
-      '--em-success', '--em-success-dark', '--em-danger', '--em-danger-dark',
-      '--em-warning', '--em-warning-dark', '--em-text-primary', '--em-text-secondary',
-      '--em-text-disabled', '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
-      '--em-border', '--em-border-light', '--em-shadow', '--em-shadow-hover',
+      ...EM_THEME_VARS,
+      '--em-shadow', '--em-shadow-hover',
       '--em-bg-image', '--em-bg-overlay'
     ];
     customVars.forEach(v => this.style.removeProperty(v));
@@ -1348,14 +1373,8 @@ class EntityManagerPanel extends HTMLElement {
     // Capture current computed CSS variables as a theme
     const computedStyle = getComputedStyle(this);
     const variables = {};
-    const varNames = [
-      '--em-primary', '--em-primary-dark', '--em-primary-light',
-      '--em-success', '--em-success-dark', '--em-danger', '--em-danger-dark',
-      '--em-warning', '--em-warning-dark', '--em-text-primary', '--em-text-secondary',
-      '--em-text-disabled', '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
-      '--em-border', '--em-border-light'
-    ];
-    
+    const varNames = EM_THEME_VARS;
+
     varNames.forEach(name => {
       const value = computedStyle.getPropertyValue(name).trim();
       if (value) {
@@ -1612,13 +1631,13 @@ class EntityManagerPanel extends HTMLElement {
       'te-primary': '#2196f3',
       'te-primary-dark': '#1565c0',
       'te-primary-light': '#64b5f6',
-      'te-success': '#4caf50',
-      'te-danger': '#f44336',
-      'te-warning': '#ff9800',
+      'te-success': '#2e9e4f',
+      'te-danger': '#e0473a',
+      'te-warning': '#e08a1e',
       'te-bg-primary': '#ffffff',
-      'te-bg-secondary': '#f5f5f5',
-      'te-text-primary': '#212121',
-      'te-border': '#e0e0e0'
+      'te-bg-secondary': '#f7f9fc',
+      'te-text-primary': '#1a2027',
+      'te-border': '#dbdde0'
     };
     
     Object.entries(defaults).forEach(([id, value]) => {
@@ -1637,12 +1656,12 @@ class EntityManagerPanel extends HTMLElement {
     
     const isDark = this.querySelector('#theme-mode-dark')?.checked;
     const primary = this.querySelector('#te-primary')?.value || '#2196f3';
-    const success = this.querySelector('#te-success')?.value || '#4caf50';
-    const danger = this.querySelector('#te-danger')?.value || '#f44336';
-    const warning = this.querySelector('#te-warning')?.value || '#ff9800';
+    const success = this.querySelector('#te-success')?.value || '#2e9e4f';
+    const danger = this.querySelector('#te-danger')?.value || '#e0473a';
+    const warning = this.querySelector('#te-warning')?.value || '#e08a1e';
     const bgPrimary = this.querySelector('#te-bg-primary')?.value || '#ffffff';
-    const textPrimary = this.querySelector('#te-text-primary')?.value || '#212121';
-    
+    const textPrimary = this.querySelector('#te-text-primary')?.value || '#1a2027';
+
     preview.style.background = bgPrimary;
     preview.style.color = textPrimary;
     
@@ -1698,14 +1717,14 @@ class EntityManagerPanel extends HTMLElement {
     
     const isDark = this.querySelector('#theme-mode-dark')?.checked;
     const primary = this.querySelector('#te-primary')?.value || '#2196f3';
-    const success = this.querySelector('#te-success')?.value || '#4caf50';
-    const danger = this.querySelector('#te-danger')?.value || '#f44336';
-    const warning = this.querySelector('#te-warning')?.value || '#ff9800';
+    const success = this.querySelector('#te-success')?.value || '#2e9e4f';
+    const danger = this.querySelector('#te-danger')?.value || '#e0473a';
+    const warning = this.querySelector('#te-warning')?.value || '#e08a1e';
     const bgPrimary = this.querySelector('#te-bg-primary')?.value || '#ffffff';
-    const bgSecondary = this.querySelector('#te-bg-secondary')?.value || '#f5f5f5';
-    const textPrimary = this.querySelector('#te-text-primary')?.value || '#212121';
-    const border = this.querySelector('#te-border')?.value || '#e0e0e0';
-    
+    const bgSecondary = this.querySelector('#te-bg-secondary')?.value || '#f7f9fc';
+    const textPrimary = this.querySelector('#te-text-primary')?.value || '#1a2027';
+    const border = this.querySelector('#te-border')?.value || '#dbdde0';
+
     const theme = {
       mode: isDark ? 'dark' : 'light',
       variables: {
@@ -1724,6 +1743,8 @@ class EntityManagerPanel extends HTMLElement {
         '--em-bg-primary': bgPrimary,
         '--em-bg-secondary': bgSecondary,
         '--em-bg-hover': isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+        // Page canvas sits one step behind bg-secondary; derived, no editor field
+        '--em-canvas': isDark ? this._darkenColor(bgSecondary, 0.1) : this._darkenColor(bgSecondary, 0.04),
         '--em-border': border,
         '--em-border-light': this._lightenColor(border, 0.05)
       }
@@ -1804,25 +1825,26 @@ class EntityManagerPanel extends HTMLElement {
     modeInputs.forEach(input => {
       input.addEventListener('change', () => {
         const isDark = this.querySelector('#theme-mode-dark')?.checked;
-        // Update default colors based on mode
+        // Update default colors based on mode (Refined light ↔ dark defaults;
+        // only swaps when the field still holds the other mode's default)
         if (isDark) {
           const bgInput = this.querySelector('#te-bg-primary');
           const bgSecInput = this.querySelector('#te-bg-secondary');
           const textInput = this.querySelector('#te-text-primary');
           const borderInput = this.querySelector('#te-border');
-          if (bgInput && bgInput.value === '#ffffff') bgInput.value = '#1e1e1e';
-          if (bgSecInput && bgSecInput.value === '#f5f5f5') bgSecInput.value = '#2d2d2d';
-          if (textInput && textInput.value === '#212121') textInput.value = '#e0e0e0';
-          if (borderInput && borderInput.value === '#e0e0e0') borderInput.value = '#424242';
+          if (bgInput && bgInput.value === '#ffffff') bgInput.value = '#181c22';
+          if (bgSecInput && bgSecInput.value === '#f7f9fc') bgSecInput.value = '#14171c';
+          if (textInput && textInput.value === '#1a2027') textInput.value = '#e7ebf0';
+          if (borderInput && borderInput.value === '#dbdde0') borderInput.value = '#3a4046';
         } else {
           const bgInput = this.querySelector('#te-bg-primary');
           const bgSecInput = this.querySelector('#te-bg-secondary');
           const textInput = this.querySelector('#te-text-primary');
           const borderInput = this.querySelector('#te-border');
-          if (bgInput && bgInput.value === '#1e1e1e') bgInput.value = '#ffffff';
-          if (bgSecInput && bgSecInput.value === '#2d2d2d') bgSecInput.value = '#f5f5f5';
-          if (textInput && textInput.value === '#e0e0e0') textInput.value = '#212121';
-          if (borderInput && borderInput.value === '#424242') borderInput.value = '#e0e0e0';
+          if (bgInput && bgInput.value === '#181c22') bgInput.value = '#ffffff';
+          if (bgSecInput && bgSecInput.value === '#14171c') bgSecInput.value = '#f7f9fc';
+          if (textInput && textInput.value === '#e7ebf0') textInput.value = '#1a2027';
+          if (borderInput && borderInput.value === '#3a4046') borderInput.value = '#dbdde0';
         }
         // Update hex displays
         colorInputs.forEach(ci => {
@@ -2400,7 +2422,7 @@ class EntityManagerPanel extends HTMLElement {
           titleEl.innerHTML = `${chevronHtml}${this._icon(sectionEmojis[t], '16px')} ${sectionTitles[t]} <span style="opacity:0.55;font-weight:400;font-size:12px">(${count})</span>`;
         }
       } catch (e) {
-        groupBody.innerHTML = `<div style="padding:12px;color:var(--em-danger)">Failed to load ${sectionTitles[t]}: ${e.message}</div>`;
+        groupBody.innerHTML = `<div style="padding:12px;color:var(--em-danger)">Failed to load ${sectionTitles[t]}: ${this._escapeHtml(e?.message || String(e))}</div>`;
       }
     }
   }
@@ -2726,11 +2748,13 @@ class EntityManagerPanel extends HTMLElement {
       }
       let successCount = 0, errorCount = 0;
       for (const [, items] of Object.entries(renameByDomain)) {
+        // renameEntity resolves true/false rather than rejecting — count real outcomes
+        // (quiet: one summary toast below instead of a stacked error dialog per failure)
         const results = await Promise.allSettled(
-          items.map(item => this.renameEntity(item.old, item.new))
+          items.map(item => this.renameEntity(item.old, item.new, false, { quiet: true }))
         );
-        successCount += results.filter(r => r.status === 'fulfilled').length;
-        errorCount += results.filter(r => r.status === 'rejected').length;
+        successCount += results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+        errorCount += results.filter(r => r.status !== 'fulfilled' || r.value !== true).length;
       }
       document.querySelector('.em-toast')?.remove();
       if (errorCount === 0) {
@@ -3466,18 +3490,18 @@ class EntityManagerPanel extends HTMLElement {
     // ── Hero header ────────────────────────────────────────────────
     const attrs = state?.attributes || {};
     const heroHtml = `<div class="em-ed-hero">
-      <div class="em-ed-hero-name" title="Click to rename" style="cursor:pointer">${this._escapeHtml(friendlyTitle)} <span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span></div>
-      ${friendlyTitle !== entityId ? `<div class="em-ed-hero-id">${this._escapeHtml(entityId)}</div>` : ''}
       <div class="em-ed-hero-chips">
         <span class="em-ed-chip em-ed-chip-domain">${this._escapeHtml(domain)}</span>
-        ${e.platform ? `<span class="em-ed-chip em-ed-chip-platform">${this._escapeHtml(e.platform)}</span>` : ''}
+        ${e.platform && e.platform !== domain ? `<span class="em-ed-chip em-ed-chip-platform">${this._escapeHtml(e.platform)}</span>` : ''}
         ${isDisabled ? `<span class="em-ed-chip em-ed-chip-disabled">Disabled</span>` : ''}
         ${area ? `<span class="em-ed-chip em-ed-chip-area">${this._icon('mdi:map-marker-outline', '12px')} ${this._escapeHtml(area.name)}</span>` : ''}
       </div>
+      <div class="em-ed-hero-name" title="Click to rename" style="cursor:pointer">${this._escapeHtml(friendlyTitle)} <span class="em-ed-name-pencil" style="display:inline-flex;align-items:center;border:1px solid var(--em-primary);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;cursor:pointer;color:var(--em-primary)">${this._icon(EM_ICONS.rename, '13px')}</span></div>
+      ${friendlyTitle !== entityId ? `<div class="em-ed-hero-id">${this._escapeHtml(entityId)}</div>` : ''}
       ${state ? `<div class="em-ed-hero-state">
         <span style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.4px;font-weight:600">State</span>
         <span class="em-ed-state-val" style="color:${stateColor(state.state)}">${this._escapeHtml(state.state)}</span>
-        ${attrs.unit_of_measurement ? `<span style="font-size:16px;color:var(--em-text-secondary)">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
+        ${attrs.unit_of_measurement ? `<span style="font-size:13px;color:var(--em-text-secondary)">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}
         ${(isControllable || isPressable) ? `<button id="em-edd-toggle-btn" class="em-dialog-btn em-dialog-btn-outline-primary" style="font-size:12px;padding:4px 10px;margin-left:4px">${isPressable ? 'Press' : (isOn ? 'Turn Off' : 'Turn On')}</button>` : ''}
         <span class="em-ed-hero-times">Changed ${this._escapeHtml(this._fmtAbsDate(state.last_changed))} &nbsp;·&nbsp; Updated ${this._escapeHtml(this._fmtAbsDate(state.last_updated))}</span>
       </div>` : `<div style="font-size:13px;color:var(--em-text-secondary);margin-top:6px">No state available (entity may be disabled)</div>`}
@@ -3539,11 +3563,10 @@ class EntityManagerPanel extends HTMLElement {
     const labelChipHtml = (labelObjs) => labelObjs.length
       ? labelObjs.map(l => `<span style="background:${this._escapeAttr(this._labelColorCss(l.color))};color:white;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600">${this._escapeHtml(l.name)}</span>`).join('')
       : `<span style="color:var(--em-text-secondary);font-size:13px">None</span>`;
-    const manageBtnStyle = 'padding:5px 12px;border-radius:6px;border:1px solid var(--em-border);background:var(--em-bg-hover);color:var(--em-text-primary);cursor:pointer;font-size:12px';
     const labelSubHead = (text) => `<div style="font-size:11px;color:var(--em-text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">${text}</div>`;
 
-    const areaLabelsHtml = `<div style="padding:8px 0;display:flex;flex-direction:column;gap:14px">
-      ${area ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 12px">
+    const areaLabelsHtml = `<div style="padding:4px 0 0;display:flex;flex-direction:column;gap:12px">
+      ${area ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         <span class="em-ed-chip em-ed-chip-domain">Area</span>
         <span class="em-ed-chip" style="color:var(--em-primary);border:1px solid var(--em-primary)">${this._escapeHtml(area.name)}</span>
         ${area.aliases?.length ? area.aliases.map(a => `<span class="em-ed-chip">${this._escapeHtml(a)}</span>`).join('') : ''}
@@ -3551,12 +3574,12 @@ class EntityManagerPanel extends HTMLElement {
       <div>
         ${labelSubHead('Entity Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Entities</span>')}
         <div id="em-edd-entity-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(entityLabels)}</div>
-        <button id="em-edd-manage-entity-labels" style="${manageBtnStyle}">${this._icon(EM_ICONS.bookmark, '14px')} ${entityLabels.length ? 'Edit' : 'Add'}</button>
+        <button id="em-edd-manage-entity-labels" class="em-mini-btn">${this._icon(EM_ICONS.bookmark, '14px')} ${entityLabels.length ? 'Edit' : 'Add'}</button>
       </div>
       ${d ? `<div>
         ${labelSubHead('Device Labels <span style="opacity:0.5;font-weight:400">— shown in Settings → Devices</span>')}
         <div id="em-edd-device-label-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">${labelChipHtml(deviceLabels)}</div>
-        <button id="em-edd-manage-device-labels" style="${manageBtnStyle}">${this._icon(EM_ICONS.bookmark, '14px')} ${deviceLabels.length ? 'Edit' : 'Add'}</button>
+        <button id="em-edd-manage-device-labels" class="em-mini-btn">${this._icon(EM_ICONS.bookmark, '14px')} ${deviceLabels.length ? 'Edit' : 'Add'}</button>
       </div>` : ''}
     </div>`;
 
@@ -3604,21 +3627,75 @@ class EntityManagerPanel extends HTMLElement {
     // ── Section: Automation Impact placeholder ─────────────────────
     const impactPlaceholder = `<div id="em-impact-placeholder" style="padding:12px;text-align:center;color:var(--em-text-secondary);font-size:13px">Scanning automations…</div>`;
 
-    // ── Assemble sections ──────────────────────────────────────────
+    // ── Assemble: pinned hero + tab strip + panels ─────────────────
+    const ovCard = (title, inner) => `<div class="em-ed-card"><div class="em-ed-card-title">${title}</div>${inner}</div>`;
+    const subhead = (t) => `<div class="em-ed-subhead">${t}</div>`;
     const totalLabelCount = entityLabels.length + deviceLabels.length;
-    let sectionsHtml = this._collGroup('Attributes', stateHtml, true);
-    sectionsHtml += this._collGroup('Registry', registryHtml);
-    if (d)  sectionsHtml += this._collGroup('Device', deviceHtml);
-    if (ce) sectionsHtml += this._collGroup('Integration', integrationHtml);
-    const areaLabelsTitle = [area ? `Area: ${this._escapeHtml(area.name)}` : '', totalLabelCount ? `Labels (${totalLabelCount})` : 'Labels'].filter(Boolean).join(' · ');
-    sectionsHtml += this._collGroup(areaLabelsTitle, areaLabelsHtml);
-    sectionsHtml += this._collGroup(`Other entities on device (${sameDeviceEntities.length})`, depHtml);
-    sectionsHtml += this._collGroup('Automation Impact', impactPlaceholder);
-    sectionsHtml += this._collGroup('State History', histHtml);
 
-    // Update dialog content
-    overlay.querySelector('#em-edd-body').innerHTML = `<div style="padding:4px 8px 0">${heroHtml}${sectionsHtml}</div>`;
+    // Overview tab: 2-col card grid (State · Area & Labels · Device · Integration)
+    const stateCardHtml = `<div class="em-ed-rows">
+      ${row('Status', isDisabled
+        ? `<span style="color:var(--em-danger);font-weight:600">Disabled</span> <span style="color:var(--em-text-secondary);font-size:12px">(by ${this._escapeHtml(e.disabled_by)})</span>`
+        : `<span style="color:var(--em-success);font-weight:600">Enabled</span>`)}
+      ${state ? row('State', `<span style="color:${stateColor(state.state)};font-weight:700">${this._escapeHtml(state.state)}</span>${attrs.unit_of_measurement ? ` <span style="color:var(--em-text-secondary);font-size:12px">${this._escapeHtml(attrs.unit_of_measurement)}</span>` : ''}`) : ''}
+      ${state ? row('Changed', this._escapeHtml(this._fmtAbsDate(state.last_changed))) : ''}
+      ${state ? row('Updated', this._escapeHtml(this._fmtAbsDate(state.last_updated))) : ''}
+      ${row('Category', this._escapeHtml(e.entity_category || '—'))}
+    </div>`;
+    const deviceCardHtml = d ? `<div class="em-ed-rows">
+      ${row('Name', this._escapeHtml(d.name_by_user || d.name || '—'))}
+      ${row('Manufacturer', this._escapeHtml(d.manufacturer || '—'))}
+      ${row('Model', this._escapeHtml(d.model || '—'))}
+      ${d.sw_version ? row('SW version', this._escapeHtml(d.sw_version)) : ''}
+    </div>` : '';
+    const integrationCardHtml = ce ? `<div class="em-ed-rows">
+      ${row('Title', this._escapeHtml(ce.title || '—'))}
+      ${row('Domain', this._escapeHtml(ce.domain || '—'))}
+      ${row('Version', ce.version != null ? String(ce.version) : '—')}
+      ${row('State', this._escapeHtml(ce.state || '—'))}
+    </div>` : '';
+    const overviewHtml = `<div class="em-ed-ov-grid">
+      ${ovCard('State', stateCardHtml)}
+      ${ovCard(area ? 'Area &amp; Labels' : `Labels${totalLabelCount ? ` (${totalLabelCount})` : ''}`, areaLabelsHtml)}
+      ${d ? ovCard('Device', deviceCardHtml) : ''}
+      ${ce ? ovCard('Integration', integrationCardHtml) : ''}
+    </div>`;
+
+    // Registry tab: full registry + device + integration detail rows
+    const registryPanelHtml = `${subhead('Entity registry')}${registryHtml}
+      ${d ? `${subhead('Device')}${deviceHtml}` : ''}
+      ${ce ? `${subhead('Integration')}${integrationHtml}` : ''}`;
+
+    // Related tab: same-device entities + automation impact
+    const relatedPanelHtml = `${subhead(`Other entities on device (${sameDeviceEntities.length})`)}${depHtml}
+      ${subhead('Automation impact')}${impactPlaceholder}`;
+
+    const histCount = histItems?.length ? Math.min(histItems.length, 30) : 0;
+    const tabBadge = (n) => n ? `<span class="em-ed-tab-badge">${n}</span>` : '';
+    const tabsHtml = `<div class="em-ed-tabs">
+      <button type="button" class="em-ed-tab active" data-tab="overview">Overview</button>
+      <button type="button" class="em-ed-tab" data-tab="attributes">Attributes ${tabBadge(attrEntries.length)}</button>
+      <button type="button" class="em-ed-tab" data-tab="registry">Registry</button>
+      <button type="button" class="em-ed-tab" data-tab="related">Related ${tabBadge(sameDeviceEntities.length)}<span class="em-ed-tab-badge em-ed-badge-impact" id="em-edd-impact-badge" style="display:none"></span></button>
+      <button type="button" class="em-ed-tab" data-tab="history">History ${tabBadge(histCount)}</button>
+    </div>`;
+    const panelsHtml = `<div class="em-ed-panels">
+      <div class="em-ed-panel active" data-panel="overview">${overviewHtml}</div>
+      <div class="em-ed-panel" data-panel="attributes">${stateHtml}</div>
+      <div class="em-ed-panel" data-panel="registry">${registryPanelHtml}</div>
+      <div class="em-ed-panel" data-panel="related">${relatedPanelHtml}</div>
+      <div class="em-ed-panel" data-panel="history">${histHtml}</div>
+    </div>`;
+
+    // Update dialog content (body is a flex column: hero + tabs pinned, panels scroll)
+    overlay.querySelector('#em-edd-body').innerHTML = `${heroHtml}${tabsHtml}${panelsHtml}`;
     overlay.querySelector('.confirm-dialog-header h2').textContent = friendlyTitle;
+
+    // Tab switching
+    overlay.querySelectorAll('.em-ed-tab').forEach(tab => tab.addEventListener('click', () => {
+      overlay.querySelectorAll('.em-ed-tab').forEach(t => t.classList.toggle('active', t === tab));
+      overlay.querySelectorAll('.em-ed-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab.dataset.tab));
+    }));
 
     // ── Actions row ────────────────────────────────────────────────
     overlay.querySelector('.confirm-dialog-actions').innerHTML = `
@@ -3711,6 +3788,8 @@ class EntityManagerPanel extends HTMLElement {
           : '<div style="padding:12px 0;font-size:13px;color:var(--em-text-secondary)">No automations or scripts appear to reference this entity</div>';
         const ph = overlay.querySelector('#em-impact-placeholder');
         if (ph) ph.outerHTML = impactContent;
+        const badge = overlay.querySelector('#em-edd-impact-badge');
+        if (badge && affected.length) { badge.textContent = affected.length; badge.style.display = ''; }
       } catch (err) {
         const ph = overlay.querySelector('#em-impact-placeholder');
         if (ph) ph.textContent = 'Failed to load automation impact';
@@ -3742,9 +3821,6 @@ class EntityManagerPanel extends HTMLElement {
         if (btn) btn.innerHTML = `${this._icon(EM_ICONS.bookmark, '14px')} ${updatedIds.length ? 'Edit' : 'Add'}`;
       });
     });
-
-    // Collapsible toggle listeners
-    this._reAttachCollapsibles(overlay);
   }
 
   _showContextMenu(e, entityId) {
@@ -4322,6 +4398,15 @@ class EntityManagerPanel extends HTMLElement {
         for (const id of action.entityIds) await (isUndo ? this.enableEntity : this.disableEntity).call(this, id, true);
         this._showToast(`${verb} bulk disable (${action.entityIds.length})`, 'info');
         break;
+      case 'states_import': {
+        // Import applied both directions at once — reverse each list on undo
+        const toEnable  = isUndo ? action.disabledIds : action.enabledIds;
+        const toDisable = isUndo ? action.enabledIds  : action.disabledIds;
+        for (const id of toEnable)  await this.enableEntity(id, true);
+        for (const id of toDisable) await this.disableEntity(id, true);
+        this._showToast(`${verb} import (${toEnable.length + toDisable.length} entities)`, 'info');
+        break;
+      }
       case 'assign_entity_area':
         await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: action.entityId, area_id: isUndo ? action.oldAreaId : action.newAreaId });
         this.floorsData = null;
@@ -4436,6 +4521,8 @@ class EntityManagerPanel extends HTMLElement {
         return `Bulk enabled ${action.entityIds?.length ?? '?'} entities`;
       case 'bulk_disable':
         return `Bulk disabled ${action.entityIds?.length ?? '?'} entities`;
+      case 'states_import':
+        return `Imported states (${(action.enabledIds?.length || 0) + (action.disabledIds?.length || 0)} entities)`;
       case 'rename':
         return `Renamed ${action.oldId} → ${action.newId}`;
       case 'display_name_change':
@@ -4496,7 +4583,8 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-history-close').addEventListener('click', closeDialog);
 
     const listEl = overlay.querySelector('#em-history-list');
-    overlay.querySelector('#em-history-clear').addEventListener('click', () => {
+    overlay.querySelector('#em-history-clear').addEventListener('click', async () => {
+      if (!(await this._confirmAsync('Clear history', 'Clear all undo/redo history? Past actions can no longer be undone.'))) return;
       this.undoStack = [];
       this.redoStack = [];
       try { localStorage.setItem('em_undoStack', '[]'); } catch {}
@@ -4605,9 +4693,9 @@ class EntityManagerPanel extends HTMLElement {
     if (!container) return;
     
     container.innerHTML = this.filterPresets.map(preset => `
-      <div class="filter-preset-item" data-preset-id="${preset.id}">
-        <span class="preset-name">${preset.name}</span>
-        <button class="preset-delete" data-delete="${preset.id}">&times;</button>
+      <div class="filter-preset-item" data-preset-id="${this._escapeAttr(String(preset.id))}">
+        <span class="preset-name">${this._escapeHtml(preset.name)}</span>
+        <button class="preset-delete" data-delete="${this._escapeAttr(String(preset.id))}">&times;</button>
       </div>
     `).join('');
   }
@@ -5003,28 +5091,43 @@ class EntityManagerPanel extends HTMLElement {
 
   async _addLabelToEntity(entityId, labelId, target = 'both') {
     try {
+      // Track before/after and push undo, mirroring _removeLabelFromEntity —
+      // label ADDs are just as undo-able as removals.
+      let beforeEntity = [], afterEntity = [], beforeDevice = [], afterDevice = [], deviceId = null;
+      let changed = false;
       if (target === 'entity' || target === 'both') {
-        const currentLabels = await this._getEntityLabels(entityId);
-        if (!currentLabels.includes(labelId)) {
+        beforeEntity = await this._getEntityLabels(entityId);
+        if (!beforeEntity.includes(labelId)) {
+          afterEntity = [...beforeEntity, labelId];
           await this._hass.callWS({
             type: 'config/entity_registry/update',
             entity_id: entityId,
-            labels: [...currentLabels, labelId],
+            labels: afterEntity,
           });
+          changed = true;
+        } else {
+          afterEntity = beforeEntity;
         }
       }
       if (target === 'device' || target === 'both') {
-        const deviceId = await this._getEntityDeviceId(entityId);
+        deviceId = await this._getEntityDeviceId(entityId);
         if (deviceId) {
-          const devLabels = await this._getDeviceLabels(deviceId);
-          if (!devLabels.includes(labelId)) {
+          beforeDevice = await this._getDeviceLabels(deviceId);
+          if (!beforeDevice.includes(labelId)) {
+            afterDevice = [...beforeDevice, labelId];
             await this._hass.callWS({
               type: 'config/device_registry/update',
               device_id: deviceId,
-              labels: [...devLabels, labelId],
+              labels: afterDevice,
             });
+            changed = true;
+          } else {
+            afterDevice = beforeDevice;
           }
         }
+      }
+      if (changed) {
+        this._pushUndoAction({ type: 'labels_change', entityId, deviceId, beforeEntity, afterEntity, beforeDevice, afterDevice });
       }
     } catch (e) {
       console.error('Error adding label:', e);
@@ -5210,12 +5313,6 @@ class EntityManagerPanel extends HTMLElement {
       this._getEntityDeviceId(entityId),
     ]);
 
-    // Snapshot labels before editing for undo
-    const [beforeEntityLabels, beforeDeviceLabels] = await Promise.all([
-      this._getEntityLabels(entityId),
-      deviceId ? this._getDeviceLabels(deviceId) : Promise.resolve([]),
-    ]);
-
     // If entity has no device, clamp target to 'entity'
     if (!deviceId && defaultTarget !== 'entity') defaultTarget = 'entity';
 
@@ -5279,7 +5376,7 @@ class EntityManagerPanel extends HTMLElement {
             <strong>Create New Label:</strong>
             <div style="display:flex;gap:8px;margin-top:8px">
               <input type="text" id="new-label-name" placeholder="Label name"
-                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:4px;background:var(--em-bg-primary);color:var(--em-text-primary)">
+                style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary)">
             </div>
             <div style="margin-top:8px">${this._renderLabelColorPickerHtml('new-label-color', 'blue')}</div>
             <div style="display:flex;justify-content:flex-end;margin-top:8px">
@@ -5367,15 +5464,9 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     overlay.querySelector('#em-label-editor-done').addEventListener('click', async () => {
-      const [afterEntityLabels, afterDeviceLabels] = await Promise.all([
-        this._getEntityLabels(entityId),
-        deviceId ? this._getDeviceLabels(deviceId) : Promise.resolve([]),
-      ]);
-      const entityChanged = JSON.stringify([...beforeEntityLabels].sort()) !== JSON.stringify([...afterEntityLabels].sort());
-      const deviceChanged = JSON.stringify([...beforeDeviceLabels].sort()) !== JSON.stringify([...afterDeviceLabels].sort());
-      if (entityChanged || deviceChanged) {
-        this._pushUndoAction({ type: 'labels_change', entityId, deviceId, beforeEntity: beforeEntityLabels, afterEntity: afterEntityLabels, beforeDevice: beforeDeviceLabels, afterDevice: afterDeviceLabels });
-      }
+      // No aggregate undo push here — _addLabelToEntity/_removeLabelFromEntity each push
+      // their own labels_change at op time (covers Escape/backdrop exits too; an aggregate
+      // here would double-count every change).
       closeDialog();
       this._loadAndDisplayLabels();
     });
@@ -5428,11 +5519,11 @@ class EntityManagerPanel extends HTMLElement {
           <div class="create-label" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--em-border);">
             <strong>Create New Label:</strong>
             <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
-              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 4px; background: var(--em-bg-primary); color: var(--em-text-primary);">
+              <input type="text" id="new-label-name" placeholder="Label name" style="flex: 1; padding: 8px; border: 1px solid var(--em-border); border-radius: 6px; background: var(--em-bg-primary); color: var(--em-text-primary);">
             </div>
             <div style="margin-top:8px">${this._renderLabelColorPickerHtml('new-label-color', 'blue')}</div>
             <div style="display:flex;justify-content:flex-end;margin-top:8px">
-              <button class="btn btn-secondary" id="create-label-btn">Create</button>
+              <button class="btn btn-primary" id="create-label-btn">Create</button>
             </div>
           </div>
         </div>
@@ -5564,6 +5655,59 @@ class EntityManagerPanel extends HTMLElement {
       delete this.entityAliases[entityId];
     }
     this._saveEntityAliases();
+  }
+
+  // ===== PER-INTEGRATION ACCENT COLORS =====
+
+  _saveIntegrationColors() {
+    this._saveToStorage('em-integration-colors', this.integrationColors);
+  }
+
+  /** User-set accent or null — the default is None, so only integrations the user
+   *  deliberately colored stand out. (The old name-hash auto palette was removed.) */
+  _integrationAccent(name) {
+    return this.integrationColors?.[name] || null;
+  }
+
+  _showIntegrationColorDialog(integration) {
+    const current = this.integrationColors[integration] || 'blue';
+    const { overlay, closeDialog } = this.createDialog({
+      title: `Accent color — ${integration}`,
+      color: 'var(--em-primary)',
+      contentHtml: `
+        <div style="padding: 14px 18px;">
+          <p style="margin: 0 0 10px; font-size: 12.5px; color: var(--em-text-secondary);">
+            Pick an accent for this integration's bar and logo tile. Integrations without a
+            color stay neutral — set one only where it matters.
+          </p>
+          ${this._renderLabelColorPickerHtml('em-int-color', current)}
+        </div>
+      `,
+      actionsHtml: `
+        <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-reset">None</button>
+        <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-cancel">Cancel</button>
+        <button class="em-dialog-btn em-dialog-btn-primary em-int-color-save">Save</button>
+      `,
+    });
+    this._attachLabelColorPicker(overlay.querySelector('#em-int-color'));
+    overlay.querySelector('.em-int-color-cancel')?.addEventListener('click', closeDialog);
+    overlay.querySelector('.em-int-color-reset')?.addEventListener('click', () => {
+      delete this.integrationColors[integration];
+      this._saveIntegrationColors();
+      closeDialog();
+      this.updateView();
+      this._showToast(`Accent color removed for ${integration}`, 'info');
+    });
+    overlay.querySelector('.em-int-color-save')?.addEventListener('click', () => {
+      const value = overlay.querySelector('#em-int-color')?.dataset.value;
+      if (value) {
+        this.integrationColors[integration] = this._labelColorCss(value);
+        this._saveIntegrationColors();
+      }
+      closeDialog();
+      this.updateView();
+      this._showToast(`Accent color updated for ${integration}`, 'success');
+    });
   }
   
   async _showBulkLabelRemover() {
@@ -5962,6 +6106,17 @@ class EntityManagerPanel extends HTMLElement {
           entities: toApply.map(({ entity_id, is_disabled }) => ({ entity_id, is_disabled: Boolean(is_disabled) })),
         });
 
+        // Undo support — every toApply entry flipped state, so undo flips them back.
+        // (Items the backend failed to apply kept their old state; "undoing" them just
+        // re-asserts that state, a harmless no-op.)
+        if (toApply.length) {
+          this._pushUndoAction({
+            type: 'states_import',
+            enabledIds:  toApply.filter(e => !e.is_disabled).map(e => e.entity_id),
+            disabledIds: toApply.filter(e =>  e.is_disabled).map(e => e.entity_id),
+          });
+        }
+
         const summary = `Applied ${result.success} changes` +
           (result.failed ? `, ${result.failed} failed` : '') +
           (localMsg ? `;${localMsg.replace(/,$/, '')}` : '');
@@ -6091,7 +6246,7 @@ class EntityManagerPanel extends HTMLElement {
             <span class="icon">${this._icon(EM_ICONS.columns)}</span>
             <span class="label">Columns</span>
           </div>
-          <div class="sidebar-item" data-filter="favorites">
+          <div class="sidebar-item ${this._showOnlyFavorites ? 'active' : ''}" data-filter="favorites">
             <span class="icon">${this._icon(EM_ICONS.favorites)}</span>
             <span class="label">Favorites</span>
             <span class="count" id="favorites-count">${this.favorites.size}</span>
@@ -6866,6 +7021,9 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   getDeviceType(deviceId) {
+    // Manual assignment wins over heuristics (set via the type-picker on Unknown badges/chips)
+    const override = this.deviceTypeOverrides?.[deviceId];
+    if (override) return override;
     const dev = this.deviceInfo[deviceId];
     if (!dev) return 'unknown';
     const identifiers = (dev.identifiers || []).map(id => id[0]);
@@ -6878,14 +7036,143 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   _deviceTypeMeta() {
-    return {
-      hardware: { label: 'Hardware', color: 'var(--em-success)' },
-      virtual:  { label: 'Virtual',  color: 'var(--em-primary)' },
-      mobile:   { label: 'Mobile',   color: '#9c27b0' },
-      system:   { label: 'System',   color: 'var(--em-warning)' },
-      cloud:    { label: 'Cloud',    color: '#00bcd4' },
-      unknown:  { label: 'Unknown',   color: 'var(--em-text-secondary)' },
+    const meta = {
+      hardware: { label: 'Hardware', color: 'var(--em-success)', emoji: '⚡' },
+      virtual:  { label: 'Virtual',  color: 'var(--em-primary)', emoji: '🔧' },
+      mobile:   { label: 'Mobile',   color: '#9c27b0', emoji: '📱' },
+      system:   { label: 'System',   color: 'var(--em-warning)', emoji: '🏠' },
+      cloud:    { label: 'Cloud',    color: '#00bcd4', emoji: '☁️' },
     };
+    // User-created types slot in before Unknown so header chips keep Unknown last
+    Object.entries(this.customDeviceTypes || {}).forEach(([id, t]) => {
+      meta[id] = { label: t.label, color: t.color || 'var(--em-primary)', emoji: '📦', custom: true };
+    });
+    meta.unknown = { label: 'Unknown', color: 'var(--em-text-secondary)', emoji: '❓' };
+    return meta;
+  }
+
+  // Rebuild the Devices-view type filter options in place (the toolbar renders once, so
+  // custom types created/deleted after that would otherwise be missing until a full render)
+  _refreshDeviceTypeSelect() {
+    const sel = this.querySelector('#device-type-select');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="all">All Types</option>` +
+      Object.entries(this._deviceTypeMeta()).map(([id, m]) =>
+        `<option value="${this._escapeAttr(id)}">${m.emoji} ${this._escapeHtml(id === 'system' ? 'HA System' : m.label)}</option>`).join('');
+    sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'all';
+  }
+
+  // Type-picker for manual device-type assignment. deviceIds: one (card badge) or many
+  // (integration header's Unknown chip). "Auto" clears the override so heuristics apply
+  // again. Also hosts create/delete of user-defined types (em-custom-device-types).
+  _showDeviceTypePickerDialog(deviceIds, { title, preselect } = {}) {
+    if (!deviceIds?.length) return;
+    const meta = this._deviceTypeMeta();
+    const assignable = ['hardware', 'cloud', 'virtual', 'mobile', 'system', ...Object.keys(this.customDeviceTypes || {})];
+    const single = deviceIds.length === 1;
+    const selected = preselect ?? (single ? this.deviceTypeOverrides?.[deviceIds[0]] : null) ?? '';
+    const deviceList = single
+      ? `<div class="em-dtp-subject">${this._escapeHtml(this.getDeviceName(deviceIds[0]))}</div>`
+      : `<div class="em-dtp-subject">${deviceIds.length} devices${deviceIds.length <= 6
+          ? ` — ${deviceIds.map(id => this._escapeHtml(this.getDeviceName(id))).join(', ')}` : ''}</div>`;
+
+    const rowHtml = (val, emoji, label, color, sub, custom = false) => `
+      <label class="em-dtp-row${val === selected ? ' em-dtp-active' : ''}">
+        <input type="radio" name="em-dtp-type" value="${this._escapeAttr(val)}" ${val === selected ? 'checked' : ''}>
+        <span class="em-dtp-emoji">${emoji}</span>
+        <span class="em-dtp-label" style="color:${color}">${this._escapeHtml(label)}</span>
+        ${sub ? `<span class="em-dtp-sub">${sub}</span>` : ''}
+        ${custom ? `<button type="button" class="em-dtp-delete" data-type-id="${this._escapeAttr(val)}" title="Delete this custom type">✕</button>` : ''}
+      </label>`;
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: title || 'Assign device type',
+      color: 'var(--em-primary)',
+      contentHtml: `<div style="padding:4px 2px">
+        ${deviceList}
+        <div class="em-dtp-list">
+          ${assignable.map(t => rowHtml(t, meta[t].emoji, meta[t].label, meta[t].color, '', !!meta[t].custom)).join('')}
+          ${rowHtml('', '✨', 'Auto', 'var(--em-text-secondary)', 'detected from registry data')}
+        </div>
+        <div class="em-dtp-create">
+          <div class="em-dtp-create-title">Create a new type</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="em-dtp-new-name" placeholder="Type name…"
+              style="flex:1;padding:8px;border:1px solid var(--em-border);border-radius:6px;background:var(--em-bg-primary);color:var(--em-text-primary)">
+            <button class="em-mini-btn" id="em-dtp-create-btn">${this._icon('mdi:plus', '14px')} Create</button>
+          </div>
+          <div style="margin-top:8px">${this._renderLabelColorPickerHtml('em-dtp-new-color', 'blue')}</div>
+        </div>
+      </div>`,
+      actionsHtml: `
+        <button class="btn btn-secondary" id="em-dtp-cancel">Cancel</button>
+        <button class="btn btn-primary" id="em-dtp-apply">Assign</button>`,
+    });
+
+    overlay.querySelector('#em-dtp-cancel').addEventListener('click', closeDialog);
+    overlay.addEventListener('change', (e) => {
+      if (e.target.name !== 'em-dtp-type') return;
+      overlay.querySelectorAll('.em-dtp-row').forEach(r =>
+        r.classList.toggle('em-dtp-active', r.querySelector('input').checked));
+    });
+
+    // Create a custom type → persist, reopen with it preselected
+    this._attachLabelColorPicker(overlay.querySelector('#em-dtp-new-color'));
+    overlay.querySelector('#em-dtp-create-btn').addEventListener('click', () => {
+      const name = overlay.querySelector('#em-dtp-new-name').value.trim();
+      if (!name) { this._showToast('Enter a type name first', 'warning'); return; }
+      const id = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      if (!id.replace('custom_', '')) { this._showToast('Enter a usable type name', 'warning'); return; }
+      if (this._deviceTypeMeta()[id]) { this._showToast(`Type "${name}" already exists`, 'warning'); return; }
+      const colorVal = overlay.querySelector('#em-dtp-new-color')?.dataset.value || 'blue';
+      this.customDeviceTypes[id] = { label: name, color: this._labelColorCss(colorVal) };
+      this._saveToStorage('em-custom-device-types', this.customDeviceTypes);
+      this._refreshDeviceTypeSelect();
+      this._showToast(`Type "${name}" created`, 'success');
+      closeDialog();
+      this._showDeviceTypePickerDialog(deviceIds, { title, preselect: id });
+    });
+
+    // Delete a custom type → devices assigned to it fall back to Auto
+    overlay.querySelectorAll('.em-dtp-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const typeId = btn.dataset.typeId;
+        const label = this.customDeviceTypes[typeId]?.label || typeId;
+        const used = Object.values(this.deviceTypeOverrides).filter(v => v === typeId).length;
+        if (!(await this._confirmAsync('Delete type', `Delete the custom type "${label}"?${used ? ` ${used} device${used !== 1 ? 's' : ''} assigned to it will return to Auto.` : ''}`))) return;
+        delete this.customDeviceTypes[typeId];
+        Object.keys(this.deviceTypeOverrides).forEach(id => {
+          if (this.deviceTypeOverrides[id] === typeId) delete this.deviceTypeOverrides[id];
+        });
+        this._saveToStorage('em-custom-device-types', this.customDeviceTypes);
+        this._saveToStorage('em-device-type-overrides', this.deviceTypeOverrides);
+        if (this.deviceTypeFilter === typeId) {
+          this.deviceTypeFilter = 'all';
+          localStorage.setItem('em-device-type-filter', 'all');
+        }
+        this._refreshDeviceTypeSelect();
+        this._showToast(`Type "${label}" deleted`, 'success');
+        closeDialog();
+        this.updateView();
+      });
+    });
+
+    overlay.querySelector('#em-dtp-apply').addEventListener('click', () => {
+      const val = overlay.querySelector('input[name="em-dtp-type"]:checked')?.value;
+      if (val === undefined) { this._showToast('Pick a type first', 'warning'); return; }
+      deviceIds.forEach(id => {
+        if (val) this.deviceTypeOverrides[id] = val;
+        else delete this.deviceTypeOverrides[id];
+      });
+      this._saveToStorage('em-device-type-overrides', this.deviceTypeOverrides);
+      closeDialog();
+      const label = val ? (this._deviceTypeMeta()[val]?.label || val) : 'Auto';
+      this._showToast(`${deviceIds.length === 1 ? this.getDeviceName(deviceIds[0]) : `${deviceIds.length} devices`} → ${label}`, 'success');
+      this.updateView();
+    });
   }
 
   extractDomains(data) {
@@ -7046,18 +7333,18 @@ class EntityManagerPanel extends HTMLElement {
             <div class="theme-editor-section-title">Status Colors</div>
             <div class="theme-editor-row">
               <label>Success</label>
-              <input type="color" id="te-success" value="#4caf50">
-              <span class="color-hex" data-for="te-success">#4caf50</span>
+              <input type="color" id="te-success" value="#2e9e4f">
+              <span class="color-hex" data-for="te-success">#2e9e4f</span>
             </div>
             <div class="theme-editor-row">
               <label>Danger</label>
-              <input type="color" id="te-danger" value="#f44336">
-              <span class="color-hex" data-for="te-danger">#f44336</span>
+              <input type="color" id="te-danger" value="#e0473a">
+              <span class="color-hex" data-for="te-danger">#e0473a</span>
             </div>
             <div class="theme-editor-row">
               <label>Warning</label>
-              <input type="color" id="te-warning" value="#ff9800">
-              <span class="color-hex" data-for="te-warning">#ff9800</span>
+              <input type="color" id="te-warning" value="#e08a1e">
+              <span class="color-hex" data-for="te-warning">#e08a1e</span>
             </div>
           </div>
           
@@ -7070,18 +7357,18 @@ class EntityManagerPanel extends HTMLElement {
             </div>
             <div class="theme-editor-row">
               <label>Secondary BG</label>
-              <input type="color" id="te-bg-secondary" value="#f5f5f5">
-              <span class="color-hex" data-for="te-bg-secondary">#f5f5f5</span>
+              <input type="color" id="te-bg-secondary" value="#f7f9fc">
+              <span class="color-hex" data-for="te-bg-secondary">#f7f9fc</span>
             </div>
             <div class="theme-editor-row">
               <label>Text</label>
-              <input type="color" id="te-text-primary" value="#212121">
-              <span class="color-hex" data-for="te-text-primary">#212121</span>
+              <input type="color" id="te-text-primary" value="#1a2027">
+              <span class="color-hex" data-for="te-text-primary">#1a2027</span>
             </div>
             <div class="theme-editor-row">
               <label>Border</label>
-              <input type="color" id="te-border" value="#e0e0e0">
-              <span class="color-hex" data-for="te-border">#e0e0e0</span>
+              <input type="color" id="te-border" value="#dbdde0">
+              <span class="color-hex" data-for="te-border">#dbdde0</span>
             </div>
           </div>
           
@@ -7221,11 +7508,8 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         <select id="device-type-select" class="toolbar-select" style="display: none;">
           <option value="all">All Types</option>
-          <option value="hardware">⚡ Hardware</option>
-          <option value="cloud">☁️ Cloud</option>
-          <option value="virtual">🔧 Virtual</option>
-          <option value="mobile">📱 Mobile</option>
-          <option value="system">🏠 HA System</option>
+          ${Object.entries(this._deviceTypeMeta()).map(([id, m]) =>
+            `<option value="${this._escapeAttr(id)}">${m.emoji} ${this._escapeHtml(id === 'system' ? 'HA System' : m.label)}</option>`).join('')}
         </select>
         <label class="hide-uptodate-label" id="hide-unavailable-label" style="display: none;">
           <input type="checkbox" id="hide-unavailable-checkbox" ${this.showOfflineOnly ? 'checked' : ''} />
@@ -7380,7 +7664,7 @@ class EntityManagerPanel extends HTMLElement {
 
       // Delegated: dismiss, mark-all-read, clear-all, settings toggle
       // stopPropagation prevents clicks inside the dropdown from reaching the outside-close handler
-      notifDropdown.addEventListener('click', e => {
+      notifDropdown.addEventListener('click', async (e) => {
         e.stopPropagation();
         const dismiss = e.target.closest('.em-notif-dismiss');
         if (dismiss) {
@@ -7397,6 +7681,8 @@ class EntityManagerPanel extends HTMLElement {
           this._refreshNotifList();
         }
         if (e.target.closest('.em-notif-clear-all')) {
+          const n = this._notifications.length;
+          if (n && !(await this._confirmAsync('Clear notifications', `Remove all ${n} notification${n !== 1 ? 's' : ''}? This cannot be undone.`))) return;
           this._notifications = [];
           this._saveToStorage('em-notifications', this._notifications);
           this._updateNotifBadge();
@@ -7465,7 +7751,10 @@ class EntityManagerPanel extends HTMLElement {
     if (domainSelect) {
       domainSelect.addEventListener('change', () => {
         this.selectedDomain = domainSelect.value;
-        this._showOnlyFavorites = false;
+        if (this._showOnlyFavorites) {
+          this._showOnlyFavorites = false;
+          this._reRenderSidebar();
+        }
         this.updateView();
       });
     }
@@ -7648,6 +7937,10 @@ class EntityManagerPanel extends HTMLElement {
         if (presetBtn.classList.contains('em-preset-enable') || presetBtn.classList.contains('em-preset-disable')) {
           const isEnable = presetBtn.classList.contains('em-preset-enable');
           if (!preset.entityIds.length) { this._showToast('Preset is empty', 'info'); return; }
+          if (!(await this._confirmAsync(
+            `${isEnable ? 'Enable' : 'Disable'} preset`,
+            `${isEnable ? 'Enable' : 'Disable'} all ${preset.entityIds.length} entit${preset.entityIds.length !== 1 ? 'ies' : 'y'} in "${preset.name}"?`,
+          ))) return;
           presetBtn.disabled = true;
           presetBtn.textContent = '…';
           try {
@@ -7696,7 +7989,7 @@ class EntityManagerPanel extends HTMLElement {
         const cgId = cgDelBtn.dataset.cgId;
         const grp = (this.customGroups || []).find(g => g.id === cgId);
         if (!grp) return;
-        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+        this.showConfirmDialog(`Delete group "${this._escapeHtml(grp.name)}"?`, 'This only removes the grouping — entities are not affected.', () => {
           this.customGroups = (this.customGroups || []).filter(g => g.id !== cgId);
           localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
           this._reRenderSidebar();
@@ -7850,12 +8143,17 @@ class EntityManagerPanel extends HTMLElement {
     } else if (presetId) {
       this._applyFilterPreset(parseInt(presetId));
     } else if (filter === 'favorites') {
-      this.searchTerm = '';
-      const searchInput = this.content.querySelector('#search-input');
-      if (searchInput) searchInput.value = '';
-      this._showOnlyFavorites = true;
+      this._showOnlyFavorites = !this._showOnlyFavorites;
+      if (this._showOnlyFavorites) {
+        this.searchTerm = '';
+        const searchInput = this.content.querySelector('#search-input');
+        if (searchInput) searchInput.value = '';
+        this._showToast('Showing favorites only', 'info');
+      } else {
+        this._showToast('Showing all entities', 'info');
+      }
       this.updateView();
-      this._showToast('Showing favorites only', 'info');
+      this._reRenderSidebar();
     } else if (action === 'load-labels') {
       this.labeledEntitiesCache = null;
       this.labeledDevicesCache = null;
@@ -7873,9 +8171,9 @@ class EntityManagerPanel extends HTMLElement {
     } else if (action === 'help-guide') {
       this._showHelpGuide();
     } else if (action === 'enable-selected') {
-      this.bulkEnable();
+      this._bulkEnableSelected();   // confirm-wrapped, same as the context menu
     } else if (action === 'disable-selected') {
-      this.bulkDisable();
+      this._disableSelectedEntities();
     } else if (action === 'deselect-all') {
       this.selectedEntities.clear();
       this._viewingSelected = false;
@@ -7901,6 +8199,7 @@ class EntityManagerPanel extends HTMLElement {
       this._showOnlyFavorites = false;
       this.updateView();
       this.updateDomainOptions();
+      this._reRenderSidebar();
     } else if (item.dataset.labelId) {
       this._filterByLabel(item.dataset.labelId);
     } else if (integration) {
@@ -8087,80 +8386,96 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Render stats
+    // Render stats — data stats row + compact view-launcher nav strip
     statsEl.innerHTML = `
-      <div class="stat-card" data-stat-type="integrations">
-        <div class="stat-label">Integrations</div>
-        <div class="stat-value">${totalIntegrations}</div>
-      </div>
-      ${(() => {
-        if (this.viewMode === 'devices' && this.deviceTypeFilter !== 'all') {
-          const typeMeta = this._deviceTypeMeta();
-          const m = typeMeta[this.deviceTypeFilter] || typeMeta.unknown;
-          const typeCount = Object.keys(this.deviceInfo).filter(id => this.getDeviceType(id) === this.deviceTypeFilter).length;
+      <div class="stats-data">
+        <div class="stat-card" data-stat-type="integrations">
+          <div class="stat-label">Integrations</div>
+          <div class="stat-value">${totalIntegrations}</div>
+        </div>
+        ${(() => {
+          if (this.viewMode === 'devices' && this.deviceTypeFilter !== 'all') {
+            const typeMeta = this._deviceTypeMeta();
+            const m = typeMeta[this.deviceTypeFilter] || typeMeta.unknown;
+            const typeCount = Object.keys(this.deviceInfo).filter(id => this.getDeviceType(id) === this.deviceTypeFilter).length;
+            return `<div class="stat-card" data-stat-type="devices">
+              <div class="stat-label">Devices · <span style="color:${m.color}">${m.label}</span></div>
+              <div class="stat-value">${typeCount}</div>
+            </div>`;
+          }
           return `<div class="stat-card" data-stat-type="devices">
-            <div class="stat-label">Devices · <span style="color:${m.color}">${m.label}</span></div>
-            <div class="stat-value">${typeCount}</div>
+            <div class="stat-label">Devices</div>
+            <div class="stat-value">${totalDevices}</div>
           </div>`;
-        }
-        return `<div class="stat-card" data-stat-type="devices">
-          <div class="stat-label">Devices</div>
-          <div class="stat-value">${totalDevices}</div>
-        </div>`;
-      })()}
-      <div class="stat-card" data-stat-type="entities">
-        <div class="stat-label">Total Entities</div>
-        <div class="stat-value">${totalEntities}</div>
+        })()}
+        <div class="stat-card" data-stat-type="entities">
+          <div class="stat-label">Total Entities</div>
+          <div class="stat-value">${totalEntities}</div>
+        </div>
+        <div class="stat-card" data-t="g" data-stat-type="enabled">
+          <div class="stat-label">Enabled</div>
+          <div class="stat-value">${enabledEntities}</div>
+        </div>
+        <div class="stat-card" data-t="b" data-stat-type="disabled">
+          <div class="stat-label">Disabled</div>
+          <div class="stat-value">${disabledEntities}</div>
+        </div>
       </div>
-      <div class="stat-card clickable-stat" data-stat-type="automations-helpers" title="Click to view automations, scripts &amp; helpers">
-        <div class="stat-label">Auto / Scripts / Helpers</div>
-        <div class="stat-value">${(this.automationCount || 0) + (this.scriptCount || 0) + (this.helperCount || 0)}</div>
+      <div class="stats-nav">
+        <div class="stat-nav-tile clickable-stat" data-stat-type="automations-helpers" title="Click to view automations, scripts &amp; helpers">
+          <span class="stat-nav-label">Auto / Scripts / Helpers</span>
+          <span class="stat-nav-value">${(this.automationCount || 0) + (this.scriptCount || 0) + (this.helperCount || 0)}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="template" title="Click to view templates">
+          <span class="stat-nav-label">Templates</span>
+          <span class="stat-nav-value">${this.templateCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="health-cleanup" title="Click to view health &amp; cleanup">
+          <span class="stat-nav-label">Health &amp; Cleanup</span>
+          <span class="stat-nav-value" style="color: ${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0) > 0 ? 'var(--em-danger)' : 'var(--em-success)'};">${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0)}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
+          <span class="stat-nav-label">HACS Store</span>
+          <span class="stat-nav-value">${this.hacsCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
+          <span class="stat-nav-label">Card Types</span>
+          <span class="stat-nav-value stat-value-lovelace">${this.lovelaceCardCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
+          <span class="stat-nav-label">Suggestions</span>
+          <span class="stat-nav-value">${(() => {
+            // Number() coercion so a tampered localStorage value can never carry markup
+            const c = Number(this._suggestionsCount ?? this._loadFromStorage('em-suggestions-count', null));
+            return Number.isFinite(c) ? c : '–';
+          })()}</span>
+        </div>
+        ${(() => {
+          const bm = (this.data || []).find(i => i.integration === 'browser_mod');
+          if (!bm) return '';
+          const browserEntries = Object.entries(bm.devices).filter(([k]) => k !== 'no_device');
+          const browserCount = browserEntries.length;
+          const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          let hasStale = false;
+          let activeCount = 0;
+          browserEntries.forEach(([, device]) => {
+            const lastActive = device.entities.reduce((max, e) => {
+              const t = this._hass?.states[e.entity_id]?.last_changed;
+              return t ? Math.max(max, new Date(t).getTime()) : max;
+            }, 0);
+            if (lastActive && lastActive < staleThreshold) hasStale = true;
+            const activeEnt = device.entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
+            if (activeEnt && this._hass?.states[activeEnt.entity_id]?.state === 'on') activeCount++;
+          });
+          const activeLabel = activeCount > 0 ? `<span class="stat-nav-extra">● ${activeCount} active</span>` : '';
+          return `
+            <div class="stat-nav-tile clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
+              <span class="stat-nav-label">Browsers${hasStale ? ` ${this._icon(EM_ICONS.warning, '14px')}` : ''}</span>
+              <span class="stat-nav-value">${browserCount}</span>
+              ${activeLabel}
+            </div>`;
+        })()}
       </div>
-      <div class="stat-card clickable-stat" data-stat-type="template" title="Click to view templates">
-        <div class="stat-label">Templates</div>
-        <div class="stat-value">${this.templateCount}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="health-cleanup" title="Click to view health &amp; cleanup">
-        <div class="stat-label">Health &amp; Cleanup</div>
-        <div class="stat-value" style="color: ${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0) > 0 ? 'var(--em-danger)' : 'var(--em-success)'} !important;">${(this.unavailableCount || 0) + (this.cleanupCount || 0) + (this.configHealthCount || 0)}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="hacs" title="Click to view HACS store">
-        <div class="stat-label">HACS Store</div>
-        <div class="stat-value">${this.hacsCount}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
-        <div class="stat-label">Card Types</div>
-        <div class="stat-value stat-value-lovelace">${this.lovelaceCardCount}</div>
-      </div>
-      <div class="stat-card clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
-        <div class="stat-label">Suggestions</div>
-        <div class="stat-value">${this._icon(EM_ICONS.suggestions, '24px')}</div>
-      </div>
-      ${(() => {
-        const bm = (this.data || []).find(i => i.integration === 'browser_mod');
-        if (!bm) return '';
-        const browserEntries = Object.entries(bm.devices).filter(([k]) => k !== 'no_device');
-        const browserCount = browserEntries.length;
-        const staleThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
-        let hasStale = false;
-        let activeCount = 0;
-        browserEntries.forEach(([, device]) => {
-          const lastActive = device.entities.reduce((max, e) => {
-            const t = this._hass?.states[e.entity_id]?.last_changed;
-            return t ? Math.max(max, new Date(t).getTime()) : max;
-          }, 0);
-          if (lastActive && lastActive < staleThreshold) hasStale = true;
-          const activeEnt = device.entities.find(e => e.entity_id.startsWith('binary_sensor.') && e.entity_id.endsWith('_active'));
-          if (activeEnt && this._hass?.states[activeEnt.entity_id]?.state === 'on') activeCount++;
-        });
-        const activeLabel = activeCount > 0 ? `<div style="font-size:0.72em;color:var(--em-success);margin-top:2px">● ${activeCount} active</div>` : '';
-        return `
-          <div class="stat-card clickable-stat" data-stat-type="browsers" title="Click to manage browser_mod browsers">
-            <div class="stat-label">Browsers${hasStale ? ` ${this._icon(EM_ICONS.warning, '14px')}` : ''}</div>
-            <div class="stat-value">${browserCount}</div>
-            ${activeLabel}
-          </div>`;
-      })()}
     `;
 
     // Entity health alert banner — shown above stat cards when unavailable count exceeds threshold
@@ -8190,9 +8505,9 @@ class EntityManagerPanel extends HTMLElement {
     // Option B: animate stat counters; Option C: stagger stat cards (only on panel load/navigation)
     if (this._playAnimations) {
       this._animateStatCounters(statsEl);
-      statsEl.querySelectorAll('.stat-card').forEach((card, i) => {
+      statsEl.querySelectorAll('.stat-card, .stat-nav-tile').forEach((card, i) => {
         card.style.animation = `em-stagger-in 1.05s ease both`;
-        card.style.animationDelay = `${i * 105}ms`;
+        card.style.animationDelay = `${i * 80}ms`;
       });
       this._playAnimations = false;
     }
@@ -8202,7 +8517,10 @@ class EntityManagerPanel extends HTMLElement {
       let emptyMessage = 'No entities found';
       let emptyDesc = '';
       
-      if (hasSearch) {
+      if (this._showOnlyFavorites) {
+        emptyMessage = 'No favorites';
+        emptyDesc = 'Star an entity to add it here, or click Favorites in the sidebar to show all entities again';
+      } else if (hasSearch) {
         emptyMessage = 'No matching entities';
         emptyDesc = `No entities match "${this._escapeHtml(this.searchTerm)}"`;
       } else if (hasDomainFilter) {
@@ -8365,11 +8683,11 @@ class EntityManagerPanel extends HTMLElement {
               <span style="color:var(--em-danger)">${disabledCount}</span>
             </span>
             <div class="smart-group-actions">
-              <button class="btn btn-secondary smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
-              <button class="btn btn-secondary smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
-              <button class="btn btn-secondary smart-group-assign-area" data-group-key="${this._escapeAttr(groupKey)}" title="Assign area to all entities in this group" style="color:var(--em-primary);border-color:var(--em-primary)">${this._icon(EM_ICONS.area, '16px')} Assign Area</button>
+              <button class="em-mini-btn em-mini-good smart-group-enable-all" data-group-key="${this._escapeAttr(groupKey)}">Enable All</button>
+              <button class="em-mini-btn em-mini-bad smart-group-disable-all" data-group-key="${this._escapeAttr(groupKey)}">Disable All</button>
+              <button class="em-mini-btn smart-group-assign-area" data-group-key="${this._escapeAttr(groupKey)}" title="Assign area to all entities in this group" style="color:var(--em-primary);border-color:var(--em-primary)">${this._icon(EM_ICONS.area, '16px')} Assign Area</button>
               ${this.smartGroupMode === 'custom' && groupKey !== '📦 Ungrouped' ? `
-                <button class="btn btn-secondary smart-group-delete-custom" data-group-key="${this._escapeAttr(groupKey)}" title="Delete this custom group" style="color:var(--em-danger);border-color:var(--em-danger)">${this._icon(EM_ICONS.delete, '16px')} Delete</button>
+                <button class="em-mini-btn em-mini-bad smart-group-delete-custom" data-group-key="${this._escapeAttr(groupKey)}" title="Delete this custom group">${this._icon(EM_ICONS.delete, '16px')} Delete</button>
               ` : ''}
             </div>
             <span class="smart-group-expand"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
@@ -8615,6 +8933,7 @@ class EntityManagerPanel extends HTMLElement {
     return this._buildDeviceCard(deviceId, device, integration, {
       showSelectCheckbox: true,
       showViewFilters: true,
+      richHeader: true,
       filterClass,
       filterAttr: this._escapeAttr(deviceId),
     });
@@ -8646,10 +8965,19 @@ class EntityManagerPanel extends HTMLElement {
     let disabledCount = 0;
     let enabledCount = 0;
 
-    // Collect all entities from all devices, tallying category counts alongside
+    // Collect all entities from all devices, tallying category counts alongside.
+    // Also aggregate the unique areas the integration's devices/entities span.
     const allEntities = [];
     const categoryCounts = new Map();
+    const areaIds = new Set();
+    const typeCounts = new Map();
     Object.entries(integration.devices).forEach(([deviceId, device]) => {
+      if (deviceId !== 'no_device') {
+        const dtype = this.getDeviceType(deviceId);
+        typeCounts.set(dtype, (typeCounts.get(dtype) || 0) + 1);
+      }
+      const devAreaId = this.deviceInfo?.[deviceId]?.area_id;
+      if (devAreaId) areaIds.add(devAreaId);
       device.entities.forEach(entity => {
         entityCount++;
         if (entity.is_disabled) {
@@ -8664,7 +8992,18 @@ class EntityManagerPanel extends HTMLElement {
         });
         const cat = this._categorizeEntity(entity);
         categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+        const entAreaId = this.entityAreaMap?.get?.(entity.entity_id);
+        if (entAreaId) areaIds.add(entAreaId);
       });
+    });
+
+    // Resolve area ids to unique area/floor names for the header meta box
+    const areaNames = new Set();
+    const floorNames = new Set();
+    areaIds.forEach(id => {
+      const a = this.areaLookup?.get?.(id);
+      if (a?.areaName) areaNames.add(a.areaName);
+      if (a?.floorName) floorNames.add(a.floorName);
     });
 
     const categoryBadgesHtml = this._categoryMeta()
@@ -8692,15 +9031,54 @@ class EntityManagerPanel extends HTMLElement {
           .replace(/ — click to manage/g, '')}</div>`
       : '';
 
+    // Area/floor chips for the meta box — capped so sprawling integrations don't flood the header
+    const capChips = (names, cls, icon, cap = 4) => {
+      const sorted = [...names].sort((a, b) => a.localeCompare(b));
+      const shown = sorted.slice(0, cap)
+        .map(n => `<span class="${cls}">${this._icon(icon, '11px')} ${this._escapeHtml(n)}</span>`)
+        .join('');
+      const extra = sorted.length - cap;
+      return shown + (extra > 0 ? `<span class="${cls} integration-chip-more">+${extra}</span>` : '');
+    };
+    const areaChipsHtml = areaNames.size ? capChips(areaNames, 'integration-area-chip', EM_ICONS.area) : '';
+    const floorChipsHtml = floorNames.size ? capChips(floorNames, 'integration-floor-chip', EM_ICONS.floor) : '';
+
+    const catsBoxHtml = categoryBadgesHtml ? `
+      <div class="integration-box integration-box-cats">
+        <div class="integration-box-title">Categories</div>
+        <div class="integration-box-chips">${categoryBadgesHtml}</div>
+      </div>` : '';
+    // Hardware box — device-type counts; the Unknown chip is clickable to bulk-assign a type
+    const typeMeta = this._deviceTypeMeta();
+    const hwChipsHtml = Object.keys(typeMeta)
+      .filter(t => typeCounts.get(t) > 0)
+      .map(t => t === 'unknown'
+        ? `<span class="integration-hw-chip integration-hw-unknown" data-integration="${this._escapeAttr(integration.integration)}"
+             style="color:${typeMeta[t].color};border-color:${typeMeta[t].color}"
+             title="Click to assign a type to the unknown devices">${typeMeta[t].emoji} ${typeMeta[t].label}: ${typeCounts.get(t)}</span>`
+        : `<span class="integration-hw-chip" style="color:${typeMeta[t].color};border-color:${typeMeta[t].color}">${typeMeta[t].emoji} ${typeMeta[t].label}: ${typeCounts.get(t)}</span>`)
+      .join('');
+    const hwBoxHtml = hwChipsHtml ? `
+      <div class="integration-box integration-box-hw">
+        <div class="integration-box-title">Hardware</div>
+        <div class="integration-box-chips">${hwChipsHtml}</div>
+      </div>` : '';
+    const metaBoxHtml = (areaChipsHtml || floorChipsHtml || labelRollupHtml) ? `
+      <div class="integration-box integration-box-meta">
+        <div class="integration-box-title">Areas &amp; Labels</div>
+        <div class="integration-box-chips">${areaChipsHtml}${floorChipsHtml}${labelRollupHtml}</div>
+      </div>` : '';
+
     const intName = this._escapeAttr(integration.integration);
     const intDisplay = this._escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1));
     const intInitial = this._escapeHtml(integration.integration.charAt(0).toUpperCase());
 
     const _ivf = this.integrationViewFilter[integration.integration];
     const _filterClass = _ivf === 'enabled' ? 'em-filter-enabled' : _ivf === 'disabled' ? 'em-filter-disabled' : '';
+    const accent = this._integrationAccent(integration.integration);
 
     return `
-      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}">
+      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}"${accent ? ` style="border-left-color: ${accent};"` : ''}>
         <div class="integration-header" data-integration="${intName}">
           <div class="integration-select-wrapper" title="Select all in this integration">
             <label class="integration-select-label">
@@ -8713,21 +9091,26 @@ class EntityManagerPanel extends HTMLElement {
               <span class="integration-select-text">Select all</span>
             </label>
           </div>
-          <div class="integration-logo-container">
+          <div class="integration-logo-container"${accent ? ` style="background: color-mix(in srgb, ${accent} 14%, transparent);"` : ''}>
             <img class="integration-logo" src="${this._brandIconUrl(integration.integration)}" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
           <div class="integration-info">
             <div class="integration-name">${intDisplay}</div>
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
-            ${categoryBadgesHtml ? `<div class="integration-cat-badges">${categoryBadgesHtml}</div>` : ''}
-            ${labelRollupHtml}
           </div>
-          <div class="integration-actions">
-            <button class="btn view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities" style="${_ivf === 'enabled' ? '' : 'color:var(--em-success);border-color:var(--em-success)'}">View Enabled</button>
-            <button class="btn view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities" style="${_ivf === 'disabled' ? '' : 'color:var(--em-danger);border-color:var(--em-danger)'}">View Disabled</button>
-            <button class="btn btn-secondary enable-integration" data-integration="${intName}">Enable All</button>
-            <button class="btn btn-secondary disable-integration" data-integration="${intName}">Disable All</button>
+          ${catsBoxHtml}
+          ${hwBoxHtml}
+          ${metaBoxHtml}
+          <div class="integration-menu-wrap">
+            <button class="em-mini-btn integration-menu-btn ${_ivf ? 'btn-primary' : ''}" data-integration="${intName}" title="Integration actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
+            <div class="integration-menu">
+              <button class="integration-menu-item view-integration-enabled ${_ivf === 'enabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only enabled entities">View Enabled</button>
+              <button class="integration-menu-item view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities">View Disabled</button>
+              <button class="integration-menu-item integration-menu-good enable-integration" data-integration="${intName}">Enable All</button>
+              <button class="integration-menu-item integration-menu-bad disable-integration" data-integration="${intName}">Disable All</button>
+              <button class="integration-menu-item integration-color-btn" data-integration="${intName}">${this._icon('mdi:pencil-outline', '14px')} Accent color…</button>
+            </div>
           </div>
         </div>
         ${isExpanded ? `
@@ -8844,7 +9227,7 @@ class EntityManagerPanel extends HTMLElement {
           ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
           ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
-        ${col('status') ? `<span class="entity-badge" style="background: ${entity.is_disabled ? '#f44336' : '#4caf50'} !important;">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
+        ${col('status') ? `<span class="entity-badge ${entity.is_disabled ? 'entity-badge--disabled' : 'entity-badge--enabled'}">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
         ${hasBottom ? `<div class="entity-item-bottom">
           <div class="entity-bottom-left">
             ${col('checkbox') ? `<input type="checkbox" class="entity-checkbox" data-entity-id="${eid}" data-integration="${iid}" data-device-id="${this._escapeAttr(entity.device_id || '')}"${this.selectedEntities.has(entity.entity_id) ? ' checked' : ''}>` : ''}
@@ -8923,6 +9306,7 @@ class EntityManagerPanel extends HTMLElement {
     const {
       showSelectCheckbox = false,
       showViewFilters = false,
+      richHeader = false,
       filterClass = '',
       filterAttr = '',
     } = opts;
@@ -8957,34 +9341,106 @@ class EntityManagerPanel extends HTMLElement {
       .map(b => this._renderCatCard(devName, b.label, b.cls, b.entities, deviceId))
       .join('') : '';
 
-    const { label: typeLabel, color: typeColor } = (this._deviceTypeMeta()[this.getDeviceType(deviceId)] || this._deviceTypeMeta().unknown);
-    const typeBadge = `<span class="device-type-badge" style="font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid ${typeColor};color:${typeColor};white-space:nowrap;flex-shrink:0">${typeLabel}</span>`;
+    const devType = this.getDeviceType(deviceId);
+    const { label: typeLabel, color: typeColor } = (this._deviceTypeMeta()[devType] || this._deviceTypeMeta().unknown);
+    // Editable when Unknown (assign a type) or already manually assigned (change/reset it).
+    // Never for the no_device pseudo-entry — its id is shared across integrations.
+    const typeEditable = deviceId !== 'no_device' && (devType === 'unknown' || !!this.deviceTypeOverrides?.[deviceId]);
+    const typeBadge = `<span class="device-type-badge${typeEditable ? ' device-type-badge-editable' : ''}"
+      ${typeEditable ? `data-type-device-id="${this._escapeAttr(deviceId)}" title="${devType === 'unknown' ? 'Unknown type — click to assign' : 'Manually assigned — click to change'}"` : ''}
+      style="font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid ${typeColor};color:${typeColor};white-space:nowrap;flex-shrink:0${typeEditable ? ';cursor:pointer' : ''}">${typeLabel}${typeEditable ? ' ✎' : ''}</span>`;
 
     const viewFilterBtns = showViewFilters ? `
-            <button class="btn view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities" style="${filterClass === 'em-filter-enabled' ? '' : 'color:var(--em-success);border-color:var(--em-success)'}">View Enabled</button>
-            <button class="btn view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities" style="${filterClass === 'em-filter-disabled' ? '' : 'color:var(--em-danger);border-color:var(--em-danger)'}">View Disabled</button>` : '';
+            <button class="em-mini-btn em-mini-good view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities">View Enabled</button>
+            <button class="em-mini-btn em-mini-bad view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities">View Disabled</button>` : '';
 
-    return `
-      <div class="device-item ${isExpanded ? 'device-expanded' : ''} ${filterClass}" ${filterAttr ? `data-device-id-filter="${filterAttr}"` : ''}>
-        <div class="device-header" data-device="${deviceIdEsc}">
-          ${showSelectCheckbox ? `<label class="device-select-label" title="Select all entities in this device">
+    // Shared header fragments
+    const areaChipHtml = `<span class="device-area-chip em-chip-clickable${areaName ? '' : ' em-area-unset'}" data-device-id="${deviceIdEsc}" title="${areaName ? `${this._escapeAttr(areaName)} — click to change area` : 'No area assigned — click to assign'}">${this._icon(EM_ICONS.area, '13px')} ${areaName ? this._escapeHtml(areaName) : '<span class="em-area-placeholder">No area</span>'}</span>`;
+    const labelChipsHtml = this._renderLabelChips(this._effectiveDeviceLabels(deviceId, areaId), `data-device-id="${deviceIdEsc}"`);
+    const selectLabelHtml = showSelectCheckbox ? `<label class="device-select-label" title="Select all entities in this device">
             <input type="checkbox" class="device-select-checkbox" data-device-id="${deviceIdEsc}"
               ${selectedCount === totalCount && totalCount > 0 ? 'checked' : ''}
               ${selectedCount > 0 && selectedCount < totalCount ? 'data-indeterminate="true"' : ''}>
-          </label>` : ''}
-          <span class="device-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+          </label>` : '';
+    const chevronHtml = `<span class="device-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>`;
+
+    // Rich header (Devices view) — mirrors the integration header: Categories / Hardware /
+    // Areas & Labels boxes plus a ⋯ actions menu. Functional classes on the menu items
+    // (view-device-*, device-enable-all/-disable-all) are unchanged so all existing
+    // listeners and in-place filter updates keep working.
+    let headerHtml;
+    if (richHeader) {
+      const categoryCounts = new Map();
+      device.entities.forEach(e => {
+        const c = this._categorizeEntity(e);
+        categoryCounts.set(c, (categoryCounts.get(c) || 0) + 1);
+      });
+      const catBadges = this._categoryMeta()
+        .filter(m => categoryCounts.get(m.key) > 0)
+        .map(m => `<span class="integration-cat-badge ${m.cls}">${m.label}: ${categoryCounts.get(m.key)}</span>`)
+        .join('');
+      const catsBox = catBadges ? `
+          <div class="integration-box integration-box-cats">
+            <div class="integration-box-title">Categories</div>
+            <div class="integration-box-chips">${catBadges}</div>
+          </div>` : '';
+      const hwBox = deviceId !== 'no_device' ? `
+          <div class="integration-box integration-box-hw">
+            <div class="integration-box-title">Hardware</div>
+            <div class="integration-box-chips">${typeBadge}</div>
+          </div>` : '';
+      const floorName = areaId ? this.areaLookup?.get(areaId)?.floorName : null;
+      const floorChipHtml = floorName ? `<span class="integration-floor-chip">${this._icon(EM_ICONS.floor, '11px')} ${this._escapeHtml(floorName)}</span>` : '';
+      const metaBox = `
+          <div class="integration-box integration-box-meta">
+            <div class="integration-box-title">Areas &amp; Labels</div>
+            <div class="integration-box-chips">${areaChipHtml}${floorChipHtml}${labelChipsHtml}</div>
+          </div>`;
+      headerHtml = `
+        <div class="device-header device-header-rich" data-device="${deviceIdEsc}">
+          ${selectLabelHtml}
+          ${chevronHtml}
+          <div class="integration-info">
+            <div class="device-name-wrap device-name-rich">
+              <span class="device-name">${this._escapeHtml(devName)}</span>${selectionIndicator}
+            </div>
+            <div class="integration-stats">${this._escapeHtml(integration)} • ${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
+          </div>
+          ${catsBox}
+          ${hwBox}
+          ${metaBox}
+          <div class="integration-menu-wrap device-bulk-actions" data-device-entities="${deviceEntityIds}">
+            <button class="em-mini-btn integration-menu-btn device-menu-btn ${filterClass ? 'btn-primary' : ''}" data-device-id="${deviceIdEsc}" title="Device actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
+            <div class="integration-menu">
+              <button class="integration-menu-item view-device-enabled ${filterClass === 'em-filter-enabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only enabled entities">View Enabled</button>
+              <button class="integration-menu-item view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities">View Disabled</button>
+              <button class="integration-menu-item integration-menu-good device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
+              <button class="integration-menu-item integration-menu-bad device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      headerHtml = `
+        <div class="device-header" data-device="${deviceIdEsc}">
+          ${selectLabelHtml}
+          ${chevronHtml}
           <span class="device-name-wrap">
             <span class="device-name">${this._escapeHtml(devName)}</span>${selectionIndicator}
           </span>
           ${typeBadge}
           <span class="device-count">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span class="count-enabled">${enabledCount}</span>/<span class="count-disabled">${disabledCount}</span>)</span>
-          <span class="device-area-chip em-chip-clickable${areaName ? '' : ' em-area-unset'}" data-device-id="${deviceIdEsc}" title="${areaName ? `${this._escapeAttr(areaName)} — click to change area` : 'No area assigned — click to assign'}">${this._icon(EM_ICONS.area, '13px')} ${areaName ? this._escapeHtml(areaName) : '<span class="em-area-placeholder">No area</span>'}</span>
-          ${this._renderLabelChips(this._effectiveDeviceLabels(deviceId, areaId), `data-device-id="${deviceIdEsc}"`)}
+          ${areaChipHtml}
+          ${labelChipsHtml}
           <div class="device-bulk-actions" data-device-entities="${deviceEntityIds}">${viewFilterBtns}
             <button class="device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
             <button class="device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
           </div>
-        </div>
+        </div>`;
+    }
+
+    return `
+      <div class="device-item ${isExpanded ? 'device-expanded' : ''} ${filterClass}" ${filterAttr ? `data-device-id-filter="${filterAttr}"` : ''}>
+        ${headerHtml}
         ${deviceAreaSuggestion ? `
         <div class="device-suggestion-row" data-device-id="${deviceIdEsc}">
           <span class="device-suggestion-icon">${this._icon(EM_ICONS.area, '18px')}</span>
@@ -9149,7 +9605,7 @@ class EntityManagerPanel extends HTMLElement {
         const groupName = btn.dataset.groupKey;
         const grp = (this.customGroups || []).find(g => g.name === groupName);
         if (!grp) return;
-        this.showConfirmDialog(`Delete group "${grp.name}"?`, 'This only removes the grouping — entities are not affected.', () => {
+        this.showConfirmDialog(`Delete group "${this._escapeHtml(grp.name)}"?`, 'This only removes the grouping — entities are not affected.', () => {
           this.customGroups = (this.customGroups || []).filter(g => g.id !== grp.id);
           localStorage.setItem('em-custom-groups', JSON.stringify(this.customGroups));
           this._reRenderSidebar();
@@ -9162,6 +9618,7 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.integration-header').forEach(header => {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.integration-select-wrapper')) return;
+        if (e.target.closest('.integration-hw-unknown')) return; // handled by the type-picker listener
         const integration = header.dataset.integration;
         if (this.expandedIntegrations.has(integration)) {
           this.expandedIntegrations.delete(integration);
@@ -9224,6 +9681,7 @@ class EntityManagerPanel extends HTMLElement {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.device-bulk-actions')) return;
         if (e.target.closest('.device-select-label')) return;
+        if (e.target.closest('.device-type-badge-editable')) return; // handled by the type-picker listener
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
           this.expandedDevices.delete(deviceId);
@@ -9309,6 +9767,29 @@ class EntityManagerPanel extends HTMLElement {
         e.stopPropagation();
         const ents = this._deviceEntitiesById(chip.dataset.deviceId);
         if (ents.length) this._showAssignDialog(ents, { focus: 'labels', labelTarget: 'device' });
+      });
+    });
+
+    // Device-type picker — editable badges (Unknown or manually assigned; both views)
+    this.content.querySelectorAll('.device-type-badge-editable').forEach(badge => {
+      badge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showDeviceTypePickerDialog([badge.dataset.typeDeviceId]);
+      });
+    });
+    // Integration Hardware box's Unknown chip — bulk-assign that integration's unknown devices
+    this.content.querySelectorAll('.integration-hw-unknown').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const intData = (this.data || []).find(i => i.integration === chip.dataset.integration);
+        if (!intData) return;
+        const unknownIds = Object.keys(intData.devices).filter(id =>
+          id !== 'no_device' && this.getDeviceType(id) === 'unknown');
+        if (unknownIds.length) {
+          this._showDeviceTypePickerDialog(unknownIds, {
+            title: `Assign type — ${unknownIds.length} unknown device${unknownIds.length !== 1 ? 's' : ''}`,
+          });
+        }
       });
     });
 
@@ -9489,6 +9970,44 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    // Integration ⋯ actions menu: toggle per row, one open at a time
+    this.content.querySelectorAll('.integration-menu-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = btn.parentElement.querySelector('.integration-menu');
+        const wasOpen = menu.classList.contains('open');
+        this.content.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
+        if (!wasOpen) menu.classList.add('open');
+      });
+    });
+    // Any menu item click closes its menu (the item's own handler still runs)
+    this.content.querySelectorAll('.integration-menu .integration-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        item.closest('.integration-menu')?.classList.remove('open');
+      });
+    });
+    // Per-integration accent color picker
+    this.content.querySelectorAll('.integration-color-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showIntegrationColorDialog(btn.dataset.integration);
+      });
+    });
+    // One-time global closers: outside click + Escape
+    if (!this._intMenuCloserAttached) {
+      this._intMenuCloserAttached = true;
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest?.('.integration-menu-wrap')) {
+          this.content?.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
+        }
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          this.content?.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
+        }
+      });
+    }
+
     this.content.querySelectorAll('.enable-integration').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -9543,6 +10062,8 @@ class EntityManagerPanel extends HTMLElement {
           container.querySelector('.view-integration-enabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'enabled');
           container.querySelector('.view-integration-disabled')?.classList.toggle('btn-primary', this.integrationViewFilter[integration] === 'disabled');
           container.querySelector('.view-integration-disabled')?.classList.toggle('btn-secondary', this.integrationViewFilter[integration] !== 'disabled');
+          // Tint the ⋯ menu button while any view filter is active
+          container.querySelector('.integration-menu-btn')?.classList.toggle('btn-primary', !!this.integrationViewFilter[integration]);
         } else {
           // Integration was collapsed, or the lone device just became expanded — re-render fully
           this.updateView();
@@ -9575,6 +10096,8 @@ class EntityManagerPanel extends HTMLElement {
           container.querySelector('.view-device-enabled')?.classList.toggle('btn-secondary', this.deviceViewFilter[deviceId] !== 'enabled');
           container.querySelector('.view-device-disabled')?.classList.toggle('btn-primary', this.deviceViewFilter[deviceId] === 'disabled');
           container.querySelector('.view-device-disabled')?.classList.toggle('btn-secondary', this.deviceViewFilter[deviceId] !== 'disabled');
+          // Tint the ⋯ menu button while any view filter is active (rich header)
+          container.querySelector('.device-menu-btn')?.classList.toggle('btn-primary', !!this.deviceViewFilter[deviceId]);
         } else {
           this.updateView();
         }
@@ -9852,6 +10375,12 @@ class EntityManagerPanel extends HTMLElement {
    */
   async _bulkToggleGroup(btn, entityIds, isEnable) {
     if (!entityIds.length) return;
+    // Same confirm the sidebar/context-menu bulk actions use — this can hit hundreds of entities
+    const verb = isEnable ? 'enable' : 'disable';
+    if (!(await this._confirmAsync(
+      `${isEnable ? 'Enable' : 'Disable'} All`,
+      `Are you sure you want to ${verb} ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} in this group?`,
+    ))) return;
     btn.disabled = true;
     btn.textContent = '…';
     try {
@@ -11518,11 +12047,7 @@ class EntityManagerPanel extends HTMLElement {
     const targetSelectorHtml = `<div style="margin-bottom:12px">
       <label style="font-size:12px;color:var(--em-text-secondary);display:block;margin-bottom:5px">Apply label to</label>
       <div id="em-asn-target" style="display:flex;gap:5px;flex-wrap:wrap">
-        ${targetOpts.map(o => `<button class="em-target-btn${o.val === labelTarget ? ' active' : ''}" data-target="${o.val}"
-          style="flex:1;min-width:64px;padding:5px 8px;border-radius:6px;border:1px solid var(--em-border);cursor:pointer;font-size:12px;
-                 background:${o.val === labelTarget ? 'var(--em-primary)' : 'var(--em-bg-hover)'};
-                 color:${o.val === labelTarget ? 'white' : 'var(--em-text-primary)'};
-                 font-weight:${o.val === labelTarget ? '600' : '400'}">${this._escapeHtml(o.label)}</button>`).join('')}
+        ${targetOpts.map(o => `<button class="em-target-btn${o.val === labelTarget ? ' active' : ''}" data-target="${o.val}">${this._escapeHtml(o.label)}</button>`).join('')}
       </div>
     </div>`;
 
@@ -11882,8 +12407,8 @@ class EntityManagerPanel extends HTMLElement {
             ${model}
           </div>`;
         }).join('');
-        return `<div style="border:2px solid var(--em-primary);border-radius:8px;margin:6px 10px;overflow:hidden">
-          <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
+        return `<div style="border:1px solid var(--em-border);border-radius:8px;margin:6px 10px;overflow:hidden">
+          <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:1px solid var(--em-border)">
             ${this._escapeHtml(label)} <span style="font-weight:400;opacity:0.7">(${items.length})</span>
           </div>
           ${itemsHtml}
@@ -11937,8 +12462,8 @@ class EntityManagerPanel extends HTMLElement {
         contentHtml: `
           <div style="padding:8px 4px 4px">
             <p style="margin:0 0 12px">Assign <strong>${this._escapeHtml(entityId)}</strong> to:</p>
-            <div style="border:2px solid var(--em-primary);border-radius:8px;overflow:hidden;margin-bottom:4px">
-              <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:2px solid var(--em-primary)">
+            <div style="border:1px solid var(--em-border);border-radius:8px;overflow:hidden;margin-bottom:4px">
+              <div style="padding:6px 12px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--em-primary);border-bottom:1px solid var(--em-border)">
                 ${this._escapeHtml(integLabel)}
               </div>
               <div style="padding:10px 14px;font-weight:600;font-size:13px">${this._escapeHtml(deviceName)}</div>
@@ -12163,6 +12688,9 @@ class EntityManagerPanel extends HTMLElement {
     labelGroups.sort((a, b) => (a.deviceName || a.label || '').localeCompare(b.deviceName || b.label || ''));
 
     const total = health.length + disable.length + naming.length + area.length + mismatch.length + labelGroups.length;
+    // Cache for the Suggestions nav tile (computed lazily, shown once known)
+    this._suggestionsCount = total;
+    this._saveToStorage('em-suggestions-count', total);
 
     const svgChev = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
@@ -13665,7 +14193,7 @@ class EntityManagerPanel extends HTMLElement {
       if (!(await this._confirmAsync('Remove entities', `Remove all ${orphanedEntities.length} orphaned entities? This cannot be undone.`))) return;
       const btn = e.target;
       btn.disabled = true; btn.textContent = 'Removing…';
-      let removed = 0;
+      let removed = 0, failed = 0;
       for (const ent of orphanedEntities) {
         try {
           await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: ent.entity_id });
@@ -13673,13 +14201,20 @@ class EntityManagerPanel extends HTMLElement {
           removed++;
         } catch (e) {
           console.warn('[EM] remove orphaned entity failed', ent.entity_id, e);
-          this._showToast(`Remove failed: ${e.message || e}`, 'error');
+          failed++;
         }
       }
       this.orphanedCount = Math.max(0, (this.orphanedCount || 0) - removed);
       this.cleanupCount = Math.max(0, (this.cleanupCount || 0) - removed);
-      this._showToast(`Removed ${removed} orphaned entities`, 'success');
-      btn.textContent = 'Done';
+      // Report the real outcome — never a success toast when everything failed
+      if (failed === 0) {
+        this._showToast(`Removed ${removed} orphaned entities`, 'success');
+      } else if (removed === 0) {
+        this._showToast(`Failed to remove all ${failed} orphaned entities`, 'error');
+      } else {
+        this._showToast(`Removed ${removed}, failed ${failed}`, 'warning');
+      }
+      btn.textContent = failed === 0 ? 'Done' : `Done (${failed} failed)`;
     });
 
     // Assign orphaned entity to a device
@@ -14024,7 +14559,7 @@ class EntityManagerPanel extends HTMLElement {
               return this._renderMiniEntityCard({
                 entity_id: t.entity_id,
                 name: tName,
-                state: t.disabled ? 'disabled' : _stateDisplay(t).replace(/<[^>]*>/g, ''),
+                state: (() => { if (t.disabled) return 'disabled'; const _tmp = document.createElement('span'); _tmp.innerHTML = _stateDisplay(t); return _tmp.textContent; })(),
                 stateColor: t.disabled ? 'var(--em-danger)' : 'var(--em-primary)',
                 timeAgo: this._fmtAgo(t.last_real_changed || t.last_changed, 'Unknown'),
                 infoLine: `${this._triggerBadge(t)}${connectedPart}`,
@@ -14738,6 +15273,7 @@ class EntityManagerPanel extends HTMLElement {
         ],
         unavailable: [
           { id: 'bulk-unavail-disable', handler: async (entityIds) => {
+            if (!(await this._confirmAsync('Disable entities', `Disable ${entityIds.length} unavailable entit${entityIds.length !== 1 ? 'ies' : 'y'}?`))) return;
             this._suppressEntityNotif(entityIds, true);
             const results = await Promise.allSettled(
               entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
@@ -15349,13 +15885,7 @@ class EntityManagerPanel extends HTMLElement {
     // Copy --em-* variables from the panel's inline style to the overlay so that
     // dialogs (appended to document.body, outside the panel's cascade) resolve
     // the correct colours when EM light mode is active with HA dark theme.
-    [
-      '--em-bg-primary', '--em-bg-secondary', '--em-bg-hover',
-      '--em-text-primary', '--em-text-secondary', '--em-text-disabled',
-      '--em-border', '--em-border-light',
-      '--em-primary', '--em-primary-dark', '--em-primary-light',
-      '--em-success', '--em-danger', '--em-warning',
-    ].forEach(v => {
+    EM_THEME_VARS.forEach(v => {
       const val = this.style.getPropertyValue(v);
       if (val) overlay.style.setProperty(v, val);
     });
@@ -15561,7 +16091,7 @@ class EntityManagerPanel extends HTMLElement {
       <div class="em-atg-mode-row${disabled ? ' em-atg-disabled' : ''}"
            data-atg-action="${this._escapeAttr(action || '')}"
            style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;
-                  border:2px solid var(--em-border);margin:4px 0;
+                  border:1px solid var(--em-border);margin:4px 0;
                   cursor:${disabled ? 'default' : 'pointer'};opacity:${disabled ? '0.45' : '1'};
                   transition:border-color 0.15s,background 0.15s">
         <span style="font-size:18px;line-height:1">${this._icon(icon, '20px')}</span>
@@ -15577,7 +16107,7 @@ class EntityManagerPanel extends HTMLElement {
       const newCount = entityIds.length - alreadyIn;
       return `<div class="em-atg-row" data-group-id="${this._escapeAttr(g.id)}"
         style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;
-               border:2px solid var(--em-border);margin:4px 0;
+               border:1px solid var(--em-border);margin:4px 0;
                cursor:${newCount > 0 ? 'pointer' : 'default'};transition:border-color 0.15s,background 0.15s">
         <span style="font-size:16px">${this._icon(EM_ICONS.customGroup, '16px')}</span>
         <span style="flex:1;font-weight:500">${this._escapeHtml(g.name)}</span>
@@ -15953,7 +16483,7 @@ class EntityManagerPanel extends HTMLElement {
       contentHtml: `
         <div class="confirm-dialog-content">
           <p style="margin-bottom: 12px;">Current Entity ID: <strong>${this._escapeHtml(entityId)}</strong></p>
-          <p style="margin-bottom: 8px; color: #666;">Enter new entity ID (without domain prefix):</p>
+          <p style="margin-bottom: 8px; color: var(--em-text-secondary);">Enter new entity ID (without domain prefix):</p>
           <input type="text" id="rename-input" class="rename-input" placeholder="new_entity_name" value="${this._escapeAttr(entityId.split('.')[1])}" pattern="[a-z0-9_]+" title="Only lowercase letters, numbers, and underscores">
           <p style="margin-top: 8px; font-size: 14px; color:var(--em-danger);">⚠️ This will update the entity ID across all automations, scripts, and helpers.</p>
         </div>
@@ -16057,14 +16587,17 @@ class EntityManagerPanel extends HTMLElement {
     noBtn.addEventListener('click', closeDialog);
   }
 
-  async renameEntity(oldEntityId, newEntityId, skipUndo = false) {
+  // Returns true on success, false on failure so bulk callers can report accurately.
+  // opts.quiet suppresses the per-failure error dialog (bulk flows show one summary toast
+  // instead of stacking N dialogs).
+  async renameEntity(oldEntityId, newEntityId, skipUndo = false, opts = {}) {
     try {
       await this._hass.callWS({
         type: 'entity_manager/rename_entity',
         old_entity_id: oldEntityId,
         new_entity_id: newEntityId,
       });
-      
+
       // Push undo action and log activity (skip when called from undo/redo)
       if (!skipUndo) {
         this._pushUndoAction({
@@ -16074,15 +16607,17 @@ class EntityManagerPanel extends HTMLElement {
         });
         this._logActivity('rename', { from: oldEntityId, to: newEntityId });
       }
-      
+
       this._fireEvent('hass-notification', {
         message: `Entity renamed from ${oldEntityId} to ${newEntityId}`,
       });
-      
+
       await this.loadData();
+      return true;
     } catch (error) {
       console.error('Error renaming entity:', error);
-      this.showErrorDialog(`Error renaming entity: ${error.message}`);
+      if (!opts.quiet) this.showErrorDialog(`Error renaming entity: ${error.message}`);
+      return false;
     }
   }
 }
