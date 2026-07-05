@@ -7,12 +7,19 @@ A full visual redesign of the panel — every surface, dialog, and view — plus
 ### 🎨 The Refined Design System
 
 - **New design language across the whole panel**: hairline 1px/1.5px borders replace the heavy 2px-primary boxes everywhere, a calmer light/dark palette (`#ffffff`/`#181c22` surfaces on an `#eef1f6`/`#0f1216` canvas), tighter radius scale (6–14px), and `color-mix()` tints instead of flat fills
-- **Stat wall split in two**: real data stats (Integrations / Devices / Entities / Enabled / Disabled) on top, a navigation strip (Auto/Scripts/Helpers, Templates, Health & Cleanup, HACS, Card Types, Suggestions, Browsers) below — the Suggestions tile now shows a live 💡 count
-- **Integration rows redesigned**: a two-box header — **Categories** (Controls / Sensors / Configuration / Diagnostic / Connectivity counts) and **Areas & Labels** (area/floor/label chips, capped with +N overflow) — with the four row actions collapsed into a **⋯ menu**
-- **Per-integration accent colors**: each integration gets a stable accent from a name-hash palette (left border + tinted logo backdrop), with a color-picker override in the ⋯ menu (persisted)
+- **Stat wall split in two**: real data stats (Integrations / Devices / Entities / Enabled / Disabled) on top, a navigation strip (Auto/Scripts/Helpers, Templates, Health & Cleanup, HACS, Card Types, Suggestions, Browsers) below — the Suggestions tile shows a live count
+- **Integration rows redesigned**: a three-box header — **Categories** (Controls / Sensors / Configuration / Diagnostic / Connectivity counts), **Hardware** (device-type counts: ⚡ Hardware, ☁️ Cloud, 🔧 Virtual, 📱 Mobile, 🏠 System, ❓ Unknown), and **Areas & Labels** (area/floor/label chips, capped with +N overflow) — with the four row actions collapsed into a **⋯ menu**
+- **Devices view matches**: every device card gets the same header anatomy — Categories / Hardware / Areas & Labels boxes plus the ⋯ actions menu — instead of the old inline chip-and-button row
+- **Per-integration accent colors, opt-in**: integrations stay neutral by default; pick an accent (left border + tinted logo backdrop) from the ⋯ menu's color picker for just the ones that matter, with a **None** option to remove it
 - **Chronic-unavailable banner** is now a compact amber pill with threshold settings and dismiss
 - **Multi-column desktop grids** for the Auto/Scripts/Helpers, Templates, and Health & Cleanup inline views, and a real card grid for the HACS store (mobile keeps the single-column layout)
 - **Refined dialogs everywhere**: unified chrome, hairline internals, theme-scoped overlays (dialog borders no longer vanish under HA themes that blank `--divider-color`), Theme Editor modal refreshed to match
+
+### 🔩 Device Types — Assign & Create
+
+- **Assign a type to Unknown devices**: click the ❓ Unknown chip on an integration header to bulk-assign a type to all of its unknown devices, or click any Unknown badge on a device card. Manually assigned badges show a ✎ and can be changed or reset to **Auto** (heuristic detection) at any time
+- **Create your own device types**: the type picker has a "Create a new type" section — name + color — and custom types appear everywhere the built-ins do (header chips, card badges, the Devices-view type filter). Deleting a custom type returns its devices to Auto
+- The Devices-view type filter also gained a **❓ Unknown** option so unclassified devices are easy to find
 
 ### ✨ Entity Details — Tabbed Redesign
 

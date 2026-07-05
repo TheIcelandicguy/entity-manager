@@ -16,7 +16,6 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Favorites](#favorites)
   - [Entity Aliases](#entity-aliases)
   - [Labels Integration](#labels-integration)
-  - [Entity Comparison](#entity-comparison)
   - [Entity Analysis](#entity-analysis)
   - [Activity Log](#activity-log)
   - [Last Activity Timeline](#last-activity-timeline)
@@ -31,8 +30,8 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
-  - [Template Sensors](#template-sensors)
   - [Health & Cleanup View](#health--cleanup-view)
+  - [Suggestions View](#suggestions-view)
   - [Statistics Dashboard](#statistics-dashboard)
   - [Mobile & Responsive Design](#mobile--responsive-design)
 - [Installation](#installation)
@@ -51,7 +50,10 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - Alphabetically sorted integrations for easy navigation
 - Device grouping with entity counts per device and integration
 - **One-click reveal** — expanding an integration with exactly one device shows its entities immediately, no extra click on the device row
-- Every integration row shows a **category-count breakdown** (Controls/Sensors/Configuration/Diagnostic/Connectivity) and a deduped **HA Label rollup** without needing to expand
+- Every integration row carries a **three-box header** without needing to expand: **Categories** (Controls/Sensors/Configuration/Diagnostic/Connectivity counts), **Hardware** (device-type counts: ⚡ Hardware, ☁️ Cloud, 🔧 Virtual, 📱 Mobile, 🏠 System, ❓ Unknown), and **Areas & Labels** (area/floor chips + a deduped HA Label rollup)
+- Row actions (View Enabled / View Disabled / Enable All / Disable All / Accent color) live in a compact **⋯ menu** on each integration and device card
+- **Opt-in accent colors** — integrations stay neutral by default; give the ones that matter a colored bar + tinted logo from the ⋯ menu (with a **None** option to remove it)
+- **Device types you control** — click an ❓ Unknown chip or badge to assign a type, reset to Auto anytime, and **create your own types** (name + color) that show up in chips, badges, and the Devices-view type filter
 - **Bulk Rename** (✎✎) and **Bulk Labels** (🏷️) buttons on every entity card — greyed out until 2+ entities are selected, then activate instantly as you check boxes
 ### Entity Renaming
 - Click-to-rename any entity directly from the panel
@@ -80,7 +82,7 @@ Entity Manager provides multiple ways to find exactly what you need:
 All filter buttons show **live counts** with color-coded indicators: green for enabled, red for disabled, amber for updates.
 ### Sidebar Navigation
 A collapsible sidebar provides quick access to every feature:
-- **Actions** -- **↺ History** (combined undo/redo timeline dialog), Export, Import, Favorites, **🕐 Last Activity** (recorder-backed timeline view), Activity Log, Comparison View, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area** (includes floor), View Selected, Deselect All
+- **Actions** -- **↺ History** (combined undo/redo timeline dialog), Export, Import, Favorites, **🕐 Last Activity** (recorder-backed timeline view), Activity Log, Column Settings; bulk selection actions: Enable Selected, Disable Selected, **Assign Area** (includes floor), View Selected, Deselect All
 - **Labels** -- Browse and filter by Home Assistant labels grouped by **Devices**, **Areas**, **Automations**, **Scripts**, **Scenes**, and **Entities**
 - **Groups** -- Switch between grouping modes: Integration (default), Room, Type, Floor, Device Name
 - **Domains** -- Filter by entity domain
@@ -94,7 +96,7 @@ Group entities by different criteria to get the view you need:
 - **Type** -- grouped by entity domain (all sensors together, all lights together, etc.)
 - **Floor** -- grouped by Floor → Area → Device hierarchy
 - **Device Name** -- all devices with matching names merged into one group
-Switch modes from the **Groups** sidebar section or with **Ctrl+G**. Your preference is saved between sessions.
+Switch modes from the **Groups** sidebar section. Your preference is saved between sessions.
 ### Favorites
 - Star any entity to mark it as a favorite
 - Dedicated **Favorites** filter in the sidebar shows only starred entities
@@ -114,18 +116,11 @@ Switch modes from the **Groups** sidebar section or with **Ctrl+G**. Your prefer
 - **Label Suggestions** in the Suggestions dialog — 21 semantic categories (Lights, Dimmable Lights, Switches, Temperature Sensors, Motion Sensors, etc.), including Power Monitoring, Energy Consumed, Energy Returned, and generic Energy Monitoring as four separate rows; one-click "Apply to N" creates and assigns the label in HA
 - **Custom color picker** — every label color picker (label editor, bulk labels, Assign dialog) offers the 19 HA presets plus a custom-hex swatch
 - Expandable list with refresh capability; label data cached for performance
-### Entity Comparison
-- Compare up to **4 entities side-by-side** in a table view
-- View all properties and metadata for each entity
-- Add entities via right-click context menu or sidebar
-- Comparison counter shown in the sidebar
-- Clear comparison with one click
 ### Entity Analysis
-Right-click any entity to access deep analysis tools:
-- **Impact Analysis** -- shows which automations reference the entity and would be affected by changes
-- **Dependencies** -- displays all related automations and scripts
-- **Statistics** -- detailed entity properties, metadata, and configuration
-- **State History** -- view entity state changes over time
+Click any entity card to open the Entity Details dialog, whose tabs cover deep analysis:
+- **Related tab** -- other entities on the same device, plus **Automation Impact**: automations and scripts that appear to reference the entity
+- **Registry tab** -- detailed entity properties, metadata, and configuration
+- **History tab** -- entity state changes over the last 30 days
 ### Activity Log
 - Reads **real Home Assistant state history** — shows every entity state change across your entire HA instance, not just Entity Manager actions
 - Events grouped by **Room → Device → Entity** with three collapsible levels
@@ -149,9 +144,8 @@ Full operation history with combined timeline dialog:
 - **↺ History** button in the sidebar opens a combined undo/redo timeline dialog
 - Shows the full action history: redo actions (top, muted) → current state divider → undo actions (bottom)
 - Click any row in the dialog to jump to that point in history; the list refreshes in-place
-- **Clear History** button wipes both stacks
-- **Ctrl+Z** to undo the last operation; **Ctrl+Shift+Z** or **Ctrl+Y** to redo
-- Supports: enable, disable, rename, display name change, label changes, device/area assignment, and all bulk operations
+- **Clear History** button wipes both stacks (with confirmation)
+- Supports: enable, disable, rename, display name change, label changes, device/area assignment, config import, and all bulk operations
 - History survives page refresh (localStorage persistence)
 ### Filter Presets
 - Save your current filter configuration (domain, search term, state) as a named preset
@@ -170,39 +164,38 @@ Choose which columns to display in the entity table:
 Toggle columns from the sidebar **Columns** button. Preferences are saved between sessions.
 ### Devices View
 A dedicated **Devices** tab shows all devices sorted alphabetically and organised by category:
+- Every device card has the **same rich header as integration rows**: name + stats, **Categories** / **Hardware** / **Areas & Labels** boxes, and a **⋯ actions menu** (View Enabled / View Disabled / Enable All / Disable All)
+- **Device type filter** in the toolbar: ⚡ Hardware, ☁️ Cloud, 🔧 Virtual, 📱 Mobile, 🏠 HA System, ❓ Unknown — plus any custom types you've created
+- **Assignable device types** — Unknown badges are clickable; pick one of the built-in types, one of your own custom types, or Auto (heuristic detection). Manually assigned badges show a ✎ and can be changed or reset anytime
 - Devices with the same display name are **merged into a single group** — useful for Shelly multi-relay devices where all channels share one name
-- Every device (and same-name group) is split into standard HA category cards: **⚡ Controls**, **📊 Sensors**, **⚙️ Configuration**, **🔧 Diagnostic**, **📡 Connectivity**
-- Each category card shows entity count, enabled/disabled breakdown, and its own **Enable All / Disable All** buttons
+- Every device (and same-name group) is split into standard HA category cards: **⚡ Controls**, **📊 Sensors**, **⚙️ Configuration**, **🔧 Diagnostic**, **📡 Connectivity** with per-card entity counts and enabled/disabled breakdowns
 - Cards are independently collapsible — opening one never affects others
 - Entities whose device has a `configuration_url` show a **🔗** button to open the device web UI in a new tab
+- **Offline only** toggle to focus on devices whose entities are all unavailable
 
 ### Entity Detail Dialog
-Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity.
+Click any entity card (not a button or checkbox) to open a full detail dialog with everything Home Assistant knows about that entity — organised as a **pinned hero + five tabs**.
 
-**Hero Header** — the top of the dialog shows:
-- Friendly name with inline pencil to rename (saves via `update_entity_display_name`; cancel with ✕, Escape, or click outside)
+**Hero Header** (always visible while tab content scrolls):
+- Type chips top-left: domain, platform, Disabled badge (if applicable), Area name
+- Friendly name centered, with an inline pencil to rename (saves via `update_entity_display_name`)
 - Entity ID in monospace below the name
-- Chip row: domain (blue border), platform, Disabled badge (if applicable), Area name
-- State displayed as a colour-coded pill (green for on/open, orange for unavailable/unknown, grey for off) with a **"State" label** prefix
-- Last changed / Last updated timestamps in locale-aware absolute format (12h/24h and date order follow your browser locale)
-- **Toggle / Press** button inline for controllable entities (switch, light, fan, cover, automation, etc.) and button/script entities
+- State displayed as a colour-coded pill (green for on/open, orange for unavailable/unknown, grey for off), with an inline **Toggle / Press** button for controllable entities, and Last changed / Last updated timestamps in locale-aware format
 
-**Collapsible Sections** (all use flat label → value rows, not cards):
+**Tabs** (count badges show attribute/related/history totals; the Related badge fills in as the automation scan completes):
 
-| Section | Contents |
-|---------|----------|
-| **Attributes** | All state attributes in a 2-column grid — open by default |
-| **Registry** | Entity category, device class, disabled/hidden state, icon, unit, unique ID, supported features |
-| **Device** | Manufacturer, model, SW/HW version, serial number, config URL, connections |
-| **Integration** | Config entry title, domain, source, version, state |
-| **Area & Labels** | Assigned area shown as bordered chips; all HA labels attached |
-| **State History** | Compact timeline of state changes: coloured dot + state value + absolute timestamp |
-| **Dependencies** | Automations and scripts that reference this entity |
+| Tab | Contents |
+|-----|----------|
+| **Overview** | Card grid: State (status, state, changed/updated, category), Area & Labels (entity + device label chips with manage buttons), Device (name, manufacturer, model, SW), Integration (title, domain, version, state) |
+| **Attributes** | All state attributes in a 2-column grid |
+| **Registry** | Full entity registry, device, and integration detail rows (unique ID, device class, connections, identifiers, config URL, …) |
+| **Related** | Other entities on the same device + Automation Impact (automations/scripts that appear to reference this entity) |
+| **History** | Compact timeline of state changes: coloured dot + state value + absolute timestamp |
 
 **Footer Action Buttons:**
 - **Copy ID** — copies entity ID to clipboard with a toast confirmation
 - **Enable / Disable** — toggles entity state and closes the dialog
-- **Open in HA** — opens the entity's HA settings page in a new tab
+- **Open in HA** — opens the entity's HA settings page
 - **Close**
 
 ### Notification Center
@@ -240,14 +233,15 @@ A dedicated **Updates** tab to manage all firmware and software updates:
 - **Import configurations** from a previously exported JSON file to restore states
 - **Export/Import custom themes** separately
 - Date-stamped export files for easy versioning
-- Access from the sidebar or **Ctrl+E**
+- Access from the sidebar's Actions section; imports confirm before applying and are undoable in one step
 ### Theme System
-Entity Manager ships with a comprehensive theming engine:
-**4 Built-in Themes:**
-1. **Default** -- follows your Home Assistant theme
-2. **Dark** -- dedicated dark mode
-3. **High Contrast** -- optimized for accessibility
-4. **Purple** -- alternative color scheme
+Entity Manager ships with a comprehensive theming engine built on the v3.0 "Refined" design language (hairline borders, calm light/dark palettes, soft tints):
+**Built-in Themes:**
+1. **Default** -- follows your Home Assistant theme (light or dark)
+2. **Light** -- the Refined light palette
+3. **Dark** -- the Refined dark palette
+4. **High Contrast** -- optimized for accessibility
+5. **OLED Black** -- true-black backgrounds for OLED displays
 **Custom Theme Editor:**
 - Create unlimited custom themes with a visual color picker
 - Customize every color: primary, success, danger, warning, text, backgrounds, borders, shadows
@@ -267,22 +261,19 @@ Entity Manager ships with a comprehensive theming engine:
 Right-click any entity (or multi-selection) for a full context menu:
 **Single entity:**
 - Rename / Enable / Disable
-- Add to Favorites
-- Manage Labels / Alias
-- **Assign to area** — two-panel dialog: select floor (step 1) to label new area creation, then pick from all areas (step 2); live preview shows new area + floor; "No area" option clears assignment
+- Add to / Remove from Favorites
+- Manage Labels / Set Alias
+- **Assign to area** — opens the unified **Assign dialog**: floor + area picker on top (create new floors/areas inline, "No area" clears the assignment) and label management below, with `E`/`D`/`A` scope badges
 - **🔌 Assign to device** — opens an integration-grouped device picker with confirmation; stored in undo history with device name
-- Add to Comparison
-- View Statistics / State History
-- Show Dependencies / Analyze Impact
 - Copy Entity ID
 - Open in Home Assistant
 **Multiple entities selected:**
-- Bulk Rename (with regex)
-- Bulk Enable / Disable
-- Bulk Add to Favorites
-- Bulk Add Labels
-- Bulk Compare
+- Bulk Rename Selected
+- Enable / Disable All Selected (with confirmation)
+- Add / Remove Labels on Selected
+- Add All to Favorites
 - Clear Selection
+- Delete Selected (with confirmation)
 
 ### Voice Assistant
 Control Entity Manager hands-free with voice commands:
@@ -293,84 +284,21 @@ Control Entity Manager hands-free with voice commands:
 - *"Registry enable/disable {name}"*
 Voice commands enforce admin-only access for safety.
 
-### Template Sensors
-Entity Manager exposes template sensors for entity statistics and automation conditions:
-
-**Available Template Sensors:**
-```yaml
-template:
-  - sensor:
-      - name: Entity Manager Disabled Entities
-        unique_id: entity_manager_disabled_count
-        state: "{{ states.entity_manager.disabled_entity_count | default(0) }}"
-        unit_of_measurement: entities
-        state_class: measurement
-        icon: mdi:checkbox-marked-outline
-
-      - name: Entity Manager Enabled Entities
-        unique_id: entity_manager_enabled_count
-        state: "{{ states.entity_manager.enabled_entity_count | default(0) }}"
-        unit_of_measurement: entities
-        state_class: measurement
-        icon: mdi:checkbox-blank-outline
-
-      - name: Entity Manager Total Entities
-        unique_id: entity_manager_total_count
-        state: "{{ states.entity_manager.total_entity_count | default(0) }}"
-        unit_of_measurement: entities
-        state_class: measurement
-        icon: mdi:layers
-
-      - name: Entity Manager Disabled Entities by Integration
-        unique_id: entity_manager_integration_stats
-        state: "{{ states.entity_manager.integration_disabled_stats | default('{}') }}"
-        icon: mdi:layers-multiple
-```
-
-**Using in Automations:**
-```yaml
-automation:
-  - alias: "Alert on too many disabled entities"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.entity_manager_disabled_entities
-        above: 100
-    action:
-      - service: persistent_notification.create
-        data:
-          title: "Entity Manager Alert"
-          message: >
-            {{ trigger.to_state.state }} entities are currently disabled.
-            Consider reviewing in Entity Manager panel.
-```
-
-**JSON Sensor for Advanced Tracking:**
-```yaml
-template:
-  - sensor:
-      - name: Entity Manager Export
-        unique_id: entity_manager_export
-        state: "{{ now().isoformat() }}"
-        attributes:
-          disabled_entities: "{{ state_attr('sensor.entity_manager_export', 'disabled_entities') }}"
-          by_integration: "{{ state_attr('sensor.entity_manager_export', 'by_integration') }}"
-          by_domain: "{{ state_attr('sensor.entity_manager_export', 'by_domain') }}"
-```
-
 ### Statistics Dashboard
-The toolbar displays live stats for your Home Assistant instance:
-- **Integration count** - Total number of integrations
-- **Device count** - Total number of devices
-- **Total entity count** - Clickable to open a grouped entity list (Integration → Device) — click any entity row to open its full detail dialog
-- **Automation count** - Clickable to view automations list with last-triggered time and edit navigation
-- **Script count** - Clickable to view scripts list
-- **Helper count** - Clickable to view input helpers and variables
-- **Template count** - Clickable to view template entities with state, last active, and edit/remove actions
-- **HACS count** - Clickable to browse your HACS store and installed integrations
-- **Lovelace Cards count** - Clickable to inspect dashboards, card type distribution, and entity references
-- **Update count** - Amber-highlighted when updates are available; clickable to open the Updates view
+The stat wall at the top is split in two rows:
 
-All counts update in real-time as you make changes.
+**Data stats** — Integrations · Devices · Total Entities (clickable, opens a grouped entity list) · Enabled · Disabled
+
+**Navigation strip** — compact tiles that each open a dedicated view:
+- **Auto / Scripts / Helpers** - automations (with last-triggered + edit navigation), scripts, and input helpers in one view
+- **Templates** - template entities with state, last active, and edit/remove actions
+- **Health & Cleanup** - housekeeping across unavailable/orphaned/stale entities, ghost devices, never-triggered automations
+- **HACS Store** - browse your installed HACS items and the community store
+- **Card Types** - inspect dashboards, card type distribution, and entity references
+- **Suggestions** - live count of improvement suggestions across all six suggestion types
+- **Browsers** - browser_mod browsers
+
+The **Enabled / Disabled / Updates** filter pills show live counts, with Updates amber-highlighted when updates are available. All counts update in real-time as you make changes.
 
 ### Stat Card Dialogs — Mini Entity Cards
 Every stat card opens a dedicated dialog where items are displayed as **mini entity cards** matching the visual style of the main view:
@@ -390,25 +318,26 @@ Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in
 
 ### Health & Cleanup View
 The **Health & Cleanup** inline view surfaces housekeeping tasks across five sections:
-- **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore** (with snooze), **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog; **Show ignored (N)** toggle in the section header
-- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration; per-row actions: **Ignore** (with snooze), **Assign to device**, **Add to Group**, **Remove**; **Show ignored (N)** toggle
+- **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore**, **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog
+- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration; per-row actions: **Ignore**, **Assign to device**, **Add to Group**, **Remove**, plus a **Remove All** with confirmation
 - **Stale entities** — entities with no state change in 30+ days; grouped by domain; Keep (hide for 30 d), Disable, or Remove per entity
 - **Ghost devices** — devices registered in HA but with zero entities; Remove
 - **Never triggered** — automations and scripts that have never been triggered
 
-**Ignore with Snooze**: clicking Ignore opens a duration picker — 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent. Snoozed entities are hidden until the snooze expires; permanently ignored entities stay hidden until you click Unignore. The ignored state is shared between the inline view and the individual stat card dialogs.
+**Ignore / Restore**: clicking **Ignore** persistently dismisses a row. A **View ignored (N)** bar in each section reveals everything dismissed there, with one-click **Restore** per item and **Restore all**. The ignored state is shared with the Suggestions view.
 
-**Add to Group**: opens a dialog with all five grouping modes from the sidebar — By Area, By Floor, By Device Name, By Integration, By Type — plus any custom groups you've created. By Area and By Floor open the two-panel area assignment dialog; By Device Name opens the device picker.
+**Add to Group**: opens a dialog with all five grouping modes from the sidebar — By Area, By Floor, By Device Name, By Integration, By Type — plus any custom groups you've created. By Area and By Floor open the area assignment dialog; By Device Name opens the device picker.
 
-### Suggestions Dialog
-Five colour-coded sections help you improve your entity setup:
+### Suggestions View
+Six colour-coded sections help you improve your entity setup:
 - 🟣 **Health Issues** (purple) — entities unavailable for 7+ days → suggested for disable
 - ⬜ **Disable Candidates** (neutral) — diagnostic entities unchanged for 30+ days
 - 🟠 **Naming Improvements** (orange) — entities with auto-generated hashes or generic names
-- 🔴 **Area Assignment** (red) — devices with no area assigned — bulk-assign directly from the dialog
-- 🟡 **Label Suggestions** (amber) — smart HA label recommendations — click *Apply to N* to create and assign instantly
+- 🔴 **Area Suggestions** (red) — devices with no area assigned — bulk-assign directly from the view, with name-based auto-matching and user-defined **mapping rules**
+- 🟠 **Area Mismatch** — entities whose own area differs from their device's area; sync or reassign per entity
+- 🟡 **Label Suggestions** (amber) — smart HA label recommendations across 21 semantic categories — click *Apply to N* to create and assign instantly
 
-Each section has its own colour tint on the header, body, device groups, and entity rows for quick visual scanning.
+Each section has its own colour tint for quick visual scanning, and every suggestion row has an **Ignore** button (persistent, with a central View ignored / Restore list). The related **Area Assignment tool** gives a full-screen device-by-device view with per-device Apply, per-area Apply All, and an Apply All Matched header action.
 
 ### Mobile & Responsive Design
 Three-breakpoint responsive layout designed and tested on real Android phones:
@@ -448,7 +377,7 @@ Three-breakpoint responsive layout designed and tested on real Android phones:
 ### Managing Entities
 - **Expand an integration** to see all its devices and entities
 - Click the **checkmark** to enable or the **X** to disable an entity
-- Use **Enable All / Disable All** buttons for entire integrations
+- Use the **⋯ menu** on an integration or device card for Enable All / Disable All / View Enabled / View Disabled
 - **Select multiple entities** with checkboxes, then use bulk actions in the toolbar
 ### Renaming Entities
 1. Click the **pencil icon** next to any entity
@@ -460,7 +389,7 @@ Three-breakpoint responsive layout designed and tested on real Android phones:
 - Type in the **search box** to find entities by name, ID, or integration
 - Click **Enabled / Disabled / Updates** buttons to filter by state
 - Click an **integration** in the sidebar to show only its entities
-- Use **#tagname** in search to find tagged entities
+- Filter by **Home Assistant labels** from the sidebar's Labels section
 ### Managing Updates
 1. Click the **Updates** filter button in the toolbar
 2. Use the filter dropdowns to narrow by stability or category
@@ -515,19 +444,21 @@ All commands require admin privileges.
 | `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Find/replace entity ID across YAML config files |
 | `entity_manager/assign_entity_device` | `entity_id`, `device_id` | Assign entity to a device |
 | `entity_manager/unassign_entity_device` | `entity_id` | Remove device assignment from entity |
+| `entity_manager/import_entity_states` | `entities` (max 500) | Apply enable/disable states from an exported config |
+| `entity_manager/register_template` | `entity_id` | Inject a unique_id into a YAML template entity and reload |
+
+YAML-writing commands (`update_yaml_references`, `register_template`) never touch `secrets.yaml` and write a `.em-bak` backup of the original file before modifying it.
 ### Home Assistant Services
 - `entity_manager.enable_entity`
 - `entity_manager.disable_entity`
-- `entity_manager.bulk_enable`
-- `entity_manager.bulk_disable`
-- `entity_manager.rename_entity`
-- `entity_manager.export_states`
+
+Both services require **admin privileges** (calls from automations/scripts run by HA itself are allowed). All other operations are WebSocket-only.
 ### Local Storage Keys
 Entity Manager stores user preferences in the browser:
 | Key | Data |
 |---|---|
 | `em-favorites` | Starred entities |
-| `em_activityLog` | Last 100 operation log entries |
+| `em-activity-log` | Last 100 operation log entries |
 | `em_undoStack` | Up to 50 undo steps (survives page refresh) |
 | `em_redoStack` | Redo steps |
 | `em-custom-themes` | User-created themes |
@@ -542,56 +473,88 @@ Entity Manager stores user preferences in the browser:
 | `em-entity-order` | Custom entity ordering |
 | `em_lastActivityCache` | Recorder-backed timestamps (1-hour TTL) |
 | `em-at-filter` | Last Activity Timeline active filter pill |
+| `em-integration-colors` | User-set integration accent colors (default is none) |
+| `em-device-type-overrides` | Manually assigned device types |
+| `em-custom-device-types` | User-created device types (name + color) |
+| `em-ignored-suggestions` | Persistently ignored suggestion/cleanup rows |
 ---
 ## Screenshots
 
+### ✨ New in v3.0 — the Refined UI
+
+Version 3.0 is a full visual redesign: hairline borders, calm light/dark palettes, three-box integration and device headers (Categories · Hardware · Areas & Labels), ⋯ action menus, opt-in accent colors, assignable device types, and a tabbed Entity Details dialog.
+
+![Main View](screenshots/v3/v3%2001%20Main%20View%20-%20All%20Entities.png)
+
+| Entity Details — tabbed | Device Type Picker (with custom types) |
+|:---:|:---:|
+| ![Entity Details Dialog](screenshots/v3/v3%2007%20Entity%20Details%20Dialog.png) | ![Device Type Picker](screenshots/v3/v3%2045%20Device%20Type%20Picker.png) |
+
+| Devices tab — rich headers | Integration ⋯ menu |
+|:---:|:---:|
+| ![Devices Tab](screenshots/v3/v3%2005%20Devices%20Tab.png) | ![Integration Menu](screenshots/v3/v3%2044%20Integration%20Menu.png) |
+
+| Light theme | Notification Center |
+|:---:|:---:|
+| ![Light Theme](screenshots/v3/v3%2027%20Main%20View%20-%20Light%20Theme.png) | ![Notification Center](screenshots/v3/v3%2028%20Notification%20Center.png) |
+
+| Mobile main view | Mobile sidebar | Mobile entity cards |
+|:---:|:---:|:---:|
+| ![Mobile Main](screenshots/v3/v3%2039%20Mobile%20-%20Main%20View.png) | ![Mobile Sidebar](screenshots/v3/v3%2040%20Mobile%20-%20Sidebar%20Drawer.png) | ![Mobile Cards](screenshots/v3/v3%2041%20Mobile%20-%20Entity%20Cards.png) |
+
 ### Main Panel
 
-| Light Theme | Dark Theme |
-|:---:|:---:|
-| ![Light Theme](screenshots/EM%20Front%20Light%20Theme.png) | ![Dark Theme](screenshots/EM%20Front%20Dark%20view.png) |
-
-| Front View |
-|:---:|
-| ![Front View](screenshots/Front%20wiew.png) |
-
-### Last Activity Timeline
-
-![Last Activity](screenshots/Last%20Activity.png)
-
-### Undo / Redo History
-
-![Undo Redo History](screenshots/Undo%20redo%20history.png)
-
-### Themes
-
-| HA Default | High Contrast | OLED | Theme Editor |
-|:---:|:---:|:---:|:---:|
-| ![HA Default](screenshots/EM%20Front%20HA%20Defult%20Theme.png) | ![High Contrast](screenshots/EM%20Front%20High%20Contrast%20Theme.png) | ![OLED](screenshots/EM%20Front%20OLED%20Theme.png) | ![Theme Editor](screenshots/EM%20Front%20Theme%20Edit.png) |
+| All Entities | Enabled Filter | Disabled Filter |
+|:---:|:---:|:---:|
+| ![All Entities](screenshots/v3/v3%2001%20Main%20View%20-%20All%20Entities.png) | ![Enabled Filter](screenshots/v3/v3%2002%20Main%20View%20-%20Enabled%20Filter.png) | ![Disabled Filter](screenshots/v3/v3%2003%20Main%20View%20-%20Disabled%20Filter.png) |
 
 ### Entity Cards
 
-| Integration View | Devices View |
-|:---:|:---:|
-| ![Integration View](screenshots/Entity%20card%20Integration.png) | ![Devices View](screenshots/Entity%20card%20devices.png) |
+![Integration Expanded](screenshots/v3/v3%2006%20Integration%20Expanded%20-%20Entity%20Cards.png)
 
-### Bulk Rename
+### Entity Details Dialog
 
-![Bulk Rename](screenshots/Bulk%20rename.png)
+| Overview | Registry | Related | History |
+|:---:|:---:|:---:|:---:|
+| ![Overview](screenshots/v3/v3%2007%20Entity%20Details%20Dialog.png) | ![Registry](screenshots/v3/v3%2007b%20Entity%20Details%20-%20Registry%20Tab.png) | ![Related](screenshots/v3/v3%2007c%20Entity%20Details%20-%20Related%20Tab.png) | ![History](screenshots/v3/v3%2007d%20Entity%20Details%20-%20History%20Tab.png) |
 
 ### Devices View
 
-![Devices All Types expanded](screenshots/Devices%20All%20Types%20expanded.png)
+![Devices Tab](screenshots/v3/v3%2005%20Devices%20Tab.png)
+
+### Last Activity Timeline
+
+![Last Activity](screenshots/v3/v3%2020%20Last%20Activity%20Timeline.png)
+
+### Activity Log & Undo / Redo History
+
+| Activity Log | History (Undo/Redo) |
+|:---:|:---:|
+| ![Activity Log](screenshots/v3/v3%2021%20Activity%20Log%20View.png) | ![Undo Redo History](screenshots/v3/v3%2037%20History%20Undo-Redo%20Dialog.png) |
+
+### Themes
+
+| Theme Menu | High Contrast | OLED Black | Theme Editor |
+|:---:|:---:|:---:|:---:|
+| ![Theme Menu](screenshots/v3/v3%2026%20Theme%20Menu.png) | ![High Contrast](screenshots/v3/v3%2042%20Theme%20-%20High%20Contrast.png) | ![OLED Black](screenshots/v3/v3%2043%20Theme%20-%20OLED%20Black.png) | ![Theme Editor](screenshots/v3/v3%2031%20Custom%20Theme%20Editor.png) |
+
+### Grouping Modes
+
+| By Area | By Type | By Floor | By Device Name |
+|:---:|:---:|:---:|:---:|
+| ![By Area](screenshots/v3/v3%2032%20Grouping%20-%20By%20Area.png) | ![By Type](screenshots/v3/v3%2033%20Grouping%20-%20By%20Type.png) | ![By Floor](screenshots/v3/v3%2034%20Grouping%20-%20By%20Floor.png) | ![By Device Name](screenshots/v3/v3%2035%20Grouping%20-%20By%20Device%20Name.png) |
+
+### Bulk Rename
+
+![Bulk Rename](screenshots/v3/v3%2022%20Bulk%20Rename%20View.png)
 
 ### Automations, Scripts & Helpers
 
-| Overview | Open |
-|:---:|:---:|
-| ![Automations Scripts Helpers](screenshots/Automations%20scripts%20helpers.png) | ![Automations Scripts Helpers Open](screenshots/Automations%20scripts%20helpers%20open.png) |
+![Automations Scripts Helpers](screenshots/v3/v3%2010%20Automations%20Scripts%20Helpers%20View.png)
 
 ### Templates
 
-![Templates](screenshots/Templates.png)
+![Templates](screenshots/v3/v3%2011%20Templates%20View.png)
 
 ### Unified Assign Dialog — Area, Floor & Labels
 
@@ -599,42 +562,38 @@ One dialog reachable from any clickable chip on an entity or device card — are
 
 | Area & Floor | Labels (scoped, Apply-to target) |
 |:---:|:---:|
-| ![Assign Dialog — Area and Floor](screenshots/Assign%20Dialog%20Area%20and%20Floor.png) | ![Assign Dialog — Labels](screenshots/Assign%20Dialog%20Labels.png) |
+| ![Assign Dialog — Area and Floor](screenshots/v3/v3%2008%20Assign%20Dialog%20-%20Area%20and%20Floor.png) | ![Assign Dialog — Labels](screenshots/v3/v3%2009%20Assign%20Dialog%20-%20Labels.png) |
 
 ### Updates
 
-![Updates](screenshots/Updates%20view.png)
+![Updates](screenshots/v3/v3%2004%20Main%20View%20-%20Updates%20Filter.png)
 
 ### HACS Store
 
-![HACS Store](screenshots/HACS%20Store.png)
+![HACS Store](screenshots/v3/v3%2016%20HACS%20Store%20View.png)
 
 ### Card Types
 
-| Card Types | Card Types (expanded) |
-|:---:|:---:|
-| ![Card Types](screenshots/Card%20types.png) | ![Card Types 2](screenshots/Card%20types%202.png) |
+![Card Types](screenshots/v3/v3%2017%20Card%20Types%20View.png)
 
-### Cleanup & Health
+### Health & Cleanup
 
-| Cleanup | Cleanup & Health | Cleanup & Health (expanded) |
+| Overview | Orphaned Entities | Unavailable Entities |
 |:---:|:---:|:---:|
-| ![Cleanup](screenshots/Cleanup.png) | ![Cleanup and health](screenshots/Cleanup%20and%20health.png) | ![Cleanup and health 2](screenshots/Cleanup%20and%20health%202.png) |
+| ![Health and Cleanup](screenshots/v3/v3%2012%20Health%20and%20Cleanup%20View.png) | ![Orphaned](screenshots/v3/v3%2013%20Cleanup%20-%20Orphaned%20Entities.png) | ![Unavailable](screenshots/v3/v3%2015%20Unavailable%20Entities%20Dialog.png) |
 
 ### Suggestions
 
-![Suggestions](screenshots/Entity%20Sugestions.png)
+Every suggestion row has an **Ignore** button that persistently dismisses it. A **View ignored** bar reveals everything you've dismissed — with its type (Health Issue, Disable Candidate, Naming, Area Suggestion, Area Mismatch, Label) and origin — and a one-click **Restore**.
 
-Every suggestion row has an **Ignore** button that persistently dismisses it. A **View ignored** checkbox reveals everything you've dismissed — with its type (Health Issue, Disable Candidate, Naming, Area Assignment, Area Mismatch, Label) and origin — and a one-click **Restore**.
-
-| Ignore button on a suggestion | View ignored + Restore |
-|:---:|:---:|
-| ![Suggestions — Ignore button](screenshots/Suggestions%20Ignore%20Button.png) | ![Suggestions — View ignored](screenshots/Suggestions%20View%20Ignored.png) |
+| Naming Improvements | Label Suggestions | Area Assignment Tool |
+|:---:|:---:|:---:|
+| ![Naming Improvements](screenshots/v3/v3%2018%20Suggestions%20-%20Naming%20Improvements.png) | ![Label Suggestions](screenshots/v3/v3%2023%20Label%20Suggestions.png) | ![Area Assignment](screenshots/v3/v3%2024%20Area%20Assignment%20Tool.png) |
 
 ---
 ## Use Cases
 - **Cleaning up after integrations** -- disable the dozens of unused entities that some integrations create
-- **Organizing large systems** -- manage hundreds of entities efficiently with filters, tags, and groups
+- **Organizing large systems** -- manage hundreds of entities efficiently with filters, labels, and groups
 - **Standardizing naming** -- bulk rename entities with regex to fix naming conventions across your setup
 - **Troubleshooting** -- analyze entity dependencies and automation impact before making changes
 - **Performance optimization** -- disable unnecessary entities to reduce system load

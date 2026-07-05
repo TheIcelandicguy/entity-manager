@@ -11,10 +11,13 @@
 ### Main View
 
 - Stat wall split into `.stats-data` (data stats) + nav strip; Suggestions tile shows a live count (cached via `em-suggestions-count`, refreshed by `_showSuggestionsDialog`)
-- Integration rows: two-box header (`catsBoxHtml` Categories + `metaBoxHtml` Areas & Labels with `capChips` 4-chip cap and +N overflow); Enable/Disable/View actions collapsed into a `⋯` popover menu (`.integration-menu-*`, one-time document closer, `:has(.integration-menu.open)` overflow release on the clipping card)
-- Per-integration accent colors: `_integrationAccent()` name-hash over `EM_ACCENT_PALETTE`, user override via `_showIntegrationColorDialog()` (shared label color picker), persisted to `em-integration-colors`; applied as inline `border-left-color` + `color-mix` logo backdrop
+- Integration rows: three-box header (`catsBoxHtml` Categories + `hwBoxHtml` Hardware device-type counts + `metaBoxHtml` Areas & Labels with `capChips` 4-chip cap and +N overflow); Enable/Disable/View actions collapsed into a `⋯` popover menu (`.integration-menu-*`, one-time document closer, `:has(.integration-menu.open)` overflow release on the clipping card)
+- Devices view rich headers: `_buildDeviceCard` gains a `richHeader` opt (set by `_renderDeviceCard`) rendering the same Categories/Hardware/Areas & Labels boxes + ⋯ menu on device cards; functional classes (`view-device-*`, `device-enable-all`/`-disable-all`) unchanged so existing listeners and in-place filter updates keep working; tree device rows keep the compact header
+- Per-integration accent colors are opt-in: `_integrationAccent()` returns the user override or `null` (the old `EM_ACCENT_PALETTE` name-hash default was removed); `.integration-group` base border-left and logo tile are neutral, colored only via inline styles when an accent is set; `_showIntegrationColorDialog()` has None/Cancel/Save
+- Device-type system: `em-device-type-overrides` (deviceId → type, checked first by `getDeviceType()`), `em-custom-device-types` (id → {label, color}, merged into `_deviceTypeMeta()` with a 📦 emoji); `_showDeviceTypePickerDialog(deviceIds, {title, preselect})` handles single-device (badge click) and bulk (integration Unknown chip) assignment, Auto reset, and custom-type create/delete (`_refreshDeviceTypeSelect()` keeps the toolbar filter dropdown in sync without a re-render); `no_device` pseudo-entries are never type-editable (shared id); Devices-view type filter gains an `unknown` option
 - Health banner → always-compact `.em-health-pill` (amber `color-mix` pill) with settings + dismiss
 - "Select all" label stacked above its checkbox (`.integration-select-label` column-reverse)
+- Suggestions stat tile shows the bare cached count (`em-suggestions-count`), no bulb icon; `–` placeholder until first computed
 - Desktop grids for inline views (`@media (min-width: 769px)`, `[data-view="automations-helpers"|"template"|"health-cleanup"|"hacs"]`) with `> :not(.em-mini-card|.hacs-store-item) { grid-column: 1/-1 }`; mobile unchanged
 
 ### Entity Details Dialog — Tabbed Rebuild
