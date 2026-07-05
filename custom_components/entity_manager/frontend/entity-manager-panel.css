@@ -695,12 +695,12 @@ entity-manager-panel.has-bg-image .app-header {
 
 .filter-group {
   display: flex;
-  gap: 6px;
+  gap: 3px;
   align-items: center;
   background: var(--em-bg-primary);
-  padding: 4px;
-  border-radius: 12px;
-  border: 2px solid var(--em-primary-dark);
+  padding: 3px;
+  border-radius: 10px;
+  border: 1.5px solid var(--em-border);
 }
 
 #toolbar-domain-select option {
@@ -709,75 +709,69 @@ entity-manager-panel.has-bg-image .app-header {
 }
 
 .filter-toggle {
-  padding: 10px 16px;
-  border: 2px solid var(--em-primary-dark);
+  padding: 7px 13px;
+  border: none;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 700;
   color: var(--em-text-secondary);
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .filter-toggle:hover {
   color: var(--em-text-primary);
-  border-color: var(--em-primary);
+  background: var(--em-bg-secondary);
 }
 
 .filter-toggle .filter-count {
   font-weight: 700;
 }
 
+/* Idle pills carry their filter's hue as text; active fills with it */
 .filter-toggle[data-filter="enabled"] {
-  border-color: var(--em-success);
   color: var(--em-success);
 }
 
 .filter-toggle[data-filter="enabled"].active {
   background: var(--em-success) !important;
-  border-color: var(--em-success) !important;
   color: #fff !important;
 }
 
 .filter-toggle[data-filter="disabled"] {
-  border-color: var(--em-danger);
   color: var(--em-danger);
 }
 
 .filter-toggle[data-filter="disabled"].active {
   background: var(--em-danger) !important;
-  border-color: var(--em-danger) !important;
   color: #fff !important;
 }
 
 .filter-toggle[data-filter="updates"] {
-  border-color: var(--em-warning);
   color: var(--em-warning);
 }
 
 .filter-toggle[data-filter="updates"].active {
   background: var(--em-warning) !important;
-  border-color: var(--em-warning) !important;
   color: #fff !important;
 }
 
 .filter-toggle.active {
   background: var(--em-primary) !important;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--em-primary) 15%, transparent) !important;
-  border-color: var(--em-primary) !important;
   color: white !important;
 }
 
 .filter-select {
-  padding: 10px 12px;
-  border: 2px solid var(--em-primary-dark);
-  border-radius: 10px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--em-border);
+  border-radius: 9px;
   background: var(--em-bg-primary);
   color: var(--em-text-primary);
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   transition: all 0.3s ease;
-  min-width: 160px;
+  min-width: 150px;
 }
 
 .domain-dropdown {
@@ -787,13 +781,13 @@ entity-manager-panel.has-bg-image .app-header {
 
 .domain-button {
   width: 100%;
-  padding: 10px 12px;
-  border: 2px solid var(--em-primary-dark);
-  border-radius: 10px;
+  padding: 8px 11px;
+  border: 1.5px solid var(--em-border);
+  border-radius: 9px;
   background: var(--em-bg-primary) !important;
   color: var(--em-text-primary);
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 12.5px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1288,10 +1282,10 @@ entity-manager-panel[data-theme="dark"] .rename-input {
 .search-box {
   flex: 1;
   min-width: 280px;
-  padding: 12px 16px;
-  border: 2px solid var(--em-primary-dark);
-  border-radius: 12px;
-  font-size: 18px;
+  padding: 10px 13px;
+  border: 1.5px solid var(--em-border);
+  border-radius: 11px;
+  font-size: 13.5px;
   background: var(--em-bg-primary);
   color: var(--em-text-primary);
   transition: all 0.3s ease;
@@ -5940,14 +5934,14 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .toolbar-select {
-  padding: 8px 12px;
-  border: 2px solid var(--em-primary-dark);
+  padding: 8px 11px;
+  border: 1.5px solid var(--em-border);
   background: var(--em-bg-primary);
-  border-radius: 10px;
+  border-radius: 9px;
   cursor: pointer;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--em-text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--em-text-primary);
   transition: all 0.3s ease;
 }
 
