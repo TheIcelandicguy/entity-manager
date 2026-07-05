@@ -1,5 +1,58 @@
 # Entity Manager UI Changes
 
+## Version 3.0.0 - "Refined" UI Redesign
+
+### Design System
+
+- **Token overhaul** (`EM_THEME_VARS` single source of truth, `PREDEFINED_THEMES`, CSS `:root` fallbacks, `entity-manager-panel[data-theme]` blocks): light surface `#ffffff` / surface-2 `#f7f9fc` / canvas `#eef1f6` / ink `#1a2027` / line `rgba(30,41,59,.16)`; dark `#181c22` / `#14171c` / `#0f1216` / `#e7ebf0` / `rgba(255,255,255,.12)`; success `#2e9e4f`, danger `#e0473a`, warning `#e08a1e`. New `--em-canvas` token and `--em-header-h: 58px` layout constant
+- **Overlay token scoping**: dialogs are appended to `document.body`, outside the panel element, so `--em-*` vars resolved from `:root` — where a user's HA theme setting `--divider-color: transparent` blanked every dialog border (`var()` fallbacks don't fire on defined values). Both `[data-theme]` token blocks now also target `.confirm-dialog-overlay[data-theme]`
+- Hairline sweep: all decorative `2px solid var(--em-primary)`/`var(--em-border)` boxes reduced to 1px `--em-border` (spinner ring, scrollbars, and update-item accents intentionally kept)
+
+### Main View
+
+- Stat wall split into `.stats-data` (data stats) + nav strip; Suggestions tile shows a live count (cached via `em-suggestions-count`, refreshed by `_showSuggestionsDialog`)
+- Integration rows: two-box header (`catsBoxHtml` Categories + `metaBoxHtml` Areas & Labels with `capChips` 4-chip cap and +N overflow); Enable/Disable/View actions collapsed into a `⋯` popover menu (`.integration-menu-*`, one-time document closer, `:has(.integration-menu.open)` overflow release on the clipping card)
+- Per-integration accent colors: `_integrationAccent()` name-hash over `EM_ACCENT_PALETTE`, user override via `_showIntegrationColorDialog()` (shared label color picker), persisted to `em-integration-colors`; applied as inline `border-left-color` + `color-mix` logo backdrop
+- Health banner → always-compact `.em-health-pill` (amber `color-mix` pill) with settings + dismiss
+- "Select all" label stacked above its checkbox (`.integration-select-label` column-reverse)
+- Desktop grids for inline views (`@media (min-width: 769px)`, `[data-view="automations-helpers"|"template"|"health-cleanup"|"hacs"]`) with `> :not(.em-mini-card|.hacs-store-item) { grid-column: 1/-1 }`; mobile unchanged
+
+### Entity Details Dialog — Tabbed Rebuild
+
+- `_showEntityDetailsDialog` reassembled from `_collGroup` accordion stack → pinned hero + `.em-ed-tabs` strip + `.em-ed-panels` scroll region (`#em-edd-body` is now a flex column with `overflow: hidden`; panels scroll independently)
+- Tabs: Overview (2-col `.em-ed-ov-grid` cards: State / Area & Labels / Device / Integration), Attributes, Registry (full registry+device+integration rows under `.em-ed-subhead`s), Related (same-device entities + async Automation Impact, which also fills a count badge), History
+- Hero: chips row first (top-left), centered name + id; duplicate domain chip dropped when `platform === domain`; label manage buttons use `.em-mini-btn`; `.em-ed-value` wraps at word boundaries (`overflow-wrap: anywhere`, was `break-all`)
+- All data fetching, action handlers, rename-pencil flow, label-editor callbacks unchanged
+
+### Dialog Internals Polish
+
+- Missing `.btn-sm` modifier defined — ~15 call sites (Suggestions Apply, Area Assignment Apply/Assign, mapping rules, bulk bars) rendered as transparent ghosts because bare `.btn` has a transparent border/background
+- Theme Editor modal brought into the Refined system (radius 14, hairline borders, 17px/700 title, 13px scale, compact footer buttons)
+- `.em-target-btn` (Apply-to selector in label editors + Assign dialog) moved from ~20 lines of inline styles + JS style toggling to a proper CSS class with `.active` state
+- Device Picker groups and Add-to-Group rows: 2px primary/border → hairline; label editors' Create buttons unified to `btn-primary`; `.rename-input` 16px → 13.5px + `box-sizing: border-box` (kills a horizontal scrollbar)
+
+### Safety / Accuracy (action-warning audit)
+
+- `renameEntity` returns `true`/`false` and takes `opts.quiet` (no per-failure dialog spam in bulk); `executeRenames` counts real outcomes instead of treating every settled promise as success
+- Cleanup "Remove All" orphaned: outcome-aware toast (success / partial / all-failed) instead of unconditional success
+- `_addLabelToEntity` pushes a `labels_change` undo (before/after both registries), matching `_removeLabelFromEntity`; the label editor's aggregate Done-time push removed (it double-counted — and had already double-counted removals)
+- Health threshold `prompt()` → `_showPromptDialog`
+- Confirms unified: sidebar Enable/Disable Selected now routes through the confirm-wrapped `_bulkEnableSelected`/`_disableSelectedEntities`; `_bulkToggleGroup` (device-card + smart-group All buttons), preset Enable/Disable, and Unavailable bulk Disable confirm with counts; Clear History and Clear all notifications confirm
+- Import Config pushes a new `states_import` undo action (`enabledIds`/`disabledIds`, reversed as one step; undoing entries the backend failed to apply is a harmless no-op)
+
+### Security
+
+- `enable_entity`/`disable_entity` service handlers enforce admin via `hass.auth.async_get_user` + `Unauthorized` (system-initiated calls without a user context pass, per core convention) — closes the asymmetry with the `@require_admin` WS commands
+- `_renderFilterPresets` (Saved Views) escapes `preset.name`/`preset.id` — was the one unescaped `innerHTML` sink in the app
+- `import_entity_states` schema capped with `vol.Length(min=1, max=MAX_BULK_ENTITIES)`
+- `update_yaml_references` and `register_template` skip any `secrets.yaml` (any directory) and write a `<file>.yaml.em-bak` backup of pre-edit content before modifying a file
+
+### Bug Fixes
+
+- Favorites sidebar filter is a real toggle (was stuck on once activated), with `.active` state and an empty-state message
+
+---
+
 ## Version 2.22.0 - One-Click Integration Reveal, Category/Label Rollup & Bulk-Action Fixes
 
 ### New Features

@@ -7,7 +7,7 @@ entity-manager/
 │       ├── __init__.py                  # Integration entry point, panel + resource registration
 │       ├── config_flow.py               # UI-based configuration flow (single-step, no options)
 │       ├── const.py                     # DOMAIN, MAX_BULK_ENTITIES, VALID_ENTITY_ID
-│       ├── manifest.json                # Integration metadata (v2.22.0)
+│       ├── manifest.json                # Integration metadata (v3.0.0)
 │       ├── services.yaml                # Service schema for enable_entity / disable_entity
 │       ├── strings.json                 # UI strings for config flow
 │       ├── voice_assistant.py           # Voice intent handlers (enable/disable)
