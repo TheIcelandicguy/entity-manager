@@ -20,6 +20,14 @@ const HA_LABEL_COLORS = [
   ['blue-grey', '#607d8b'],
 ];
 
+// Auto-accent palette for per-integration colors (name-hashed, user-overridable).
+// Hues chosen to read on both Refined light and dark surfaces.
+const EM_ACCENT_PALETTE = [
+  '#2196f3', '#e0473a', '#2e9e4f', '#e08a1e', '#9c27b0', '#00bcd4',
+  '#3f51b5', '#e91e63', '#009688', '#ff5722', '#8bc34a', '#673ab7',
+  '#03a9f4', '#f06292', '#4db6ac', '#7986cb',
+];
+
 // Predefined themes (inlined for reliable loading).
 // Light/Dark carry the "Refined" (v3.0) palette; keep in sync with the
 // CSS :root fallbacks and [data-theme] blocks in entity-manager-panel.css.
@@ -353,6 +361,9 @@ class EntityManagerPanel extends HTMLElement {
     
     // Entity aliases
     this.entityAliases = this._loadEntityAliases();
+
+    // Per-integration accent color overrides (name-hash palette when absent)
+    this.integrationColors = this._loadFromStorage('em-integration-colors', {});
     
     // Groups state
     this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name, custom
@@ -5583,6 +5594,61 @@ class EntityManagerPanel extends HTMLElement {
     }
     this._saveEntityAliases();
   }
+
+  // ===== PER-INTEGRATION ACCENT COLORS =====
+
+  _saveIntegrationColors() {
+    this._saveToStorage('em-integration-colors', this.integrationColors);
+  }
+
+  /** User override first, else a stable name-hashed pick from the accent palette. */
+  _integrationAccent(name) {
+    const override = this.integrationColors?.[name];
+    if (override) return override;
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = ((h * 31) + name.charCodeAt(i)) >>> 0;
+    return EM_ACCENT_PALETTE[h % EM_ACCENT_PALETTE.length];
+  }
+
+  _showIntegrationColorDialog(integration) {
+    const current = this.integrationColors[integration] || this._integrationAccent(integration);
+    const { overlay, closeDialog } = this.createDialog({
+      title: `Accent color — ${integration}`,
+      color: 'var(--em-primary)',
+      contentHtml: `
+        <div style="padding: 14px 18px;">
+          <p style="margin: 0 0 10px; font-size: 12.5px; color: var(--em-text-secondary);">
+            Pick an accent for this integration's bar and logo tile, or reset to the automatic color.
+          </p>
+          ${this._renderLabelColorPickerHtml('em-int-color', current)}
+        </div>
+      `,
+      actionsHtml: `
+        <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-reset">Reset to auto</button>
+        <button class="em-dialog-btn em-dialog-btn-secondary em-int-color-cancel">Cancel</button>
+        <button class="em-dialog-btn em-dialog-btn-primary em-int-color-save">Save</button>
+      `,
+    });
+    this._attachLabelColorPicker(overlay.querySelector('#em-int-color'));
+    overlay.querySelector('.em-int-color-cancel')?.addEventListener('click', closeDialog);
+    overlay.querySelector('.em-int-color-reset')?.addEventListener('click', () => {
+      delete this.integrationColors[integration];
+      this._saveIntegrationColors();
+      closeDialog();
+      this.updateView();
+      this._showToast(`Accent color for ${integration} reset to automatic`, 'info');
+    });
+    overlay.querySelector('.em-int-color-save')?.addEventListener('click', () => {
+      const value = overlay.querySelector('#em-int-color')?.dataset.value;
+      if (value) {
+        this.integrationColors[integration] = this._labelColorCss(value);
+        this._saveIntegrationColors();
+      }
+      closeDialog();
+      this.updateView();
+      this._showToast(`Accent color updated for ${integration}`, 'success');
+    });
+  }
   
   async _showBulkLabelRemover() {
     if (!this.selectedEntities?.size) return;
@@ -8778,9 +8844,10 @@ class EntityManagerPanel extends HTMLElement {
 
     const _ivf = this.integrationViewFilter[integration.integration];
     const _filterClass = _ivf === 'enabled' ? 'em-filter-enabled' : _ivf === 'disabled' ? 'em-filter-disabled' : '';
+    const accent = this._integrationAccent(integration.integration);
 
     return `
-      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}">
+      <div class="integration-group integration-card ${_filterClass}" data-integration="${intName}" style="border-left-color: ${accent};">
         <div class="integration-header" data-integration="${intName}">
           <div class="integration-select-wrapper" title="Select all in this integration">
             <label class="integration-select-label">
@@ -8793,7 +8860,7 @@ class EntityManagerPanel extends HTMLElement {
               <span class="integration-select-text">Select all</span>
             </label>
           </div>
-          <div class="integration-logo-container">
+          <div class="integration-logo-container" style="background: color-mix(in srgb, ${accent} 14%, transparent);">
             <img class="integration-logo" src="${this._brandIconUrl(integration.integration)}" alt="${intName}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><text x=%2224%22 y=%2232%22 font-size=%2224%22 text-anchor=%22middle%22 fill=%22%23999%22>${intInitial}</text></svg>'">
           </div>
           <span class="integration-icon ${isExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
@@ -8810,6 +8877,7 @@ class EntityManagerPanel extends HTMLElement {
               <button class="integration-menu-item view-integration-disabled ${_ivf === 'disabled' ? 'btn-primary' : 'btn-secondary'}" data-integration="${intName}" title="Show only disabled entities">View Disabled</button>
               <button class="integration-menu-item integration-menu-good enable-integration" data-integration="${intName}">Enable All</button>
               <button class="integration-menu-item integration-menu-bad disable-integration" data-integration="${intName}">Disable All</button>
+              <button class="integration-menu-item integration-color-btn" data-integration="${intName}">${this._icon('mdi:pencil-outline', '14px')} Accent color…</button>
             </div>
           </div>
         </div>
@@ -9586,6 +9654,13 @@ class EntityManagerPanel extends HTMLElement {
     this.content.querySelectorAll('.integration-menu .integration-menu-item').forEach(item => {
       item.addEventListener('click', () => {
         item.closest('.integration-menu')?.classList.remove('open');
+      });
+    });
+    // Per-integration accent color picker
+    this.content.querySelectorAll('.integration-color-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showIntegrationColorDialog(btn.dataset.integration);
       });
     });
     // One-time global closers: outside click + Escape

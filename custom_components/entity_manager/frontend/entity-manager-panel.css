@@ -1807,6 +1807,12 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   flex-shrink: 0;
 }
 
+/* The card clips overflow for rounded corners — release it while a menu is open
+   so the popover can escape the row */
+.integration-group:has(.integration-menu.open) {
+  overflow: visible;
+}
+
 .integration-menu-btn {
   min-width: 34px;
 }
