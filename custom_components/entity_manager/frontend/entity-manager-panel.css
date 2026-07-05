@@ -51,8 +51,8 @@ entity-manager-panel *::after {
   --em-header-h: 58px; /* layout constant, not a theme token */
   /* Dialog spacing & sizing */
   --dialog-padding: 24px;
-  --dialog-border-width: 2px;
-  --dialog-border-radius: 16px;
+  --dialog-border-width: 1px;
+  --dialog-border-radius: 14px;
   --dialog-header-padding: 24px 24px 16px 24px;
   --dialog-content-padding: 24px;
   --dialog-actions-padding: 16px 24px 24px 24px;
@@ -891,12 +891,12 @@ body.em-dialog-open {
 .confirm-dialog-box {
   background: var(--em-bg-primary, #ffffff) !important;
   border-radius: var(--dialog-border-radius);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
   max-width: 500px;
   width: 90%;
   animation: slideUp 0.3s ease;
   overflow: hidden;
-  border: var(--dialog-border-width) solid var(--em-primary-dark);
+  border: var(--dialog-border-width) solid var(--em-border);
   /* Flex column so header/actions stay pinned and content scrolls */
   display: flex;
   flex-direction: column;
@@ -931,16 +931,17 @@ body.em-dialog-open {
 
 .confirm-dialog-header {
   padding: var(--dialog-header-padding);
-  border-bottom: 2px solid var(--em-border, #e0e0e0);
+  border-bottom: 1.5px solid var(--em-border, #e0e0e0);
   background: var(--em-bg-primary, #ffffff);
   flex-shrink: 0;
 }
 
 .confirm-dialog-header h2 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--primary-text-color, #333);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--em-text-primary, #333);
 }
 
 .confirm-dialog-content {
@@ -949,9 +950,9 @@ body.em-dialog-open {
 
 .confirm-dialog-content p {
   margin: 0;
-  font-size: 16px;
-  line-height: 1.5;
-  color: var(--secondary-text-color, #666);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--em-text-secondary, #666);
 }
 
 .confirm-dialog-actions {
@@ -1180,13 +1181,14 @@ entity-manager-panel[data-theme="dark"] .confirm-no:hover {
   background: var(--em-bg-hover) !important;
 }
 
+/* Refined dark: bg-primary is the raised surface (bg-secondary is the deeper inset one) */
 .confirm-dialog-overlay[data-theme="dark"] .confirm-dialog-box {
-  background: var(--em-bg-secondary) !important;
+  background: var(--em-bg-primary) !important;
   color: var(--em-text-primary);
 }
 
 .confirm-dialog-overlay[data-theme="dark"] .confirm-dialog-header {
-  background: var(--em-bg-secondary);
+  background: var(--em-bg-primary);
   border-bottom-color: var(--em-border);
 }
 
@@ -1333,14 +1335,13 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 }
 
 .btn {
-  padding: 10px 20px;
-  border: 2px solid transparent;
-  border-radius: 10px;
+  padding: 9px 16px;
+  border: 1.5px solid transparent;
+  border-radius: 9px;
   cursor: pointer;
-  font-size: 18px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
 }
@@ -1350,25 +1351,24 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--em-primary), var(--em-primary-dark)) !important;
+  background: var(--em-primary) !important;
   color: white !important;
-  border: 2px solid var(--em-primary-dark) !important;
+  border: 1.5px solid var(--em-primary-dark) !important;
 }
 
 .btn-primary:hover {
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--em-primary) 40%, transparent) !important;
+  filter: brightness(1.08);
 }
 
 .btn-secondary {
-  background: var(--em-bg-primary);
+  background: var(--em-bg-secondary);
   color: var(--em-text-primary);
-  border: 2px solid var(--em-primary-dark);
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: 18px;
-  font-weight: 600;
-  box-shadow: var(--em-shadow);
-  transition: all 0.3s ease;
+  border: 1.5px solid var(--em-border);
+  padding: 9px 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+  transition: all 0.2s ease;
 }
 
 .btn-secondary:hover {
@@ -5623,7 +5623,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-dialog-btn-secondary {
   background: var(--em-bg-primary);
   color: var(--em-text-primary);
-  border: 2px solid var(--em-border);
+  border: 1.5px solid var(--em-border);
 }
 .em-dialog-btn-primary { background: var(--em-primary); color: #fff; border: none; }
 .em-dialog-btn-danger  { background: var(--em-danger);  color: #fff; border: none; }
@@ -5631,7 +5631,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-dialog-btn-outline-primary {
   background: var(--em-bg-primary);
   color: var(--em-primary);
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
 }
 .em-dialog-btn-outline-primary:hover {
   background: var(--em-primary);
