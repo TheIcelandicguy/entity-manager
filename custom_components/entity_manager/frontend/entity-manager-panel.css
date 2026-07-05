@@ -507,7 +507,7 @@ entity-manager-panel :focus-visible {
 
 .theme-editor-btn.save {
   background: var(--em-primary);
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   color: white;
 }
 
@@ -817,7 +817,7 @@ entity-manager-panel.has-bg-image .app-header {
   left: 0;
   right: 0;
   background: var(--em-bg-primary) !important;
-  border: 2px solid var(--em-primary-dark) !important;
+  border: 1px solid var(--em-border) !important;
   border-radius: 10px;
   box-shadow: var(--em-shadow-hover);
   max-height: 240px;
@@ -1266,7 +1266,7 @@ entity-manager-panel[data-theme="dark"] .confirm-no:hover {
 .rename-input {
   width: 100%;
   padding: 12px;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-border);
   border-radius: 8px;
   font-size: 16px;
   font-family: monospace;
@@ -1385,7 +1385,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 .btn-success {
   background: var(--em-success) !important;
   color: white !important;
-  border: 2px solid var(--em-success) !important;
+  border: 1.5px solid var(--em-success) !important;
 }
 
 .btn-success:hover {
@@ -1395,7 +1395,7 @@ entity-manager-panel[data-theme="dark"] .hide-uptodate-label input[type="checkbo
 .btn-danger {
   background: var(--em-danger);
   color: white;
-  border: 2px solid var(--em-danger);
+  border: 1.5px solid var(--em-danger);
 }
 
 .btn-danger:hover {
@@ -1914,7 +1914,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   flex-direction: row;
   flex-wrap: wrap;
   gap: 12px;
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
   max-width: 100%;
   overflow: hidden;
 }
@@ -2393,7 +2393,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .select-all-pill {
   display: inline-flex;
   align-items: center;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   border-radius: 10px;
   overflow: hidden;
   background: var(--em-bg-primary);
@@ -2444,7 +2444,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   gap: 8px;
   padding: 8px 16px;
   background: var(--em-bg-primary);
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   border-radius: 10px;
   color: var(--em-text-primary);
   font-weight: 600;
@@ -2506,7 +2506,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .update-item.is-active {
-  border: 2px solid var(--em-primary) !important;
+  border: 1px solid var(--em-border) !important;
   border-left: 4px solid var(--em-primary) !important;
   background: color-mix(in srgb, var(--em-primary) 6%, transparent);
   position: relative;
@@ -2531,13 +2531,13 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .update-item.is-done {
-  border: 2px solid var(--em-success) !important;
+  border: 1px solid var(--em-border) !important;
   border-left: 4px solid var(--em-success) !important;
   background: color-mix(in srgb, var(--em-success) 6%, transparent);
 }
 
 .update-item.is-failed {
-  border: 2px solid var(--em-danger) !important;
+  border: 1px solid var(--em-border) !important;
   border-left: 4px solid var(--em-danger) !important;
   background: color-mix(in srgb, var(--em-danger) 6%, transparent);
 }
@@ -2637,7 +2637,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .update-btn {
   padding: 8px 16px;
-  border: 2px solid var(--em-success);
+  border: 1.5px solid var(--em-success);
   background: var(--em-success);
   color: white;
   border-radius: 8px;
@@ -3440,7 +3440,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border-bottom: 2px solid var(--em-success);
+  border-bottom: 1.5px solid var(--em-success);
   background: color-mix(in srgb, var(--em-success) 4%, var(--em-bg-primary));
   flex-wrap: wrap;
 }
@@ -3712,8 +3712,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Left column: search bar + entity list */
 .bulk-rename-top-box {
-  border: 2px solid var(--em-primary);
-  border-radius: 8px;
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
   overflow: hidden;
   flex: 2;
   display: flex;
@@ -3821,8 +3821,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Right column: rename queue */
 .bulk-rename-bottom-box {
-  border: 2px solid var(--em-primary);
-  border-radius: 8px;
+  border: 1px solid var(--em-border);
+  border-radius: 10px;
   overflow: hidden;
   flex: 1;
   display: flex;
@@ -3981,7 +3981,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Pattern card */
 .bulk-rename-pattern-card {
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
+  border-left: 3px solid var(--em-primary);
   border-radius: 10px;
   overflow: hidden;
 }
@@ -4435,7 +4436,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .em-view-selected-exit {
   padding: 4px 12px;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   border-radius: 6px;
   background: transparent;
   color: var(--em-primary);
@@ -4888,7 +4889,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 14px 16px;
   background: var(--em-bg-secondary);
   border-radius: 8px 8px 0 0;
-  border-bottom: 2px solid var(--em-primary);
+  border-bottom: 1px solid var(--em-border);
   cursor: pointer;
 }
 
@@ -4947,7 +4948,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-assign-btn {
   font-size: 11px;
   padding: 3px 9px;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   border-radius: 6px;
   background: var(--em-primary);
   color: white;
@@ -5127,7 +5128,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .device-suggestion-row .device-suggestion-apply {
   background: var(--em-success);
   color: #fff;
-  border: 2px solid var(--em-success);
+  border: 1.5px solid var(--em-success);
 }
 .device-suggestion-row .device-suggestion-apply:hover {
   background: color-mix(in srgb, var(--em-success) 85%, black);
@@ -5254,7 +5255,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* Collapsible section wrapper — matches .em-naming-device-group pattern */
 .em-afd-section {
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
+  border-left: 3px solid var(--em-primary);
   border-radius: 8px;
   overflow: hidden;
   margin: 2px 0;
@@ -5268,7 +5270,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   user-select: none;
   padding: 7px 10px;
   background: var(--em-bg-secondary);
-  border-bottom: 2px solid var(--em-primary);
+  border-bottom: 1px solid var(--em-border);
 }
 .em-afd-section.em-afd-collapsed .em-afd-section-toggle { border-bottom: none; }
 
@@ -5318,7 +5320,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   gap: 8px;
   padding: 7px 10px;
   border-radius: 6px;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-border);
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
   font-size: 13px;
@@ -5498,7 +5500,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 /* Separator line between top selectors and entity info box */
 .em-afd-divider {
   border: none;
-  border-top: 2px solid var(--em-primary);
+  border-top: 1px solid var(--em-border);
   margin: 0;
   flex-shrink: 0;
   opacity: 0.4;
@@ -5519,7 +5521,8 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-content: start;
 }
 .em-afd-entity-card {
-  border: 2px solid var(--em-danger);
+  border: 1px solid var(--em-border);
+  border-left: 3px solid var(--em-danger);
   border-radius: 6px;
   padding: 6px 8px;
   min-width: 0;
@@ -6006,14 +6009,15 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 /* ===== SUGGESTION DIALOG — device group headers & entity rows ===== */
 .em-naming-device-group {
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
+  border-left: 3px solid var(--em-primary);
   border-radius: 8px;
   overflow: hidden;
   margin: 4px 0;
 }
 
 .em-naming-device-toggle {
-  border-bottom: 2px solid var(--em-primary);
+  border-bottom: 1px solid var(--em-border);
 }
 
 .em-naming-device-body {
@@ -6024,7 +6028,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 }
 
 .em-sug-row {
-  border: 2px solid var(--em-primary);
+  border: 1px solid var(--em-border);
   border-radius: 6px;
   font-size: 12px;
 }
@@ -6338,7 +6342,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 6px;
-  border: 2px solid var(--em-primary);
+  border: 1.5px solid var(--em-primary);
   color: var(--em-primary);
   background: var(--em-bg-primary);
   white-space: nowrap;
