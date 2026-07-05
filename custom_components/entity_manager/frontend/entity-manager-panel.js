@@ -1167,14 +1167,21 @@ class EntityManagerPanel extends HTMLElement {
       this.showEntityListDialog('unavailable');
     });
     banner.querySelector('.em-health-banner-settings')?.addEventListener('click', () => {
-      const newVal = prompt(`Entity health alert threshold (currently ${threshold}):\nSet to 0 to disable.`, String(threshold));
-      if (newVal === null) return;
-      const n = parseInt(newVal, 10);
-      if (!isNaN(n) && n >= 0) {
-        this._saveToStorage('em-health-alert-threshold', String(n));
-        delete banner.dataset.renderedCount; // force re-render with new threshold
-        this._updateHealthBanner();
-      }
+      this._showPromptDialog(
+        'Health alert threshold',
+        `Alert when this many entities are unavailable (currently ${threshold}). Set to 0 to disable.`,
+        String(threshold),
+        (newVal) => {
+          const n = parseInt(newVal, 10);
+          if (!isNaN(n) && n >= 0) {
+            this._saveToStorage('em-health-alert-threshold', String(n));
+            delete banner.dataset.renderedCount; // force re-render with new threshold
+            this._updateHealthBanner();
+          } else {
+            this._showToast('Enter a number of 0 or more', 'warning');
+          }
+        },
+      );
     });
     banner.querySelector('.em-health-banner-dismiss')?.addEventListener('click', () => {
       this._saveToStorage('em-health-banner-dismissed', String(unavail));
@@ -2745,11 +2752,13 @@ class EntityManagerPanel extends HTMLElement {
       }
       let successCount = 0, errorCount = 0;
       for (const [, items] of Object.entries(renameByDomain)) {
+        // renameEntity resolves true/false rather than rejecting — count real outcomes
+        // (quiet: one summary toast below instead of a stacked error dialog per failure)
         const results = await Promise.allSettled(
-          items.map(item => this.renameEntity(item.old, item.new))
+          items.map(item => this.renameEntity(item.old, item.new, false, { quiet: true }))
         );
-        successCount += results.filter(r => r.status === 'fulfilled').length;
-        errorCount += results.filter(r => r.status === 'rejected').length;
+        successCount += results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+        errorCount += results.filter(r => r.status !== 'fulfilled' || r.value !== true).length;
       }
       document.querySelector('.em-toast')?.remove();
       if (errorCount === 0) {
@@ -4393,6 +4402,15 @@ class EntityManagerPanel extends HTMLElement {
         for (const id of action.entityIds) await (isUndo ? this.enableEntity : this.disableEntity).call(this, id, true);
         this._showToast(`${verb} bulk disable (${action.entityIds.length})`, 'info');
         break;
+      case 'states_import': {
+        // Import applied both directions at once — reverse each list on undo
+        const toEnable  = isUndo ? action.disabledIds : action.enabledIds;
+        const toDisable = isUndo ? action.enabledIds  : action.disabledIds;
+        for (const id of toEnable)  await this.enableEntity(id, true);
+        for (const id of toDisable) await this.disableEntity(id, true);
+        this._showToast(`${verb} import (${toEnable.length + toDisable.length} entities)`, 'info');
+        break;
+      }
       case 'assign_entity_area':
         await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: action.entityId, area_id: isUndo ? action.oldAreaId : action.newAreaId });
         this.floorsData = null;
@@ -4507,6 +4525,8 @@ class EntityManagerPanel extends HTMLElement {
         return `Bulk enabled ${action.entityIds?.length ?? '?'} entities`;
       case 'bulk_disable':
         return `Bulk disabled ${action.entityIds?.length ?? '?'} entities`;
+      case 'states_import':
+        return `Imported states (${(action.enabledIds?.length || 0) + (action.disabledIds?.length || 0)} entities)`;
       case 'rename':
         return `Renamed ${action.oldId} → ${action.newId}`;
       case 'display_name_change':
@@ -4567,7 +4587,8 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-history-close').addEventListener('click', closeDialog);
 
     const listEl = overlay.querySelector('#em-history-list');
-    overlay.querySelector('#em-history-clear').addEventListener('click', () => {
+    overlay.querySelector('#em-history-clear').addEventListener('click', async () => {
+      if (!(await this._confirmAsync('Clear history', 'Clear all undo/redo history? Past actions can no longer be undone.'))) return;
       this.undoStack = [];
       this.redoStack = [];
       try { localStorage.setItem('em_undoStack', '[]'); } catch {}
@@ -5074,28 +5095,43 @@ class EntityManagerPanel extends HTMLElement {
 
   async _addLabelToEntity(entityId, labelId, target = 'both') {
     try {
+      // Track before/after and push undo, mirroring _removeLabelFromEntity —
+      // label ADDs are just as undo-able as removals.
+      let beforeEntity = [], afterEntity = [], beforeDevice = [], afterDevice = [], deviceId = null;
+      let changed = false;
       if (target === 'entity' || target === 'both') {
-        const currentLabels = await this._getEntityLabels(entityId);
-        if (!currentLabels.includes(labelId)) {
+        beforeEntity = await this._getEntityLabels(entityId);
+        if (!beforeEntity.includes(labelId)) {
+          afterEntity = [...beforeEntity, labelId];
           await this._hass.callWS({
             type: 'config/entity_registry/update',
             entity_id: entityId,
-            labels: [...currentLabels, labelId],
+            labels: afterEntity,
           });
+          changed = true;
+        } else {
+          afterEntity = beforeEntity;
         }
       }
       if (target === 'device' || target === 'both') {
-        const deviceId = await this._getEntityDeviceId(entityId);
+        deviceId = await this._getEntityDeviceId(entityId);
         if (deviceId) {
-          const devLabels = await this._getDeviceLabels(deviceId);
-          if (!devLabels.includes(labelId)) {
+          beforeDevice = await this._getDeviceLabels(deviceId);
+          if (!beforeDevice.includes(labelId)) {
+            afterDevice = [...beforeDevice, labelId];
             await this._hass.callWS({
               type: 'config/device_registry/update',
               device_id: deviceId,
-              labels: [...devLabels, labelId],
+              labels: afterDevice,
             });
+            changed = true;
+          } else {
+            afterDevice = beforeDevice;
           }
         }
+      }
+      if (changed) {
+        this._pushUndoAction({ type: 'labels_change', entityId, deviceId, beforeEntity, afterEntity, beforeDevice, afterDevice });
       }
     } catch (e) {
       console.error('Error adding label:', e);
@@ -5281,12 +5317,6 @@ class EntityManagerPanel extends HTMLElement {
       this._getEntityDeviceId(entityId),
     ]);
 
-    // Snapshot labels before editing for undo
-    const [beforeEntityLabels, beforeDeviceLabels] = await Promise.all([
-      this._getEntityLabels(entityId),
-      deviceId ? this._getDeviceLabels(deviceId) : Promise.resolve([]),
-    ]);
-
     // If entity has no device, clamp target to 'entity'
     if (!deviceId && defaultTarget !== 'entity') defaultTarget = 'entity';
 
@@ -5438,15 +5468,9 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     overlay.querySelector('#em-label-editor-done').addEventListener('click', async () => {
-      const [afterEntityLabels, afterDeviceLabels] = await Promise.all([
-        this._getEntityLabels(entityId),
-        deviceId ? this._getDeviceLabels(deviceId) : Promise.resolve([]),
-      ]);
-      const entityChanged = JSON.stringify([...beforeEntityLabels].sort()) !== JSON.stringify([...afterEntityLabels].sort());
-      const deviceChanged = JSON.stringify([...beforeDeviceLabels].sort()) !== JSON.stringify([...afterDeviceLabels].sort());
-      if (entityChanged || deviceChanged) {
-        this._pushUndoAction({ type: 'labels_change', entityId, deviceId, beforeEntity: beforeEntityLabels, afterEntity: afterEntityLabels, beforeDevice: beforeDeviceLabels, afterDevice: afterDeviceLabels });
-      }
+      // No aggregate undo push here — _addLabelToEntity/_removeLabelFromEntity each push
+      // their own labels_change at op time (covers Escape/backdrop exits too; an aggregate
+      // here would double-count every change).
       closeDialog();
       this._loadAndDisplayLabels();
     });
@@ -6087,6 +6111,17 @@ class EntityManagerPanel extends HTMLElement {
           type: 'entity_manager/import_entity_states',
           entities: toApply.map(({ entity_id, is_disabled }) => ({ entity_id, is_disabled: Boolean(is_disabled) })),
         });
+
+        // Undo support — every toApply entry flipped state, so undo flips them back.
+        // (Items the backend failed to apply kept their old state; "undoing" them just
+        // re-asserts that state, a harmless no-op.)
+        if (toApply.length) {
+          this._pushUndoAction({
+            type: 'states_import',
+            enabledIds:  toApply.filter(e => !e.is_disabled).map(e => e.entity_id),
+            disabledIds: toApply.filter(e =>  e.is_disabled).map(e => e.entity_id),
+          });
+        }
 
         const summary = `Applied ${result.success} changes` +
           (result.failed ? `, ${result.failed} failed` : '') +
@@ -7506,7 +7541,7 @@ class EntityManagerPanel extends HTMLElement {
 
       // Delegated: dismiss, mark-all-read, clear-all, settings toggle
       // stopPropagation prevents clicks inside the dropdown from reaching the outside-close handler
-      notifDropdown.addEventListener('click', e => {
+      notifDropdown.addEventListener('click', async (e) => {
         e.stopPropagation();
         const dismiss = e.target.closest('.em-notif-dismiss');
         if (dismiss) {
@@ -7523,6 +7558,8 @@ class EntityManagerPanel extends HTMLElement {
           this._refreshNotifList();
         }
         if (e.target.closest('.em-notif-clear-all')) {
+          const n = this._notifications.length;
+          if (n && !(await this._confirmAsync('Clear notifications', `Remove all ${n} notification${n !== 1 ? 's' : ''}? This cannot be undone.`))) return;
           this._notifications = [];
           this._saveToStorage('em-notifications', this._notifications);
           this._updateNotifBadge();
@@ -7777,6 +7814,10 @@ class EntityManagerPanel extends HTMLElement {
         if (presetBtn.classList.contains('em-preset-enable') || presetBtn.classList.contains('em-preset-disable')) {
           const isEnable = presetBtn.classList.contains('em-preset-enable');
           if (!preset.entityIds.length) { this._showToast('Preset is empty', 'info'); return; }
+          if (!(await this._confirmAsync(
+            `${isEnable ? 'Enable' : 'Disable'} preset`,
+            `${isEnable ? 'Enable' : 'Disable'} all ${preset.entityIds.length} entit${preset.entityIds.length !== 1 ? 'ies' : 'y'} in "${preset.name}"?`,
+          ))) return;
           presetBtn.disabled = true;
           presetBtn.textContent = '…';
           try {
@@ -8007,9 +8048,9 @@ class EntityManagerPanel extends HTMLElement {
     } else if (action === 'help-guide') {
       this._showHelpGuide();
     } else if (action === 'enable-selected') {
-      this.bulkEnable();
+      this._bulkEnableSelected();   // confirm-wrapped, same as the context menu
     } else if (action === 'disable-selected') {
-      this.bulkDisable();
+      this._disableSelectedEntities();
     } else if (action === 'deselect-all') {
       this.selectedEntities.clear();
       this._viewingSelected = false;
@@ -10088,6 +10129,12 @@ class EntityManagerPanel extends HTMLElement {
    */
   async _bulkToggleGroup(btn, entityIds, isEnable) {
     if (!entityIds.length) return;
+    // Same confirm the sidebar/context-menu bulk actions use — this can hit hundreds of entities
+    const verb = isEnable ? 'enable' : 'disable';
+    if (!(await this._confirmAsync(
+      `${isEnable ? 'Enable' : 'Disable'} All`,
+      `Are you sure you want to ${verb} ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} in this group?`,
+    ))) return;
     btn.disabled = true;
     btn.textContent = '…';
     try {
@@ -13900,7 +13947,7 @@ class EntityManagerPanel extends HTMLElement {
       if (!(await this._confirmAsync('Remove entities', `Remove all ${orphanedEntities.length} orphaned entities? This cannot be undone.`))) return;
       const btn = e.target;
       btn.disabled = true; btn.textContent = 'Removing…';
-      let removed = 0;
+      let removed = 0, failed = 0;
       for (const ent of orphanedEntities) {
         try {
           await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: ent.entity_id });
@@ -13908,13 +13955,20 @@ class EntityManagerPanel extends HTMLElement {
           removed++;
         } catch (e) {
           console.warn('[EM] remove orphaned entity failed', ent.entity_id, e);
-          this._showToast(`Remove failed: ${e.message || e}`, 'error');
+          failed++;
         }
       }
       this.orphanedCount = Math.max(0, (this.orphanedCount || 0) - removed);
       this.cleanupCount = Math.max(0, (this.cleanupCount || 0) - removed);
-      this._showToast(`Removed ${removed} orphaned entities`, 'success');
-      btn.textContent = 'Done';
+      // Report the real outcome — never a success toast when everything failed
+      if (failed === 0) {
+        this._showToast(`Removed ${removed} orphaned entities`, 'success');
+      } else if (removed === 0) {
+        this._showToast(`Failed to remove all ${failed} orphaned entities`, 'error');
+      } else {
+        this._showToast(`Removed ${removed}, failed ${failed}`, 'warning');
+      }
+      btn.textContent = failed === 0 ? 'Done' : `Done (${failed} failed)`;
     });
 
     // Assign orphaned entity to a device
@@ -14973,6 +15027,7 @@ class EntityManagerPanel extends HTMLElement {
         ],
         unavailable: [
           { id: 'bulk-unavail-disable', handler: async (entityIds) => {
+            if (!(await this._confirmAsync('Disable entities', `Disable ${entityIds.length} unavailable entit${entityIds.length !== 1 ? 'ies' : 'y'}?`))) return;
             this._suppressEntityNotif(entityIds, true);
             const results = await Promise.allSettled(
               entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/disable_entity', entity_id: eid }))
@@ -16286,14 +16341,17 @@ class EntityManagerPanel extends HTMLElement {
     noBtn.addEventListener('click', closeDialog);
   }
 
-  async renameEntity(oldEntityId, newEntityId, skipUndo = false) {
+  // Returns true on success, false on failure so bulk callers can report accurately.
+  // opts.quiet suppresses the per-failure error dialog (bulk flows show one summary toast
+  // instead of stacking N dialogs).
+  async renameEntity(oldEntityId, newEntityId, skipUndo = false, opts = {}) {
     try {
       await this._hass.callWS({
         type: 'entity_manager/rename_entity',
         old_entity_id: oldEntityId,
         new_entity_id: newEntityId,
       });
-      
+
       // Push undo action and log activity (skip when called from undo/redo)
       if (!skipUndo) {
         this._pushUndoAction({
@@ -16303,15 +16361,17 @@ class EntityManagerPanel extends HTMLElement {
         });
         this._logActivity('rename', { from: oldEntityId, to: newEntityId });
       }
-      
+
       this._fireEvent('hass-notification', {
         message: `Entity renamed from ${oldEntityId} to ${newEntityId}`,
       });
-      
+
       await this.loadData();
+      return true;
     } catch (error) {
       console.error('Error renaming entity:', error);
-      this.showErrorDialog(`Error renaming entity: ${error.message}`);
+      if (!opts.quiet) this.showErrorDialog(`Error renaming entity: ${error.message}`);
+      return false;
     }
   }
 }
