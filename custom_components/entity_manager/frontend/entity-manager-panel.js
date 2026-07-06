@@ -14108,7 +14108,7 @@ class EntityManagerPanel extends HTMLElement {
     };
 
     const _clnOrphanHeaderHtml = () => `<div class="em-cleanup-orphan-header" style="padding:6px 12px 4px;display:flex;justify-content:flex-end;gap:8px;align-items:center">
-        <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-all-orphaned">Remove All (${orphanedEntities.length})</button>
+        <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-all-orphaned">Remove All (${orphanedEntities.filter(e => !isOrphanIgnored(e.entity_id)).length})</button>
       </div>`;
 
     const orphanedHtml = orphanedEntities.length === 0
@@ -14269,11 +14269,15 @@ class EntityManagerPanel extends HTMLElement {
     // ── Listeners ─────────────────────────────────────────────────────
     // Remove All orphaned
     overlay.querySelector('.em-cleanup-remove-all-orphaned')?.addEventListener('click', async (e) => {
-      if (!(await this._confirmAsync('Remove entities', `Remove all ${orphanedEntities.length} orphaned entities? This cannot be undone.`))) return;
+      // Ignored entities are exempt — the user explicitly asked to keep them.
+      // Recompute at click time so ignores made after render are respected.
+      const targets = orphanedEntities.filter(en => !isOrphanIgnored(en.entity_id));
+      if (!targets.length) { this._showToast('Nothing to remove — all remaining orphans are ignored', 'info'); return; }
+      if (!(await this._confirmAsync('Remove entities', `Remove ${targets.length} orphaned entit${targets.length !== 1 ? 'ies' : 'y'}? Ignored ones are kept. This cannot be undone.`))) return;
       const btn = e.target;
       btn.disabled = true; btn.textContent = 'Removing…';
       let removed = 0, failed = 0;
-      for (const ent of orphanedEntities) {
+      for (const ent of targets) {
         try {
           await this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: ent.entity_id });
           overlay.querySelector(`.em-cleanup-orphaned-row[data-entity-id="${CSS.escape(ent.entity_id)}"]`)?.remove();
