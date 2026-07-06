@@ -319,7 +319,7 @@ Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in
 ### Health & Cleanup View
 The **Health & Cleanup** inline view surfaces housekeeping tasks across five sections:
 - **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore**, **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog
-- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration; per-row actions: **Ignore**, **Assign to device**, **Add to Group**, **Remove**, plus a **Remove All** with confirmation
+- **Orphaned entities** — registry entries whose *owner is gone*, split into three groups: **Missing Device** (`device_id` points at a deleted device), **Missing Config Entry** (the integration entry was removed — classic leftovers), and **Not Loaded** (enabled but nothing provides a state anymore). Entities that are simply device-less by design — automations, scripts, helpers, persons, groups — are **not** treated as orphans. Per-row actions: **Ignore**, **Assign to device** (Missing Device only), **Add to Group**, **Remove**, plus a **Remove All** with confirmation
 - **Stale entities** — entities with no state change in 30+ days; grouped by domain; Keep (hide for 30 d), Disable, or Remove per entity
 - **Ghost devices** — devices registered in HA but with zero entities; Remove
 - **Never triggered** — automations and scripts that have never been triggered

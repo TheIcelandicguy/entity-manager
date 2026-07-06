@@ -4133,9 +4133,9 @@ class EntityManagerPanel extends HTMLElement {
               <h3>${this._icon(EM_ICONS.cleanup, '16px')} Cleanup</h3>
               <ul>
                 <li>Click the <strong>Cleanup</strong> stat card to open the housekeeping view</li>
-                <li><strong>Orphaned entities</strong> — entities with no parent device (YAML remnants or integration leftovers)</li>
-                <li>Orphaned per-row actions: <strong>Ignore</strong> (snooze picker, same as Unavailable), <strong>Assign to device</strong>, <strong>Add to Group</strong>, <strong>Remove</strong></li>
-                <li><strong>Show ignored (N)</strong> toggle appears in the Orphaned header once any are ignored</li>
+                <li><strong>Orphaned entities</strong> — registry entries whose owner is gone: <em>Missing Device</em> (device was deleted), <em>Missing Config Entry</em> (integration entry removed), or <em>Not Loaded</em> (enabled but nothing provides a state). Entities that simply have no device — automations, helpers, persons, groups — are <em>not</em> orphans and never show here</li>
+                <li>Orphaned per-row actions: <strong>Ignore</strong>, <strong>Assign to device</strong> (Missing Device only), <strong>Add to Group</strong>, <strong>Remove</strong></li>
+                <li><strong>View ignored (N)</strong> bar appears in the Orphaned section once any are ignored</li>
                 <li><strong>Stale entities</strong> — no state change in 30+ days — Keep (hide for 30 d), Disable (with confirm), or Remove (with confirm)</li>
                 <li><strong>Ghost devices</strong> — devices registered in HA but with zero entities — Open in HA to manage</li>
                 <li><strong>Never Triggered</strong> — automations and scripts that have never run — click ↗ to open the editor</li>
@@ -6607,6 +6607,7 @@ class EntityManagerPanel extends HTMLElement {
 
   async loadData() {
     this.setLoading(true);
+    this._configEntrySnapshot = undefined; // refetched lazily per data load (orphan detection)
     try {
       // Always fetch the full set — viewState (all/enabled/disabled/updates) is applied
       // client-side in updateView(), same as domain/search/favorites/label filters.
@@ -6883,6 +6884,61 @@ class EntityManagerPanel extends HTMLElement {
     }).join('');
   }
 
+  // Snapshot of HA's config entries (entry_id → state), cached per data load.
+  // Used to detect registry entries whose owning config entry no longer exists.
+  async _getConfigEntrySnapshot() {
+    if (this._configEntrySnapshot !== undefined) return this._configEntrySnapshot;
+    try {
+      const entries = await this._hass.callWS({ type: 'config_entries/get' });
+      this._configEntrySnapshot = {
+        ids: new Set(entries.map(e => e.entry_id)),
+        states: new Map(entries.map(e => [e.entry_id, e.state])),
+      };
+    } catch (e) {
+      console.warn('[EM] config_entries/get failed — orphan detection degraded', e);
+      this._configEntrySnapshot = null;
+    }
+    return this._configEntrySnapshot;
+  }
+
+  /**
+   * True orphans: registry entries whose OWNER is gone — not merely entities
+   * without a device (automations, helpers, persons, groups etc. are device-less
+   * by design and are NOT orphans). Three reasons, checked in order:
+   *   missing-device — device_id points at a device no longer in the device registry
+   *   missing-entry  — config_entry_id points at a config entry that no longer exists
+   *   not-loaded     — enabled, but nothing provides a state for it anymore
+   *                    (entities whose config entry exists but is failing belong to
+   *                    Config Health, so they're excluded here)
+   */
+  async _computeOrphanedEntities() {
+    const snap = await this._getConfigEntrySnapshot();
+    const haveDevices = this.deviceInfo && Object.keys(this.deviceInfo).length > 0;
+    const out = [];
+    (this.data || []).forEach(integration => {
+      Object.values(integration.devices).forEach(dev => {
+        dev.entities.forEach(e => {
+          let reason = null;
+          const stateObj = this._hass?.states?.[e.entity_id];
+          // `restored: true` is HA's marker for a registry entry no platform set up
+          // this session — HA creates these placeholder states for every registry
+          // entry, so a plain "no state object" check would never fire.
+          const unprovided = !stateObj || stateObj.attributes?.restored === true;
+          if (e.device_id && haveDevices && !this.deviceInfo[e.device_id]) {
+            reason = 'missing-device';
+          } else if (e.config_entry_id && snap && !snap.ids.has(e.config_entry_id)) {
+            reason = 'missing-entry';
+          } else if (!e.is_disabled && unprovided) {
+            const entryState = e.config_entry_id ? snap?.states.get(e.config_entry_id) : null;
+            if (!e.config_entry_id || entryState === 'loaded') reason = 'not-loaded';
+          }
+          if (reason) out.push({ ...e, integration: integration.integration, orphanReason: reason });
+        });
+      });
+    });
+    return out;
+  }
+
   async loadCounts() {
     try {
       // Get all states to count automations, scripts, helpers, and other entities
@@ -6909,14 +6965,8 @@ class EntityManagerPanel extends HTMLElement {
         if (staleDismissedActive.has(s.entity_id)) return false;
         return new Date(s.last_updated).getTime() < thirtyDaysAgo;
       }).length;
-      // Count orphaned entities (no device) from entity registry data
-      this.orphanedCount = 0;
-      if (this.data) {
-        this.data.forEach(integration => {
-          const noDevice = integration.devices['no_device'];
-          if (noDevice) this.orphanedCount += noDevice.entities.length;
-        });
-      }
+      // Count true orphaned entities (missing device / missing config entry / not loaded)
+      this.orphanedCount = (await this._computeOrphanedEntities()).length;
       // Ghost devices: in deviceInfo but no entities in loaded data
       const devicesWithEntities = new Set();
       (this.data || []).forEach(int => {
@@ -11013,7 +11063,7 @@ class EntityManagerPanel extends HTMLElement {
         })
         .map(([devId, dev]) => {
           const devLabel = devId === 'no_device'
-            ? 'No Device (Orphaned)'
+            ? 'No Device'
             : this._escapeHtml(dev.name || 'Unknown Device');
 
           const entitiesHtml = (dev.entities || [])
@@ -13954,78 +14004,84 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
-  _showCleanupDialog({ inline = false, container = null } = {}) {
+  async _showCleanupDialog({ inline = false, container = null } = {}) {
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
     const thirtyDaysAgo = Date.now() - thirtyDaysMs;
     const dismissed = this._loadFromStorage('em-stale-dismissed', {});
     const states = Object.values(this._hass?.states || {});
 
-    // ── Section 1: Orphaned entities ──────────────────────────────────
-    const orphanedEntities = [];
-    (this.data || []).forEach(integration => {
-      const noDevice = integration.devices['no_device'];
-      if (noDevice) noDevice.entities.forEach(e => orphanedEntities.push({ ...e, integration: integration.integration }));
-    });
+    // ── Section 1: Orphaned entities (true orphans — owner gone) ──────
+    // NOT "entities without a device": automations, helpers, persons, groups etc.
+    // are device-less by design. See _computeOrphanedEntities for the definition.
+    const orphanedEntities = await this._computeOrphanedEntities();
 
     // Ignore state — shared with Suggestions' permanent ignore/restore system (_ignoredSugKeys)
     const isOrphanIgnored = eid => this._ignoredSugKeys.has('orphaned:' + eid);
 
-    // Split: YAML-defined (no config_entry_id) vs integration-backed
-    const yamlOrphaned = orphanedEntities.filter(e => !e.config_entry_id);
-    const integOrphaned = orphanedEntities.filter(e => e.config_entry_id);
+    const ORPHAN_REASON_META = {
+      'missing-device': {
+        title: 'Missing Device', icon: 'mdi:link-off', cls: 'em-sug-area',
+        hint: 'These entities point at a device that no longer exists in the device registry.',
+        chip: 'device gone',
+      },
+      'missing-entry': {
+        title: 'Missing Config Entry', icon: EM_ICONS.integration, cls: 'em-sug-naming',
+        hint: 'These registry entries belong to a config entry that was removed — classic integration leftovers.',
+        chip: 'entry gone',
+      },
+      'not-loaded': {
+        title: 'Not Loaded', icon: 'mdi:power-plug-off-outline', cls: 'em-sug-health',
+        hint: 'Their integration is loaded but no longer provides these entities — HA marks them "restored" and they can usually be removed. Note: sleeping/battery devices may appear here briefly after a restart, until they first report in. Entities of a failing config entry show under Config Health instead.',
+        chip: 'not loaded',
+      },
+    };
 
-    const orphanedByInteg = {};
-    integOrphaned.forEach(e => {
-      if (!orphanedByInteg[e.integration]) orphanedByInteg[e.integration] = [];
-      orphanedByInteg[e.integration].push(e);
-    });
-
-    const _renderOrphanCard = (e, isYaml) => {
+    const _renderOrphanCard = (e) => {
       const stateObj = this._hass?.states?.[e.entity_id];
       const currentState = stateObj ? String(stateObj.state) : null;
       const lastUpdated = stateObj?.last_updated ? this._fmtAgo(stateObj.last_updated, 'Never') : 'Never seen';
       const eid = this._escapeAttr(e.entity_id);
+      const meta = ORPHAN_REASON_META[e.orphanReason];
+      const isYaml = !e.config_entry_id;
       return this._renderMiniEntityCard({
         entity_id: e.entity_id,
         name: e.original_name || e.entity_id,
-        state: currentState ?? 'not in states',
+        state: currentState ?? meta.chip,
         stateColor: currentState ? 'var(--em-primary)' : 'var(--em-danger)',
         timeAgo: lastUpdated,
-        infoLine: isYaml ? `${this._icon('mdi:file-document', '14px')} YAML · ${this._escapeHtml(e.integration)}` : `${this._icon(EM_ICONS.integration, '14px')} ${this._escapeHtml(e.integration)}`,
+        infoLine: `${this._icon(meta.icon, '14px')} ${this._escapeHtml(meta.title)} · ${this._escapeHtml(e.integration)}${isYaml ? ' · YAML' : ''}`,
         extraClass: 'em-cleanup-orphaned-row',
         checkboxHtml: `<input type="checkbox" class="em-dlg-sel" data-entity-id="${eid}" data-entity-name="${this._escapeAttr(e.original_name || e.entity_id)}" style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`,
         actionsHtml: `
           <button class="em-dialog-btn em-dialog-btn-warning em-cleanup-orphan-ignore" data-entity-id="${eid}">Ignore</button>
-          <button class="em-assign-btn em-cleanup-assign-orphaned" data-entity-id="${eid}">Assign to device</button>
+          ${e.orphanReason === 'missing-device' ? `<button class="em-assign-btn em-cleanup-assign-orphaned" data-entity-id="${eid}">Assign to device</button>` : ''}
           <button class="em-dialog-btn em-dialog-btn-outline-primary em-cleanup-orphan-add-group" data-entity-id="${eid}">Add to Group</button>
-          <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-orphaned" data-entity-id="${eid}"${isYaml ? ' title="YAML entity — will re-appear on restart"' : ''}>Remove</button>`,
+          <button class="em-dialog-btn em-dialog-btn-danger em-cleanup-remove-orphaned" data-entity-id="${eid}"${isYaml ? ' title="YAML entity — will re-appear on restart if still defined"' : ''}>Remove</button>`,
       });
     };
 
     const _clnOrphanBodyHtml = () => {
       const visible = orphanedEntities.filter(e => !isOrphanIgnored(e.entity_id));
-      if (!visible.length) return '<p style="text-align:center;padding:24px;opacity:0.6">No orphaned entities found.</p>';
-      const visYaml = visible.filter(e => !e.config_entry_id);
-      const visInteg = visible.filter(e => e.config_entry_id);
-      const byInteg = {};
-      visInteg.forEach(e => { if (!byInteg[e.integration]) byInteg[e.integration] = []; byInteg[e.integration].push(e); });
-      const yHtml = visYaml.length === 0
-        ? '<p style="text-align:center;padding:16px;opacity:0.6">No YAML orphaned entities.</p>'
-        : `<p style="padding:6px 12px 2px;font-size:11px;opacity:0.6;margin:0">YAML entities will re-appear on restart if removed from the registry.</p>
-           ${visYaml.map(e => _renderOrphanCard(e, true)).join('')}`;
-      const iHtml = visInteg.length === 0
-        ? '<p style="text-align:center;padding:16px;opacity:0.6">No integration orphaned entities.</p>'
-        : Object.entries(byInteg).sort().map(([integ, items]) => {
-            const integLabel = integ.charAt(0).toUpperCase() + integ.slice(1);
-            return this._collGroup(`${integLabel} (${items.length})`, items.map(e => _renderOrphanCard(e, false)).join(''));
+      if (!visible.length) return '<p style="text-align:center;padding:24px;opacity:0.6">No orphaned entities — every registry entry has a live owner.</p>';
+      return ['missing-device', 'missing-entry', 'not-loaded'].map(reason => {
+        const items = visible.filter(e => e.orphanReason === reason);
+        if (!items.length) return '';
+        const meta = ORPHAN_REASON_META[reason];
+        // Group by integration inside each reason section
+        const byInteg = {};
+        items.forEach(e => { (byInteg[e.integration] = byInteg[e.integration] || []).push(e); });
+        const inner = `<p style="padding:6px 12px 2px;font-size:11px;opacity:0.6;margin:0">${meta.hint}</p>` +
+          Object.entries(byInteg).sort().map(([integ, list]) => {
+            const integLabel = this._escapeHtml(integ.charAt(0).toUpperCase() + integ.slice(1));
+            return Object.keys(byInteg).length === 1
+              ? list.map(e => _renderOrphanCard(e)).join('')
+              : this._collGroup(`${integLabel} (${list.length})`, list.map(e => _renderOrphanCard(e)).join(''));
           }).join('');
-      return `
-        <div class="em-sug-section em-sug-naming" style="margin:0 8px 8px">
-          ${this._collGroup(`${this._icon('mdi:file-document', '16px')} YAML Config Entities (${visYaml.length})`, yHtml)}
-        </div>
-        <div class="em-sug-section em-sug-area" style="margin:0 8px 8px">
-          ${this._collGroup(`${this._icon(EM_ICONS.integration, '16px')} Integration Orphans (${visInteg.length})`, iHtml)}
+        return `
+        <div class="em-sug-section ${meta.cls}" style="margin:0 8px 8px">
+          ${this._collGroup(`${this._icon(meta.icon, '16px')} ${meta.title} (${items.length})`, inner)}
         </div>`;
+      }).join('');
     };
 
     const _clnOrphanHeaderHtml = () => `<div class="em-cleanup-orphan-header" style="padding:6px 12px 4px;display:flex;justify-content:flex-end;gap:8px;align-items:center">
