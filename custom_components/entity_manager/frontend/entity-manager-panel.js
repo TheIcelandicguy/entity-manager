@@ -6991,6 +6991,61 @@ class EntityManagerPanel extends HTMLElement {
     return out;
   }
 
+  /**
+   * Stale = data-providing entities whose VALUE hasn't changed in 30+ days.
+   * - Prefers the recorder-backed last-activity timestamp (survives HA restarts —
+   *   in-memory last_updated resets to the restart time, hiding staleness for
+   *   30 days after every reboot); falls back to state.last_updated.
+   * - Excludes domains whose state is static by design (automations, scenes,
+   *   zones, buttons…) and config-category entities (settings legitimately
+   *   never change).
+   */
+  _computeStaleEntities() {
+    const STATIC_DOMAINS = new Set(['automation', 'script', 'scene', 'button', 'input_button',
+      'zone', 'schedule', 'person', 'device_tracker', 'update', 'tag', 'group']);
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - thirtyDaysMs;
+    const dismissed = this._loadFromStorage('em-stale-dismissed', {});
+    const regMeta = new Map();
+    (this.data || []).forEach(int => Object.values(int.devices).forEach(d =>
+      d.entities.forEach(e => regMeta.set(e.entity_id, e))));
+    return Object.values(this._hass?.states || {}).filter(s => {
+      if (s.state === 'unavailable' || s.state === 'unknown') return false;
+      if (STATIC_DOMAINS.has(s.entity_id.split('.')[0])) return false;
+      if (regMeta.get(s.entity_id)?.entity_category === 'config') return false;
+      const d = dismissed[s.entity_id];
+      if (d && Date.now() - d < thirtyDaysMs) return false;
+      const rec = this._lastActivityCache?.get(s.entity_id);
+      const ts = rec ? Date.parse(rec) : (s.last_updated ? Date.parse(s.last_updated) : NaN);
+      return Number.isFinite(ts) && ts < cutoff;
+    });
+  }
+
+  /** Ghost devices = registered devices with zero registry entities — excluding
+   *  hubs/bridges that other devices reference as their via_device (a coordinator
+   *  with no entities of its own is normal, not a leftover). */
+  _computeGhostDevices() {
+    const devicesWithEntities = new Set();
+    (this.data || []).forEach(int => {
+      Object.keys(int.devices).forEach(id => { if (id !== 'no_device') devicesWithEntities.add(id); });
+    });
+    const viaParents = new Set(
+      Object.values(this.deviceInfo || {}).map(d => d.via_device_id).filter(Boolean)
+    );
+    return Object.entries(this.deviceInfo || {}).filter(([id]) =>
+      !devicesWithEntities.has(id) && !viaParents.has(id));
+  }
+
+  /** Never-triggered automations & scripts. Restored remnants are excluded —
+   *  they belong to Cleanup → Orphaned, not here. */
+  _computeNeverTriggered() {
+    return Object.values(this._hass?.states || {}).filter(s =>
+      (s.entity_id.startsWith('automation.') || s.entity_id.startsWith('script.')) &&
+      !s.attributes?.restored &&
+      !s.attributes?.last_triggered
+    );
+  }
+
   async loadCounts() {
     try {
       // Get all states to count automations, scripts, helpers, and other entities
@@ -7006,33 +7061,12 @@ class EntityManagerPanel extends HTMLElement {
       // Restored placeholder states are registry remnants — they belong to
       // Cleanup → Orphaned (Not Loaded), not to the unavailable count.
       this.unavailableCount = states.filter(s => s.state === 'unavailable' && !s.attributes?.restored).length;
-      // Count entities not updated in 30+ days (excluding meta-states and dismissed)
-      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-      const thirtyDaysAgo = Date.now() - thirtyDaysMs;
-      const staleDismissed = this._loadFromStorage('em-stale-dismissed', {});
-      const staleDismissedActive = new Set(
-        Object.entries(staleDismissed).filter(([, ts]) => Date.now() - ts < thirtyDaysMs).map(([eid]) => eid)
-      );
-      this.healthCount = states.filter(s => {
-        if (s.state === 'unavailable' || s.state === 'unknown') return false;
-        if (!s.last_updated) return false;
-        if (staleDismissedActive.has(s.entity_id)) return false;
-        return new Date(s.last_updated).getTime() < thirtyDaysAgo;
-      }).length;
-      // Count true orphaned entities (missing device / missing config entry / not loaded)
+      // Stale / orphaned / ghost / never-triggered — same shared helpers the
+      // Cleanup view renders from, so the counts can't drift from the lists
+      this.healthCount = this._computeStaleEntities().length;
       this.orphanedCount = (await this._computeOrphanedEntities()).length;
-      // Ghost devices: in deviceInfo but no entities in loaded data
-      const devicesWithEntities = new Set();
-      (this.data || []).forEach(int => {
-        Object.keys(int.devices).forEach(id => { if (id !== 'no_device') devicesWithEntities.add(id); });
-      });
-      this.ghostDeviceCount = Object.keys(this.deviceInfo).filter(id => !devicesWithEntities.has(id)).length;
-
-      // Never-triggered automations + scripts
-      this.neverTriggeredCount = Object.values(this._hass?.states || {}).filter(s =>
-        (s.entity_id.startsWith('automation.') || s.entity_id.startsWith('script.')) &&
-        !s.attributes?.last_triggered
-      ).length;
+      this.ghostDeviceCount = this._computeGhostDevices().length;
+      this.neverTriggeredCount = this._computeNeverTriggered().length;
 
       // Total cleanup count
       this.cleanupCount = (this.orphanedCount || 0) + (this.healthCount || 0) + (this.ghostDeviceCount || 0) + (this.neverTriggeredCount || 0);
@@ -14081,8 +14115,6 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {
-    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-    const thirtyDaysAgo = Date.now() - thirtyDaysMs;
     const dismissed = this._loadFromStorage('em-stale-dismissed', {});
     const states = Object.values(this._hass?.states || {});
 
@@ -14178,13 +14210,7 @@ class EntityManagerPanel extends HTMLElement {
          </div>`;
 
     // ── Section 2: Stale entities ─────────────────────────────────────
-    const staleEntities = states.filter(s => {
-      if (s.state === 'unavailable' || s.state === 'unknown') return false;
-      if (!s.last_updated) return false;
-      const d = dismissed[s.entity_id];
-      if (d && Date.now() - d < thirtyDaysMs) return false;
-      return new Date(s.last_updated).getTime() < thirtyDaysAgo;
-    });
+    const staleEntities = this._computeStaleEntities();
 
     const staleHtml = staleEntities.length === 0
       ? '<p style="text-align:center;padding:24px;opacity:0.6">No stale entities found.</p>'
@@ -14203,11 +14229,7 @@ class EntityManagerPanel extends HTMLElement {
         })).join('');
 
     // ── Section 3: Ghost devices ───────────────────────────────────────
-    const devicesWithEntities = new Set();
-    (this.data || []).forEach(int => {
-      Object.keys(int.devices).forEach(id => { if (id !== 'no_device') devicesWithEntities.add(id); });
-    });
-    const ghostDevices = Object.entries(this.deviceInfo).filter(([id]) => !devicesWithEntities.has(id));
+    const ghostDevices = this._computeGhostDevices();
 
     const ghostHtml = ghostDevices.length === 0
       ? '<p style="text-align:center;padding:24px;opacity:0.6">No ghost devices found.</p>'
@@ -14221,10 +14243,7 @@ class EntityManagerPanel extends HTMLElement {
         })).join('');
 
     // ── Section 4: Never-triggered automations & scripts ──────────────
-    const neverTriggered = states.filter(s =>
-      (s.entity_id.startsWith('automation.') || s.entity_id.startsWith('script.')) &&
-      !s.attributes?.last_triggered
-    );
+    const neverTriggered = this._computeNeverTriggered();
 
     const neverHtml = neverTriggered.length === 0
       ? '<p style="text-align:center;padding:24px;opacity:0.6">All automations and scripts have been triggered.</p>'
@@ -14253,11 +14272,11 @@ class EntityManagerPanel extends HTMLElement {
         </div>
         <div class="em-sug-section em-sug-disable">
           ${this._collGroup(`Stale Entities — 30d+ (${staleEntities.length})`,
-            this._sectionHint('No state change in over 30 days. Some entities are legitimately quiet (rarely-triggered sensors, seasonal devices). <b>Keep</b> hides a row for 30 days, <b>Disable</b> stops HA recording it (re-enable anytime), <b>Remove</b> deletes the registry entry permanently.', 'help-cleanup') + staleHtml)}
+            this._sectionHint('Value unchanged in over 30 days, using recorder timestamps that survive restarts. Static-by-design entities (automations, scenes, zones, buttons…) and config settings are excluded — but some of these may still be legitimately quiet (rarely-triggered sensors, seasonal devices). <b>Keep</b> hides a row for 30 days, <b>Disable</b> stops HA recording it (re-enable anytime), <b>Remove</b> deletes the registry entry permanently.', 'help-cleanup') + staleHtml)}
         </div>
         <div class="em-sug-section em-sug-health">
           ${this._collGroup(`Ghost Devices (${ghostDevices.length})`,
-            this._sectionHint('Devices registered in HA with zero entities — usually leftovers from removed integrations. Click a card to open the device page in HA, where it can be deleted.', 'help-cleanup') + ghostHtml)}
+            this._sectionHint('Devices registered in HA with zero entities — usually leftovers from removed integrations. Hubs and bridges that other devices connect through are excluded (having no entities of their own is normal for them). Click a card to open the device page in HA, where it can be deleted.', 'help-cleanup') + ghostHtml)}
         </div>
         <div class="em-sug-section em-sug-naming">
           ${this._collGroup(`Never Triggered (${neverTriggered.length})`,

@@ -321,9 +321,9 @@ Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in
 The **Health & Cleanup** inline view surfaces housekeeping tasks across five sections:
 - **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore**, **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog
 - **Orphaned entities** — registry entries whose *owner is gone*, split into three groups: **Missing Device** (`device_id` points at a deleted device), **Missing Config Entry** (the integration entry was removed — classic leftovers), and **Not Loaded** (enabled but nothing provides a state anymore). Entities that are simply device-less by design — automations, scripts, helpers, persons, groups — are **not** treated as orphans. Per-row actions: **Ignore**, **Assign to device** (Missing Device only), **Add to Group**, **Remove**, plus a **Remove All** with confirmation
-- **Stale entities** — entities with no state change in 30+ days; grouped by domain; Keep (hide for 30 d), Disable, or Remove per entity
-- **Ghost devices** — devices registered in HA but with zero entities; Remove
-- **Never triggered** — automations and scripts that have never been triggered
+- **Stale entities** — value unchanged in 30+ days, using recorder-backed timestamps that survive HA restarts; static-by-design domains (automations, scenes, zones, buttons…) and config-category settings are excluded; Keep (hide for 30 d), Disable, or Remove per entity
+- **Ghost devices** — devices registered in HA with zero entities, excluding hubs/bridges that other devices connect through; click to open the device page in HA
+- **Never triggered** — automations and scripts that have never been triggered (restored remnants excluded — those are orphans)
 
 **Ignore / Restore**: clicking **Ignore** persistently dismisses a row. A **View ignored (N)** bar in each section reveals everything dismissed there, with one-click **Restore** per item and **Restore all**. The ignored state is shared with the Suggestions view.
 
