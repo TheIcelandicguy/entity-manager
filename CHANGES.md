@@ -1,5 +1,40 @@
 # Entity Manager UI Changes
 
+## Version 3.1.0 - Health & Cleanup Accuracy, Click-to-Details Everywhere
+
+### Orphaned Entities Redefinition
+
+- `_computeOrphanedEntities()` (shared by the count and the Cleanup view) replaces the old "no device_id → orphan" rule. Reasons, checked in order: `missing-device` (device_id gone from device registry), `missing-entry` (config_entry_id gone — via a cached `config_entries/get` snapshot in `_getConfigEntrySnapshot()`, invalidated per loadData), `not-loaded` (enabled + HA `restored: true` placeholder state — a bare no-state check never fires since HA restores a state for every registry entry; entities of non-loaded config entries are excluded, they belong to Config Health)
+- Cleanup renders per-reason groups with per-integration subgroups; Assign-to-device offered only for `missing-device`; Remove All recomputes the non-ignored set at click time (Ignored entities are exempt) and no-ops with a toast when only ignored remain
+- Devices view `no_device` pseudo-group label: "No Device (Orphaned)" → "No Device"
+
+### Unavailable / Stale / Ghost / Never Triggered / Config Errors
+
+- `unavailableCount`, the Unavailable list, Health Issues, and the 30d Disable rule all exclude `attributes.restored` states (registry remnants → Orphaned's territory); Disable-candidate dedup now checks both lists
+- `_computeStaleEntities()`: prefers `_lastActivityCache` (recorder-backed, survives restarts) over `state.last_updated`; excludes STATIC_DOMAINS (automation, script, scene, button, input_button, zone, schedule, person, device_tracker, update, tag, group) and `entity_category === 'config'`
+- `_computeGhostDevices()`: devices referenced as `via_device_id` by others (hubs/bridges) are not ghosts
+- `_computeNeverTriggered()`: excludes restored remnants
+- All cleanup counts in loadCounts use the same helpers as the view — counts can't drift from lists
+- Backend `get_config_entry_health`: skips entries with `disabled_by` set and `source == "ignore"` (deliberate choices, not errors)
+- Naming heuristic: hex-hash regex requires a digit AND a letter in the run (dates like `backup_20250101` no longer flagged); 26-char Crockford-base32 ULIDs (battery_notes-style) now detected
+
+### Click-to-Details Everywhere
+
+- `_renderMiniEntityCard` adds `.em-mini-clickable` + title when the id is a real entity_id (ghost-device cards stay inert); suggestion-style rows get `.em-row-clickable` + `data-entity-id` (naming/health/disable rows, label entity rows, area device-card entity rows, mismatch rows)
+- One shared delegate attached to BOTH the panel element and document — the panel sits inside HA's shadow DOM, so a document-level listener only sees the retargeted shadow host for inline-view clicks, while dialog overlays live on document.body in light DOM. Exempt: button/a/input/select/label/[data-action]/card action rows
+
+### Section Hints + Help Deep-links
+
+- `_sectionHint(text, helpId?)` renders a 1-3 sentence explanation at the top of a section body; optional `?` button (`.em-hint-help`) opens `_showHelpGuide(targetId)` scrolled to the section
+- Hints on: Cleanup (Orphaned overview + per-reason, Stale, Ghost, Never Triggered), Unavailable, Config Errors, and all six Suggestions sections
+- Help guide content refreshed (unavailable snooze wording removed — ignore is permanent with View ignored/Restore; Not Loaded + Remove All semantics; mini-card click-to-details; all six suggestion types incl. Area Mismatch)
+
+### Fixes
+
+- Naming "Rename Selected" passed ids via the save-swap-restore anti-pattern around the un-awaited `_openBulkRenameDialog()` — the restore ran before the view read the selection. Now uses the explicit `entityIds` parameter; the picker filters + pre-checks, and the queue is seeded via the existing `preSelected.forEach(addToQueue)`
+
+---
+
 ## Version 3.0.0 - "Refined" UI Redesign
 
 ### Design System

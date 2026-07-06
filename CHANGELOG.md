@@ -1,5 +1,45 @@
 # Changelog
 
+## Version 3.1.0 - Health & Cleanup Accuracy, Click-to-Details Everywhere
+
+An accuracy release, driven by user feedback: every Health & Cleanup and Suggestions surface now tells the truth about what it found, every entity in the app is one click away from its full details, and explanatory hints tell you what each action really does before you do it.
+
+### 🧹 Orphaned Entities — redefined
+
+- **"No device" no longer means "orphaned."** The old definition flagged every automation, script, helper, group, and person as an orphan. Orphaned now means the entry's *owner is gone*, split into three groups:
+  - **Missing Device** — the entity's device was deleted from the device registry
+  - **Missing Config Entry** — the integration entry was removed (classic leftovers)
+  - **Not Loaded** — enabled, but no platform provides it anymore (HA's "restored" entities)
+- Entities of a *failing* config entry stay under Config Errors instead of being mis-flagged
+- **Remove All skips entities you've Ignored** — Ignore means keep it
+- Real-world result: ~700 false "orphans" → ~330 genuine removable remnants
+
+### 🔍 Unavailable, Stale & friends — de-noised
+
+- **Unavailable Entities** (list, count, health pill) now only counts genuinely offline entities — registry remnants moved to Orphaned. Real-world result: ~500 → ~95
+- **Stale Entities** uses recorder-backed timestamps that survive restarts (in-memory timestamps reset on every reboot, blinding stale detection for 30 days), and excludes static-by-design domains (automations, scenes, zones, buttons…) and config settings
+- **Ghost Devices** no longer flags hubs/bridges that other devices connect through
+- **Never Triggered** excludes restored remnant automations
+- **Config Errors** no longer reports integrations you deliberately disabled or discoveries you ignored
+- **Suggestions**: Health Issues and Disable Candidates exclude remnants (Disable was the wrong tool for them); fixed an entity being suggested for disable twice; the naming heuristic no longer flags dates like `backup_20250101` as hashes and now detects ULID ids (battery_notes-style)
+
+### 👆 Click-to-details everywhere
+
+- **Every entity card and row in the app opens the full Entity Details dialog on click** — mini cards in Cleanup/Unavailable/stat dialogs, and all Suggestions rows (naming, labels, area device cards, mismatch). Buttons and checkboxes stay exempt
+
+### 💡 Explanatory hints + Help deep-links
+
+- Every Health & Cleanup and Suggestions section starts with a short hint: what you're looking at, what the actions do, and what's reversible
+- Detailed hints carry a **?** button that opens the Help guide scrolled to the right section
+- Help guide refreshed to match current behavior throughout
+
+### 🐛 Fixes
+
+- Suggestions → Naming → **Rename Selected** now opens Bulk Rename with your checked entities pre-filtered, pre-checked, and already in the rename queue (it previously opened unfiltered with an empty queue)
+- Devices view "No Device (Orphaned)" pseudo-group renamed to "No Device"
+
+---
+
 ## Version 3.0.0 - "Refined" UI Redesign
 
 A full visual redesign of the panel — every surface, dialog, and view — plus a safety and security hardening pass.
