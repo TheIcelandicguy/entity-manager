@@ -13300,10 +13300,11 @@ class EntityManagerPanel extends HTMLElement {
         const checkedIds = [...dialogBody.querySelectorAll('.em-sug-naming-cb:checked')].map(cb => cb.dataset.entityId);
         if (checkedIds.length === 0) return;
         closeDialog();
-        const prevSelected = this.selectedEntities;
-        this.selectedEntities = new Set(checkedIds);
-        this._openBulkRenameDialog();
-        this.selectedEntities = prevSelected;
+        // Pass ids explicitly — the old save-swap-restore of this.selectedEntities
+        // restored BEFORE the async open ever read it, so the bulk view opened with
+        // no preselection and an empty queue (see "Bulk Actions From a Different
+        // Selection" in CLAUDE.md).
+        this._openBulkRenameDialog(checkedIds);
       });
     }
 
