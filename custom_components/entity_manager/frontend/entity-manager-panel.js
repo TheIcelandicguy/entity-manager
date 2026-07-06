@@ -6982,7 +6982,9 @@ class EntityManagerPanel extends HTMLElement {
             reason = 'missing-entry';
           } else if (!e.is_disabled && unprovided) {
             const entryState = e.config_entry_id ? snap?.states.get(e.config_entry_id) : null;
-            if (!e.config_entry_id || entryState === 'loaded') reason = 'not-loaded';
+            // `!snap` fallback: if config_entries/get failed we can't verify the entry —
+            // still surface unprovided entities as not-loaded rather than hiding them.
+            if (!e.config_entry_id || !snap || entryState === 'loaded') reason = 'not-loaded';
           }
           if (reason) out.push({ ...e, integration: integration.integration, orphanReason: reason });
         });
