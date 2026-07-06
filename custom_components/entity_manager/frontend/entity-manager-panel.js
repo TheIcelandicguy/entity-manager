@@ -1133,7 +1133,7 @@ class EntityManagerPanel extends HTMLElement {
         this._showHelpGuide(helpBtn.dataset.helpSection);
         return;
       }
-      const card = e.target.closest?.('.em-mini-card.em-mini-clickable');
+      const card = e.target.closest?.('.em-mini-card.em-mini-clickable, .em-row-clickable[data-entity-id]');
       if (!card) return;
       if (e.target.closest('button, a, input, select, textarea, label, [data-action], .em-mini-card-actions, .em-mini-card-link')) return;
       const eid = card.dataset.entityId;
@@ -12846,7 +12846,7 @@ class EntityManagerPanel extends HTMLElement {
     // keeps its own select-all/bulk-bar wiring, since the bulk button's underlying action
     // differs per section — disableEntity() vs. bulk rename — not just its label).
     const renderSugItemRow = (item, checkboxClass, ignoreKey) => `
-      <div class="em-sug-row em-sug-naming-row" data-entity-id="${this._escapeAttr(item.entity.entity_id)}" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
+      <div class="em-sug-row em-sug-naming-row em-row-clickable" data-entity-id="${this._escapeAttr(item.entity.entity_id)}" title="Click for entity details" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
         <input type="checkbox" class="${checkboxClass}" data-entity-id="${this._escapeAttr(item.entity.entity_id)}"
                style="flex-shrink:0;cursor:pointer;width:15px;height:15px;accent-color:var(--em-primary)">
         <div style="flex:1;min-width:0">
@@ -12990,7 +12990,7 @@ class EntityManagerPanel extends HTMLElement {
           }
           const stateClass = (rawState === 'unavailable' || rawState === 'unknown') ? ' em-sug-state-muted' : '';
           return `
-            <div class="em-sug-area-entity-row">
+            <div class="em-sug-area-entity-row em-row-clickable" data-entity-id="${this._escapeAttr(e.entity_id)}" title="Click for entity details">
               <span class="em-sug-area-entity-icon">${this._icon(iconName, '16px')}</span>
               <div class="em-sug-area-entity-info">
                 <div class="em-sug-area-entity-name" title="${this._escapeAttr(friendly)}">${this._escapeHtml(friendly)}</div>
@@ -13051,7 +13051,7 @@ class EntityManagerPanel extends HTMLElement {
       if (!items.length) return '';
       const rows = items.map(item => {
         const eid = this._escapeAttr(item.entity.entity_id);
-        return `<div class="em-sug-mismatch-row" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--em-border-light)">
+        return `<div class="em-sug-mismatch-row em-row-clickable" data-entity-id="${eid}" title="Click for entity details" style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--em-border-light)">
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.name)}</div>
             <div style="font-size:11px;font-family:monospace;color:var(--em-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(item.entity.entity_id)}</div>
@@ -13085,7 +13085,7 @@ class EntityManagerPanel extends HTMLElement {
         const name = this._hass?.states?.[e.entity_id]?.attributes?.friendly_name || e.original_name || e.entity_id;
         const devName = e.deviceName && e.deviceName !== name ? e.deviceName : '';
         return `
-          <div class="em-sug-row em-sug-naming-row" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
+          <div class="em-sug-row em-sug-naming-row em-row-clickable" data-entity-id="${this._escapeAttr(e.entity_id)}" title="Click for entity details" style="display:flex;gap:10px;padding:7px 4px 7px 12px;border-bottom:1px solid var(--em-border-light);align-items:center">
             <input type="checkbox" class="em-label-sug-cb" data-entity-id="${this._escapeAttr(e.entity_id)}" data-label-key="${labelKey}"
                    checked style="flex-shrink:0;cursor:pointer;width:15px;height:15px;accent-color:var(--em-primary)">
             <div style="flex:1;min-width:0">

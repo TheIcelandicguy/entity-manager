@@ -6349,6 +6349,15 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   background: color-mix(in srgb, var(--em-primary) 4%, transparent);
 }
 
+/* Same affordance for suggestion-style rows (naming, labels, area, mismatch) */
+.em-row-clickable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.em-row-clickable:hover {
+  background: color-mix(in srgb, var(--em-primary) 5%, transparent);
+}
+
 /* Keep card header on one line — name gets flex:1, right-side chips don't wrap */
 .em-mini-card .entity-card-header {
   flex-wrap: nowrap;
