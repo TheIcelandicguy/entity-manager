@@ -302,6 +302,7 @@ The **Enabled / Disabled / Updates** filter pills show live counts, with Updates
 
 ### Stat Card Dialogs — Mini Entity Cards
 Every stat card opens a dedicated dialog where items are displayed as **mini entity cards** matching the visual style of the main view:
+- **Click any card** (outside its buttons/checkboxes) to open the full Entity Details dialog for that entity — works in every dialog and inline view (Cleanup, Unavailable, Suggestions, Automations, …)
 - Dark header band showing the friendly name, state chip (On/Off/Running/unavailable/…), and time-ago
 - Monospace entity ID in the body with domain or mode info below
 - Action buttons (Edit, Rename, Toggle, Remove…) in a row at the bottom

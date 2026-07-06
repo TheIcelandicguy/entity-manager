@@ -6308,6 +6308,16 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   flex: none !important;
 }
 
+/* Click-to-details affordance — only cards representing a real entity */
+.em-mini-card.em-mini-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.em-mini-card.em-mini-clickable:hover {
+  border-color: var(--em-primary);
+  background: color-mix(in srgb, var(--em-primary) 4%, transparent);
+}
+
 /* Keep card header on one line — name gets flex:1, right-side chips don't wrap */
 .em-mini-card .entity-card-header {
   flex-wrap: nowrap;

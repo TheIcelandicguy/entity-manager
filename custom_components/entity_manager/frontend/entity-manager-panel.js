@@ -715,9 +715,12 @@ class EntityManagerPanel extends HTMLElement {
     return `<span style="opacity:0.6">HA / System</span>`;
   }
 
-  /** Mini entity card used in stat dialogs — matches the visual style of main view entity cards */
+  /** Mini entity card used in stat dialogs — matches the visual style of main view entity cards.
+   *  Cards whose id is a real entity_id are click-to-open Entity Details (see the
+   *  document-level delegate in connectedCallback); ghost-device cards etc. stay inert. */
   _renderMiniEntityCard({ entity_id, name, state, stateColor, timeAgo, infoLine, actionsHtml, contentHtml, checkboxHtml = '', extraClass = '', navigatePath = null, compact = false, superLabel = null, extraChip = null }) {
     const eid = this._escapeAttr(entity_id);
+    const isEntity = typeof entity_id === 'string' && entity_id.includes('.');
     const linkAttr = navigatePath
       ? `data-open-path="${this._escapeAttr(navigatePath)}"`
       : `data-open-entity="${eid}"`;
@@ -741,7 +744,7 @@ class EntityManagerPanel extends HTMLElement {
          <span class="entity-header-state" style="opacity:0.65${colorStyle ? ';' + colorStyle : ''}">${this._escapeHtml(extraChip)}</span>`
       : state != null ? `<span class="entity-header-state" style="${colorStyle}">${this._escapeHtml(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(state) ? this._fmtAgo(state) : state)}</span>` : '';
     return `
-      <div class="entity-item entity-list-item em-mini-card ${extraClass}" data-entity-id="${eid}">
+      <div class="entity-item entity-list-item em-mini-card${isEntity ? ' em-mini-clickable' : ''} ${extraClass}" data-entity-id="${eid}"${isEntity ? ' title="Click for entity details"' : ''}>
         <div class="entity-card-header">
           ${checkboxHtml}
           ${nameCol}
@@ -1104,6 +1107,22 @@ class EntityManagerPanel extends HTMLElement {
       }
     };
     window.addEventListener('location-changed', this._locationChangedHandler);
+
+    // Mini entity cards (dialogs + inline views) → click opens Entity Details.
+    // Attached to BOTH the panel (inline views — the panel sits inside HA's shadow
+    // DOM, so a document-level listener would only ever see the retargeted shadow
+    // host, never the card) AND document (dialog overlays are appended to
+    // document.body in light DOM, outside the panel's tree). A given click matches
+    // exactly one of the two scopes, so there's no double-fire.
+    this._miniCardDetailsHandler = (e) => {
+      const card = e.target.closest?.('.em-mini-card.em-mini-clickable');
+      if (!card) return;
+      if (e.target.closest('button, a, input, select, textarea, label, [data-action], .em-mini-card-actions, .em-mini-card-link')) return;
+      const eid = card.dataset.entityId;
+      if (eid) this._showEntityDetailsDialog(eid);
+    };
+    this.addEventListener('click', this._miniCardDetailsHandler);
+    document.addEventListener('click', this._miniCardDetailsHandler);
   }
 
   disconnectedCallback() {
@@ -1111,6 +1130,10 @@ class EntityManagerPanel extends HTMLElement {
     if (this._themeOutsideHandler) document.removeEventListener('click', this._themeOutsideHandler);
     if (this._domainOutsideHandler) document.removeEventListener('click', this._domainOutsideHandler);
     if (this._locationChangedHandler) window.removeEventListener('location-changed', this._locationChangedHandler);
+    if (this._miniCardDetailsHandler) {
+      this.removeEventListener('click', this._miniCardDetailsHandler);
+      document.removeEventListener('click', this._miniCardDetailsHandler);
+    }
   }
 
   // Re-render sidebar in place and re-attach listeners + labels.
