@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Version](https://img.shields.io/badge/version-3.1.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -302,6 +302,7 @@ The **Enabled / Disabled / Updates** filter pills show live counts, with Updates
 
 ### Stat Card Dialogs — Mini Entity Cards
 Every stat card opens a dedicated dialog where items are displayed as **mini entity cards** matching the visual style of the main view:
+- **Click any card** (outside its buttons/checkboxes) to open the full Entity Details dialog for that entity — works in every dialog and inline view (Cleanup, Unavailable, Suggestions, Automations, …)
 - Dark header band showing the friendly name, state chip (On/Off/Running/unavailable/…), and time-ago
 - Monospace entity ID in the body with domain or mode info below
 - Action buttons (Edit, Rename, Toggle, Remove…) in a row at the bottom
@@ -319,10 +320,10 @@ Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in
 ### Health & Cleanup View
 The **Health & Cleanup** inline view surfaces housekeeping tasks across five sections:
 - **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore**, **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog
-- **Orphaned entities** — entities with no parent device (YAML remnants or integration leftovers); grouped by integration; per-row actions: **Ignore**, **Assign to device**, **Add to Group**, **Remove**, plus a **Remove All** with confirmation
-- **Stale entities** — entities with no state change in 30+ days; grouped by domain; Keep (hide for 30 d), Disable, or Remove per entity
-- **Ghost devices** — devices registered in HA but with zero entities; Remove
-- **Never triggered** — automations and scripts that have never been triggered
+- **Orphaned entities** — registry entries whose *owner is gone*, split into three groups: **Missing Device** (`device_id` points at a deleted device), **Missing Config Entry** (the integration entry was removed — classic leftovers), and **Not Loaded** (enabled but nothing provides a state anymore). Entities that are simply device-less by design — automations, scripts, helpers, persons, groups — are **not** treated as orphans. Per-row actions: **Ignore**, **Assign to device** (Missing Device only), **Add to Group**, **Remove**, plus a **Remove All** with confirmation
+- **Stale entities** — value unchanged in 30+ days, using recorder-backed timestamps that survive HA restarts; static-by-design domains (automations, scenes, zones, buttons…) and config-category settings are excluded; Keep (hide for 30 d), Disable, or Remove per entity
+- **Ghost devices** — devices registered in HA with zero entities, excluding hubs/bridges that other devices connect through; click to open the device page in HA
+- **Never triggered** — automations and scripts that have never been triggered (restored remnants excluded — those are orphans)
 
 **Ignore / Restore**: clicking **Ignore** persistently dismisses a row. A **View ignored (N)** bar in each section reveals everything dismissed there, with one-click **Restore** per item and **Restore all**. The ignored state is shared with the Suggestions view.
 

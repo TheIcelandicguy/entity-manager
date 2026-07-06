@@ -457,7 +457,7 @@ await this.loadData();
 
 ## Version Information
 
-- **Current Version**: 3.0.0
+- **Current Version**: 3.1.0
 - **Minimum Home Assistant**: 2024.1.0
 - **IoT Class**: `calculated`
 - **HACS Compatible**: Yes
