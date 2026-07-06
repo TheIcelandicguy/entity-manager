@@ -7003,7 +7003,9 @@ class EntityManagerPanel extends HTMLElement {
       // Count pending updates (update.* entities with state 'on' = update available)
       this.updateCount = states.filter(s => s.entity_id.startsWith('update.') && s.state === 'on').length;
       // Count entities stuck in unavailable
-      this.unavailableCount = states.filter(s => s.state === 'unavailable').length;
+      // Restored placeholder states are registry remnants — they belong to
+      // Cleanup → Orphaned (Not Loaded), not to the unavailable count.
+      this.unavailableCount = states.filter(s => s.state === 'unavailable' && !s.attributes?.restored).length;
       // Count entities not updated in 30+ days (excluding meta-states and dismissed)
       const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
       const thirtyDaysAgo = Date.now() - thirtyDaysMs;
@@ -12656,22 +12658,31 @@ class EntityManagerPanel extends HTMLElement {
       const chgMs  = state?.last_changed  ? Date.parse(state.last_changed)  : null;
       const domain = entity.entity_id.split('.')[0];
 
-      if (!entity.is_disabled && state?.state === 'unavailable' && updMs && (now - updMs) > day7ms) {
+      // Restored placeholder states are registry remnants (Cleanup → Orphaned territory);
+      // suggesting "disable" for those would be the wrong tool, so they're excluded here.
+      const isLiveUnavailable = state?.state === 'unavailable' && !state?.attributes?.restored;
+      if (!entity.is_disabled && isLiveUnavailable && updMs && (now - updMs) > day7ms) {
         health.push({ entity, name, reason: `Unavailable for ${this._fmtAgo(state.last_updated)}`, action: 'disable', actionLabel: 'Disable' });
       }
       if (!entity.is_disabled && entity.entity_category === 'diagnostic' && chgMs && (now - chgMs) > day30ms) {
         disable.push({ entity, name, reason: `Diagnostic, unchanged for ${this._fmtAgo(state?.last_changed)}`, action: 'disable', actionLabel: 'Disable' });
       }
-      if (!entity.is_disabled && state?.state === 'unavailable' && updMs && (now - updMs) > day30ms
-          && !health.find(h => h.entity.entity_id === entity.entity_id)) {
+      if (!entity.is_disabled && isLiveUnavailable && updMs && (now - updMs) > day30ms
+          && !health.find(h => h.entity.entity_id === entity.entity_id)
+          && !disable.find(d => d.entity.entity_id === entity.entity_id)) {
         disable.push({ entity, name, reason: `Unavailable for ${this._fmtAgo(state.last_updated)}`, action: 'disable', actionLabel: 'Disable' });
       }
 
       const localId = entity.entity_id.split('.')[1] || '';
-      const hasHash = /[0-9a-f]{8,}/i.test(localId);
+      // Hex hash: 8+ hex chars containing BOTH a digit and a letter — a digits-only run
+      // like a date (backup_20250101) is not a hash. ULIDs (26-char Crockford base32,
+      // e.g. battery_notes' 01jdj99jj3gftxwmpr81db0fpv) are matched separately since
+      // they use letters beyond a-f.
+      const hasHash = /(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,}/i.test(localId)
+        || /(?:^|_)[0-9][0-9a-hjkmnp-tv-z]{25}(?:_|$)/i.test(localId);
       const nameGeneric = genericNames.has((entity.original_name || '').toLowerCase().trim());
       if (!entity.is_disabled && (hasHash || nameGeneric)) {
-        naming.push({ entity, name, reason: hasHash ? 'Entity ID contains auto-generated hash' : 'Generic entity name — consider something descriptive', action: 'rename', actionLabel: 'Rename' });
+        naming.push({ entity, name, reason: hasHash ? 'Entity ID contains an auto-generated hash' : 'Generic entity name — consider something descriptive', action: 'rename', actionLabel: 'Rename' });
       }
 
       if (!entity.is_disabled && entity.device_id && !helperDomains.has(domain)) {
@@ -14744,7 +14755,9 @@ class EntityManagerPanel extends HTMLElement {
           let _uvLastSeen = {};
           let _uvWentUnavailAt = {}; // recorder-backed: when the entity last transitioned TO unavailable
 
-          const allUnavailEntities = states.filter(s => s.state === 'unavailable');
+          // Excludes restored placeholder states — those are registry remnants with no
+          // provider and live under Cleanup → Orphaned (Not Loaded) instead.
+          const allUnavailEntities = states.filter(s => s.state === 'unavailable' && !s.attributes?.restored);
 
           const UV_TIME_FILTERS = [
             { id: 'all', label: 'All',  ms: 0 },
@@ -14823,7 +14836,7 @@ class EntityManagerPanel extends HTMLElement {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reachable!</p>';
           } else {
             groupedHtml = `
-              ${this._sectionHint('Currently <b>unavailable</b> — the device is offline or its integration can\'t reach it right now. Often temporary. <b>Ignore</b> hides a row here (this browser only, restorable), <b>Disable</b> stops HA tracking it (re-enable anytime), <b>Remove</b> deletes the registry entry permanently.', 'help-unavailable')}
+              ${this._sectionHint('Currently <b>unavailable</b> — the device is offline or its integration can\'t reach it right now. Often temporary. Registry remnants that no longer have a provider are listed under <b>Cleanup → Orphaned</b> instead. <b>Ignore</b> hides a row here (this browser only, restorable), <b>Disable</b> stops HA tracking it (re-enable anytime), <b>Remove</b> deletes the registry entry permanently.', 'help-unavailable')}
               ${_uvFilterBar(_uvFilter)}
               <div class="em-sug-ignored-wrap" style="padding:0 4px"></div>
               <div class="em-unavail-list">${_uvBodyHtml({}, _uvFilter)}</div>`;
