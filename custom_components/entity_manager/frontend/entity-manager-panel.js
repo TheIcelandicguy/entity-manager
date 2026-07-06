@@ -14054,7 +14054,7 @@ class EntityManagerPanel extends HTMLElement {
       },
       'not-loaded': {
         title: 'Not Loaded', icon: 'mdi:power-plug-off-outline', cls: 'em-sug-health',
-        hint: 'Their integration is loaded but no longer provides these entities — HA marks them "restored" and they can usually be removed. Note: sleeping/battery devices may appear here briefly after a restart, until they first report in. Entities of a failing config entry show under Config Health instead.',
+        hint: 'Their integration is loaded but is not providing these entities — HA marks them "restored". Disabled entities never show here. Some may just be temporarily absent (a network client that\'s offline, a sleeping/battery device that hasn\'t reported since restart) — removing those is recoverable, since an integration automatically re-creates any entity it still provides. True leftovers stay gone. Entities of a failing config entry show under Config Health instead.',
         chip: 'not loaded',
       },
     };
