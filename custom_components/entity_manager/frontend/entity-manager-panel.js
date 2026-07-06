@@ -763,6 +763,17 @@ class EntityManagerPanel extends HTMLElement {
     `;
   }
 
+  /** Explanatory hint line at the top of a section — tells the user what they're
+   *  looking at and what the actions do. Keep these to 1-3 sentences.
+   *  Pass a help-guide section id (e.g. 'help-cleanup') to append a "?" button
+   *  that opens the Help guide scrolled to that section. */
+  _sectionHint(text, helpId = null) {
+    const helpBtn = helpId
+      ? ` <button type="button" class="em-hint-help" data-help-section="${this._escapeAttr(helpId)}" title="More in the Help guide">?</button>`
+      : '';
+    return `<p class="em-section-hint">${text}${helpBtn}</p>`;
+  }
+
   _renderDialogBulkBar(actions) {
     const btns = actions.map(a =>
       `<button class="em-dialog-btn em-dialog-btn-${a.variant || 'secondary'} em-bulk-action-btn"
@@ -1115,6 +1126,13 @@ class EntityManagerPanel extends HTMLElement {
     // document.body in light DOM, outside the panel's tree). A given click matches
     // exactly one of the two scopes, so there's no double-fire.
     this._miniCardDetailsHandler = (e) => {
+      // Hint "?" → open the Help guide at the linked section
+      const helpBtn = e.target.closest?.('.em-hint-help');
+      if (helpBtn) {
+        e.stopPropagation();
+        this._showHelpGuide(helpBtn.dataset.helpSection);
+        return;
+      }
       const card = e.target.closest?.('.em-mini-card.em-mini-clickable');
       if (!card) return;
       if (e.target.closest('button, a, input, select, textarea, label, [data-action], .em-mini-card-actions, .em-mini-card-link')) return;
@@ -3941,7 +3959,7 @@ class EntityManagerPanel extends HTMLElement {
   
   // ===== HELP GUIDE =====
   
-  _showHelpGuide() {
+  _showHelpGuide(targetId = null) {
     const sections = [
       { id: 'search',      icon: EM_ICONS.search,      title: 'Search & Filter' },
       { id: 'enable',      icon: EM_ICONS.enable,      title: 'Enable / Disable Entities' },
@@ -4073,11 +4091,13 @@ class EntityManagerPanel extends HTMLElement {
               <h3>${this._icon(EM_ICONS.suggestions, '16px')} Suggestions</h3>
               <ul>
                 <li>Click the <strong>Suggestions</strong> stat card to analyse your entities</li>
-                <li>🟣 <strong>Health Issues</strong> — entities unavailable 7+ days → suggest disable</li>
-                <li>⬜ <strong>Disable Candidates</strong> — diagnostic entities unchanged 30+ days</li>
-                <li>🟠 <strong>Naming Improvements</strong> — auto-generated hashes or generic names</li>
-                <li>🔴 <strong>Area Assignment</strong> — devices with no area — bulk-assign directly from the dialog</li>
+                <li>🟣 <strong>Health Issues</strong> — entities unavailable 7+ days → suggested for disable (reversible; stops HA tracking dead entities)</li>
+                <li>⬜ <strong>Disable Candidates</strong> — diagnostic entities unchanged 30+ days; disabling reduces database noise, re-enable anytime</li>
+                <li>🟠 <strong>Naming Improvements</strong> — auto-generated hashes or generic names; Rename changes the entity ID and propagates it across automations, scripts, and YAML</li>
+                <li>🔴 <strong>Area Suggestions</strong> — devices with no area, matched by device name (✨) and your mapping rules (📐); Apply sets the area on the device and its entities</li>
+                <li>🟠 <strong>Area Mismatch</strong> — the entity's own area differs from its device's area; Sync adopts the device's area, Choose Area picks another</li>
                 <li>🟡 <strong>Label Suggestions</strong> — smart HA label recommendations — click <em>Apply to N</em> to create &amp; assign instantly</li>
+                <li>Every suggestion row has an <strong>Ignore</strong> button (permanent, this browser); restore anything via the <strong>View ignored</strong> bar at the top</li>
                 <li>Each section is colour-tinted for quick scanning</li>
               </ul>
             </div>
@@ -4135,6 +4155,7 @@ class EntityManagerPanel extends HTMLElement {
               <ul>
                 <li>Click any stat card (Automations, Scripts, Helpers, Templates, Unavailable…) to open its dialog</li>
                 <li>Items appear as <strong>mini entity cards</strong> — same style as the main view: name · state · time-ago in the header, entity ID in the body</li>
+                <li><strong>Click any card</strong> (outside its buttons/checkboxes) to open the full Entity Details dialog with everything HA knows about the entity</li>
                 <li>Click <strong>↗</strong> on any card to jump to HA: Automations and Scripts open their editor directly; all others open the HA more-info popup</li>
                 <li>Bulk checkboxes, Rename, and Labels work inside dialogs the same as in the main view</li>
               </ul>
@@ -4143,12 +4164,11 @@ class EntityManagerPanel extends HTMLElement {
             <div class="help-section" id="help-unavailable">
               <h3>${this._icon(EM_ICONS.warning, '16px')} Unavailable Entities</h3>
               <ul>
-                <li>Click the <strong>Unavailable</strong> stat card to see all entities currently in an unavailable state</li>
+                <li>Entities currently <strong>unavailable</strong> — the device is offline or its integration can't reach it. Often temporary (device off, Wi-Fi dropout), so investigate before removing</li>
                 <li>Filter by time range: All / Last 24 h / Last 7 days / Last 30 days</li>
-                <li>Per-row actions: <strong>Ignore</strong> (hide with snooze), <strong>Disable</strong>, <strong>Add to Group</strong>, <strong>Remove</strong></li>
-                <li><strong>Ignore</strong> opens a snooze picker — 1 Day / 3 Days / 1 Week / 2 Weeks / 1 Month / 3 Months / Permanent — entity is hidden until the snooze expires</li>
-                <li>Click <strong>Unignore</strong> on a hidden entity to restore it instantly; use <strong>Show ignored (N)</strong> to reveal all snoozed entities</li>
-                <li>Disable / Remove show a confirmation prompt before acting</li>
+                <li>Per-row actions: <strong>Ignore</strong>, <strong>Disable</strong>, <strong>Add to Group</strong>, <strong>Remove</strong></li>
+                <li><strong>Ignore</strong> hides the row permanently (stored in this browser only, and shared with Suggestions); restore any time via the <strong>View ignored (N)</strong> bar</li>
+                <li><strong>Disable</strong> stops HA tracking the entity — fully reversible; <strong>Remove</strong> deletes the registry entry permanently. Both confirm before acting</li>
               </ul>
             </div>
 
@@ -4159,6 +4179,7 @@ class EntityManagerPanel extends HTMLElement {
                 <li><strong>Orphaned entities</strong> — registry entries whose owner is gone: <em>Missing Device</em> (device was deleted), <em>Missing Config Entry</em> (integration entry removed), or <em>Not Loaded</em> (enabled but nothing provides a state). Entities that simply have no device — automations, helpers, persons, groups — are <em>not</em> orphans and never show here</li>
                 <li>Orphaned per-row actions: <strong>Ignore</strong>, <strong>Assign to device</strong> (Missing Device only), <strong>Add to Group</strong>, <strong>Remove</strong></li>
                 <li><strong>View ignored (N)</strong> bar appears in the Orphaned section once any are ignored</li>
+                <li><strong>Not Loaded</strong> nuance: entities of temporarily-absent providers (an offline network client, a sleeping sensor after restart) may appear — removing those is recoverable, since an integration re-creates any entity it still provides. <strong>Remove All</strong> always skips entities you've ignored</li>
                 <li><strong>Stale entities</strong> — no state change in 30+ days — Keep (hide for 30 d), Disable (with confirm), or Remove (with confirm)</li>
                 <li><strong>Ghost devices</strong> — devices registered in HA but with zero entities — Open in HA to manage</li>
                 <li><strong>Never Triggered</strong> — automations and scripts that have never run — click ↗ to open the editor</li>
@@ -4263,6 +4284,14 @@ class EntityManagerPanel extends HTMLElement {
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
+
+    // Deep-link: hint "?" buttons open the guide scrolled to their section.
+    // Small delay so the dialog has laid out before we scroll.
+    if (targetId) {
+      setTimeout(() => {
+        overlay.querySelector(`#${CSS.escape(targetId)}`)?.scrollIntoView({ block: 'start' });
+      }, 80);
+    }
   }
   
   // ===== ACTIVITY LOG =====
@@ -12815,7 +12844,12 @@ class EntityManagerPanel extends HTMLElement {
       }
       rows = rows || '';
       const bulkLabel = items[0]?.actionLabel || 'Apply';
+      const sectionHints = {
+        health: 'Unavailable for 7+ days — likely dead or long-gone devices. <b>Disable</b> stops HA tracking them (re-enable anytime); <b>Ignore</b> hides a row here permanently (restorable below).',
+        disable: 'Diagnostic entities with no state change in 30+ days — disabling them reduces database noise without losing anything. Re-enable anytime.',
+      };
       const body = `<div style="padding:2px 0">
+        ${sectionHints[sectionKey] ? this._sectionHint(sectionHints[sectionKey], 'help-suggestions') : ''}
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
           <button class="btn btn-primary btn-sm em-sug-bulk-btn" data-section="${sectionKey}" data-action="${items[0]?.action || ''}"
                   disabled style="opacity:0.4;pointer-events:none">${bulkLabel} Selected (0)</button>
@@ -12853,6 +12887,7 @@ class EntityManagerPanel extends HTMLElement {
       }
       rows = rows || '';
       const body = `<div style="padding:2px 0">
+        ${this._sectionHint('Entity IDs with auto-generated hashes or overly generic names. <b>Rename</b> updates the entity ID itself and propagates the change across automations, scripts, and YAML files.', 'help-suggestions')}
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
           <button class="btn btn-primary btn-sm em-naming-rename-btn" disabled style="opacity:0.4;pointer-events:none">Rename Selected (0)</button>
           <span style="font-size:11px;color:var(--em-text-secondary)">Check entities to bulk rename</span>
@@ -12958,6 +12993,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>`;
       }
       return `<div style="padding:2px 0">
+        ${this._sectionHint('Devices with no area assigned, matched by device name (✨ Auto) and your own mapping rules (📐). <b>Apply</b> sets the suggested area on the device and all of its entities.', 'help-suggestions')}
         <div class="em-sug-area-bulk-bar">
           <button class="btn btn-primary btn-sm em-area-bulk-btn" disabled style="opacity:0.4;pointer-events:none">Assign Area to Selected (0)</button>
           <span style="font-size:11px;color:var(--em-text-secondary)">Select devices to bulk assign area</span>
@@ -12991,7 +13027,9 @@ class EntityManagerPanel extends HTMLElement {
         </div>`;
       }).join('');
       if (!items.length) return '';
-      return `<div class="em-sug-sub-label">${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span></div><div style="padding:4px 0">${rows}</div>`;
+      return `<div class="em-sug-sub-label">${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span></div>
+        ${this._sectionHint('The entity\'s own area differs from its device\'s area — usually after moving a device. <b>Sync</b> adopts the device\'s area; <b>Choose Area</b> picks a different one.', 'help-suggestions')}
+        <div style="padding:4px 0">${rows}</div>`;
     };
 
     const renderLabelSuggestionsSection = (groups) => {
@@ -13058,7 +13096,9 @@ class EntityManagerPanel extends HTMLElement {
             <div class="em-naming-device-body" style="display:none">${renderDeviceGroups(g.entities, labelKey)}</div>
           </div>`;
       }).join('');
-      const body = `<div style="padding:2px 0">${rows}</div>`;
+      const body = `<div style="padding:2px 0">
+        ${this._sectionHint('Smart label recommendations grouped by semantic category (lights, motion sensors, power monitoring…). <b>Apply to N</b> creates the HA label if needed and assigns it — labels are HA-native and usable everywhere, not just in Entity Manager.', 'help-labels')}
+        ${rows}</div>`;
       return this._collGroup(`${this._icon(EM_ICONS.labels, '16px')} Label Suggestions <span style="opacity:0.55;font-weight:400;font-size:12px">(${groups.length} group${groups.length !== 1 ? 's' : ''})</span>`, body);
     };
 
@@ -13621,7 +13661,9 @@ class EntityManagerPanel extends HTMLElement {
           rows
         );
       }
-      body.innerHTML = `<div class="em-sug-section em-sug-health" style="padding:0">${html}</div>`;
+      body.innerHTML = `<div class="em-sug-section em-sug-health" style="padding:0">${
+        this._sectionHint('Config entries that failed to set up or are still retrying — usually credentials, network, or a device that\'s off. <b>Reload</b> retries the integration now; fixing the underlying issue is done in HA\'s own integration page. Entities of these entries are excluded from Cleanup\'s orphan detection until the entry recovers.')
+      }${html}</div>`;
       this._attachDialogSearch(overlay);
 
       this._reAttachCollapsibles(body);
@@ -14093,7 +14135,7 @@ class EntityManagerPanel extends HTMLElement {
         // Group by integration inside each reason section
         const byInteg = {};
         items.forEach(e => { (byInteg[e.integration] = byInteg[e.integration] || []).push(e); });
-        const inner = `<p style="padding:6px 12px 2px;font-size:11px;opacity:0.6;margin:0">${meta.hint}</p>` +
+        const inner = this._sectionHint(meta.hint, 'help-cleanup') +
           Object.entries(byInteg).sort().map(([integ, list]) => {
             const integLabel = this._escapeHtml(integ.charAt(0).toUpperCase() + integ.slice(1));
             return Object.keys(byInteg).length === 1
@@ -14195,16 +14237,20 @@ class EntityManagerPanel extends HTMLElement {
     const cleanupContentHtml = `
       <div style="padding:8px 8px 4px">
         <div class="em-sug-section em-sug-area">
-          ${this._collGroup(`${this._icon(EM_ICONS.cleanup, '16px')} Orphaned Entities (${orphanedEntities.length})`, orphanedHtml)}
+          ${this._collGroup(`${this._icon(EM_ICONS.cleanup, '16px')} Orphaned Entities (${orphanedEntities.length})`,
+            this._sectionHint('Registry entries whose owner is gone — a deleted device, a removed config entry, or an integration that no longer provides them. Entities that simply have no device (automations, helpers, persons…) are not orphans and never show here.', 'help-cleanup') + orphanedHtml)}
         </div>
         <div class="em-sug-section em-sug-disable">
-          ${this._collGroup(`Stale Entities — 30d+ (${staleEntities.length})`, staleHtml)}
+          ${this._collGroup(`Stale Entities — 30d+ (${staleEntities.length})`,
+            this._sectionHint('No state change in over 30 days. Some entities are legitimately quiet (rarely-triggered sensors, seasonal devices). <b>Keep</b> hides a row for 30 days, <b>Disable</b> stops HA recording it (re-enable anytime), <b>Remove</b> deletes the registry entry permanently.', 'help-cleanup') + staleHtml)}
         </div>
         <div class="em-sug-section em-sug-health">
-          ${this._collGroup(`Ghost Devices (${ghostDevices.length})`, ghostHtml)}
+          ${this._collGroup(`Ghost Devices (${ghostDevices.length})`,
+            this._sectionHint('Devices registered in HA with zero entities — usually leftovers from removed integrations. Click a card to open the device page in HA, where it can be deleted.', 'help-cleanup') + ghostHtml)}
         </div>
         <div class="em-sug-section em-sug-naming">
-          ${this._collGroup(`Never Triggered (${neverTriggered.length})`, neverHtml)}
+          ${this._collGroup(`Never Triggered (${neverTriggered.length})`,
+            this._sectionHint('Automations and scripts that have never run. New or rarely-triggered ones are perfectly normal — treat this as a review list, not junk. Click a card to open it in the editor.', 'help-cleanup') + neverHtml)}
         </div>
       </div>`;
     let overlay, closeDialog;
@@ -14777,6 +14823,7 @@ class EntityManagerPanel extends HTMLElement {
             groupedHtml = '<p style="text-align:center;padding:24px;opacity:0.6">All entities are reachable!</p>';
           } else {
             groupedHtml = `
+              ${this._sectionHint('Currently <b>unavailable</b> — the device is offline or its integration can\'t reach it right now. Often temporary. <b>Ignore</b> hides a row here (this browser only, restorable), <b>Disable</b> stops HA tracking it (re-enable anytime), <b>Remove</b> deletes the registry entry permanently.', 'help-unavailable')}
               ${_uvFilterBar(_uvFilter)}
               <div class="em-sug-ignored-wrap" style="padding:0 4px"></div>
               <div class="em-unavail-list">${_uvBodyHtml({}, _uvFilter)}</div>`;

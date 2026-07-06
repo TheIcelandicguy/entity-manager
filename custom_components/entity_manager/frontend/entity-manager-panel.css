@@ -6308,6 +6308,37 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   flex: none !important;
 }
 
+/* Section hint — explanatory line at the top of a section body */
+.em-section-hint {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  opacity: 0.65;
+  margin: 0;
+  line-height: 1.5;
+}
+.em-hint-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  margin-left: 2px;
+  border: 1px solid var(--em-primary);
+  border-radius: 50%;
+  background: none;
+  color: var(--em-primary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: text-bottom;
+}
+.em-hint-help:hover {
+  background: var(--em-primary);
+  color: #fff;
+}
+
 /* Click-to-details affordance — only cards representing a real entity */
 .em-mini-card.em-mini-clickable {
   cursor: pointer;
