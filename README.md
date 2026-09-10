@@ -416,7 +416,7 @@ Home Assistant Entity & Device Registries
 | Component | Description |
 |---|---|
 | `__init__.py` | Integration setup, service registration, sidebar panel |
-| `websocket_api.py` | 19 WebSocket command handlers |
+| `websocket_api.py` | 21 WebSocket command handlers |
 | `voice_assistant.py` | Voice intent handlers |
 | `config_flow.py` | UI-based configuration flow |
 | `entity-manager-panel.js` | Full frontend as a single web component |
@@ -439,8 +439,8 @@ All commands require admin privileges.
 | `entity_manager/disable_entity` | `entity_id` | Disable a single entity |
 | `entity_manager/bulk_enable` | `entity_ids` (max 500) | Enable multiple entities |
 | `entity_manager/bulk_disable` | `entity_ids` (max 500) | Disable multiple entities |
-| `entity_manager/rename_entity` | `entity_id`, `new_name` | Rename entity (domain preserved) |
-| `entity_manager/update_entity_display_name` | `entity_id`, `display_name` | Set or clear user display name |
+| `entity_manager/rename_entity` | `old_entity_id`, `new_entity_id` | Rename entity (domain preserved) |
+| `entity_manager/update_entity_display_name` | `entity_id`, `name` (null clears) | Set or clear user display name |
 | `entity_manager/remove_entity` | `entity_id` | Remove entity (handles templates, YAML, integration-managed) |
 | `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Find/replace entity ID across YAML config files |
 | `entity_manager/assign_entity_device` | `entity_id`, `device_id` | Assign entity to a device |
