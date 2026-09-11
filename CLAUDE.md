@@ -138,22 +138,25 @@ bandit -r custom_components/ --severity-level medium
 ```
 
 Both are thin wrappers over `E:\tools\deploy-to-ha.ps1`, shared by every
-integration on this machine. It mirrors `custom_components\entity_manager` →
-`Z:\custom_components\entity_manager` with `robocopy /MIR /R:2 /W:2`, excluding
-the dirs `__pycache__`, `.git`, `.claude`, `.venv`, `tests` and the files
-`*.pyc`, `*.pyo`, `settings.local.json`, `test_*.py`. Before copying it refuses
-to run unless `Z:\configuration.yaml` exists, warns about anything on `Z:` that
-is newer than its `E:` counterpart (a hand edit on the HA side about to be
-overwritten), and afterwards fails if the deployed `manifest.json` version does
-not match the source. The pre-2026-08-30 standalone script is kept as
-`sync-to-ha.ps1.bak-2026-08-30`.
+integration on this machine. It copies `custom_components\entity_manager` →
+`Z:\custom_components\entity_manager` with `robocopy /E /R:2 /W:2` (`/E`,
+never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.claude`, `.venv`,
+`tests` and the files `*.pyc`, `*.pyo`, `settings.local.json`, `test_*.py`.
+Before copying it refuses to run unless `Z:\configuration.yaml` exists and
+warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
+edit on the HA side about to be overwritten); afterwards it lists files on
+`Z:` that the repo no longer has and fails if the deployed `manifest.json`
+version does not match the source. Robocopy exit codes 0–7 are success (1 =
+files copied); only ≥8 is a failure. The pre-2026-08-30 standalone script is
+kept as `sync-to-ha.ps1.bak-2026-08-30`.
 
 - **Python changes need an HA restart; frontend-only changes need only a hard
   browser refresh.** Getting this backwards is the usual reason a change looks
   like it did not apply.
-- `/MIR` is deliberate: `/E` would leave a module you deleted from the repo
-  sitting on `Z:`, still importable. Never edit under
-  `Z:\custom_components\entity_manager` directly — it gets wiped.
+- `/E` never deletes, so a module you delete from the repo stays on `Z:`,
+  still importable, until you remove it by hand — the deploy output names it.
+  Never edit under `Z:\custom_components\entity_manager` directly; the next
+  deploy overwrites it and the edit was never in git.
 - `/R:2 /W:2` matters: robocopy's default is a million retries at 30 s, so a
   file HA holds open becomes a hang rather than an error. If the copy fails on a
   lock, restart HA and re-run.
