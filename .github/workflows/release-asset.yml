@@ -39,22 +39,23 @@ jobs:
       - name: hacs.json and the component agree on the name
         id: names
         run: |
-          want=$(python -c "import json;print(json.load(open('hacs.json')).get('filename',''))")
-          zip_release=$(python -c "import json;print(json.load(open('hacs.json')).get('zip_release',False))")
-          if [ "$zip_release" != "True" ] || [ -z "$want" ]; then
-            echo "::error::hacs.json needs zip_release: true and a filename for the asset to be used."
-            exit 1
-          fi
           domain=$(ls custom_components)
           if [ "$(echo "$domain" | wc -l)" -ne 1 ]; then
             echo "::error::expected exactly one directory under custom_components/, found: $domain"
             exit 1
           fi
-          if [ "$want" != "${domain}.zip" ]; then
-            echo "::error::hacs.json filename is '$want' but the component is '$domain'."
-            echo "::error::HACS matches the asset name against that field exactly, so they must agree."
+          want="${domain}.zip"
+          # The tag's own hacs.json is only advisory here. Releases published
+          # before zip_release was added have no filename field, and those are
+          # exactly the ones that need backfilling, so an absent field must not
+          # stop the upload. A field that disagrees is a real mismatch: HACS
+          # matches the asset name against it exactly.
+          declared=$(python -c "import json;print(json.load(open('hacs.json')).get('filename',''))")
+          if [ -n "$declared" ] && [ "$declared" != "$want" ]; then
+            echo "::error::hacs.json filename is '$declared' but the component is '$domain'."
             exit 1
           fi
+          [ -n "$declared" ] || echo "::notice::this tag predates zip_release in hacs.json; uploading as $want"
           echo "domain=$domain" >> "$GITHUB_OUTPUT"
           echo "asset=$want" >> "$GITHUB_OUTPUT"
 
