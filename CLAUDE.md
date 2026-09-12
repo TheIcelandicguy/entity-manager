@@ -35,8 +35,9 @@ All paths below are relative to the repo root. Note that `tests/` and
 | `.../frontend/entity-manager-panel.css` | 7,458 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
-| `deploy.ps1`, `sync-to-ha.ps1` | The same thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). `sync-to-ha.ps1` is kept only because the name is in muscle memory and permission lists. |
+| `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
+| `ruff.toml` | Pins Ruff lint rules for this repo so CI does not inherit widened future defaults. |
 | `_from_Z/` | The stale copies of this repo's docs that sat loose in the HA config root until 2026-09-10. Archive only; every file matched a Jan–Feb 2026 commit exactly. |
 
 ## Architecture
@@ -133,12 +134,15 @@ bandit -r custom_components/ --severity-level medium
 ## Deploy
 
 ```
-.\deploy.ps1            # or .\sync-to-ha.ps1 — same thing
+.\deploy.ps1
 .\deploy.ps1 -DryRun    # show what would change, write nothing
 ```
 
-Both are thin wrappers over `E:\tools\deploy-to-ha.ps1`, shared by every
-integration on this machine. It copies `custom_components\entity_manager` →
+The checked-in wrapper is a thin wrapper over `E:\tools\deploy-to-ha.ps1`,
+shared by every integration on this machine. No `sync-to-ha.ps1` script is in
+the repo; a local gitignored helper with that name points at the same
+underlying script for muscle memory and old permission lists. It copies
+`custom_components\entity_manager` →
 `Z:\custom_components\entity_manager` with `robocopy /E /R:2 /W:2` (`/E`,
 never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.claude`, `.venv`,
 `tests` and the files `*.pyc`, `*.pyo`, `settings.local.json`, `test_*.py`.
@@ -147,9 +151,9 @@ warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
 edit on the HA side about to be overwritten); afterwards it lists files on
 `Z:` that the repo no longer has and fails if the deployed `manifest.json`
 version does not match the source. Robocopy exit codes 0–7 are success (1 =
-files copied); only ≥8 is a failure. The pre-2026-08-30 standalone script that
-both wrappers replaced is kept locally as `sync-to-ha.ps1.bak-2026-08-30`; it
-is gitignored along with `sync-to-ha.ps1` itself, so neither is in the repo.
+files copied); only ≥8 is a failure. The pre-2026-08-30 standalone script the
+wrappers replaced is kept locally as sync-to-ha.ps1.bak-2026-08-30; it is
+gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
 
 - **Python changes need an HA restart; frontend-only changes need only a hard
   browser refresh.** Getting this backwards is the usual reason a change looks
