@@ -37,3 +37,4 @@ node_modules/
 # Local dev tools
 sync-to-ha.ps1
 .claude/
+sync-to-ha.ps1.bak-*

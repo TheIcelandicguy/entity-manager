@@ -147,8 +147,9 @@ warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
 edit on the HA side about to be overwritten); afterwards it lists files on
 `Z:` that the repo no longer has and fails if the deployed `manifest.json`
 version does not match the source. Robocopy exit codes 0–7 are success (1 =
-files copied); only ≥8 is a failure. The pre-2026-08-30 standalone script is
-kept as `sync-to-ha.ps1.bak-2026-08-30`.
+files copied); only ≥8 is a failure. The pre-2026-08-30 standalone script that
+both wrappers replaced is kept locally as `sync-to-ha.ps1.bak-2026-08-30`; it
+is gitignored along with `sync-to-ha.ps1` itself, so neither is in the repo.
 
 - **Python changes need an HA restart; frontend-only changes need only a hard
   browser refresh.** Getting this backwards is the usual reason a change looks
@@ -170,11 +171,11 @@ kept as `sync-to-ha.ps1.bak-2026-08-30`.
   `CODE_OF_CONDUCT.md`, `eslint.config.js`, `sentences\`). They were moved to
   `_from_Z/` here. If any of them reappear on `Z:`, something is copying the
   repo root instead of `custom_components\entity_manager`.
-- The previous version of this file is kept at `CLAUDE.md.bak-2026-08-30`. It
-  contradicted itself on the version and documented wrong parameter names for
-  `rename_entity`, `update_entity_display_name`, `get_last_activity` and
-  `import_entity_states`. Do not reintroduce anything from it without checking
-  source.
+- The pre-2026-08-30 version of this file is in git history at commit
+  `656230b`, not in the working tree. It contradicted itself on the version and
+  documented wrong parameter names for `rename_entity`,
+  `update_entity_display_name`, `get_last_activity` and `import_entity_states`.
+  Do not reintroduce anything from it without checking source.
 - Version bumps must touch both `manifest.json` and `package.json`.
 - `VALID_ENTITY_ID` is stricter than it looks — the domain must start with a
   letter, not an underscore. Validate against it before any registry write.
