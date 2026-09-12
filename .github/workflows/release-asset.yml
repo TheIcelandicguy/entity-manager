@@ -1,0 +1,93 @@
+name: Attach release asset
+
+# GitHub counts downloads of release *assets* only. A HACS integration with no
+# asset is fetched as the tag's source archive, which is never counted, so the
+# downloads badge sits at zero no matter how many people install it.
+#
+# Setting zip_release + filename in hacs.json makes HACS download the asset
+# instead. Note the asymmetry with a Lovelace plugin: if a plugin's asset is
+# missing HACS silently falls back to the file in the repo tree, but for an
+# integration the install *fails*. So every published release needs this asset,
+# including any published before this workflow existed — backfill those with
+# the workflow_dispatch below rather than leaving a version that cannot install.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the asset to (e.g. v3.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve the tag
+        id: tag
+        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      # Check out the TAG, not the default branch: the asset must be what that
+      # version shipped, and main usually moves on straight after a release.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: hacs.json and the component agree on the name
+        id: names
+        run: |
+          want=$(python -c "import json;print(json.load(open('hacs.json')).get('filename',''))")
+          zip_release=$(python -c "import json;print(json.load(open('hacs.json')).get('zip_release',False))")
+          if [ "$zip_release" != "True" ] || [ -z "$want" ]; then
+            echo "::error::hacs.json needs zip_release: true and a filename for the asset to be used."
+            exit 1
+          fi
+          domain=$(ls custom_components)
+          if [ "$(echo "$domain" | wc -l)" -ne 1 ]; then
+            echo "::error::expected exactly one directory under custom_components/, found: $domain"
+            exit 1
+          fi
+          if [ "$want" != "${domain}.zip" ]; then
+            echo "::error::hacs.json filename is '$want' but the component is '$domain'."
+            echo "::error::HACS matches the asset name against that field exactly, so they must agree."
+            exit 1
+          fi
+          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+          echo "asset=$want" >> "$GITHUB_OUTPUT"
+
+      # A release whose manifest disagrees with its tag installs as the wrong
+      # version and is confusing to debug long after the fact.
+      - name: The manifest version matches the tag
+        run: |
+          want="${{ steps.tag.outputs.tag }}"; want="${want#v}"
+          got=$(python -c "import json;print(json.load(open('custom_components/${{ steps.names.outputs.domain }}/manifest.json'))['version'])")
+          if [ "$want" != "$got" ]; then
+            echo "::error::tag ${{ steps.tag.outputs.tag }} but manifest.json says $got."
+            exit 1
+          fi
+
+      # HACS extracts the asset straight into custom_components/<domain>/, so
+      # manifest.json has to sit at the root of the zip, not inside a folder.
+      - name: Build the zip
+        run: |
+          cd "custom_components/${{ steps.names.outputs.domain }}"
+          zip -r -q "$GITHUB_WORKSPACE/${{ steps.names.outputs.asset }}" . \
+            -x '*__pycache__/*' '*.pyc' '*.pyo' 'tests/*' 'test_*.py'
+          cd "$GITHUB_WORKSPACE"
+          unzip -l "${{ steps.names.outputs.asset }}" | tail -3
+          unzip -l "${{ steps.names.outputs.asset }}" | grep -qE ' (\./)?manifest\.json$' || {
+            echo "::error::manifest.json is not at the root of the zip - HACS would install an empty component."
+            exit 1
+          }
+
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "${{ steps.names.outputs.asset }}" --clobber
+          gh release view "${{ steps.tag.outputs.tag }}" \
+            --json assets --jq '.assets[] | "attached: \(.name) (\(.size) bytes)"'
