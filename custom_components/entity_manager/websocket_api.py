@@ -1322,18 +1322,20 @@ async def handle_get_last_activity(
     """
     entity_ids: list[str] | None = msg.get("entity_ids") or None
 
+    try:
+        from homeassistant.components.recorder import get_instance  # noqa: PLC0415
+        from sqlalchemy import text as sa_text  # noqa: PLC0415
+    except ImportError:
+        connection.send_result(msg["id"], {})
+        return
+
+    try:
+        recorder = get_instance(hass)
+    except Exception:  # noqa: BLE001
+        connection.send_result(msg["id"], {})
+        return
+
     def _run_query() -> dict[str, float]:
-        try:
-            from homeassistant.components.recorder import get_instance  # noqa: PLC0415
-            from sqlalchemy import text as sa_text  # noqa: PLC0415
-        except ImportError:
-            return {}
-
-        try:
-            recorder = get_instance(hass)
-        except Exception:  # noqa: BLE001
-            return {}
-
         result: dict[str, float] = {}
         CHUNK = 500
         try:
@@ -1376,7 +1378,10 @@ async def handle_get_last_activity(
         return result
 
     try:
-        result = await hass.async_add_executor_job(_run_query)
+        # Recorder DB work must run on the recorder's own executor, not the
+        # generic hass executor, or HA logs a "accesses the database without
+        # the database executor" warning.
+        result = await recorder.async_add_executor_job(_run_query)
         connection.send_result(msg["id"], result)
     except Exception as err:
         _LOGGER.error("Error in get_last_activity: %s", err, exc_info=True)
