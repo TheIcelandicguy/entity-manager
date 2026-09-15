@@ -14,11 +14,11 @@ Solves the common problem of managing hundreds of disabled diagnostic entities (
 
 ## Project Stats
 
-- **Version**: 3.1.0
+- **Version**: 3.2.0
 - **License**: MIT
 - **Language**: Python (backend), JavaScript (frontend)
 - **HA Minimum**: 2024.1.0
-- **Lines of Code**: ~16,100 JS / ~7,050 CSS / ~1,380 Python
+- **Lines of Code**: ~17,400 JS / ~7,450 CSS / ~2,030 Python
 
 ## File Structure
 
