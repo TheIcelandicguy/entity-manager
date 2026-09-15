@@ -228,6 +228,6 @@ MIT License - Free to use, modify, and distribute
 
 ---
 
-**Version**: 2.22.0
+**Version**: 3.2.0
 **Created**: January 2025
 **Maintainer**: @TheIcelandicguy
