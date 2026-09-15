@@ -1,5 +1,18 @@
 # Changelog
 
+## Version 3.2.0 - Renames Update Every Reference
+
+Renaming an entity ID now carries the new ID everywhere Home Assistant config points at it, with HA running.
+
+### 🔁 Reference updates that actually happen
+
+- **Fixed: renames never updated references.** The rename dialog previewed YAML references but only renamed the registry entry, and the bulk rename queue skipped references entirely. Both now rewrite references after the rename, and so does undo/redo of a rename
+- **Bulk rename queue previews first** — one dry-run over the whole batch lists every place that will change and every file that still needs a manual fix, before anything is renamed
+- **Beyond YAML:** storage-mode dashboards, config entry data/options (UI helpers such as utility_meter, derivative, threshold, group and template keep their source entity there and went silently `unknown`), persons' device trackers and Assist pipelines are rewritten through HA's own APIs — no restart, no `.storage` edits on disk. Each change is backed up to `.storage/entity_manager_backups/`
+- **Automations, scripts, scenes and templates reload** after a YAML change, so running copies pick up the new ID immediately
+- **Manual follow-ups are listed** — integration Stores in `.storage` and hard-coded IDs under `custom_components` are reported, never rewritten
+- `update_yaml_references` accepts a `renames` list (up to 500 per call; the panel chunks larger batches) and rewrites a whole batch in one linear pass
+
 ## Version 3.1.0 - Health & Cleanup Accuracy, Click-to-Details Everywhere
 
 An accuracy release, driven by user feedback: every Health & Cleanup and Suggestions surface now tells the truth about what it found, every entity in the app is one click away from its full details, and explanatory hints tell you what each action really does before you do it.

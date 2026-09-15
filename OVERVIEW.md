@@ -1,7 +1,7 @@
 # Entity Manager — Project Overview
 
 > A comprehensive overview of the **Entity Manager** Home Assistant custom integration
-> (domain `entity_manager`, version **3.1.0**). Covers both user-facing behaviour and
+> (domain `entity_manager`, version **3.2.0**). Covers both user-facing behaviour and
 > developer/architecture detail. Generated from the repository source.
 
 ## Table of Contents
@@ -140,7 +140,7 @@ entity-manager/
 │   ├── __init__.py            # Entry point: panel + resource/WS/service/intent registration
 │   ├── config_flow.py         # Single-step UI config flow (no options)
 │   ├── const.py               # DOMAIN, MAX_BULK_ENTITIES (500), VALID_ENTITY_ID regex
-│   ├── manifest.json          # Integration metadata (v3.1.0, service, calculated)
+│   ├── manifest.json          # Integration metadata (v3.2.0, service, calculated)
 │   ├── services.yaml          # enable_entity / disable_entity service schemas
 │   ├── strings.json / en.json / translations/en.json  # UI + config-flow strings
 │   ├── voice_assistant.py     # Enable/Disable voice intent handlers (admin-gated)
@@ -221,12 +221,16 @@ All 21 WebSocket commands are decorated with `@websocket_api.require_admin` +
 | `entity_manager/assign_entity_device` | `entity_id`, `device_id` | Assign entity to a device. |
 | `entity_manager/unassign_entity_device` | `entity_id` | Clear an entity's device assignment. |
 | `entity_manager/import_entity_states` | `entities` (1–500, each `entity_id`+`is_disabled`) | Apply enable/disable states from an exported config. |
-| `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Find/replace an entity ID across YAML config files (preview when `dry_run`). |
+| `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Rewrite references after one rename or a `renames` list (≤500) across YAML config files, storage-mode dashboards, config entry data/options, persons and Assist pipelines; reports remaining hits in integration Stores and `custom_components` as `manual_references` (preview when `dry_run`). |
 | `entity_manager/register_template` | `entity_id` | Inject a generated `unique_id` into a YAML template entity and reload templates. |
 
 > **YAML safety:** the YAML-writing commands (`update_yaml_references`, `register_template`)
 > skip `secrets.yaml` and directories like `custom_components`, `.storage`, `www`, `backups`,
 > `.git`, and write a `.em-bak` backup of each file before modifying it.
+> `update_yaml_references` additionally rewrites storage dashboards, config entries, persons and
+> Assist pipelines through HA's APIs (JSON backups in `.storage/entity_manager_backups/`), reloads automations, scripts,
+> scenes and templates after a YAML write, and only *reports* hits in integration Stores and
+> `custom_components`.
 
 ### Home Assistant Services (`services.yaml`)
 | Service | Description |

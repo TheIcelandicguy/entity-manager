@@ -840,8 +840,17 @@ async def handle_get_template_sensors(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/update_yaml_references",
-        vol.Required("old_entity_id"): cv.entity_id,
-        vol.Required("new_entity_id"): cv.entity_id,
+        vol.Exclusive("old_entity_id", "rename"): cv.entity_id,
+        vol.Optional("new_entity_id"): cv.entity_id,
+        vol.Exclusive("renames", "rename"): vol.All(
+            [
+                {
+                    vol.Required("old_entity_id"): cv.entity_id,
+                    vol.Required("new_entity_id"): cv.entity_id,
+                }
+            ],
+            vol.Length(min=1, max=MAX_BULK_ENTITIES),
+        ),
         vol.Optional("dry_run", default=False): bool,
     }
 )
@@ -852,22 +861,33 @@ async def handle_update_yaml_references(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Replace all occurrences of old_entity_id with new_entity_id in YAML config files.
+    """Rewrite entity ID references after a rename, wherever HA config holds them.
 
-    When dry_run=True the files are scanned but not modified; the response
-    lists what *would* change so the caller can show a preview.
+    Takes one ``old_entity_id``/``new_entity_id`` pair or a ``renames`` list.
+    Rewrites YAML config files, storage-mode dashboards, config entry
+    data/options (UI helpers keep their source entity there), persons and
+    Assist pipelines, then reloads automations/scripts/scenes/templates if YAML
+    changed. Integration Stores in .storage and files under custom_components
+    are only reported in ``manual_references``.
+
+    When dry_run=True nothing is modified; the response lists what *would*
+    change so the caller can show a preview.
     """
-    old_id = msg["old_entity_id"]
-    new_id = msg["new_entity_id"]
+    if "renames" in msg:
+        pairs = [(r["old_entity_id"], r["new_entity_id"]) for r in msg["renames"]]
+    elif "old_entity_id" in msg and "new_entity_id" in msg:
+        pairs = [(msg["old_entity_id"], msg["new_entity_id"])]
+    else:
+        connection.send_error(
+            msg["id"],
+            "invalid_format",
+            "Pass old_entity_id and new_entity_id, or a renames list",
+        )
+        return
+
+    rewriter = _Rewriter(dict(pairs))
     dry_run: bool = msg["dry_run"]
     config_path = Path(hass.config.config_dir)
-
-    # Matches old_entity_id as a whole token — not part of a longer identifier.
-    # Lookbehind excludes alphanumeric, underscore, and dot (prevents matching
-    # e.g. "binary_sensor.x" when searching for "sensor.x").
-    pattern = re.compile(
-        r"(?<![a-zA-Z0-9_\.])" + re.escape(old_id) + r"(?![a-zA-Z0-9_])"
-    )
 
     # Directories inside config_dir that should never be touched
     _SKIP = {
@@ -895,9 +915,7 @@ async def handle_update_yaml_references(
                 continue
             try:
                 content = filepath.read_text(encoding="utf-8")
-                if old_id not in content:
-                    continue
-                new_content, count = pattern.subn(new_id, content)
+                new_content, count = rewriter.sub(content)
                 if count:
                     if not dry_run:
                         # Keep a one-shot backup of the pre-edit content next to the file
@@ -905,7 +923,9 @@ async def handle_update_yaml_references(
                             content, encoding="utf-8"
                         )
                         filepath.write_text(new_content, encoding="utf-8")
-                    results.append({"file": str(rel), "replacements": count})
+                    results.append(
+                        {"file": str(rel), "replacements": count, "kind": "yaml"}
+                    )
             except Exception as exc:  # noqa: BLE001
                 errors.append({"file": str(rel), "error": str(exc)})
 
@@ -914,19 +934,342 @@ async def handle_update_yaml_references(
             "dry_run": dry_run,
             "files_updated": results,
             "errors": errors,
-            "total_replacements": sum(r["replacements"] for r in results),
         }
 
-    result = _do_replace()
+    result = await hass.async_add_executor_job(_do_replace)
+    yaml_changed = bool(result["files_updated"])
+
+    # Dashboards, config entries, persons and pipelines live in .storage. HA
+    # holds those in memory and overwrites the files on its next save, so they
+    # are rewritten through HA's own APIs, never on disk.
+    backup_dir = config_path / ".storage" / "entity_manager_backups"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+
+    def _write_backup(name: str, payload: Any) -> None:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+        (backup_dir / f"{stamp}.{safe}.json").write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+
+    for kind, rewrite in (
+        ("dashboard", _replace_in_dashboards),
+        ("config_entry", _replace_in_config_entries),
+        ("person", _replace_in_persons),
+        ("assist_pipeline", _replace_in_pipelines),
+    ):
+        for label, count, error in await rewrite(
+            hass, rewriter, dry_run, _write_backup
+        ):
+            if error:
+                result["errors"].append({"file": label, "error": error})
+            else:
+                result["files_updated"].append(
+                    {"file": label, "replacements": count, "kind": kind}
+                )
+
+    result["total_replacements"] = sum(
+        r["replacements"] for r in result["files_updated"]
+    )
+
+    # Everything else that mentions an old ID is owned by a running
+    # integration (its Store) or is source code that belongs in a git repo,
+    # so it is reported for manual follow-up and never rewritten.
+    result["manual_references"] = await hass.async_add_executor_job(
+        _scan_manual_references, config_path, rewriter
+    )
+
     if not dry_run:
+        # UI automations and scripts are YAML on disk; without a reload the
+        # running copies keep the old ID until the next restart.
+        if yaml_changed:
+            for domain in _RELOAD_AFTER_YAML:
+                if hass.services.has_service(domain, "reload"):
+                    try:
+                        await hass.services.async_call(domain, "reload", blocking=True)
+                    except Exception as exc:  # noqa: BLE001
+                        result["errors"].append(
+                            {"file": f"{domain}.reload", "error": str(exc)}
+                        )
         _LOGGER.info(
-            "YAML reference update %s → %s: %d replacement(s) in %d file(s)",
-            old_id,
-            new_id,
+            "Reference update for %d rename(s): %d replacement(s) in %d place(s), "
+            "%d manual reference(s) left",
+            len(pairs),
             result["total_replacements"],
             len(result["files_updated"]),
+            len(result["manual_references"]),
         )
     connection.send_result(msg["id"], result)
+
+
+_RELOAD_AFTER_YAML = ("automation", "script", "scene", "template")
+
+# .storage files that mention entity IDs but must not be reported: registries
+# and state caches HA migrates itself, stores rewritten via the API above,
+# history or caches that are expected to hold old IDs, and credentials.
+_STORAGE_REPORT_SKIP = re.compile(
+    r"^(core\.(entity_registry|device_registry|restore_state|config_entries)"
+    r"|lovelace|person$|assist_pipeline\.|trace\.|auth|http|cloud|onboarding"
+    r"|hacs\.|repairs\.|homeassistant\.exposed_entities|entity_manager_backups"
+    r"|google\.|local_calendar\.|local_todo\.|bluetooth\.|backup$)"
+    r"|\.(pem|ics)$|bak|pre-|rollback",
+)
+
+_MANUAL_SCAN_SUFFIXES = {".py", ".js", ".ts", ".json", ".yaml", ".yml"}
+_MANUAL_SCAN_MAX_BYTES = 5_000_000
+
+
+class _Rewriter:
+    """Replace entity ID tokens from an old→new table in one linear regex pass.
+
+    A token is a whole entity ID: not preceded by a letter, digit, underscore
+    or dot, and not followed by a letter, digit or underscore — so
+    ``binary_sensor.x`` never matches ``sensor.x``. Matching every token and
+    looking it up keeps a 2,000-rename batch as fast as one rename, and swaps
+    (a→b together with b→a) cannot chain.
+    """
+
+    _TOKEN = re.compile(
+        r"(?<![a-zA-Z0-9_\.])[a-z][a-z0-9_]*\.[a-z0-9_]+(?![a-zA-Z0-9_])"
+    )
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self.mapping = mapping
+
+    def sub(self, text: str) -> tuple[str, int]:
+        count = 0
+
+        def _repl(match: re.Match[str]) -> str:
+            nonlocal count
+            new = self.mapping.get(match.group(0))
+            if new is None:
+                return match.group(0)
+            count += 1
+            return new
+
+        return self._TOKEN.sub(_repl, text), count
+
+    def count(self, text: str) -> int:
+        return sum(1 for m in self._TOKEN.finditer(text) if m.group(0) in self.mapping)
+
+
+def _replace_in_obj(obj: Any, rewriter: _Rewriter) -> tuple[Any, int]:
+    """Return a copy of a JSON-like value with entity ID tokens replaced, plus the count.
+
+    Dict keys are rewritten too — integrations often key options by entity ID.
+    """
+    if isinstance(obj, str):
+        return rewriter.sub(obj)
+    if isinstance(obj, list):
+        total = 0
+        items = []
+        for item in obj:
+            new_item, n = _replace_in_obj(item, rewriter)
+            items.append(new_item)
+            total += n
+        return items, total
+    if isinstance(obj, dict):
+        total = 0
+        out: dict[Any, Any] = {}
+        for key, value in obj.items():
+            new_key, nk = _replace_in_obj(key, rewriter)
+            new_value, nv = _replace_in_obj(value, rewriter)
+            out[new_key] = new_value
+            total += nk + nv
+        return out, total
+    return obj, 0
+
+
+async def _replace_in_dashboards(
+    hass: HomeAssistant, rewriter: _Rewriter, dry_run: bool, write_backup: Any
+) -> list[tuple[str, int, str | None]]:
+    """Rewrite entity ID references in storage-mode Lovelace dashboards."""
+    lovelace = hass.data.get("lovelace")
+    if lovelace is None:
+        return []
+    dashboards = (
+        lovelace.get("dashboards", {})
+        if isinstance(lovelace, dict)
+        else getattr(lovelace, "dashboards", {})
+    )
+    out: list[tuple[str, int, str | None]] = []
+    for url_path, dashboard in list(dashboards.items()):
+        # YAML dashboards are already covered by the file scan.
+        if getattr(dashboard, "mode", None) != "storage":
+            continue
+        label = f"dashboard: {url_path or 'lovelace'}"
+        try:
+            config = await dashboard.async_load(False)
+        except Exception:  # noqa: BLE001 — empty/auto-generated dashboard
+            continue
+        new_config, count = _replace_in_obj(config, rewriter)
+        if not count:
+            continue
+        if not dry_run:
+            try:
+                await hass.async_add_executor_job(
+                    write_backup, f"lovelace.{url_path or 'lovelace'}", config
+                )
+                await dashboard.async_save(new_config)
+            except Exception as exc:  # noqa: BLE001
+                out.append((label, 0, str(exc)))
+                continue
+        out.append((label, count, None))
+    return out
+
+
+async def _replace_in_config_entries(
+    hass: HomeAssistant, rewriter: _Rewriter, dry_run: bool, write_backup: Any
+) -> list[tuple[str, int, str | None]]:
+    """Rewrite entity ID references in config entry data and options.
+
+    UI helpers (utility_meter, derivative, threshold, group, template…) keep
+    their source entity here; they reload through their update listener.
+    """
+    out: list[tuple[str, int, str | None]] = []
+    for entry in hass.config_entries.async_entries():
+        new_data, n_data = _replace_in_obj(dict(entry.data), rewriter)
+        new_options, n_options = _replace_in_obj(dict(entry.options), rewriter)
+        count = n_data + n_options
+        if not count:
+            continue
+        label = f"config entry: {entry.domain} ({entry.title})"
+        if not dry_run:
+            try:
+                await hass.async_add_executor_job(
+                    write_backup,
+                    f"config_entry.{entry.domain}.{entry.entry_id}",
+                    {"data": dict(entry.data), "options": dict(entry.options)},
+                )
+                changes: dict[str, Any] = {}
+                if n_data:
+                    changes["data"] = new_data
+                if n_options:
+                    changes["options"] = new_options
+                hass.config_entries.async_update_entry(entry, **changes)
+            except Exception as exc:  # noqa: BLE001
+                out.append((label, 0, str(exc)))
+                continue
+        out.append((label, count, None))
+    return out
+
+
+async def _replace_in_persons(
+    hass: HomeAssistant, rewriter: _Rewriter, dry_run: bool, write_backup: Any
+) -> list[tuple[str, int, str | None]]:
+    """Rewrite device_tracker references on UI-managed persons."""
+    person_data = hass.data.get("person")
+    if not isinstance(person_data, tuple) or len(person_data) < 2:
+        return []
+    collection = person_data[1]
+    out: list[tuple[str, int, str | None]] = []
+    for item in list(collection.async_items()):
+        trackers, count = _replace_in_obj(
+            list(item.get("device_trackers", [])), rewriter
+        )
+        if not count:
+            continue
+        label = f"person: {item.get('name', item.get('id'))}"
+        if not dry_run:
+            try:
+                await hass.async_add_executor_job(
+                    write_backup, f"person.{item.get('id')}", item
+                )
+                await collection.async_update_item(
+                    item["id"], {"device_trackers": trackers}
+                )
+            except Exception as exc:  # noqa: BLE001
+                out.append((label, 0, str(exc)))
+                continue
+        out.append((label, count, None))
+    return out
+
+
+_PIPELINE_ENTITY_FIELDS = (
+    "conversation_engine",
+    "stt_engine",
+    "tts_engine",
+    "wake_word_entity",
+)
+
+
+async def _replace_in_pipelines(
+    hass: HomeAssistant, rewriter: _Rewriter, dry_run: bool, write_backup: Any
+) -> list[tuple[str, int, str | None]]:
+    """Rewrite engine/wake-word entity references in Assist pipelines."""
+    pipeline_data = hass.data.get("assist_pipeline")
+    store = getattr(pipeline_data, "pipeline_store", None)
+    if store is None:
+        return []
+    out: list[tuple[str, int, str | None]] = []
+    for pipeline in list(store.async_items()):
+        changes: dict[str, Any] = {}
+        for field in _PIPELINE_ENTITY_FIELDS:
+            value = getattr(pipeline, field, None)
+            if isinstance(value, str):
+                new_value, n = rewriter.sub(value)
+                if n:
+                    changes[field] = new_value
+        if not changes:
+            continue
+        label = f"assist pipeline: {getattr(pipeline, 'name', pipeline.id)}"
+        if not dry_run:
+            try:
+                from homeassistant.components.assist_pipeline import (  # noqa: PLC0415
+                    async_update_pipeline,
+                )
+
+                await hass.async_add_executor_job(
+                    write_backup, f"assist_pipeline.{pipeline.id}", pipeline.to_json()
+                )
+                await async_update_pipeline(hass, pipeline, **changes)
+            except Exception as exc:  # noqa: BLE001
+                out.append((label, 0, str(exc)))
+                continue
+        out.append((label, len(changes), None))
+    return out
+
+
+def _scan_manual_references(
+    config_path: Path, rewriter: _Rewriter
+) -> list[dict[str, Any]]:
+    """Find references EM will not rewrite: integration Stores and custom_components."""
+    found: list[dict[str, Any]] = []
+
+    def _check(path: Path, kind: str) -> None:
+        try:
+            if path.stat().st_size > _MANUAL_SCAN_MAX_BYTES:
+                return
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return
+        count = rewriter.count(text)
+        if count:
+            found.append(
+                {
+                    "file": str(path.relative_to(config_path)),
+                    "matches": count,
+                    "kind": kind,
+                }
+            )
+
+    storage = config_path / ".storage"
+    if storage.is_dir():
+        for path in sorted(storage.iterdir()):
+            if path.is_file() and not _STORAGE_REPORT_SKIP.search(path.name):
+                _check(path, "storage")
+
+    components = config_path / "custom_components"
+    if components.is_dir():
+        for path in sorted(components.rglob("*")):
+            rel = path.relative_to(components)
+            if any(p == "__pycache__" or p.startswith(".") for p in rel.parts):
+                continue
+            if path.is_file() and path.suffix in _MANUAL_SCAN_SUFFIXES:
+                _check(path, "custom_component")
+
+    return found
 
 
 @websocket_api.websocket_command(

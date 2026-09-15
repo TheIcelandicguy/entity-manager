@@ -6,9 +6,12 @@ from unittest.mock import MagicMock
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.entity_manager.websocket_api import (
     _bulk_toggle,
+    _replace_in_obj,
+    _Rewriter,
     disable_entity,
     enable_entity,
     handle_bulk_disable,
@@ -152,7 +155,7 @@ async def test_ws_enable_success(hass: HomeAssistant) -> None:
     }
 
     handle_enable_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once_with(1, {"success": True})
     conn.send_error.assert_not_called()
@@ -167,7 +170,7 @@ async def test_ws_enable_not_found(hass: HomeAssistant) -> None:
     }
 
     handle_enable_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     call_id, error_code = conn.send_error.call_args[0][:2]
@@ -191,7 +194,7 @@ async def test_ws_disable_success(hass: HomeAssistant) -> None:
     }
 
     handle_disable_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once_with(3, {"success": True})
     conn.send_error.assert_not_called()
@@ -214,7 +217,7 @@ async def test_ws_bulk_enable_success(hass: HomeAssistant) -> None:
     }
 
     handle_bulk_enable(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -233,7 +236,7 @@ async def test_ws_bulk_disable_partial(hass: HomeAssistant) -> None:
     }
 
     handle_bulk_disable(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -255,7 +258,7 @@ async def test_ws_get_disabled_only(hass: HomeAssistant) -> None:
     msg = {"id": 6, "type": "entity_manager/get_disabled_entities", "state": "disabled"}
 
     handle_get_disabled_entities(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     integrations = conn.send_result.call_args[0][1]
@@ -277,7 +280,7 @@ async def test_ws_get_all(hass: HomeAssistant) -> None:
     msg = {"id": 7, "type": "entity_manager/get_disabled_entities", "state": "all"}
 
     handle_get_disabled_entities(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     integrations = conn.send_result.call_args[0][1]
@@ -308,7 +311,7 @@ async def test_ws_rename_success(hass: HomeAssistant) -> None:
     }
 
     handle_rename_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -330,7 +333,7 @@ async def test_ws_rename_bad_format(hass: HomeAssistant) -> None:
     }
 
     handle_rename_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "rename_failed"
@@ -348,7 +351,7 @@ async def test_ws_rename_domain_mismatch(hass: HomeAssistant) -> None:
     }
 
     handle_rename_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "rename_failed"
@@ -367,7 +370,7 @@ async def test_ws_rename_already_exists(hass: HomeAssistant) -> None:
     }
 
     handle_rename_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "rename_failed"
@@ -390,7 +393,7 @@ async def test_ws_update_name_success(hass: HomeAssistant) -> None:
     }
 
     handle_update_entity_display_name(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once_with(12, {"success": True})
     conn.send_error.assert_not_called()
@@ -406,7 +409,7 @@ async def test_ws_update_name_not_found(hass: HomeAssistant) -> None:
     }
 
     handle_update_entity_display_name(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "not_found"
@@ -428,7 +431,7 @@ async def test_ws_remove_success(hass: HomeAssistant) -> None:
     }
 
     handle_remove_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -446,7 +449,7 @@ async def test_ws_remove_not_found(hass: HomeAssistant) -> None:
     }
 
     handle_remove_entity(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "not_found"
@@ -473,7 +476,7 @@ async def test_ws_get_automations_returns_all(hass: HomeAssistant) -> None:
     msg = {"id": 20, "type": "entity_manager/get_automations"}
 
     handle_get_automations(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     results = conn.send_result.call_args[0][1]
@@ -499,7 +502,7 @@ async def test_ws_get_automations_trigger_context_system(hass: HomeAssistant) ->
     msg = {"id": 21, "type": "entity_manager/get_automations"}
 
     handle_get_automations(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     results = conn.send_result.call_args[0][1]
     target = next(r for r in results if r["entity_id"] == "automation.context_test")
@@ -513,7 +516,7 @@ async def test_ws_get_automations_empty(hass: HomeAssistant) -> None:
     msg = {"id": 22, "type": "entity_manager/get_automations"}
 
     handle_get_automations(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     assert conn.send_result.call_args[0][1] == []
@@ -535,7 +538,7 @@ async def test_ws_get_template_sensors_from_states(hass: HomeAssistant) -> None:
     msg = {"id": 23, "type": "entity_manager/get_template_sensors"}
 
     handle_get_template_sensors(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     results = conn.send_result.call_args[0][1]
@@ -555,7 +558,7 @@ async def test_ws_get_template_sensors_empty(hass: HomeAssistant) -> None:
     msg = {"id": 24, "type": "entity_manager/get_template_sensors"}
 
     handle_get_template_sensors(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     assert conn.send_result.call_args[0][1] == []
@@ -579,7 +582,7 @@ async def test_ws_get_entity_details_success(hass: HomeAssistant) -> None:
     }
 
     handle_get_entity_details(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -606,7 +609,7 @@ async def test_ws_get_entity_details_not_found(hass: HomeAssistant) -> None:
     }
 
     handle_get_entity_details(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_error.assert_called_once()
     assert conn.send_error.call_args[0][1] == "not_found"
@@ -623,7 +626,7 @@ async def test_ws_get_config_entry_health_all_loaded(hass: HomeAssistant) -> Non
     msg = {"id": 27, "type": "entity_manager/get_config_entry_health"}
 
     handle_get_config_entry_health(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -658,7 +661,7 @@ async def test_ws_update_yaml_dry_run(hass: HomeAssistant, tmp_path: Path) -> No
     }
 
     handle_update_yaml_references(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -693,7 +696,7 @@ async def test_ws_update_yaml_applies_replacements(
     }
 
     handle_update_yaml_references(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     assert result["total_replacements"] == 2
@@ -702,6 +705,140 @@ async def test_ws_update_yaml_applies_replacements(
     updated = yaml_file.read_text(encoding="utf-8")
     assert "sensor.beta" in updated
     assert "sensor.alpha" not in updated
+
+
+def test_replace_in_obj_rewrites_values_and_keys() -> None:
+    """Nested values and dict keys are rewritten; longer IDs are left alone."""
+    rewriter = _Rewriter({"sensor.a": "sensor.b"})
+    obj = {
+        "sensor.a": {"entity": "sensor.a", "other": "binary_sensor.a"},
+        "cards": [{"entities": ["sensor.a", "sensor.ab"]}, 3, None],
+    }
+    new, count = _replace_in_obj(obj, rewriter)
+    assert count == 3
+    assert new == {
+        "sensor.b": {"entity": "sensor.b", "other": "binary_sensor.a"},
+        "cards": [{"entities": ["sensor.b", "sensor.ab"]}, 3, None],
+    }
+
+
+async def test_ws_update_references_config_entry_options(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Config entry options are previewed on dry_run and rewritten otherwise."""
+    hass.config.config_dir = str(tmp_path)
+    entry = MockConfigEntry(
+        domain="test_consumer",
+        title="Consumer",
+        data={"source": "sensor.old_id"},
+        options={"watched": ["sensor.old_id", "sensor.keep"]},
+    )
+    entry.add_to_hass(hass)
+
+    for msg_id, dry_run in ((31, True), (32, False)):
+        conn = _mock_conn()
+        handle_update_yaml_references(
+            hass,
+            conn,
+            {
+                "id": msg_id,
+                "type": "entity_manager/update_yaml_references",
+                "old_entity_id": "sensor.old_id",
+                "new_entity_id": "sensor.new_id",
+                "dry_run": dry_run,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+        result = conn.send_result.call_args[0][1]
+        assert result["total_replacements"] == 2
+        assert result["files_updated"][0]["kind"] == "config_entry"
+        if dry_run:
+            assert entry.data["source"] == "sensor.old_id"
+
+    assert entry.data["source"] == "sensor.new_id"
+    assert entry.options["watched"] == ["sensor.new_id", "sensor.keep"]
+    assert list((tmp_path / ".storage" / "entity_manager_backups").iterdir())
+
+
+async def test_ws_update_references_reports_manual(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Integration Stores and custom_components are reported, never rewritten."""
+    hass.config.config_dir = str(tmp_path)
+    storage = tmp_path / ".storage"
+    storage.mkdir()
+    store_text = '{"data": {"sensor.old_id": 1}}'
+    (storage / "some_integration.data").write_text(store_text, encoding="utf-8")
+    (storage / "core.restore_state").write_text(store_text, encoding="utf-8")
+    comp = tmp_path / "custom_components" / "thing"
+    comp.mkdir(parents=True)
+    (comp / "const.py").write_text('WATCH = "sensor.old_id"\n', encoding="utf-8")
+
+    conn = _mock_conn()
+    handle_update_yaml_references(
+        hass,
+        conn,
+        {
+            "id": 33,
+            "type": "entity_manager/update_yaml_references",
+            "old_entity_id": "sensor.old_id",
+            "new_entity_id": "sensor.new_id",
+            "dry_run": False,
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    manual = {
+        m["file"].replace("\\", "/"): m["kind"] for m in result["manual_references"]
+    }
+    assert manual == {
+        ".storage/some_integration.data": "storage",
+        "custom_components/thing/const.py": "custom_component",
+    }
+    assert result["total_replacements"] == 0
+    assert (storage / "some_integration.data").read_text(encoding="utf-8") == store_text
+
+
+def test_rewriter_swaps_do_not_chain() -> None:
+    """a→b together with b→a swaps the two instead of collapsing onto one."""
+    rewriter = _Rewriter({"light.a": "light.b", "light.b": "light.a"})
+    text, count = rewriter.sub("on: light.a\noff: light.b\nstates.light.a\n")
+    assert count == 2
+    assert text == "on: light.b\noff: light.a\nstates.light.a\n"
+
+
+async def test_ws_update_references_bulk_renames(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A renames list rewrites every pair in one call."""
+    hass.config.config_dir = str(tmp_path)
+    yaml_file = tmp_path / "automations.yaml"
+    yaml_file.write_text(
+        "- entity_id: [sensor.one, sensor.two, sensor.three]\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_update_yaml_references(
+        hass,
+        conn,
+        {
+            "id": 34,
+            "type": "entity_manager/update_yaml_references",
+            "renames": [
+                {"old_entity_id": "sensor.one", "new_entity_id": "sensor.uno"},
+                {"old_entity_id": "sensor.two", "new_entity_id": "sensor.dos"},
+            ],
+            "dry_run": False,
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total_replacements"] == 2
+    assert yaml_file.read_text(encoding="utf-8") == (
+        "- entity_id: [sensor.uno, sensor.dos, sensor.three]\n"
+    )
 
 
 async def test_ws_update_yaml_no_matches(hass: HomeAssistant, tmp_path: Path) -> None:
@@ -719,7 +856,7 @@ async def test_ws_update_yaml_no_matches(hass: HomeAssistant, tmp_path: Path) ->
     }
 
     handle_update_yaml_references(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     assert result["total_replacements"] == 0
@@ -741,7 +878,7 @@ async def test_ws_export_states_returns_list(hass: HomeAssistant) -> None:
     msg = {"id": 40, "type": "entity_manager/export_states"}
 
     handle_export_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -766,7 +903,7 @@ async def test_ws_export_states_sorted(hass: HomeAssistant) -> None:
     msg = {"id": 41, "type": "entity_manager/export_states"}
 
     handle_export_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     entity_ids = [e["entity_id"] for e in result]
@@ -783,7 +920,7 @@ async def test_ws_export_states_disabled_flag(hass: HomeAssistant) -> None:
     msg = {"id": 42, "type": "entity_manager/export_states"}
 
     handle_export_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     by_id = {e["entity_id"]: e for e in result}
@@ -809,7 +946,7 @@ async def test_ws_import_enables_disabled_entity(hass: HomeAssistant) -> None:
     }
 
     handle_import_entity_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -834,7 +971,7 @@ async def test_ws_import_disables_enabled_entity(hass: HomeAssistant) -> None:
     }
 
     handle_import_entity_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     conn.send_result.assert_called_once()
     result = conn.send_result.call_args[0][1]
@@ -859,7 +996,7 @@ async def test_ws_import_skips_already_correct_state(hass: HomeAssistant) -> Non
     }
 
     handle_import_entity_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     assert result["success"] == 1
@@ -878,7 +1015,7 @@ async def test_ws_import_not_found_entity_reported_as_failed(
     }
 
     handle_import_entity_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     assert result["success"] == 0
@@ -903,7 +1040,7 @@ async def test_ws_import_partial_success(hass: HomeAssistant) -> None:
     }
 
     handle_import_entity_states(hass, conn, msg)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     result = conn.send_result.call_args[0][1]
     assert result["success"] == 1
