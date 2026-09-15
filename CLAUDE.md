@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.1.0**.
+Home Assistant custom integration, domain `entity_manager`, **v3.2.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -28,7 +28,7 @@ All paths below are relative to the repo root. Note that `tests/` and
 |---|---|
 | `custom_components/entity_manager/__init__.py` | 121 lines. Registers the static path `/api/entity_manager/frontend`, the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). Reads `manifest.json` at runtime for the `?v=` cache-buster on the panel JS. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 1,410 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 1,655 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers; patterns in `sentences/en/entity_manager.yaml`. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
 | `.../frontend/entity-manager-panel.js` | 16,790 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
@@ -94,6 +94,25 @@ allowed. Everything else is WebSocket-only.
   `www`, `.git`, and write a `<file>.em-bak` beside every file they modify. Keep
   all three guards in any change to that path. Only `update_yaml_references`
   takes `dry_run`; `register_template` has no preview mode.
+- `update_yaml_references` takes one `old_entity_id`/`new_entity_id` pair or a
+  `renames` list (≤500). `_Rewriter` matches every entity-ID token in one regex
+  pass and looks it up in the old→new table, so big batches stay linear and
+  swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
+  (`async_load` / `async_save`), **config entry data/options**
+  (`async_update_entry` — UI helpers keep their source entity there),
+  **persons** (`device_trackers`) and **Assist pipelines**
+  (`async_update_pipeline`) through HA's APIs — never by editing `.storage` on
+  disk, which HA would overwrite from memory, so no HA stop is needed. Each gets
+  a JSON backup under `.storage/entity_manager_backups/`. After a YAML write it
+  reloads `automation`, `script`, `scene`, `template`. Integration Stores in
+  `.storage` and files under `custom_components` are only **reported** in
+  `manual_references` (`_STORAGE_REPORT_SKIP` filters registries, caches and
+  credentials).
+- `rename_entity` only touches the entity registry. The panel rewrites
+  references itself via `_updateReferences()` after every rename path: the bulk
+  rename queue (dry-run preview → renames → one update for the successes), the
+  single-rename dialog (`_renameWithReferences`) and undo/redo of a rename.
+  Before 3.2.0 no rename path wrote references at all.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.

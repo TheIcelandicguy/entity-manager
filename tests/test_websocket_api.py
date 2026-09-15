@@ -6,9 +6,12 @@ from unittest.mock import MagicMock
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.entity_manager.websocket_api import (
     _bulk_toggle,
+    _replace_in_obj,
+    _Rewriter,
     disable_entity,
     enable_entity,
     handle_bulk_disable,
@@ -702,6 +705,140 @@ async def test_ws_update_yaml_applies_replacements(
     updated = yaml_file.read_text(encoding="utf-8")
     assert "sensor.beta" in updated
     assert "sensor.alpha" not in updated
+
+
+def test_replace_in_obj_rewrites_values_and_keys() -> None:
+    """Nested values and dict keys are rewritten; longer IDs are left alone."""
+    rewriter = _Rewriter({"sensor.a": "sensor.b"})
+    obj = {
+        "sensor.a": {"entity": "sensor.a", "other": "binary_sensor.a"},
+        "cards": [{"entities": ["sensor.a", "sensor.ab"]}, 3, None],
+    }
+    new, count = _replace_in_obj(obj, rewriter)
+    assert count == 3
+    assert new == {
+        "sensor.b": {"entity": "sensor.b", "other": "binary_sensor.a"},
+        "cards": [{"entities": ["sensor.b", "sensor.ab"]}, 3, None],
+    }
+
+
+async def test_ws_update_references_config_entry_options(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Config entry options are previewed on dry_run and rewritten otherwise."""
+    hass.config.config_dir = str(tmp_path)
+    entry = MockConfigEntry(
+        domain="test_consumer",
+        title="Consumer",
+        data={"source": "sensor.old_id"},
+        options={"watched": ["sensor.old_id", "sensor.keep"]},
+    )
+    entry.add_to_hass(hass)
+
+    for msg_id, dry_run in ((31, True), (32, False)):
+        conn = _mock_conn()
+        handle_update_yaml_references(
+            hass,
+            conn,
+            {
+                "id": msg_id,
+                "type": "entity_manager/update_yaml_references",
+                "old_entity_id": "sensor.old_id",
+                "new_entity_id": "sensor.new_id",
+                "dry_run": dry_run,
+            },
+        )
+        await hass.async_block_till_done()
+        result = conn.send_result.call_args[0][1]
+        assert result["total_replacements"] == 2
+        assert result["files_updated"][0]["kind"] == "config_entry"
+        if dry_run:
+            assert entry.data["source"] == "sensor.old_id"
+
+    assert entry.data["source"] == "sensor.new_id"
+    assert entry.options["watched"] == ["sensor.new_id", "sensor.keep"]
+    assert list((tmp_path / ".storage" / "entity_manager_backups").iterdir())
+
+
+async def test_ws_update_references_reports_manual(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Integration Stores and custom_components are reported, never rewritten."""
+    hass.config.config_dir = str(tmp_path)
+    storage = tmp_path / ".storage"
+    storage.mkdir()
+    store_text = '{"data": {"sensor.old_id": 1}}'
+    (storage / "some_integration.data").write_text(store_text, encoding="utf-8")
+    (storage / "core.restore_state").write_text(store_text, encoding="utf-8")
+    comp = tmp_path / "custom_components" / "thing"
+    comp.mkdir(parents=True)
+    (comp / "const.py").write_text('WATCH = "sensor.old_id"\n', encoding="utf-8")
+
+    conn = _mock_conn()
+    handle_update_yaml_references(
+        hass,
+        conn,
+        {
+            "id": 33,
+            "type": "entity_manager/update_yaml_references",
+            "old_entity_id": "sensor.old_id",
+            "new_entity_id": "sensor.new_id",
+            "dry_run": False,
+        },
+    )
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    manual = {
+        m["file"].replace("\\", "/"): m["kind"] for m in result["manual_references"]
+    }
+    assert manual == {
+        ".storage/some_integration.data": "storage",
+        "custom_components/thing/const.py": "custom_component",
+    }
+    assert result["total_replacements"] == 0
+    assert (storage / "some_integration.data").read_text(encoding="utf-8") == store_text
+
+
+def test_rewriter_swaps_do_not_chain() -> None:
+    """a→b together with b→a swaps the two instead of collapsing onto one."""
+    rewriter = _Rewriter({"light.a": "light.b", "light.b": "light.a"})
+    text, count = rewriter.sub("on: light.a\noff: light.b\nstates.light.a\n")
+    assert count == 2
+    assert text == "on: light.b\noff: light.a\nstates.light.a\n"
+
+
+async def test_ws_update_references_bulk_renames(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A renames list rewrites every pair in one call."""
+    hass.config.config_dir = str(tmp_path)
+    yaml_file = tmp_path / "automations.yaml"
+    yaml_file.write_text(
+        "- entity_id: [sensor.one, sensor.two, sensor.three]\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_update_yaml_references(
+        hass,
+        conn,
+        {
+            "id": 34,
+            "type": "entity_manager/update_yaml_references",
+            "renames": [
+                {"old_entity_id": "sensor.one", "new_entity_id": "sensor.uno"},
+                {"old_entity_id": "sensor.two", "new_entity_id": "sensor.dos"},
+            ],
+            "dry_run": False,
+        },
+    )
+    await hass.async_block_till_done()
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total_replacements"] == 2
+    assert yaml_file.read_text(encoding="utf-8") == (
+        "- entity_id: [sensor.uno, sensor.dos, sensor.three]\n"
+    )
 
 
 async def test_ws_update_yaml_no_matches(hass: HomeAssistant, tmp_path: Path) -> None:

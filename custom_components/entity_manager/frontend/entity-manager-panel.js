@@ -2780,6 +2780,18 @@ class EntityManagerPanel extends HTMLElement {
         this._showToast('No changes to apply.', 'info');
         return;
       }
+      // Preview every reference the renames would touch before committing
+      this._showToast(`Checking references for ${renameMap.length} entities...`, 'info', 0);
+      const preview = await this._updateReferences(renameMap, true);
+      document.querySelector('.em-toast')?.remove();
+      const proceed = preview
+        ? await this._confirmReferencePreview(renameMap.length, preview)
+        : await this._confirmAsync(
+          'References not checked',
+          'Could not scan for references to these entities. Rename anyway? Automations, dashboards and helpers that use them will NOT be updated.'
+        );
+      if (!proceed) return;
+
       this._showToast(`Renaming ${renameMap.length} entities...`, 'info', 0);
       const renameByDomain = {};
       for (const item of renameMap) {
@@ -2787,22 +2799,33 @@ class EntityManagerPanel extends HTMLElement {
         if (!renameByDomain[d]) renameByDomain[d] = [];
         renameByDomain[d].push(item);
       }
-      let successCount = 0, errorCount = 0;
+      const succeeded = [];
       for (const [, items] of Object.entries(renameByDomain)) {
         // renameEntity resolves true/false rather than rejecting — count real outcomes
         // (quiet: one summary toast below instead of a stacked error dialog per failure)
         const results = await Promise.allSettled(
           items.map(item => this.renameEntity(item.old, item.new, false, { quiet: true }))
         );
-        successCount += results.filter(r => r.status === 'fulfilled' && r.value === true).length;
-        errorCount += results.filter(r => r.status !== 'fulfilled' || r.value !== true).length;
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value === true) succeeded.push(items[i]);
+        });
+      }
+      const errorCount = renameMap.length - succeeded.length;
+
+      // References are rewritten once, for the renames that actually happened
+      let refResult = null;
+      if (preview && succeeded.length) {
+        document.querySelector('.em-toast')?.remove();
+        this._showToast(`Updating references for ${succeeded.length} entities...`, 'info', 0);
+        refResult = await this._updateReferences(succeeded);
       }
       document.querySelector('.em-toast')?.remove();
-      if (errorCount === 0) {
-        this._showToast(`Successfully renamed ${successCount} entities`, 'success');
-      } else {
-        this._showToast(`Renamed ${successCount}, failed ${errorCount}`, 'warning');
-      }
+      const msg = (errorCount === 0
+        ? `Renamed ${succeeded.length} entities.`
+        : `Renamed ${succeeded.length}, failed ${errorCount}.`)
+        + this._referenceSummary(refResult, !!preview && succeeded.length > 0);
+      const clean = errorCount === 0 && refResult && !refResult.errors.length && !refResult.manual_references.length;
+      this._showToast(msg, clean ? 'success' : 'warning', 8000);
       await exitMode();
     };
 
@@ -3404,7 +3427,10 @@ class EntityManagerPanel extends HTMLElement {
         const integration = det?.config_entry?.domain || det?.entity?.platform || id.split('.')[0];
         const deviceName = det?.device?.name || '';
         const area = det?.area?.name || '';
-        const files = ref?.files_updated || [];
+        const files = [
+          ...(ref?.files_updated || []),
+          ...(ref?.manual_references || []).map(m => ({ file: m.file, replacements: m.matches })),
+        ];
         totalRefs += files.reduce((s, f) => s + (f.replacements || 0), 0);
         const metaParts = [integration, deviceName, area].filter(Boolean);
         const refHtml = files.length
@@ -3417,7 +3443,10 @@ class EntityManagerPanel extends HTMLElement {
         </div>`;
       }).join('');
 
-      const allRefFiles = [...new Set(refs.flatMap(r => (r?.files_updated || []).map(f => f.file)))];
+      const allRefFiles = [...new Set(refs.flatMap(r => [
+        ...(r?.files_updated || []).map(f => f.file),
+        ...(r?.manual_references || []).map(m => m.file),
+      ]))];
       body.innerHTML = `
         <div style="background:rgba(229,57,53,0.08);border:1px solid var(--em-danger);border-radius:8px;padding:10px 14px;margin-bottom:12px">
           <div style="font-weight:600;color:var(--em-danger);margin-bottom:4px">⚠ This cannot be undone</div>
@@ -4438,10 +4467,16 @@ class EntityManagerPanel extends HTMLElement {
         await (isUndo ? this.enableEntity : this.disableEntity).call(this, action.entityId, true);
         this._showToast(`${verb} disable: ${action.entityId}`, 'info');
         break;
-      case 'rename':
-        await this.renameEntity(isUndo ? action.newId : action.oldId, isUndo ? action.oldId : action.newId, true);
+      case 'rename': {
+        const from = isUndo ? action.newId : action.oldId;
+        const to = isUndo ? action.oldId : action.newId;
+        // Point automations, dashboards and helpers back at the restored ID too
+        if (await this.renameEntity(from, to, true)) {
+          await this._updateReferences([{ old: from, new: to }]);
+        }
         this._showToast(`${verb} rename`, 'info');
         break;
+      }
       case 'bulk_enable':
         for (const id of action.entityIds) await (isUndo ? this.disableEntity : this.enableEntity).call(this, id, true);
         this._showToast(`${verb} bulk enable (${action.entityIds.length})`, 'info');
@@ -15685,14 +15720,16 @@ class EntityManagerPanel extends HTMLElement {
                 const fileCount = yamlResult.files_updated.length;
                 const replCount = yamlResult.total_replacements;
                 const errCount = yamlResult.errors.length;
+                const manualCount = (yamlResult.manual_references || []).length;
                 let msg = `Renamed to ${newEntityId}.`;
                 if (replCount > 0) {
-                  msg += ` Updated ${replCount} reference${replCount !== 1 ? 's' : ''} in ${fileCount} YAML file${fileCount !== 1 ? 's' : ''}.`;
+                  msg += ` Updated ${replCount} reference${replCount !== 1 ? 's' : ''} in ${fileCount} place${fileCount !== 1 ? 's' : ''}.`;
                 } else {
-                  msg += ' No YAML references found.';
+                  msg += ' No references found.';
                 }
-                if (errCount > 0) msg += ` ⚠️ ${errCount} file error(s) — check logs.`;
-                this._showToast(msg, replCount > 0 ? 'success' : 'info', 6000);
+                if (manualCount > 0) msg += ` ⚠️ ${manualCount} file${manualCount !== 1 ? 's' : ''} still mention the old ID — fix by hand.`;
+                if (errCount > 0) msg += ` ⚠️ ${errCount} error(s) — check logs.`;
+                this._showToast(msg, errCount || manualCount ? 'warning' : replCount > 0 ? 'success' : 'info', 8000);
               } else {
                 this._showToast(`Saved ${idChanged ? newEntityId : entityId}`, 'success');
               }
@@ -16690,36 +16727,43 @@ class EntityManagerPanel extends HTMLElement {
       yesBtn.disabled = true;
       yesBtn.textContent = 'Checking…';
       try {
-        const preview = await this._hass.callWS({
-          type: 'entity_manager/update_yaml_references',
-          old_entity_id: entityId,
-          new_entity_id: newEntityId,
-          dry_run: true,
-        });
+        const preview = await this._updateReferences([{ old: entityId, new: newEntityId }], true);
+        if (!preview) throw new Error('reference preview failed');
 
-        if (preview.total_replacements === 0) {
-          // No YAML references — rename immediately
+        const manual = preview.manual_references || [];
+        if (preview.total_replacements === 0 && manual.length === 0) {
+          // No references anywhere — rename immediately
           closeDialog();
-          await this.renameEntity(entityId, newEntityId);
+          await this._renameWithReferences(entityId, newEntityId);
           return;
         }
 
         // Show preview in-place inside the dialog before confirming
         const content = overlay.querySelector('.confirm-dialog-content');
-        const fileRows = preview.files_updated.map(f =>
+        const row = (label, count, unit) =>
           `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
-             <span style="font-size:12px;font-family:monospace">${this._escapeHtml(f.file)}</span>
-             <span style="font-size:11px;color:var(--secondary-text-color)">${f.replacements} ref${f.replacements !== 1 ? 's' : ''}</span>
-           </div>`).join('');
+             <span style="font-size:12px;font-family:monospace">${this._escapeHtml(label)}</span>
+             <span style="font-size:11px;color:var(--secondary-text-color)">${count} ${unit}${count !== 1 ? 's' : ''}</span>
+           </div>`;
+        const fileRows = preview.files_updated.map(f => row(f.file, f.replacements, 'ref')).join('');
+        const manualRows = manual.map(m => row(m.file, m.matches, 'match')).join('');
         content.innerHTML = `
           <p style="margin-bottom:8px">Rename <strong>${this._escapeHtml(entityId)}</strong> → <strong>${this._escapeHtml(newEntityId)}</strong></p>
+          ${preview.total_replacements > 0 ? `
           <div class="em-rename-preview-box">
             <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-warning)">
-              ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${preview.files_updated.length} file${preview.files_updated.length !== 1 ? 's' : ''} will be updated:
+              ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${preview.files_updated.length} place${preview.files_updated.length !== 1 ? 's' : ''} will be updated:
             </div>
             <div style="max-height:180px;overflow-y:auto">${fileRows}</div>
-          </div>
-          <p style="font-size:12px;opacity:0.7">Confirm to rename the entity and update all references.</p>
+          </div>` : ''}
+          ${manual.length > 0 ? `
+          <div class="em-rename-preview-box">
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-danger)">
+              ${manual.length} file${manual.length !== 1 ? 's' : ''} still mention the old ID and must be fixed by hand:
+            </div>
+            <div style="max-height:180px;overflow-y:auto">${manualRows}</div>
+          </div>` : ''}
+          <p style="font-size:12px;opacity:0.7">Confirm to rename the entity and update the references listed above.</p>
         `;
         yesBtn.disabled = false;
         yesBtn.textContent = 'Confirm Rename';
@@ -16729,7 +16773,7 @@ class EntityManagerPanel extends HTMLElement {
           yesBtn.disabled = true;
           yesBtn.textContent = 'Renaming…';
           closeDialog();
-          await this.renameEntity(entityId, newEntityId);
+          await this._renameWithReferences(entityId, newEntityId);
         };
         yesBtn.replaceWith(yesBtn.cloneNode(true)); // Remove old listeners
         overlay.querySelector('.confirm-yes').addEventListener('click', newHandler);
@@ -16738,7 +16782,7 @@ class EntityManagerPanel extends HTMLElement {
         // dry_run failed (old HA?) — proceed without preview
         console.warn('[EM] dry-run failed, proceeding without preview', e);
         closeDialog();
-        await this.renameEntity(entityId, newEntityId);
+        await this._renameWithReferences(entityId, newEntityId);
       }
     };
 
@@ -16784,6 +16828,128 @@ class EntityManagerPanel extends HTMLElement {
       if (!opts.quiet) this.showErrorDialog(`Error renaming entity: ${error.message}`);
       return false;
     }
+  }
+
+  /** Rename one entity, then rewrite every reference to it. */
+  async _renameWithReferences(oldEntityId, newEntityId) {
+    if (!(await this.renameEntity(oldEntityId, newEntityId))) return false;
+    const res = await this._updateReferences([{ old: oldEntityId, new: newEntityId }]);
+    const clean = res && !res.errors.length && !res.manual_references.length;
+    this._showToast(`Renamed to ${newEntityId}.${this._referenceSummary(res)}`, clean ? 'success' : 'warning', 8000);
+    return true;
+  }
+
+  /**
+   * Rewrite references for renames ([{old, new}]) across YAML, dashboards, config
+   * entries, persons and Assist pipelines. Sent in backend-sized chunks and merged.
+   * Resolves null when nothing could be checked.
+   */
+  async _updateReferences(pairs, dryRun = false) {
+    if (!pairs.length) return null;
+    const CHUNK = 500; // MAX_BULK_ENTITIES
+    const files = new Map();
+    const manual = new Map();
+    const merged = { total_replacements: 0, files_updated: [], manual_references: [], errors: [] };
+    let answered = 0;
+    for (let i = 0; i < pairs.length; i += CHUNK) {
+      try {
+        const res = await this._hass.callWS({
+          type: 'entity_manager/update_yaml_references',
+          renames: pairs.slice(i, i + CHUNK).map(p => ({ old_entity_id: p.old, new_entity_id: p.new })),
+          dry_run: dryRun,
+        });
+        answered++;
+        merged.total_replacements += res.total_replacements || 0;
+        for (const f of res.files_updated || []) {
+          const row = files.get(f.file) || { ...f, replacements: 0 };
+          row.replacements += f.replacements;
+          files.set(f.file, row);
+        }
+        for (const m of res.manual_references || []) {
+          const row = manual.get(m.file) || { ...m, matches: 0 };
+          row.matches += m.matches;
+          manual.set(m.file, row);
+        }
+        merged.errors.push(...(res.errors || []));
+      } catch (e) {
+        console.warn('[EM] reference update failed', e);
+        merged.errors.push({ file: '?', error: e.message || String(e) });
+      }
+    }
+    if (!answered) return null;
+    merged.files_updated = [...files.values()];
+    merged.manual_references = [...manual.values()];
+    return merged;
+  }
+
+  /** One-line toast suffix describing a reference update result. */
+  _referenceSummary(res, attempted = true) {
+    if (!attempted) return '';
+    if (!res) return ' ⚠️ References were not updated — check logs.';
+    const n = res.total_replacements;
+    const places = res.files_updated.length;
+    const manual = res.manual_references.length;
+    const errs = res.errors.length;
+    let s = n > 0
+      ? ` Updated ${n} reference${n !== 1 ? 's' : ''} in ${places} place${places !== 1 ? 's' : ''}.`
+      : ' No references to update.';
+    if (manual) s += ` ⚠️ ${manual} file${manual !== 1 ? 's' : ''} still mention old IDs — fix by hand.`;
+    if (errs) s += ` ⚠️ ${errs} error(s) — check logs.`;
+    return s;
+  }
+
+  /** Show a dry-run reference preview for a bulk rename; resolves true to proceed. */
+  _confirmReferencePreview(renameCount, preview) {
+    const files = preview.files_updated;
+    const manual = preview.manual_references;
+    if (!files.length && !manual.length) return Promise.resolve(true);
+    const row = (label, count, unit) =>
+      `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
+         <span style="font-size:12px;font-family:monospace">${this._escapeHtml(label)}</span>
+         <span style="font-size:11px;color:var(--secondary-text-color);white-space:nowrap">${count} ${unit}${count !== 1 ? 's' : ''}</span>
+       </div>`;
+    return new Promise(resolve => {
+      let resolved = false;
+      const { overlay, closeDialog } = this.createDialog({
+        title: `Rename ${renameCount} entit${renameCount !== 1 ? 'ies' : 'y'}`,
+        color: 'var(--em-warning)',
+        contentHtml: `
+          <div class="confirm-dialog-content">
+            ${files.length ? `
+            <div class="em-rename-preview-box">
+              <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-warning)">
+                ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${files.length} place${files.length !== 1 ? 's' : ''} will be updated:
+              </div>
+              <div style="max-height:220px;overflow-y:auto">${files.map(f => row(f.file, f.replacements, 'ref')).join('')}</div>
+            </div>` : ''}
+            ${manual.length ? `
+            <div class="em-rename-preview-box">
+              <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-danger)">
+                ${manual.length} file${manual.length !== 1 ? 's' : ''} still mention these IDs and must be fixed by hand:
+              </div>
+              <div style="max-height:180px;overflow-y:auto">${manual.map(m => row(m.file, m.matches, 'match')).join('')}</div>
+            </div>` : ''}
+          </div>`,
+        actionsHtml: `
+          <button class="btn btn-secondary confirm-no">Cancel</button>
+          <button class="btn btn-primary confirm-yes">Rename &amp; update references</button>
+        `,
+      });
+      overlay.querySelector('.confirm-yes').addEventListener('click', () => {
+        resolved = true;
+        closeDialog();
+        resolve(true);
+      });
+      overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
+      // Backdrop click and Escape close without a callback — resolve false then
+      const observer = new MutationObserver(() => {
+        if (!document.body.contains(overlay)) {
+          observer.disconnect();
+          if (!resolved) resolve(false);
+        }
+      });
+      observer.observe(document.body, { childList: true });
+    });
   }
 }
 
