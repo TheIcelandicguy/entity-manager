@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '3.2.0';
+const EM_VERSION = '3.3.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -2775,57 +2775,92 @@ class EntityManagerPanel extends HTMLElement {
       await this.loadData();
     };
 
-    const executeRenames = async (renameMap) => {
-      if (renameMap.length === 0) {
+    // Display names from a CSV import: set after the renames, on the entity's final ID
+    const applyDisplayNames = async (nameChanges, renamedOk) => {
+      let ok = 0;
+      for (const c of nameChanges) {
+        const renamed = c.new !== c.old;
+        if (renamed && !renamedOk.has(c.old)) continue;
+        const target = renamed ? c.new : c.old;
+        try {
+          const entry = await this._hass.callWS({ type: 'config/entity_registry/get', entity_id: target });
+          await this._hass.callWS({ type: 'entity_manager/update_entity_display_name', entity_id: target, name: c.name });
+          this._pushUndoAction({ type: 'display_name_change', entityId: target, oldName: entry?.name || '', newName: c.name });
+          ok++;
+        } catch (err) {
+          console.warn(`Setting display name for ${target} failed:`, err);
+        }
+      }
+      return ok;
+    };
+
+    const executeRenames = async (renameMap, nameChanges = []) => {
+      if (renameMap.length === 0 && nameChanges.length === 0) {
         this._showToast('No changes to apply.', 'info');
         return;
       }
-      // Preview every reference the renames would touch before committing
-      this._showToast(`Checking references for ${renameMap.length} entities...`, 'info', 0);
-      const preview = await this._updateReferences(renameMap, true);
-      document.querySelector('.em-toast')?.remove();
-      const proceed = preview
-        ? await this._confirmReferencePreview(renameMap.length, preview)
-        : await this._confirmAsync(
-          'References not checked',
-          'Could not scan for references to these entities. Rename anyway? Automations, dashboards and helpers that use them will NOT be updated.'
-        );
-      if (!proceed) return;
-
-      this._showToast(`Renaming ${renameMap.length} entities...`, 'info', 0);
-      const renameByDomain = {};
-      for (const item of renameMap) {
-        const d = item.old.split('.')[0];
-        if (!renameByDomain[d]) renameByDomain[d] = [];
-        renameByDomain[d].push(item);
-      }
+      let preview = null;
+      let refResult = null;
       const succeeded = [];
-      for (const [, items] of Object.entries(renameByDomain)) {
-        // renameEntity resolves true/false rather than rejecting — count real outcomes
-        // (quiet: one summary toast below instead of a stacked error dialog per failure)
-        const results = await Promise.allSettled(
-          items.map(item => this.renameEntity(item.old, item.new, false, { quiet: true }))
-        );
-        results.forEach((r, i) => {
-          if (r.status === 'fulfilled' && r.value === true) succeeded.push(items[i]);
-        });
+      if (renameMap.length) {
+        // Preview every reference the renames would touch before committing
+        this._showToast(`Checking references for ${renameMap.length} entities...`, 'info', 0);
+        preview = await this._updateReferences(renameMap, true);
+        document.querySelector('.em-toast')?.remove();
+        const proceed = preview
+          ? await this._confirmReferencePreview(renameMap.length, preview)
+          : await this._confirmAsync(
+            'References not checked',
+            'Could not scan for references to these entities. Rename anyway? Automations, dashboards and helpers that use them will NOT be updated.'
+          );
+        if (!proceed) return;
+
+        this._showToast(`Renaming ${renameMap.length} entities...`, 'info', 0);
+        const renameByDomain = {};
+        for (const item of renameMap) {
+          const d = item.old.split('.')[0];
+          if (!renameByDomain[d]) renameByDomain[d] = [];
+          renameByDomain[d].push(item);
+        }
+        for (const [, items] of Object.entries(renameByDomain)) {
+          // renameEntity resolves true/false rather than rejecting — count real outcomes
+          // (quiet: one summary toast below instead of a stacked error dialog per failure)
+          const results = await Promise.allSettled(
+            items.map(item => this.renameEntity(item.old, item.new, false, { quiet: true }))
+          );
+          results.forEach((r, i) => {
+            if (r.status === 'fulfilled' && r.value === true) succeeded.push(items[i]);
+          });
+        }
+
+        // References are rewritten once, for the renames that actually happened
+        if (preview && succeeded.length) {
+          document.querySelector('.em-toast')?.remove();
+          this._showToast(`Updating references for ${succeeded.length} entities...`, 'info', 0);
+          refResult = await this._updateReferences(succeeded);
+        }
       }
       const errorCount = renameMap.length - succeeded.length;
 
-      // References are rewritten once, for the renames that actually happened
-      let refResult = null;
-      if (preview && succeeded.length) {
+      let namesSet = 0;
+      if (nameChanges.length) {
         document.querySelector('.em-toast')?.remove();
-        this._showToast(`Updating references for ${succeeded.length} entities...`, 'info', 0);
-        refResult = await this._updateReferences(succeeded);
+        this._showToast(`Setting ${nameChanges.length} display names...`, 'info', 0);
+        namesSet = await applyDisplayNames(nameChanges, new Set(succeeded.map(s => s.old)));
       }
+
       document.querySelector('.em-toast')?.remove();
-      const msg = (errorCount === 0
-        ? `Renamed ${succeeded.length} entities.`
-        : `Renamed ${succeeded.length}, failed ${errorCount}.`)
-        + this._referenceSummary(refResult, !!preview && succeeded.length > 0);
-      const clean = errorCount === 0 && refResult && !refResult.errors.length && !refResult.manual_references.length;
-      this._showToast(msg, clean ? 'success' : 'warning', 8000);
+      const parts = [];
+      if (renameMap.length) {
+        parts.push((errorCount === 0
+          ? `Renamed ${succeeded.length} entities.`
+          : `Renamed ${succeeded.length}, failed ${errorCount}.`)
+          + this._referenceSummary(refResult, !!preview && succeeded.length > 0));
+      }
+      if (nameChanges.length) parts.push(`Set ${namesSet} of ${nameChanges.length} display names.`);
+      const refsClean = !renameMap.length || (refResult && !refResult.errors.length && !refResult.manual_references.length);
+      const clean = errorCount === 0 && namesSet === nameChanges.length && refsClean;
+      this._showToast(parts.join(' '), clean ? 'success' : 'warning', 8000);
       await exitMode();
     };
 
@@ -2939,6 +2974,8 @@ class EntityManagerPanel extends HTMLElement {
           </svg>
           Bulk Rename Entities
           <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <button id="brv-import-csv" class="btn" title="Queue renames from a CSV file: old_entity_id, new_entity_id, display_name" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Import CSV</button>
+            <button id="brv-export-csv" class="btn" title="Download the queue (or the listed entities) as a CSV to edit and import" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Export CSV</button>
             <button id="brp-deselect-all-top" class="btn" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Deselect all</button>
             <button id="brq-rename-btn-top" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.9);border:1.5px solid rgba(255,255,255,0.9);color:var(--em-primary);font-weight:700;border-radius:6px;cursor:pointer;" disabled>Rename 0</button>
             <button id="brv-exit" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">${this._icon(EM_ICONS.close, '14px')} Exit</button>
@@ -3057,7 +3094,7 @@ class EntityManagerPanel extends HTMLElement {
         const oid = old.slice(old.indexOf('.') + 1);
         const nv = r.querySelector('.bulk-new-name').value.trim();
         const changed = nv && nv !== oid;
-        if (changed) changes++;
+        if (changed || r.dataset.displayName) changes++;
         r.classList.toggle('is-renamed', changed);
         // Update live preview
         const preview = r.querySelector('.brq-preview-id');
@@ -3232,17 +3269,95 @@ class EntityManagerPanel extends HTMLElement {
     // ── Rename ────────────────────────────────────────────────────────
     const doRename = async () => {
       const renameMap = [];
+      const nameChanges = [];
       queueRows.querySelectorAll('.bulk-rename-entity-row').forEach(row => {
         const old = row.dataset.oldEntity;
         const domain = old.slice(0, old.indexOf('.'));
         const objectId = old.slice(old.indexOf('.') + 1);
         const newVal = row.querySelector('.bulk-new-name').value.trim();
-        if (newVal && newVal !== objectId) renameMap.push({ old, new: `${domain}.${newVal}` });
+        const renamed = newVal && newVal !== objectId;
+        if (renamed) renameMap.push({ old, new: `${domain}.${newVal}` });
+        if (row.dataset.displayName) {
+          nameChanges.push({ old, new: renamed ? `${domain}.${newVal}` : old, name: row.dataset.displayName });
+        }
       });
-      await executeRenames(renameMap);
+      await executeRenames(renameMap, nameChanges);
     };
     renameBtn.addEventListener('click', doRename);
     view.querySelector('#brq-rename-btn-top').addEventListener('click', doRename);
+
+    // ── CSV import / export ───────────────────────────────────────────
+    const knownNames = new Map();
+    renameData.forEach(intg => Object.values(intg.devices || {}).forEach(dev =>
+      (dev.entities || []).forEach(e => knownNames.set(e.entity_id, ''))));
+    Object.entries(hassStates).forEach(([id, s]) => knownNames.set(id, s.attributes?.friendly_name || ''));
+
+    const importCsv = () => {
+      const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.csv,text/csv' });
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        let result;
+        try {
+          result = this._validateRenameCsv(this._parseCsv(await file.text()), knownNames);
+        } catch (err) {
+          this._showToast(`Could not read ${file.name}: ${err.message}`, 'error');
+          return;
+        }
+        const { changes, problems } = result;
+        if (changes.length > 500) {
+          this._showToast(`${file.name} has ${changes.length} changes; the limit is 500 per run. Split the file.`, 'error', 8000);
+          return;
+        }
+        if (!(await this._confirmCsvImport(file.name, changes, problems))) return;
+        for (const c of changes) {
+          addToQueue(c.old);
+          const row = queueRows.querySelector(`[data-old-entity="${CSS.escape(c.old)}"]`);
+          if (!row) continue;
+          row.querySelector('.bulk-new-name').value = c.new.slice(c.new.indexOf('.') + 1);
+          row.querySelector('.brq-row-dn')?.remove();
+          if (c.name) {
+            row.dataset.displayName = c.name;
+            const dn = document.createElement('div');
+            dn.className = 'brq-row-dn';
+            dn.style.cssText = 'font-size:11px;color:var(--em-text-secondary);padding:2px 0 0;';
+            dn.textContent = `Display name → ${c.name}`;
+            row.appendChild(dn);
+          } else {
+            delete row.dataset.displayName;
+          }
+          const cb = view.querySelector(`#brp-list .brp-cb[data-entity-id="${CSS.escape(c.old)}"]`);
+          if (cb) { cb.checked = true; cb.closest('.bulk-rename-picker-row')?.classList.add('is-checked'); }
+        }
+        if (selCountEl) selCountEl.textContent = `${view.querySelectorAll('#brp-list .brp-cb:checked').length} selected`;
+        syncRenameBtn();
+        this._showToast(`Queued ${changes.length} change${changes.length !== 1 ? 's' : ''} from ${file.name}. Review, then press Rename.`, 'success');
+      };
+      input.click();
+    };
+
+    const exportCsv = () => {
+      let ids = [...queueRows.querySelectorAll('.bulk-rename-entity-row')].map(r => r.dataset.oldEntity);
+      if (!ids.length) {
+        ids = [...view.querySelectorAll('#brp-list .bulk-rename-picker-row')]
+          .filter(r => r.style.display !== 'none')
+          .map(r => r.dataset.entityId);
+      }
+      if (!ids.length) {
+        this._showToast('Nothing to export.', 'info');
+        return;
+      }
+      const blob = new Blob([this._renameCsvText(ids)], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement('a'), {
+        href: url,
+        download: `em-rename-${new Date().toISOString().split('T')[0]}.csv`,
+      }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    view.querySelector('#brv-import-csv').addEventListener('click', importCsv);
+    view.querySelector('#brv-export-csv').addEventListener('click', exportCsv);
 
     // ── Exit button ───────────────────────────────────────────────────
     view.querySelector('#brv-exit').addEventListener('click', exitMode);
@@ -16942,6 +17057,157 @@ class EntityManagerPanel extends HTMLElement {
       });
       overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
       // Backdrop click and Escape close without a callback — resolve false then
+      const observer = new MutationObserver(() => {
+        if (!document.body.contains(overlay)) {
+          observer.disconnect();
+          if (!resolved) resolve(false);
+        }
+      });
+      observer.observe(document.body, { childList: true });
+    });
+  }
+
+  /**
+   * Split CSV text into rows of trimmed cells. Handles quoted cells, CRLF, a
+   * UTF-8 BOM, Excel's "sep=" first line, and ";" as the delimiter (what Excel
+   * writes in locales that use a decimal comma).
+   */
+  _parseCsv(text) {
+    let src = String(text ?? '').replace(/^﻿/, '');
+    let delim = null;
+    const sepLine = src.match(/^sep=(.)\r?\n/i);
+    if (sepLine) {
+      delim = sepLine[1];
+      src = src.slice(sepLine[0].length);
+    }
+    if (!delim) {
+      const first = src.split(/\r?\n/, 1)[0].replace(/"[^"]*"/g, '');
+      delim = first.split(';').length > first.split(',').length ? ';' : ',';
+    }
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (quoted) {
+        if (ch !== '"') cell += ch;
+        else if (src[i + 1] === '"') { cell += '"'; i++; }
+        else quoted = false;
+      } else if (ch === '"') {
+        quoted = true;
+      } else if (ch === delim) {
+        row.push(cell);
+        cell = '';
+      } else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && src[i + 1] === '\n') i++;
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = '';
+      } else {
+        cell += ch;
+      }
+    }
+    if (cell !== '' || row.length) {
+      row.push(cell);
+      rows.push(row);
+    }
+    return rows.map(r => r.map(c => c.trim()));
+  }
+
+  /**
+   * Check rename-CSV rows (old_entity_id, new_entity_id, display_name).
+   * `known` maps every existing entity_id to its current friendly name.
+   * The new ID may omit the domain; an empty new ID keeps the current one; an
+   * empty or unchanged display name leaves the name alone. Rows that target an
+   * ID already in use are rejected, which also rules out swaps and chains —
+   * the registry renames one entity at a time.
+   * Returns { changes: [{ old, new, name }], problems: [{ row, text, reason }] }.
+   */
+  _validateRenameCsv(rows, known) {
+    const idRe = /^[a-z][a-z0-9_]*\.[a-z0-9_]+$/;
+    const changes = [];
+    const problems = [];
+    const seenOld = new Set();
+    const seenNew = new Set();
+    rows.forEach((cells, i) => {
+      const [oldId = '', rawNew = '', name = ''] = cells;
+      if (!cells.some(c => c) || oldId.startsWith('#')) return;
+      if (i === 0 && !idRe.test(oldId) && /entity|old/i.test(oldId)) return; // header row
+      const fail = reason => problems.push({ row: i + 1, text: cells.join(', '), reason });
+      if (!idRe.test(oldId)) return fail('Current entity ID is not valid');
+      if (!known.has(oldId)) return fail('Entity not found');
+      if (seenOld.has(oldId)) return fail('Entity is listed more than once');
+      const domain = oldId.slice(0, oldId.indexOf('.'));
+      const newId = !rawNew ? oldId : rawNew.includes('.') ? rawNew : `${domain}.${rawNew}`;
+      if (!idRe.test(newId)) return fail('New entity ID is not valid — lowercase letters, digits and _ only');
+      if (!newId.startsWith(`${domain}.`)) return fail('The domain cannot change');
+      if (newId !== oldId && known.has(newId)) return fail(`${newId} is already in use`);
+      if (seenNew.has(newId)) return fail(`Another row already renames to ${newId}`);
+      seenOld.add(oldId);
+      const nameChange = name && name !== known.get(oldId) ? name : null;
+      if (newId === oldId && !nameChange) return;
+      seenNew.add(newId);
+      changes.push({ old: oldId, new: newId, name: nameChange });
+    });
+    return { changes, problems };
+  }
+
+  /** CSV template for bulk rename: each entity's ID twice plus its display name, BOM-prefixed for Excel. */
+  _renameCsvText(entityIds) {
+    const cell = c => (/[",;\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
+    const rows = [['old_entity_id', 'new_entity_id', 'display_name']];
+    entityIds.forEach(id => rows.push([id, id, this._hass?.states?.[id]?.attributes?.friendly_name || '']));
+    return '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+  }
+
+  /** Summarise a validated rename CSV; resolves true to queue its changes. */
+  _confirmCsvImport(fileName, changes, problems) {
+    const renames = changes.filter(c => c.new !== c.old).length;
+    const names = changes.filter(c => c.name).length;
+    const line = (left, right, color) =>
+      `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
+         <span style="font-size:12px;font-family:monospace;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(left)}</span>
+         <span style="font-size:11px;color:${color};white-space:nowrap">${this._escapeHtml(right)}</span>
+       </div>`;
+    return new Promise(resolve => {
+      let resolved = false;
+      const { overlay, closeDialog } = this.createDialog({
+        title: `Import ${fileName}`,
+        color: problems.length ? 'var(--em-warning)' : 'var(--em-primary)',
+        contentHtml: `
+          <div class="confirm-dialog-content">
+            <p style="margin:0 0 10px">${changes.length
+              ? `${renames} rename${renames !== 1 ? 's' : ''} and ${names} display name${names !== 1 ? 's' : ''} ready to queue. Nothing changes until you press Rename.`
+              : 'No usable changes in this file.'}</p>
+            ${changes.length ? `
+            <div class="em-rename-preview-box">
+              <div style="max-height:200px;overflow-y:auto">${changes.map(c => line(
+                c.new !== c.old ? `${c.old} → ${c.new}` : c.old,
+                c.name ? `“${c.name}”` : '',
+                'var(--em-text-secondary)'
+              )).join('')}</div>
+            </div>` : ''}
+            ${problems.length ? `
+            <div class="em-rename-preview-box">
+              <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-danger)">
+                ${problems.length} row${problems.length !== 1 ? 's' : ''} skipped:
+              </div>
+              <div style="max-height:180px;overflow-y:auto">${problems.map(p => line(`Row ${p.row}: ${p.text}`, p.reason, 'var(--em-danger)')).join('')}</div>
+            </div>` : ''}
+          </div>`,
+        actionsHtml: changes.length
+          ? `<button class="btn btn-secondary confirm-no">Cancel</button>
+             <button class="btn btn-primary confirm-yes">Add ${changes.length} to queue</button>`
+          : '<button class="btn btn-secondary confirm-no">Close</button>',
+      });
+      overlay.querySelector('.confirm-yes')?.addEventListener('click', () => {
+        resolved = true;
+        closeDialog();
+        resolve(true);
+      });
+      overlay.querySelector('.confirm-no').addEventListener('click', closeDialog);
       const observer = new MutationObserver(() => {
         if (!document.body.contains(overlay)) {
           observer.disconnect();

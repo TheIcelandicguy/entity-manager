@@ -429,3 +429,113 @@ describe('_attachDialogSearch(root)', () => {
     expect(() => el._attachDialogSearch(root)).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Bulk rename CSV: _parseCsv, _validateRenameCsv, _renameCsvText
+// ---------------------------------------------------------------------------
+
+describe('_parseCsv(text)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('splits comma rows with CRLF and trims cells', () => {
+    expect(el._parseCsv('a, b ,c\r\nd,e,f\r\n')).toEqual([['a', 'b', 'c'], ['d', 'e', 'f']]);
+  });
+
+  it('strips a BOM and handles quoted delimiters, quotes and newlines', () => {
+    expect(el._parseCsv('﻿x,"Eldhús, loft","say ""hi"""\ny,"two\nlines",z'))
+      .toEqual([['x', 'Eldhús, loft', 'say "hi"'], ['y', 'two\nlines', 'z']]);
+  });
+
+  it('detects semicolon as the delimiter', () => {
+    expect(el._parseCsv('a;b;Stofa, ljós\n')).toEqual([['a', 'b', 'Stofa, ljós']]);
+  });
+
+  it('honours an Excel sep= line', () => {
+    expect(el._parseCsv('sep=;\na;b,c\n')).toEqual([['a', 'b,c']]);
+  });
+
+  it('returns no rows for empty input', () => {
+    expect(el._parseCsv('')).toEqual([]);
+  });
+});
+
+describe('_validateRenameCsv(rows, known)', () => {
+  let el;
+  const known = new Map([
+    ['light.stofa', 'Stofa'],
+    ['light.eldhus', 'Eldhús'],
+    ['sensor.temp', ''],
+  ]);
+  beforeEach(() => { el = makePanel(); });
+  const run = rows => el._validateRenameCsv(rows, known);
+
+  it('skips the header, blank and comment rows', () => {
+    const r = run([['old_entity_id', 'new_entity_id', 'display_name'], [''], ['# note'], ['light.stofa', 'light.lounge']]);
+    expect(r.problems).toEqual([]);
+    expect(r.changes).toEqual([{ old: 'light.stofa', new: 'light.lounge', name: null }]);
+  });
+
+  it('accepts a new ID without the domain', () => {
+    expect(run([['light.stofa', 'lounge']]).changes[0].new).toBe('light.lounge');
+  });
+
+  it('drops unchanged rows and unchanged display names', () => {
+    expect(run([['light.stofa', 'light.stofa', 'Stofa'], ['light.eldhus', '', '']]).changes).toEqual([]);
+  });
+
+  it('keeps a display-name-only change', () => {
+    expect(run([['light.eldhus', 'light.eldhus', 'Eldhúsljós']]).changes)
+      .toEqual([{ old: 'light.eldhus', new: 'light.eldhus', name: 'Eldhúsljós' }]);
+  });
+
+  it('rejects bad rows with a reason and 1-based row number', () => {
+    const r = run([
+      ['light.missing', 'light.x'],
+      ['Light.Stofa', 'x'],
+      ['light.stofa', 'switch.stofa'],
+      ['light.stofa', 'light.Bad-Name'],
+      ['light.stofa', 'light.eldhus'],
+      ['sensor.temp', 'sensor.a'],
+      ['light.eldhus', 'light.a'.replace('light', 'sensor')],
+    ]);
+    expect(r.changes).toEqual([{ old: 'sensor.temp', new: 'sensor.a', name: null }]);
+    expect(r.problems.map(p => [p.row, p.reason])).toEqual([
+      [1, 'Entity not found'],
+      [2, 'Current entity ID is not valid'],
+      [3, 'The domain cannot change'],
+      [4, 'New entity ID is not valid — lowercase letters, digits and _ only'],
+      [5, 'light.eldhus is already in use'],
+      [7, 'The domain cannot change'],
+    ]);
+  });
+
+  it('rejects duplicate sources and duplicate targets', () => {
+    const r = run([['light.stofa', 'light.a'], ['light.stofa', 'light.b'], ['light.eldhus', 'light.a']]);
+    expect(r.changes).toHaveLength(1);
+    expect(r.problems.map(p => p.reason)).toEqual([
+      'Entity is listed more than once',
+      'Another row already renames to light.a',
+    ]);
+  });
+
+  it('rejects a swap', () => {
+    const r = run([['light.stofa', 'light.eldhus'], ['light.eldhus', 'light.stofa']]);
+    expect(r.changes).toEqual([]);
+    expect(r.problems).toHaveLength(2);
+  });
+});
+
+describe('_renameCsvText(entityIds)', () => {
+  it('writes a BOM, header and quoted display names that round-trip', () => {
+    const el = makePanel();
+    el._hass.states['light.q'] = { attributes: { friendly_name: 'Stofa, "aðal"' } };
+    const text = el._renameCsvText(['light.living_room', 'light.q']);
+    expect(text.startsWith('﻿old_entity_id,new_entity_id,display_name\r\n')).toBe(true);
+    const rows = el._parseCsv(text);
+    expect(rows[1]).toEqual(['light.living_room', 'light.living_room', 'Living Room Light']);
+    expect(rows[2]).toEqual(['light.q', 'light.q', 'Stofa, "aðal"']);
+    const known = new Map([['light.living_room', 'Living Room Light'], ['light.q', 'Stofa, "aðal"']]);
+    expect(el._validateRenameCsv(rows, known).changes).toEqual([]);
+  });
+});

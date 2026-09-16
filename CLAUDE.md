@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.2.0**.
+Home Assistant custom integration, domain `entity_manager`, **v3.3.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -113,6 +113,12 @@ allowed. Everything else is WebSocket-only.
   rename queue (dry-run preview → renames → one update for the successes), the
   single-rename dialog (`_renameWithReferences`) and undo/redo of a rename.
   Before 3.2.0 no rename path wrote references at all.
+- Bulk rename has **Import CSV / Export CSV** (`old_entity_id,new_entity_id,display_name`).
+  Import is frontend-only: `_parseCsv` (quotes, BOM, `;` or `sep=`) →
+  `_validateRenameCsv` → a summary dialog → rows land in the normal queue, so the
+  reference preview and undo apply unchanged. Rows targeting an ID already in use
+  are rejected, which rules out swaps and chains. Display names are set after the
+  renames, through `update_entity_display_name`, with a `display_name_change` undo step.
 - A release bumps **four** places: `manifest.json`, `package.json` (+ lock, via
   `npm version`), the README badge, and `EM_VERSION` at the top of
   `entity-manager-panel.js` — the panel prints that constant in its header when
