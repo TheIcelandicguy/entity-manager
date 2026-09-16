@@ -113,6 +113,10 @@ allowed. Everything else is WebSocket-only.
   rename queue (dry-run preview → renames → one update for the successes), the
   single-rename dialog (`_renameWithReferences`) and undo/redo of a rename.
   Before 3.2.0 no rename path wrote references at all.
+- A release bumps **four** places: `manifest.json`, `package.json` (+ lock, via
+  `npm version`), the README badge, and `EM_VERSION` at the top of
+  `entity-manager-panel.js` — the panel prints that constant in its header when
+  the panel config carries no version. `check_docs.py` now fails on a stale one.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.

@@ -264,6 +264,32 @@ def check_services(doc: str) -> None:
             fail(f"services: doc calls `{DOMAIN}.{s}` a service but services.yaml does not declare it")
 
 
+# ---- source version constants ------------------------------------------------
+
+SOURCE_VERSION = re.compile(
+    r"""\b([A-Z][A-Z0-9_]*VERSION)\s*[:=]\s*['"](\d+\.\d+\.\d+)['"]"""
+)
+
+
+def check_source_versions() -> None:
+    """A hard-coded VERSION constant in source must match manifest.json.
+
+    The panel prints EM_VERSION in its header, so a missed bump ships a build
+    that misreports itself.
+    """
+    rv = repo_version()
+    if rv is None:
+        return
+    version, vfile = rv
+    for f in source_files():
+        for name, found in SOURCE_VERSION.findall(read(f)):
+            if found != version:
+                fail(
+                    f"version: `{name} = {found}` in {f.relative_to(ROOT).as_posix()}; "
+                    f"{vfile.relative_to(ROOT).as_posix()} says {version}"
+                )
+
+
 # ---- line counts -------------------------------------------------------------
 
 LINES_A = re.compile(r"`([^`]+\.(?:py|js|ts|css))`[^|\n]*?\|\s*([\d,]+)\s+lines", re.I)
@@ -296,6 +322,7 @@ def main() -> int:
     check_paths(doc)
     check_constants(doc)
     check_version(doc)
+    check_source_versions()
     check_tests(doc)
     check_services(doc)
     check_lines(doc)
