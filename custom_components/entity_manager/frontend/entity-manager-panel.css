@@ -3960,6 +3960,36 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   font-weight: 600;
   font-size: 14px;
 }
+.brv-banner-title {
+  min-width: 0;
+}
+.brv-banner-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.em-bulk-rename-banner .brv-banner-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.15);
+  border: 1.5px solid rgba(255,255,255,0.5);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.em-bulk-rename-banner .brv-banner-btn-primary {
+  padding: 4px 14px;
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(255,255,255,0.9);
+  color: var(--em-primary);
+}
 
 /* Actions row at bottom */
 .em-bulk-rename-actions {
@@ -4389,6 +4419,96 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   padding: 12px;
   max-height: 200px;
   overflow-y: auto;
+}
+
+/* ── Bulk Rename on tablets and phones ──────────────────────────────────
+   The width rules are container queries on the view itself, not media
+   queries: on a tablet the EM sidebar takes a third of the screen, so the
+   view is phone-narrow even when the viewport is not. Narrow: the banner
+   buttons wrap under the title, the entity picker and the rename queue stack
+   instead of sitting side by side, and each keeps its own scroll area.
+   Touch screens: larger tap targets, and 16px inputs so iOS does not zoom
+   the page when a field gets focus. */
+.em-bulk-rename-view { container: em-brv / inline-size; }
+
+@media (max-width: 768px) {
+  .em-bulk-rename-view {
+    padding: 4px 0 12px;
+    min-height: 0;
+  }
+}
+
+@container em-brv (max-width: 900px) {
+  .em-bulk-rename-banner { flex-wrap: wrap; }
+  .brv-banner-actions {
+    margin-left: 0;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+  .em-bulk-rename-banner .brv-banner-btn { flex: 1 1 auto; }
+}
+
+@container em-brv (max-width: 680px) {
+  .brv-split { flex-direction: column; }
+  .bulk-rename-top-box,
+  .bulk-rename-bottom-box {
+    flex: none;
+    min-width: 0;
+  }
+  .bulk-rename-picker-list { max-height: 45vh; }
+  .bulk-rename-queue-inner {
+    max-height: 60vh;
+    min-height: 120px;
+  }
+  .bulk-rename-pattern-inputs { flex-wrap: wrap; }
+  .bulk-rename-field { flex-basis: 100%; }
+  .bulk-rename-field-arrow { display: none; }
+  .brq-row-name { max-width: 45%; }
+}
+
+@container em-brv (max-width: 480px) {
+  .brv-banner-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .em-bulk-rename-banner #brq-rename-btn-top {
+    order: 5;
+    grid-column: 1 / -1;
+  }
+  .brp-row-name {
+    order: 5;
+    flex-basis: 100%;
+    max-width: none !important;
+    padding-left: 22px;
+  }
+  .bulk-rename-picker-row { flex-wrap: wrap; }
+  .bulk-rename-top-bar > div:first-child { flex-basis: 100%; }
+}
+
+@media (pointer: coarse) {
+  .em-bulk-rename-banner .brv-banner-btn {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .bulk-rename-picker-row { min-height: 44px; }
+  .bulk-rename-picker-row input[type="checkbox"],
+  .brp-int-cb {
+    width: 20px !important;
+    height: 20px !important;
+  }
+  .brp-dev-header { top: 37px; }
+  .brq-remove {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+  }
+  #brp-search,
+  .bulk-rename-field-input,
+  .brq-row-input-line .bulk-new-name {
+    font-size: 16px !important;
+  }
+  .brq-row-input-line .bulk-new-name { padding: 8px 10px; }
 }
 
 .preview-item {

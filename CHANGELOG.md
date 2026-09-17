@@ -1,5 +1,22 @@
 # Changelog
 
+## Version 3.3.1 - CSV Import and Export on Phones and Tablets
+
+Bulk rename by CSV now works from the Home Assistant Companion apps and on small screens.
+
+### 📱 Phones and tablets
+
+- **Fixed: Import CSV greyed out every file on Android.** The file picker was filtered to `.csv,text/csv`, and a CSV stored in OneDrive (and other storage apps) did not match that filter. The picker is no longer filtered; Entity Manager checks the file itself instead. The theme and entity-state JSON imports get the same fix
+- **Clear messages for the wrong file:** an Excel workbook (`.xlsx` or `.xls`) or any other binary file is refused with a hint to use Save As → "CSV UTF-8"; files over 5 MB are refused
+- **Excel's plain "CSV" type now keeps Icelandic and other accented letters.** A file that is not valid UTF-8 is read as Windows-1252, the encoding Excel uses for that type on Windows, instead of turning á, ð, þ and ö into �
+- **Export CSV works in the Companion apps.** Downloads now follow Home Assistant's own method (the link is attached to the page and the file stays readable for 10 seconds), so the Android app can save it. Android picks the file name itself. The theme and entity-state JSON exports use the same method
+- **Bulk Rename fits narrow screens.** The layout follows the width of the Bulk Rename view rather than the screen, so a tablet with the Entity Manager sidebar open gets the narrow layout too. Under 900 px the banner buttons move below the title; under 680 px the entity list and the rename queue stack, each with its own scroll area, and the Find & Replace fields take the full width; under 480 px the buttons form a two-column grid with Rename across the bottom, the search box gets its own line, and friendly names drop below the entity ID
+- **Touch screens:** larger buttons, checkboxes and remove buttons, and 16 px text in the search and rename fields so iOS does not zoom the page on focus
+
+### 🧪 Development
+
+- `npm test` runs again: `vitest.config.js` now transforms tests in SSR mode, because the setup file's `node:fs` import was being replaced with a browser stub. 14 new tests cover the file helpers (65 in total)
+
 ## Version 3.3.0 - Bulk Rename from a CSV File
 
 Plan a large rename in a spreadsheet and load it into the bulk rename queue.

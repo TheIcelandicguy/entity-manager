@@ -7,7 +7,7 @@
  * before these tests run, so customElements.get('entity-manager-panel') works.
  */
 
-import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -537,5 +537,146 @@ describe('_renameCsvText(entityIds)', () => {
     expect(rows[2]).toEqual(['light.q', 'light.q', 'Stofa, "aðal"']);
     const known = new Map([['light.living_room', 'Living Room Light'], ['light.q', 'Stofa, "aðal"']]);
     expect(el._validateRenameCsv(rows, known).changes).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// File import / export helpers (work in the Companion apps too)
+// ---------------------------------------------------------------------------
+
+describe('_decodeImportText(bytes)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+  const utf8 = s => new TextEncoder().encode(s);
+
+  it('decodes UTF-8, keeping Icelandic letters', () => {
+    expect(el._decodeImportText(utf8('light.a,light.b,Eldhúsljós þvottahús\r\n')))
+      .toBe('light.a,light.b,Eldhúsljós þvottahús\r\n');
+  });
+
+  it('reads a BOM-prefixed export back through the CSV parser', () => {
+    const text = el._decodeImportText(utf8('﻿old_entity_id,new_entity_id\r\nlight.a,light.b\r\n'));
+    expect(el._parseCsv(text)).toEqual([['old_entity_id', 'new_entity_id'], ['light.a', 'light.b']]);
+  });
+
+  it('falls back to Windows-1252 for non-UTF-8 files from Excel', () => {
+    // "Stofa ljós, gólf ð" in Windows-1252: ó = 0xF3, ð = 0xF0
+    const bytes = new Uint8Array([...utf8('light.a,light.b,Stofa lj'), 0xf3, ...utf8('s g'), 0xf3, ...utf8('lf '), 0xf0]);
+    expect(el._decodeImportText(bytes)).toBe('light.a,light.b,Stofa ljós gólf ð');
+  });
+
+  it('refuses an Excel workbook with a hint to save as CSV', () => {
+    const xlsx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00]);
+    expect(() => el._decodeImportText(xlsx)).toThrow(/Excel workbook.*CSV UTF-8/);
+  });
+
+  it('refuses an old .xls file', () => {
+    const xls = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    expect(() => el._decodeImportText(xls)).toThrow(/\.xls/);
+  });
+
+  it('refuses other binary files', () => {
+    expect(() => el._decodeImportText(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]))).toThrow(/not a text file/);
+  });
+});
+
+describe('_readImportText(file)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('reads a File as text', async () => {
+    const file = new File(['light.a,light.b,Bílskúr'], 'rename.csv', { type: 'text/comma-separated-values' });
+    await expect(el._readImportText(file)).resolves.toBe('light.a,light.b,Bílskúr');
+  });
+
+  it('reads a file whose reported type is not text/csv', async () => {
+    const file = new File(['light.a,light.b'], 'rename.csv', { type: 'application/octet-stream' });
+    await expect(el._readImportText(file)).resolves.toBe('light.a,light.b');
+  });
+
+  it('refuses files over 5 MB before reading them', async () => {
+    const readSpy = vi.spyOn(el, '_readFileBytes');
+    await expect(el._readImportText({ size: 6 * 1024 * 1024, name: 'big.csv' })).rejects.toThrow(/5 MB/);
+    expect(readSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('_pickFile(onFile)', () => {
+  let el;
+  let clickSpy;
+  beforeEach(() => {
+    el = makePanel();
+    clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    clickSpy.mockRestore();
+    document.querySelectorAll('input.em-file-picker').forEach(i => i.remove());
+  });
+
+  const current = () => document.querySelector('input.em-file-picker');
+
+  it('opens an unfiltered file input that is attached to the page', () => {
+    el._pickFile(() => {});
+    const input = current();
+    expect(input).not.toBeNull();
+    expect(input.type).toBe('file');
+    expect(input.accept).toBe('');
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the chosen file on and removes the input', () => {
+    const onFile = vi.fn();
+    el._pickFile(onFile);
+    const input = current();
+    const file = new File(['x'], 'a.csv');
+    Object.defineProperty(input, 'files', { value: [file] });
+    input.dispatchEvent(new Event('change'));
+    expect(onFile).toHaveBeenCalledWith(file);
+    expect(current()).toBeNull();
+  });
+
+  it('removes the input when the picker is cancelled', () => {
+    const onFile = vi.fn();
+    el._pickFile(onFile);
+    current().dispatchEvent(new Event('cancel'));
+    expect(current()).toBeNull();
+    expect(onFile).not.toHaveBeenCalled();
+  });
+
+  it('replaces a picker left behind by an earlier call', () => {
+    el._pickFile(() => {});
+    el._pickFile(() => {});
+    expect(document.querySelectorAll('input.em-file-picker')).toHaveLength(1);
+  });
+});
+
+describe('_downloadFile(blob, filename)', () => {
+  let el;
+  beforeEach(() => {
+    el = makePanel();
+    vi.useFakeTimers();
+    URL.createObjectURL = vi.fn(() => 'blob:http://localhost/abc');
+    URL.revokeObjectURL = vi.fn();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('clicks an attached link, removes it, and keeps the blob URL alive for 10 s', () => {
+    let seen = null;
+    const dispatchSpy = vi.spyOn(HTMLAnchorElement.prototype, 'dispatchEvent').mockImplementation(function () {
+      seen = { href: this.getAttribute('href'), download: this.download, target: this.target, attached: document.body.contains(this) };
+      return true;
+    });
+    el._downloadFile(new Blob(['a,b'], { type: 'text/csv' }), 'em-rename.csv');
+    dispatchSpy.mockRestore();
+
+    expect(seen).toEqual({ href: 'blob:http://localhost/abc', download: 'em-rename.csv', target: '_blank', attached: true });
+    expect(document.querySelector('a[download="em-rename.csv"]')).toBeNull();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(9_999);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/abc');
   });
 });
