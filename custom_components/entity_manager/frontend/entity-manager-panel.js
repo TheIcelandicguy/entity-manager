@@ -17006,10 +17006,11 @@ class EntityManagerPanel extends HTMLElement {
     const files = preview.files_updated;
     const manual = preview.manual_references;
     if (!files.length && !manual.length) return Promise.resolve(true);
-    const row = (label, count, unit) =>
+    // Long paths wrap anywhere so the count stays on screen on a phone
+    const row = (label, count, one, many) =>
       `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
-         <span style="font-size:12px;font-family:monospace">${this._escapeHtml(label)}</span>
-         <span style="font-size:11px;color:var(--secondary-text-color);white-space:nowrap">${count} ${unit}${count !== 1 ? 's' : ''}</span>
+         <span style="font-size:12px;font-family:monospace;min-width:0;overflow-wrap:anywhere">${this._escapeHtml(label)}</span>
+         <span style="font-size:11px;color:var(--secondary-text-color);white-space:nowrap;flex-shrink:0">${count} ${count !== 1 ? many : one}</span>
        </div>`;
     return new Promise(resolve => {
       let resolved = false;
@@ -17023,14 +17024,14 @@ class EntityManagerPanel extends HTMLElement {
               <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-warning)">
                 ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${files.length} place${files.length !== 1 ? 's' : ''} will be updated:
               </div>
-              <div style="max-height:220px;overflow-y:auto">${files.map(f => row(f.file, f.replacements, 'ref')).join('')}</div>
+              <div style="max-height:220px;overflow-y:auto">${files.map(f => row(f.file, f.replacements, 'ref', 'refs')).join('')}</div>
             </div>` : ''}
             ${manual.length ? `
             <div class="em-rename-preview-box">
               <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-danger)">
                 ${manual.length} file${manual.length !== 1 ? 's' : ''} still mention these IDs and must be fixed by hand:
               </div>
-              <div style="max-height:180px;overflow-y:auto">${manual.map(m => row(m.file, m.matches, 'match')).join('')}</div>
+              <div style="max-height:180px;overflow-y:auto">${manual.map(m => row(m.file, m.matches, 'match', 'matches')).join('')}</div>
             </div>` : ''}
           </div>`,
         actionsHtml: `

@@ -680,3 +680,26 @@ describe('_downloadFile(blob, filename)', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:http://localhost/abc');
   });
 });
+
+describe('_confirmReferencePreview(renameCount, preview)', () => {
+  afterEach(() => document.querySelectorAll('.confirm-no').forEach(b => b.click()));
+
+  it('pluralises counts correctly and lets long paths wrap', () => {
+    const el = makePanel();
+    const longPath = 'amira/snapshots/20260314_235710_automations.yaml';
+    el._confirmReferencePreview(2, {
+      total_replacements: 28,
+      files_updated: [{ file: longPath, replacements: 27 }, { file: 'configuration.yaml', replacements: 1 }],
+      manual_references: [{ file: '.storage/daily_brief_items', matches: 1 }, { file: '.storage/home_health_overview.frequency', matches: 481 }],
+    });
+    const text = document.body.textContent;
+    expect(text).toContain('27 refs');
+    expect(text).toContain('1 ref');
+    expect(text).toContain('1 match');
+    expect(text).toContain('481 matches');
+    expect(text).not.toContain('matchs');
+    const label = [...document.querySelectorAll('span')].find(s => s.textContent === longPath);
+    expect(label.style.overflowWrap).toBe('anywhere');
+    expect(parseFloat(label.style.minWidth)).toBe(0);
+  });
+});

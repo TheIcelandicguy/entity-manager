@@ -26,7 +26,7 @@ All paths below are relative to the repo root. Note that `tests/` and
 
 | Path | Responsibility |
 |---|---|
-| `custom_components/entity_manager/__init__.py` | 121 lines. Registers the static path `/api/entity_manager/frontend`, the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). Reads `manifest.json` at runtime for the `?v=` cache-buster on the panel JS. |
+| `custom_components/entity_manager/__init__.py` | 131 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
 | `.../websocket_api.py` | 1,655 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers; patterns in `sentences/en/entity_manager.yaml`. |
