@@ -6895,6 +6895,18 @@ class EntityManagerPanel extends HTMLElement {
       this.showErrorDialog(`Error loading entities: ${error.message}`);
     } finally {
       this.setLoading(false);
+      // Repaint here, not just where the caller happens to remember to: loadData()
+      // only ever updates this.data. Every write action in this file calls loadData()
+      // afterward expecting the list to reflect it, but the only thing that actually
+      // repainted #content was the fire-and-forget last-activity cache refresh below —
+      // which skips its own repaint whenever its cache is still warm (the common case,
+      // TTL 1 hour). Guards in updateView()'s inline views (bulk rename, area assign,
+      // active-view panels) already no-op this while the user is mid-edit there, so
+      // this is safe to call unconditionally.
+      if (this.content) {
+        this._reRenderSidebar();
+        this.updateView();
+      }
     }
   }
 
