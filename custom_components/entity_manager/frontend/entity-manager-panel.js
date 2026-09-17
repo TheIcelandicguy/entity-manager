@@ -2481,6 +2481,10 @@ class EntityManagerPanel extends HTMLElement {
       this._areaAssignMode = false;
       this.querySelector('#main-content')?.classList.remove('em-area-assign-active');
       await this.loadData();
+      // See the matching comment in _renderBulkRenameView's exitMode: loadData()
+      // alone doesn't repaint #content, so do it explicitly.
+      this._reRenderSidebar();
+      this.updateView();
     };
 
     // Scan all devices for missing areas + compute suggestions
@@ -2773,6 +2777,13 @@ class EntityManagerPanel extends HTMLElement {
       this._bulkRenamePreselectedIds = null;
       this.querySelector('#main-content')?.classList.remove('em-bulk-rename-active');
       await this.loadData();
+      // loadData() doesn't repaint #content itself — without this, #content keeps
+      // showing the (now-stale) bulk rename markup until something else happens to
+      // call updateView() (e.g. the last-activity cache refresh, which no-ops here
+      // when its cache is still warm). Repaint explicitly so the entity list — with
+      // whatever filter/search was active before — comes back right away.
+      this._reRenderSidebar();
+      this.updateView();
     };
 
     const executeRenames = async (renameMap) => {
