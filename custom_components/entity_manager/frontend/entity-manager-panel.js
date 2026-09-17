@@ -2848,7 +2848,15 @@ class EntityManagerPanel extends HTMLElement {
       const refsClean = !renameMap.length || (refResult && !refResult.errors.length && !refResult.manual_references.length);
       const clean = errorCount === 0 && namesSet === nameChanges.length && refsClean;
       this._showToast(parts.join(' '), clean ? 'success' : 'warning', 8000);
-      await exitMode();
+
+      // Stay in Bulk Rename so the next batch can follow straight away; Exit is
+      // what leaves. Re-open on fresh registry data (the old IDs are gone), with
+      // anything that failed still queued for another try.
+      const failedIds = renameMap.filter(r => !succeeded.includes(r)).map(r => r.old);
+      succeeded.forEach(r => this.selectedEntities.delete(r.old));
+      contentEl.innerHTML = '';
+      await this._openBulkRenameDialog(failedIds);
+      this.loadData();
     };
 
     // ── Build entity list grouped by integration → device ───────────
