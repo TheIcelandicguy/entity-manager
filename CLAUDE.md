@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.3.0**.
+Home Assistant custom integration, domain `entity_manager`, **v3.3.1**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -26,7 +26,7 @@ All paths below are relative to the repo root. Note that `tests/` and
 
 | Path | Responsibility |
 |---|---|
-| `custom_components/entity_manager/__init__.py` | 121 lines. Registers the static path `/api/entity_manager/frontend`, the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). Reads `manifest.json` at runtime for the `?v=` cache-buster on the panel JS. |
+| `custom_components/entity_manager/__init__.py` | 131 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
 | `.../websocket_api.py` | 1,655 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers; patterns in `sentences/en/entity_manager.yaml`. |
@@ -114,11 +114,27 @@ allowed. Everything else is WebSocket-only.
   single-rename dialog (`_renameWithReferences`) and undo/redo of a rename.
   Before 3.2.0 no rename path wrote references at all.
 - Bulk rename has **Import CSV / Export CSV** (`old_entity_id,new_entity_id,display_name`).
-  Import is frontend-only: `_parseCsv` (quotes, BOM, `;` or `sep=`) →
+  Import is frontend-only: `_pickFile` → `_readImportText` → `_parseCsv` (quotes, BOM, `;` or `sep=`) →
   `_validateRenameCsv` → a summary dialog → rows land in the normal queue, so the
   reference preview and undo apply unchanged. Rows targeting an ID already in use
   are rejected, which rules out swaps and chains. Display names are set after the
   renames, through `update_entity_display_name`, with a `display_name_change` undo step.
+- **Files in and out go through three helpers so they work in the Companion
+  apps.** `_pickFile(onFile)` opens a file input with **no `accept` filter** —
+  Android's picker greyed out a real CSV in OneDrive under `.csv,text/csv` — and
+  keeps it in the page until the picker closes. `_readImportText(file)` refuses
+  files over 5 MB, Excel workbooks and other binary files with a message, and
+  reads non-UTF-8 text as Windows-1252 (Excel's plain "CSV" type).
+  `_downloadFile(blob, name)` mirrors HA's own `fileDownload`: an attached
+  `<a target=_blank download>`, and the blob URL is revoked after 10 s because
+  the Android app fetches it asynchronously. Use these for any new import or
+  export; do not create detached inputs or revoke a blob URL straight away.
+- Bulk Rename's phone/tablet rules sit at the end of its CSS section. The width
+  rules are **container queries** on `.em-bulk-rename-view` (`em-brv`: ≤900,
+  ≤680, ≤480 px), because on a tablet the EM sidebar leaves the view
+  phone-narrow while the viewport is not; touch sizing is `pointer: coarse`.
+  The banner buttons use the `brv-banner-btn` classes, not inline styles, so
+  those rules can reach them.
 - A release bumps **four** places: `manifest.json`, `package.json` (+ lock, via
   `npm version`), the README badge, and `EM_VERSION` at the top of
   `entity-manager-panel.js` — the panel prints that constant in its header when
@@ -150,7 +166,9 @@ bandit -r custom_components/ --severity-level medium
 ```
 
 - `pytest.ini` sets `asyncio_mode = auto`.
-- Vitest uses jsdom; config in `vitest.config.js`, specs matched at
+- Vitest uses jsdom with `testTransformMode: { ssr: ['**/*'] }` — without it the
+  setup file's `node:fs` import is stubbed and every run fails with
+  "fileURLToPath is not a function". Config in `vitest.config.js`, specs matched at
   `custom_components/entity_manager/frontend/tests/**/*.test.js`.
 - CI is `.github/workflows/ci.yml`, on PRs and pushes to `main`, Python 3.12 with
   `pytest-homeassistant-custom-component`. `ruff format --check` fails the build

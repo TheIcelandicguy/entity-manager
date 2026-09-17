@@ -1,5 +1,6 @@
 """Entity Manager Integration."""
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -90,6 +91,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         (Path(__file__).parent / "manifest.json").read_text
     )
     version = json.loads(manifest_text).get("version", "0")
+    # The static path is served with long cache headers, so the ?v= key must
+    # change whenever the panel file does, not only when the version is bumped.
+    # Otherwise a redeploy under the same version keeps serving the old panel
+    # to every browser and Companion app that already cached it.
+    panel_bytes = await hass.async_add_executor_job(
+        (frontend_path / "entity-manager-panel.js").read_bytes
+    )
+    cache_key = f"{version}-{hashlib.sha256(panel_bytes).hexdigest()[:10]}"
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -101,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "name": "entity-manager-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={version}",
+                "js_url": f"/api/entity_manager/frontend/entity-manager-panel.js?v={cache_key}",
                 "version": version,
             }
         },

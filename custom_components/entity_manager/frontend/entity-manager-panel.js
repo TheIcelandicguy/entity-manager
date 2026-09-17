@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '3.3.0';
+const EM_VERSION = '3.3.1';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -1302,25 +1302,13 @@ class EntityManagerPanel extends HTMLElement {
       activeTheme: this.activeTheme
     };
     const json = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'entity-manager-themes.json';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    this._downloadFile(new Blob([json], { type: 'application/json' }), 'entity-manager-themes.json');
   }
   
   _importThemes() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      
+    this._pickFile(async (file) => {
       try {
-        const text = await file.text();
+        const text = await this._readImportText(file);
         const data = JSON.parse(text);
         
         if (!data.themes || typeof data.themes !== 'object') {
@@ -1360,8 +1348,7 @@ class EntityManagerPanel extends HTMLElement {
       } catch (err) {
         this._showToast('Failed to import themes: ' + err.message, 'error');
       }
-    };
-    input.click();
+    });
   }
   
   _handleLocalImageUpload() {
@@ -2861,7 +2848,15 @@ class EntityManagerPanel extends HTMLElement {
       const refsClean = !renameMap.length || (refResult && !refResult.errors.length && !refResult.manual_references.length);
       const clean = errorCount === 0 && namesSet === nameChanges.length && refsClean;
       this._showToast(parts.join(' '), clean ? 'success' : 'warning', 8000);
-      await exitMode();
+
+      // Stay in Bulk Rename so the next batch can follow straight away; Exit is
+      // what leaves. Re-open on fresh registry data (the old IDs are gone), with
+      // anything that failed still queued for another try.
+      const failedIds = renameMap.filter(r => !succeeded.includes(r)).map(r => r.old);
+      succeeded.forEach(r => this.selectedEntities.delete(r.old));
+      contentEl.innerHTML = '';
+      await this._openBulkRenameDialog(failedIds);
+      this.loadData();
     };
 
     // ── Build entity list grouped by integration → device ───────────
@@ -2888,8 +2883,8 @@ class EntityManagerPanel extends HTMLElement {
       return `<div class="bulk-rename-picker-row${checked ? ' is-checked' : ''}" data-entity-id="${this._escapeAttr(entityId)}">
         <input type="checkbox" class="brp-cb"${checked ? ' checked' : ''} data-entity-id="${this._escapeAttr(entityId)}">
         <span style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;border:1px solid ${dc};color:${dc};white-space:nowrap;flex-shrink:0">${this._escapeHtml(domain)}</span>
-        <span style="font-family:monospace;font-size:11px;font-weight:600;color:var(--em-text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${this._escapeAttr(entityId)}">${this._escapeHtml(objectId)}</span>
-        ${name ? `<span style="font-size:11px;color:var(--em-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${this._escapeHtml(name)}</span>` : ''}
+        <span class="brp-row-id" style="font-family:monospace;font-size:11px;font-weight:600;color:var(--em-text-primary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1" title="${this._escapeAttr(entityId)}">${this._escapeHtml(objectId)}</span>
+        ${name ? `<span class="brp-row-name" style="font-size:11px;color:var(--em-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${this._escapeHtml(name)}</span>` : ''}
         <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--em-bg-secondary);color:var(--em-text-secondary);flex-shrink:0">${this._escapeHtml(state)}</span>
       </div>`;
     };
@@ -2972,13 +2967,13 @@ class EntityManagerPanel extends HTMLElement {
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
           </svg>
-          Bulk Rename Entities
-          <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <button id="brv-import-csv" class="btn" title="Queue renames from a CSV file: old_entity_id, new_entity_id, display_name" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Import CSV</button>
-            <button id="brv-export-csv" class="btn" title="Download the queue (or the listed entities) as a CSV to edit and import" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Export CSV</button>
-            <button id="brp-deselect-all-top" class="btn" style="padding:4px 12px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">Deselect all</button>
-            <button id="brq-rename-btn-top" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.9);border:1.5px solid rgba(255,255,255,0.9);color:var(--em-primary);font-weight:700;border-radius:6px;cursor:pointer;" disabled>Rename 0</button>
-            <button id="brv-exit" class="btn" style="padding:4px 14px;font-size:12px;background:rgba(255,255,255,0.15);border:1.5px solid rgba(255,255,255,0.5);color:#fff;border-radius:6px;cursor:pointer;">${this._icon(EM_ICONS.close, '14px')} Exit</button>
+          <span class="brv-banner-title">Bulk Rename Entities</span>
+          <div class="brv-banner-actions">
+            <button id="brv-import-csv" class="btn brv-banner-btn" title="Queue renames from a CSV file: old_entity_id, new_entity_id, display_name">Import CSV</button>
+            <button id="brv-export-csv" class="btn brv-banner-btn" title="Download the queue (or the listed entities) as a CSV to edit and import">Export CSV</button>
+            <button id="brp-deselect-all-top" class="btn brv-banner-btn">Deselect all</button>
+            <button id="brq-rename-btn-top" class="btn brv-banner-btn brv-banner-btn-primary" disabled>Rename 0</button>
+            <button id="brv-exit" class="btn brv-banner-btn">${this._icon(EM_ICONS.close, '14px')} Exit</button>
           </div>
         </div>
 
@@ -3293,13 +3288,10 @@ class EntityManagerPanel extends HTMLElement {
     Object.entries(hassStates).forEach(([id, s]) => knownNames.set(id, s.attributes?.friendly_name || ''));
 
     const importCsv = () => {
-      const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.csv,text/csv' });
-      input.onchange = async () => {
-        const file = input.files[0];
-        if (!file) return;
+      this._pickFile(async (file) => {
         let result;
         try {
-          result = this._validateRenameCsv(this._parseCsv(await file.text()), knownNames);
+          result = this._validateRenameCsv(this._parseCsv(await this._readImportText(file)), knownNames);
         } catch (err) {
           this._showToast(`Could not read ${file.name}: ${err.message}`, 'error');
           return;
@@ -3332,8 +3324,7 @@ class EntityManagerPanel extends HTMLElement {
         if (selCountEl) selCountEl.textContent = `${view.querySelectorAll('#brp-list .brp-cb:checked').length} selected`;
         syncRenameBtn();
         this._showToast(`Queued ${changes.length} change${changes.length !== 1 ? 's' : ''} from ${file.name}. Review, then press Rename.`, 'success');
-      };
-      input.click();
+      });
     };
 
     const exportCsv = () => {
@@ -3347,13 +3338,13 @@ class EntityManagerPanel extends HTMLElement {
         this._showToast('Nothing to export.', 'info');
         return;
       }
-      const blob = new Blob([this._renameCsvText(ids)], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      Object.assign(document.createElement('a'), {
-        href: url,
-        download: `em-rename-${new Date().toISOString().split('T')[0]}.csv`,
-      }).click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      // Plain "text/csv": Android's download handler maps it to a .csv name, which it
+      // does not do for "text/csv;charset=utf-8". The BOM already marks the file as UTF-8.
+      this._downloadFile(
+        new Blob([this._renameCsvText(ids)], { type: 'text/csv' }),
+        `em-rename-${new Date().toISOString().split('T')[0]}.csv`,
+      );
+      this._showToast(`Exported ${ids.length} entit${ids.length !== 1 ? 'ies' : 'y'} to CSV.`, 'success');
     };
 
     view.querySelector('#brv-import-csv').addEventListener('click', importCsv);
@@ -6243,13 +6234,10 @@ class EntityManagerPanel extends HTMLElement {
         favorites: [...this.favorites],
         aliases: this.entityAliases,
       };
-      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-      const a = Object.assign(document.createElement('a'), {
-        href: URL.createObjectURL(blob),
-        download: `entity-manager-${new Date().toISOString().slice(0, 10)}.json`,
-      });
-      a.click();
-      URL.revokeObjectURL(a.href);
+      this._downloadFile(
+        new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' }),
+        `entity-manager-${new Date().toISOString().slice(0, 10)}.json`,
+      );
       this._showToast(`Exported ${entities.length} entities`, 'success');
     } catch (err) {
       this._showToast('Export failed: ' + (err.message || err), 'error');
@@ -6258,12 +6246,9 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   _importEntityConfig() {
-    const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.json' });
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+    this._pickFile(async (file) => {
       try {
-        const config = JSON.parse(await file.text());
+        const config = JSON.parse(await this._readImportText(file));
         if (config.version !== 1 && config.version !== 2) {
           this._showToast('Unsupported config version', 'error');
           return;
@@ -6328,8 +6313,7 @@ class EntityManagerPanel extends HTMLElement {
         this._showToast('Import failed: ' + (err.message || err), 'error');
         console.warn('[EM] Import failed', err);
       }
-    };
-    input.click();
+    });
   }
 
   _formatTimeDiff(ms) {
@@ -17030,10 +17014,11 @@ class EntityManagerPanel extends HTMLElement {
     const files = preview.files_updated;
     const manual = preview.manual_references;
     if (!files.length && !manual.length) return Promise.resolve(true);
-    const row = (label, count, unit) =>
+    // Long paths wrap anywhere so the count stays on screen on a phone
+    const row = (label, count, one, many) =>
       `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
-         <span style="font-size:12px;font-family:monospace">${this._escapeHtml(label)}</span>
-         <span style="font-size:11px;color:var(--secondary-text-color);white-space:nowrap">${count} ${unit}${count !== 1 ? 's' : ''}</span>
+         <span style="font-size:12px;font-family:monospace;min-width:0;overflow-wrap:anywhere">${this._escapeHtml(label)}</span>
+         <span style="font-size:11px;color:var(--secondary-text-color);white-space:nowrap;flex-shrink:0">${count} ${count !== 1 ? many : one}</span>
        </div>`;
     return new Promise(resolve => {
       let resolved = false;
@@ -17047,14 +17032,14 @@ class EntityManagerPanel extends HTMLElement {
               <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-warning)">
                 ${preview.total_replacements} reference${preview.total_replacements !== 1 ? 's' : ''} in ${files.length} place${files.length !== 1 ? 's' : ''} will be updated:
               </div>
-              <div style="max-height:220px;overflow-y:auto">${files.map(f => row(f.file, f.replacements, 'ref')).join('')}</div>
+              <div style="max-height:220px;overflow-y:auto">${files.map(f => row(f.file, f.replacements, 'ref', 'refs')).join('')}</div>
             </div>` : ''}
             ${manual.length ? `
             <div class="em-rename-preview-box">
               <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--em-danger)">
                 ${manual.length} file${manual.length !== 1 ? 's' : ''} still mention these IDs and must be fixed by hand:
               </div>
-              <div style="max-height:180px;overflow-y:auto">${manual.map(m => row(m.file, m.matches, 'match')).join('')}</div>
+              <div style="max-height:180px;overflow-y:auto">${manual.map(m => row(m.file, m.matches, 'match', 'matches')).join('')}</div>
             </div>` : ''}
           </div>`,
         actionsHtml: `
@@ -17077,6 +17062,87 @@ class EntityManagerPanel extends HTMLElement {
       });
       observer.observe(document.body, { childList: true });
     });
+  }
+
+  /**
+   * Open the system file picker and call `onFile(file)` once a file is chosen.
+   *
+   * No `accept` filter on purpose: in the Android Companion app, `.csv,text/csv`
+   * greyed out a real CSV stored in OneDrive: Android's picker filters on the
+   * type the storage provider reports, which need not be text/csv. Callers
+   * check the content instead (see _readImportText).
+   *
+   * The input stays in the page, visually hidden, until the picker closes,
+   * rather than being clicked while detached.
+   */
+  _pickFile(onFile) {
+    document.querySelectorAll('input.em-file-picker').forEach(el => el.remove());
+    const input = Object.assign(document.createElement('input'), { type: 'file', className: 'em-file-picker' });
+    input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (file) onFile(file);
+    });
+    input.addEventListener('cancel', () => input.remove());
+    document.body.appendChild(input);
+    input.click();
+  }
+
+  /** Read a File or Blob as bytes. FileReader works in every WebView, unlike Blob.arrayBuffer(). */
+  _readFileBytes(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(new Uint8Array(reader.result));
+      reader.onerror = () => reject(reader.error || new Error('Could not read the file'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  /**
+   * Turn an imported file's bytes into text, or throw a message the user can act on.
+   * Rejects Excel workbooks and other binary files, and falls back to Windows-1252
+   * for files that are not valid UTF-8 — what Excel's plain "CSV" type writes on
+   * Windows, which would otherwise turn á, ð, þ and ö into replacement characters.
+   */
+  _decodeImportText(bytes) {
+    const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04) {
+      throw new Error('This is an Excel workbook or other zip file, not a CSV. In Excel use Save As → "CSV UTF-8", then import that file.');
+    }
+    if (b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) {
+      throw new Error('This is an old Excel (.xls) file, not a CSV. In Excel use Save As → "CSV UTF-8", then import that file.');
+    }
+    if (b.subarray(0, 4096).includes(0)) {
+      throw new Error('This is not a text file.');
+    }
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(b);
+    } catch {
+      return new TextDecoder('windows-1252').decode(b);
+    }
+  }
+
+  /** Read an imported file as text, refusing anything over 5 MB. */
+  async _readImportText(file) {
+    if (file.size > 5 * 1024 * 1024) throw new Error('The file is larger than 5 MB.');
+    return this._decodeImportText(await this._readFileBytes(file));
+  }
+
+  /**
+   * Save a Blob as a file the way Home Assistant's own frontend does, so it also
+   * works inside the Companion apps: the link is attached to the page before the
+   * click, and the blob URL is kept alive for 10 s because the Android app reads
+   * it asynchronously after the click. Android names the file itself.
+   */
+  _downloadFile(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: filename, target: '_blank' });
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.dispatchEvent(new MouseEvent('click'));
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   /**
