@@ -1,5 +1,18 @@
 # Changelog
 
+## Version 3.3.0 - Bulk Rename from a CSV File
+
+Plan a large rename in a spreadsheet and load it into the bulk rename queue.
+
+### 📄 CSV import and export
+
+- **Export CSV** in Bulk Rename writes `old_entity_id,new_entity_id,display_name` for the queue, or for the listed entities when the queue is empty. Edit the new IDs and display names in any spreadsheet
+- **Import CSV** checks every row first and shows what is ready and which rows were skipped and why: invalid or unknown IDs, a domain change, an entity listed twice, two rows renaming to the same ID, or a target ID already in use (so swaps and chains are refused)
+- Imported rows land in the normal rename queue, so the reference preview, reference rewrite and undo work exactly as for a manual bulk rename. Nothing changes until you press Rename
+- The new ID may leave out the domain; an empty new ID or an unchanged display name leaves that part alone, so re-importing an unedited export does nothing
+- Display names are set after the renames, on the new ID, and each can be undone
+- Reads comma- or semicolon-separated files, quoted cells, a UTF-8 BOM and Excel's `sep=` line. Up to 500 changes per file
+
 ## Version 3.2.0 - Renames Update Every Reference
 
 Renaming an entity ID now carries the new ID everywhere Home Assistant config points at it, with HA running.
