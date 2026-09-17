@@ -17174,7 +17174,7 @@ class EntityManagerPanel extends HTMLElement {
     return new Promise(resolve => {
       let resolved = false;
       const { overlay, closeDialog } = this.createDialog({
-        title: `Import ${fileName}`,
+        title: `Import ${this._escapeHtml(fileName)}`,
         color: problems.length ? 'var(--em-warning)' : 'var(--em-primary)',
         contentHtml: `
           <div class="confirm-dialog-content">
