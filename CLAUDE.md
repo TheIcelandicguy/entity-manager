@@ -90,7 +90,7 @@ allowed. Everything else is WebSocket-only.
   split for accurate toasts and undo — do not collapse it to a boolean.
 - `update_yaml_references` and `register_template` do regex text replacement over
   YAML config files, not semantic YAML parsing. They skip `secrets.yaml` and the
-  dirs `custom_components`, `.storage`, `deps`, `tts`, `__pycache__`, `backups`,
+  dirs `custom_components`, `.storage`, `deps`, `tts`, `__pycache__`, `backups`, `snapshots`,
   `www`, `.git`, and write a `<file>.em-bak` beside every file they modify. Keep
   all three guards in any change to that path. Only `update_yaml_references`
   takes `dry_run`; `register_template` has no preview mode.

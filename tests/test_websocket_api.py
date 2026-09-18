@@ -863,6 +863,39 @@ async def test_ws_update_yaml_no_matches(hass: HomeAssistant, tmp_path: Path) ->
     assert result["files_updated"] == []
 
 
+async def test_ws_update_yaml_skips_snapshots(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """YAML under a snapshots directory is an old copy and is left alone."""
+    hass.config.config_dir = str(tmp_path)
+    live = tmp_path / "automations.yaml"
+    live.write_text("entity_id: sensor.old_snap\n", encoding="utf-8")
+    snap_dir = tmp_path / "amira" / "snapshots"
+    snap_dir.mkdir(parents=True)
+    snap = snap_dir / "automations.yaml"
+    snap.write_text("entity_id: sensor.old_snap\n", encoding="utf-8")
+
+    conn = _mock_conn()
+    handle_update_yaml_references(
+        hass,
+        conn,
+        {
+            "id": 31,
+            "type": "entity_manager/update_yaml_references",
+            "old_entity_id": "sensor.old_snap",
+            "new_entity_id": "sensor.new_snap",
+            "dry_run": False,
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total_replacements"] == 1
+    assert "sensor.new_snap" in live.read_text(encoding="utf-8")
+    assert snap.read_text(encoding="utf-8") == "entity_id: sensor.old_snap\n"
+    assert not (snap_dir / "automations.yaml.em-bak").exists()
+
+
 # ---------------------------------------------------------------------------
 # handle_export_states
 # ---------------------------------------------------------------------------
