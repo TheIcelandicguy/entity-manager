@@ -38,7 +38,6 @@ All paths below are relative to the repo root. Note that `tests/` and
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
 | `ruff.toml` | Pins Ruff lint rules for this repo so CI does not inherit widened future defaults. |
-| `_from_Z/` | The stale copies of this repo's docs that sat loose in the HA config root until 2026-09-10. Archive only; every file matched a Jan–Feb 2026 commit exactly. |
 
 ## Architecture
 
@@ -90,7 +89,7 @@ allowed. Everything else is WebSocket-only.
   split for accurate toasts and undo — do not collapse it to a boolean.
 - `update_yaml_references` and `register_template` do regex text replacement over
   YAML config files, not semantic YAML parsing. They skip `secrets.yaml` and the
-  dirs `custom_components`, `.storage`, `deps`, `tts`, `__pycache__`, `backups`,
+  dirs `custom_components`, `.storage`, `deps`, `tts`, `__pycache__`, `backups`, `snapshots`,
   `www`, `.git`, and write a `<file>.em-bak` beside every file they modify. Keep
   all three guards in any change to that path. Only `update_yaml_references`
   takes `dry_run`; `register_template` has no preview mode.
@@ -215,13 +214,19 @@ gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
 
 ## Gotchas
 
+- The HACS release zip (`.github/workflows/release-asset.yml`) is built from
+  the component directory and excludes `__pycache__`, `*.pyc`, `*.pyo`,
+  every `tests/` folder (including `frontend/tests/`), `test_*.py` and
+  `.claude/`. Anything else in `custom_components/entity_manager/` ships to
+  every user, so keep local tooling out of it.
 - **There is no `Z:\CLAUDE.md` any more.** Until 2026-09-10 a Jan–Feb 2026 copy
-  of this repo's docs sat loose in the Home Assistant config root (`CLAUDE.md`,
-  `README.md`, `INSTALL.md`, `STRUCTURE.md`, `PROJECT_SUMMARY.md`,
-  `QUICKSTART.md`, `CHANGELOG.md`, `CHANGES.md`, `info.md`, `cursorrules.md`,
-  `CODE_OF_CONDUCT.md`, `eslint.config.js`, `sentences\`). They were moved to
-  `_from_Z/` here. If any of them reappear on `Z:`, something is copying the
-  repo root instead of `custom_components\entity_manager`.
+  of this repo's docs sat loose in the Home Assistant config root (CLAUDE.md,
+  README.md, INSTALL.md, STRUCTURE.md, PROJECT_SUMMARY.md, QUICKSTART.md,
+  CHANGELOG.md, CHANGES.md, info.md, cursorrules.md, CODE_OF_CONDUCT.md,
+  eslint.config.js, sentences\). They were archived in
+  `_from_Z/` (commit `20b0034`) and removed from the tree on 2026-09-18; git
+  history still has them. If any of them reappear on `Z:`, something is copying
+  the repo root instead of `custom_components\entity_manager`.
 - The pre-2026-08-30 version of this file is in git history at commit
   `656230b`, not in the working tree. It contradicted itself on the version and
   documented wrong parameter names for `rename_entity`,

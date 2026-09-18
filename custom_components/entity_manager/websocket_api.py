@@ -889,18 +889,6 @@ async def handle_update_yaml_references(
     dry_run: bool = msg["dry_run"]
     config_path = Path(hass.config.config_dir)
 
-    # Directories inside config_dir that should never be touched
-    _SKIP = {
-        "custom_components",
-        ".storage",
-        "deps",
-        "tts",
-        "__pycache__",
-        "backups",
-        "www",
-        ".git",
-    }
-
     def _do_replace() -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
@@ -908,7 +896,7 @@ async def handle_update_yaml_references(
         for filepath in sorted(config_path.rglob("*.yaml")):
             # Skip any path whose parent parts include an excluded directory
             rel = filepath.relative_to(config_path)
-            if any(p in _SKIP or p.startswith(".") for p in rel.parts[:-1]):
+            if any(p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]):
                 continue
             # Never touch secrets files (any directory level)
             if filepath.name == "secrets.yaml":
@@ -1008,6 +996,21 @@ _RELOAD_AFTER_YAML = ("automation", "script", "scene", "template")
 # .storage files that mention entity IDs but must not be reported: registries
 # and state caches HA migrates itself, stores rewritten via the API above,
 # history or caches that are expected to hold old IDs, and credentials.
+# Directories inside config_dir whose YAML is never rewritten. "snapshots" holds
+# point-in-time copies of automations (e.g. amira/snapshots), not live config.
+_YAML_SKIP = {
+    "custom_components",
+    ".storage",
+    "deps",
+    "tts",
+    "__pycache__",
+    "backups",
+    "snapshots",
+    "www",
+    ".git",
+}
+
+
 _STORAGE_REPORT_SKIP = re.compile(
     r"^(core\.(entity_registry|device_registry|restore_state|config_entries)"
     r"|lovelace|person$|assist_pipeline\.|trace\.|auth|http|cloud|onboarding"
@@ -1499,18 +1502,6 @@ async def handle_get_areas_and_floors(
     except Exception as err:
         _LOGGER.error("Error getting areas and floors: %s", err, exc_info=True)
         connection.send_error(msg["id"], "get_failed", str(err))
-
-
-_YAML_SKIP = {
-    "custom_components",
-    ".storage",
-    "deps",
-    "tts",
-    "__pycache__",
-    "backups",
-    "www",
-    ".git",
-}
 
 
 @websocket_api.websocket_command(

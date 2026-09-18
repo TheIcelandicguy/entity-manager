@@ -76,7 +76,7 @@ jobs:
         run: |
           cd "custom_components/${{ steps.names.outputs.domain }}"
           zip -r -q "$GITHUB_WORKSPACE/${{ steps.names.outputs.asset }}" . \
-            -x '*__pycache__/*' '*.pyc' '*.pyo' 'tests/*' 'test_*.py'
+            -x '*__pycache__/*' '*.pyc' '*.pyo' '*tests/*' 'test_*.py' '.claude/*'
           cd "$GITHUB_WORKSPACE"
           unzip -l "${{ steps.names.outputs.asset }}" | tail -3
           unzip -l "${{ steps.names.outputs.asset }}" | grep -qE ' (\./)?manifest\.json$' || {

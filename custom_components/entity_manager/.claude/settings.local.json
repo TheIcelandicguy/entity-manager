@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(wc:*)",
-      "Bash(del \"Z:\\\\custom_components\\\\entity_manager\\\\frontend\\\\themes.js\")"
-    ]
-  }
-}
