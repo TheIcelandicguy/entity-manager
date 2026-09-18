@@ -41,3 +41,6 @@ sync-to-ha.ps1.bak-*
 
 # Rescued from the old Z:\ config-root checkout (13 Sep 2026)
 _from_Z/
+
+# Local Claude Code settings anywhere in the tree
+**/.claude/
