@@ -1,5 +1,22 @@
 # Changelog
 
+## Version 3.4.0 - Filter by the Header Pills
+
+The counts in an integration or device header used to be there to read. Now they are buttons.
+
+### 🔎 Filter pills
+
+- **Categories, Hardware, Areas and Labels each get a box of pills** in the integration and device headers. Click one to narrow that header to the entities it names, and click it again to clear
+- **Areas and Labels show six pills and a `+N`** that reveals the rest, so an integration spanning the whole house does not flood its header
+- **Clicking a pill opens the integration**, and says so plainly when nothing matches
+- **A device's Hardware pill assigns the type** rather than filtering, because a device only has one. Assigning a type to an integration's unknown devices moved into the integration menu
+- **The device menu gained "Change area…" and "Labels…"**, which the header chips used to do
+
+### 🩹 Also
+
+- **An open category card stays open** when an entity inside it is enabled, disabled or renamed
+- The four boxes stack on a narrow screen
+
 ## Version 3.3.1 - CSV Import and Export on Phones and Tablets
 
 Bulk rename by CSV now works from the Home Assistant Companion apps and on small screens.
