@@ -99,9 +99,12 @@ allowed. Everything else is WebSocket-only.
   swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
   (`async_load` / `async_save`), **config entry data/options**
   (`async_update_entry` — UI helpers keep their source entity there),
-  **persons** (`device_trackers`) and **Assist pipelines**
-  (`async_update_pipeline`) through HA's APIs — never by editing `.storage` on
-  disk, which HA would overwrite from memory, so no HA stop is needed. Each gets
+  **persons** (`device_trackers`), **Assist pipelines**
+  (`async_update_pipeline`) and the **Energy dashboard preferences**
+  (`async_get_manager` → `manager.async_update`, only the three keys
+  `EnergyManager.async_update` merges) through HA's APIs — never by editing
+  `.storage` on disk, which HA would overwrite from memory, so no HA stop is
+  needed. Each gets
   a JSON backup under `.storage/entity_manager_backups/`. After a YAML write it
   reloads `automation`, `script`, `scene`, `template`. Integration Stores in
   `.storage` and files under `custom_components` are only **reported** in

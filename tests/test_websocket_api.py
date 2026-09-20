@@ -1,7 +1,7 @@
 """Unit tests for websocket_api.py core functions."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -1078,3 +1078,156 @@ async def test_ws_import_partial_success(hass: HomeAssistant) -> None:
     result = conn.send_result.call_args[0][1]
     assert result["success"] == 1
     assert result["failed"] == 1
+
+
+def _energy_prefs() -> dict:
+    """Energy preferences shaped like HA's: two grid sources and a device."""
+    return {
+        "energy_sources": [
+            {
+                "type": "grid",
+                "flow_from": [
+                    {
+                        "stat_energy_from": "sensor.old_id",
+                        "stat_cost": "sensor.old_id_cost",
+                        "entity_energy_price": None,
+                    }
+                ],
+                "flow_to": [],
+                "cost_adjustment_day": 0.0,
+            },
+            {
+                "type": "solar",
+                "stat_energy_from": "sensor.keep",
+                "config_entry_solar_forecast": None,
+            },
+        ],
+        "device_consumption": [
+            {"stat_consumption": "sensor.old_id", "name": "Dishwasher"},
+        ],
+    }
+
+
+def _patch_energy(manager):
+    """Patch the energy manager the rewriter imports inside the function."""
+    return patch(
+        "homeassistant.components.energy.data.async_get_manager",
+        AsyncMock(return_value=manager),
+    )
+
+
+async def test_ws_update_references_rewrites_energy_prefs(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Energy dashboard statistic IDs follow a rename, and a backup is written."""
+    hass.config.config_dir = str(tmp_path)
+    manager = MagicMock()
+    manager.data = _energy_prefs()
+    manager.async_update = AsyncMock()
+
+    conn = _mock_conn()
+    with _patch_energy(manager):
+        handle_update_yaml_references(
+            hass,
+            conn,
+            {
+                "id": 34,
+                "type": "entity_manager/update_yaml_references",
+                "old_entity_id": "sensor.old_id",
+                "new_entity_id": "sensor.new_id",
+                "dry_run": False,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    energy = [f for f in result["files_updated"] if f["kind"] == "energy"]
+    # sensor.old_id twice; sensor.old_id_cost and sensor.keep are different IDs
+    assert energy == [
+        {"file": "energy preferences", "replacements": 2, "kind": "energy"}
+    ]
+
+    update = manager.async_update.call_args[0][0]
+    assert (
+        update["energy_sources"][0]["flow_from"][0]["stat_energy_from"]
+        == "sensor.new_id"
+    )
+    assert (
+        update["energy_sources"][0]["flow_from"][0]["stat_cost"] == "sensor.old_id_cost"
+    )
+    assert update["energy_sources"][1]["stat_energy_from"] == "sensor.keep"
+    assert update["device_consumption"][0]["stat_consumption"] == "sensor.new_id"
+    assert set(update) <= {
+        "energy_sources",
+        "device_consumption",
+        "device_consumption_water",
+    }
+
+    backups = list((tmp_path / ".storage" / "entity_manager_backups").iterdir())
+    assert any(b.name.endswith(".energy.json") for b in backups)
+
+
+async def test_ws_update_references_energy_dry_run(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A preview counts the energy references but writes nothing."""
+    hass.config.config_dir = str(tmp_path)
+    manager = MagicMock()
+    manager.data = _energy_prefs()
+    manager.async_update = AsyncMock()
+
+    conn = _mock_conn()
+    with _patch_energy(manager):
+        handle_update_yaml_references(
+            hass,
+            conn,
+            {
+                "id": 35,
+                "type": "entity_manager/update_yaml_references",
+                "old_entity_id": "sensor.old_id",
+                "new_entity_id": "sensor.new_id",
+                "dry_run": True,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert [f for f in result["files_updated"] if f["kind"] == "energy"]
+    manager.async_update.assert_not_called()
+    assert not (tmp_path / ".storage" / "entity_manager_backups").exists()
+
+
+async def test_ws_update_references_energy_untouched_and_unreported(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """Prefs without the old ID are left alone, and .storage/energy is not manual."""
+    hass.config.config_dir = str(tmp_path)
+    storage = tmp_path / ".storage"
+    storage.mkdir()
+    (storage / "energy").write_text(
+        '{"data": {"x": "sensor.old_id"}}', encoding="utf-8"
+    )
+    manager = MagicMock()
+    manager.data = {"energy_sources": [], "device_consumption": []}
+    manager.async_update = AsyncMock()
+
+    conn = _mock_conn()
+    with _patch_energy(manager):
+        handle_update_yaml_references(
+            hass,
+            conn,
+            {
+                "id": 36,
+                "type": "entity_manager/update_yaml_references",
+                "old_entity_id": "sensor.old_id",
+                "new_entity_id": "sensor.new_id",
+                "dry_run": False,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert not [f for f in result["files_updated"] if f["kind"] == "energy"]
+    manager.async_update.assert_not_called()
+    # The file is rewritten through the manager, so it must not be reported as manual
+    assert not [m for m in result["manual_references"] if m["file"].endswith("energy")]
