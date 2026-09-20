@@ -1830,28 +1830,66 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
 }
 
-/* The label rollup wrapper flows its chips inline with area/floor chips */
-.integration-box-chips .integration-label-rollup {
-  display: contents;
+/* Integration header: Categories / Hardware / Areas / Labels, spread across the row */
+.integration-boxes {
+  display: flex;
+  flex: 3 1 520px;
+  gap: 8px;
+  min-width: 0;
+  align-items: stretch;
+}
+.integration-header > .integration-info {
+  flex: 0 1 auto;
+}
+.integration-boxes .integration-box {
+  flex: 1 1 0;
+  max-width: none;
+}
+.integration-boxes .integration-box-cats,
+.integration-boxes .integration-box-labels {
+  flex-grow: 1.4;
 }
 
-.integration-area-chip,
-.integration-floor-chip {
+/* One pill form for every header filter — colour comes from --pill-c */
+.integration-pill {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  font: inherit;
   font-size: 11px;
   font-weight: 600;
+  line-height: 1.3;
   padding: 2px 8px;
   border-radius: 10px;
-  border: 1px solid var(--em-border);
-  color: var(--em-text-secondary);
-  background: var(--em-bg-primary);
+  border: 1px solid var(--pill-c, var(--em-border));
+  color: var(--pill-c, var(--em-text-secondary));
+  background: transparent;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
-
-.integration-chip-more {
-  opacity: 0.7;
+.integration-pill:hover {
+  background: color-mix(in srgb, var(--pill-c, currentColor) 14%, transparent);
+}
+.integration-pill.active {
+  background: color-mix(in srgb, var(--pill-c, currentColor) 28%, transparent);
+  box-shadow: 0 0 0 1px var(--pill-c, currentColor);
+}
+.integration-pill-static {
+  cursor: default;
+}
+.integration-pill-static:hover {
+  background: transparent;
+}
+.integration-pill-more {
+  --pill-c: var(--em-text-secondary);
+  opacity: 0.75;
+}
+.integration-pill-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--em-text-secondary);
+  font-size: 13px;
 }
 
 /* ── Integration ⋯ actions menu ── */
@@ -2043,44 +2081,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .device-cat-chip.cat-diagnostic   { color: var(--em-warning);  border-color: var(--em-warning); }
 .device-cat-chip.cat-connectivity { color: var(--em-success);  border-color: var(--em-success); }
 
-/* Integration-level category-count breakdown (collapsed-state summary) */
-.integration-cat-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-.integration-cat-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid;
-  white-space: nowrap;
-}
-.integration-cat-badge.cat-controls     { color: var(--em-success); border-color: var(--em-success); }
-.integration-cat-badge.cat-sensors      { color: var(--em-primary); border-color: var(--em-primary); }
-.integration-cat-badge.cat-config       { color: var(--em-primary); border-color: var(--em-primary); }
-.integration-cat-badge.cat-diagnostic   { color: var(--em-warning); border-color: var(--em-warning); }
-.integration-cat-badge.cat-connectivity { color: var(--em-success); border-color: var(--em-success); }
-
-/* Integration header Hardware box — device-type counts (colors set inline per _deviceTypeMeta) */
-.integration-hw-chip {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid;
-  white-space: nowrap;
-}
-.integration-hw-unknown {
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-.integration-hw-unknown:hover {
-  background: color-mix(in srgb, currentColor 12%, transparent);
-}
-
 /* Device-type picker dialog */
 .em-dtp-subject {
   font-size: 12.5px;
@@ -2151,7 +2151,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
 }
 .device-header-rich .integration-info {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 .device-header-rich .device-name-rich .device-name {
@@ -2173,16 +2173,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   position: relative;
 }
 
-/* Integration-level HA Label rollup — display-only, no click target */
-.integration-label-rollup {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-.integration-label-rollup .entity-header-label {
-  cursor: default;
-}
 
 
 .entity-list {
@@ -3112,6 +3102,10 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .integration-box {
     flex-basis: 100%;
     max-width: none;
+  }
+  .integration-boxes {
+    flex-basis: 100%;
+    flex-direction: column;
   }
   
   .device-list {
