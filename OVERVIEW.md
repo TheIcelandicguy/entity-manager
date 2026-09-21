@@ -119,7 +119,11 @@ panel appears in the sidebar.
 - **Right-click** any entity (or multi-selection) for a full context menu (rename, enable/disable,
   favorites, labels, aliases, assign to area/device, copy ID, open in HA, delete).
 - **Voice** (hands-free, admin-only): *"enable/disable/activate/deactivate entity {name}"*,
-  *"registry enable/disable {name}"* — sentence patterns in `sentences/en/entity_manager.yaml`.
+  *"registry enable/disable {name}"*. Say the entity's name or its ID; the name is matched
+  against the registry, so disabled entities are reachable too, and an ambiguous name is read
+  back with the IDs to choose from. The patterns ship in
+  `custom_components/entity_manager/sentences/en/entity_manager.yaml` and are copied to
+  `<config>/custom_sentences/en/` on setup, which is the only place HA reads them from.
 
 ---
 
@@ -149,9 +153,10 @@ entity-manager/
 │   │   ├── entity-manager-panel.js   # Full UI web component (~16,100 lines)
 │   │   ├── entity-manager-panel.css  # Stylesheet (~7,050 lines, all --em-* vars)
 │   │   └── tests/                     # Vitest frontend tests + setup
+│   ├── sentences/en/entity_manager.yaml  # Voice sentences, installed into <config>/custom_sentences/
 │   └── brand/                  # Icons/logos
-├── sentences/en/entity_manager.yaml  # Voice sentence patterns
-├── tests/                     # Python pytest: test_const.py, test_websocket_api.py, conftest.py
+├── tests/                     # Python pytest: test_const.py, test_websocket_api.py,
+│                              #   test_voice_assistant.py, conftest.py
 ├── .github/workflows/ci.yml   # CI pipeline
 ├── sync-to-ha.ps1             # Deploy repo → Z:\ HA config (robocopy)
 └── docs: README.md, CLAUDE.md, STRUCTURE.md, DEVREF.md, QUICKSTART.md, INSTALL.md, CHANGELOG.md, PROJECT_SUMMARY.md

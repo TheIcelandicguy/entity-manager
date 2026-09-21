@@ -1,6 +1,14 @@
-"""Voice assistant intents for Entity Manager."""
+"""Voice assistant intents for Entity Manager.
+
+The sentences use a wildcard slot rather than HA's built-in ``{name}`` list:
+that list is built from *exposed* entities, and a disabled entity has no state,
+so it can never appear there — which is exactly the case these intents exist
+for. What the user said is therefore free text, resolved against the entity
+registry here.
+"""
 
 import logging
+import re
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -13,100 +21,152 @@ _LOGGER = logging.getLogger(__name__)
 INTENT_ENABLE_ENTITY = "entity_manager_enable_entity"
 INTENT_DISABLE_ENTITY = "entity_manager_disable_entity"
 
+# The wildcard list in sentences/en/entity_manager.yaml. "entity" is the name
+# the pre-3.5 sentences used; accepted so an old custom copy keeps working.
+_SLOT_NAMES = ("em_entity", "entity")
 
-class EnableEntityIntentHandler(intent.IntentHandler):
+# How many candidates to read back when what was said matches several entities
+_MAX_AMBIGUOUS = 3
+
+
+class _EntityIdError(Exception):
+    """What the user said could not be resolved to exactly one entity."""
+
+
+def _spoken_form(text: str) -> str:
+    """Normalise for comparison: lowercase, no punctuation, single spaces."""
+    return re.sub(r"[\s_.-]+", " ", text.casefold()).strip()
+
+
+def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
+    """Resolve what the user said to one entity ID, disabled entities included.
+
+    Accepts a literal entity ID, a display name, or part of one. Raises
+    _EntityIdError with speakable text when there is no match or several.
+    """
+    entity_reg = er.async_get(hass)
+    said = spoken.strip()
+
+    if VALID_ENTITY_ID.match(said):
+        if entity_reg.async_get(said) is None:
+            raise _EntityIdError(f"There is no entity called {said}")
+        return said
+
+    target = _spoken_form(said)
+    if not target:
+        raise _EntityIdError("Please say which entity you mean")
+
+    exact: list[str] = []
+    partial: list[str] = []
+    for entry in entity_reg.entities.values():
+        names = [
+            name
+            for name in (entry.name, entry.original_name, entry.entity_id.split(".")[1])
+            if name
+        ]
+        forms = {_spoken_form(name) for name in names}
+        if target in forms:
+            exact.append(entry.entity_id)
+        elif any(target in form for form in forms):
+            partial.append(entry.entity_id)
+
+    matches = exact or partial
+    if not matches:
+        raise _EntityIdError(f"I could not find an entity called {said}")
+    if len(matches) > 1:
+        listed = ", ".join(sorted(matches)[:_MAX_AMBIGUOUS])
+        more = (
+            f", and {len(matches) - _MAX_AMBIGUOUS} more"
+            if len(matches) > _MAX_AMBIGUOUS
+            else ""
+        )
+        raise _EntityIdError(
+            f"{len(matches)} entities match {said}: {listed}{more}. "
+            "Please say the entity ID."
+        )
+    return matches[0]
+
+
+class _EntityManagerIntentHandler(intent.IntentHandler):
+    """Shared admin gate and entity resolution for the two intents."""
+
+    verb = ""  # "enable" / "disable"
+
+    async def _async_apply(self, entity_id: str) -> None:
+        """Write the registry change. Implemented by each subclass."""
+        raise NotImplementedError
+
+    async def async_handle(self, intent_obj) -> intent.IntentResponse:
+        """Resolve the entity, check the user is an admin, then apply."""
+        response = intent_obj.create_response()
+
+        # Admin gate mirroring @websocket_api.require_admin. Unlike the
+        # services, a voice request with no user context is refused: it is a
+        # person speaking, not HA starting up.
+        user_id = intent_obj.context.user_id
+        user = (
+            await self.hass.auth.async_get_user(user_id)  # type: ignore[attr-defined]
+            if user_id
+            else None
+        )
+        if not user or not user.is_admin:
+            response.async_set_speech(
+                f"Only administrators can {self.verb} entities",
+            )
+            return response
+
+        spoken = ""
+        for slot in _SLOT_NAMES:
+            value = intent_obj.slots.get(slot, {}).get("value")
+            if value:
+                spoken = str(value)
+                break
+
+        if not spoken:
+            response.async_set_speech(f"Please specify which entity to {self.verb}")
+            return response
+
+        try:
+            entity_id = _resolve_entity_id(self.hass, spoken)  # type: ignore[attr-defined]
+        except _EntityIdError as err:
+            response.async_set_speech(str(err))
+            return response
+
+        try:
+            await self._async_apply(entity_id)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Error running %s on %s: %s", self.verb, entity_id, err)
+            response.async_set_speech(f"Failed to {self.verb} {entity_id}")
+            return response
+
+        response.async_set_speech(f"{self.verb.capitalize()}d {entity_id}")
+        return response
+
+
+class EnableEntityIntentHandler(_EntityManagerIntentHandler):
     """Handle enable entity intent."""
 
     intent_type = INTENT_ENABLE_ENTITY
+    verb = "enable"
 
-    async def async_handle(self, intent_obj) -> intent.IntentResponse:
-        """Handle the enable entity intent."""
-        # Check admin permission - deny if no user context or non-admin
-        user = intent_obj.context.user_id
-        if not user:
-            response = intent_obj.create_response()
-            response.async_set_speech("Only administrators can enable entities")
-            return response
-
-        user_obj = await self.hass.auth.async_get_user(user)  # type: ignore[attr-defined]
-        if not user_obj or not user_obj.is_admin:
-            response = intent_obj.create_response()
-            response.async_set_speech("Only administrators can enable entities")
-            return response
-
-        entity_id = intent_obj.slots.get("entity", {}).get("value")
-
-        if not entity_id:
-            response = intent_obj.create_response()
-            response.async_set_speech("Please specify which entity to enable")
-            return response
-
-        if not VALID_ENTITY_ID.match(entity_id):
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Invalid entity ID: {entity_id}")
-            return response
-
-        entity_reg = er.async_get(self.hass)  # type: ignore[attr-defined]
-
-        try:
-            entity_reg.async_update_entity(entity_id, disabled_by=None)
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Enabled {entity_id}")
-            return response
-        except Exception as err:
-            _LOGGER.error("Error enabling entity %s: %s", entity_id, err)
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Failed to enable {entity_id}")
-            return response
+    async def _async_apply(self, entity_id: str) -> None:
+        """Clear disabled_by on the entity."""
+        er.async_get(self.hass).async_update_entity(  # type: ignore[attr-defined]
+            entity_id, disabled_by=None
+        )
 
 
-class DisableEntityIntentHandler(intent.IntentHandler):
+class DisableEntityIntentHandler(_EntityManagerIntentHandler):
     """Handle disable entity intent."""
 
     intent_type = INTENT_DISABLE_ENTITY
+    verb = "disable"
 
-    async def async_handle(self, intent_obj) -> intent.IntentResponse:
-        """Handle the disable entity intent."""
-        # Check admin permission - deny if no user context or non-admin
-        user = intent_obj.context.user_id
-        if not user:
-            response = intent_obj.create_response()
-            response.async_set_speech("Only administrators can disable entities")
-            return response
-
-        user_obj = await self.hass.auth.async_get_user(user)  # type: ignore[attr-defined]
-        if not user_obj or not user_obj.is_admin:
-            response = intent_obj.create_response()
-            response.async_set_speech("Only administrators can disable entities")
-            return response
-
-        entity_id = intent_obj.slots.get("entity", {}).get("value")
-
-        if not entity_id:
-            response = intent_obj.create_response()
-            response.async_set_speech("Please specify which entity to disable")
-            return response
-
-        if not VALID_ENTITY_ID.match(entity_id):
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Invalid entity ID: {entity_id}")
-            return response
-
-        entity_reg = er.async_get(self.hass)  # type: ignore[attr-defined]
-
-        try:
-            entity_reg.async_update_entity(
-                entity_id,
-                disabled_by=er.RegistryEntryDisabler.USER,
-            )
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Disabled {entity_id}")
-            return response
-        except Exception as err:
-            _LOGGER.error("Error disabling entity %s: %s", entity_id, err)
-            response = intent_obj.create_response()
-            response.async_set_speech(f"Failed to disable {entity_id}")
-            return response
+    async def _async_apply(self, entity_id: str) -> None:
+        """Disable the entity as a user action."""
+        er.async_get(self.hass).async_update_entity(  # type: ignore[attr-defined]
+            entity_id, disabled_by=er.RegistryEntryDisabler.USER
+        )
 
 
 async def async_setup_intents(hass: HomeAssistant) -> None:
