@@ -798,7 +798,7 @@ describe('_headerPill(scopeAttrs, activeFilter, kind, value, text, count, color)
   beforeEach(() => { el = makePillPanel(); });
 
   it('marks only the matching pill active and carries kind, value and colour', () => {
-    const active = { kind: 'area', value: 'stofa' };
+    const active = [{ kind: 'area', value: 'stofa' }];
     const html = el._headerPill('data-integration="shelly"', active, 'area', 'stofa', 'Stofa', 4, 'var(--em-primary)');
     expect(html).toContain('integration-pill active');
     expect(html).toContain('data-pill-kind="area"');
@@ -813,7 +813,7 @@ describe('_headerPill(scopeAttrs, activeFilter, kind, value, text, count, color)
   });
 
   it('escapes a value that would otherwise break out of the attribute', () => {
-    const html = el._headerPill('data-device-id="d"', null, 'label', 'a"><script>x</script>', 'Odd', 1, 'red');
+    const html = el._headerPill('data-device-id="d"', [], 'label', 'a"><script>x</script>', 'Odd', 1, 'red');
     expect(html).not.toContain('<script>');
     expect(html).toContain('&quot;');
   });
@@ -825,5 +825,93 @@ describe('label pill colour', () => {
     expect(el._labelPillColor('lbl_critical')).toBe(el._labelColorCss('red'));
     expect(el._labelPillColor('lbl_device')).toBe('var(--em-primary)');
     expect(el._labelPillColor('lbl_unknown')).toBe('var(--em-primary)');
+  });
+});
+
+describe('_pillMatchesAll(filters, entity, deviceId)', () => {
+  let el;
+  beforeEach(() => { el = makePillPanel(); });
+
+  it('keeps everything when nothing is filtering', () => {
+    expect(el._pillMatchesAll([], LAMP, 'dev_shelly')).toBe(true);
+    expect(el._pillMatchesAll(undefined, LAMP, 'dev_shelly')).toBe(true);
+  });
+
+  it('ORs pills of the same kind', () => {
+    const areas = [{ kind: 'area', value: 'stofa' }, { kind: 'area', value: 'eldhus' }];
+    expect(el._pillMatchesAll(areas, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._pillMatchesAll(areas, LOOSE, 'no_device')).toBe(true);
+    expect(el._pillMatchesAll(areas, { entity_id: 'sensor.nowhere' }, 'dev_cloud')).toBe(false);
+  });
+
+  it('ANDs pills of different kinds', () => {
+    const diagnosticInStofa = [{ kind: 'cat', value: 'diagnostic' }, { kind: 'area', value: 'stofa' }];
+    expect(el._pillMatchesAll(diagnosticInStofa, RSSI, 'dev_shelly')).toBe(true);
+    // Right area, wrong category
+    expect(el._pillMatchesAll(diagnosticInStofa, LAMP, 'dev_shelly')).toBe(false);
+    // Right category, wrong area
+    el.entityAreaMap.set('sensor.rssi', 'eldhus');
+    expect(el._pillMatchesAll(diagnosticInStofa, RSSI, 'dev_shelly')).toBe(false);
+  });
+});
+
+describe('_togglePillFilter(map, scope, kind, value)', () => {
+  let el;
+  beforeEach(() => { el = makePillPanel(); localStorage.clear(); });
+
+  it('adds, stacks and removes, dropping the scope when the last pill goes', () => {
+    const map = {};
+    expect(el._togglePillFilter(map, 'shelly', 'area', 'stofa')).toBe(true);
+    el._togglePillFilter(map, 'shelly', 'cat', 'diagnostic');
+    expect(map.shelly).toEqual([{ kind: 'area', value: 'stofa' }, { kind: 'cat', value: 'diagnostic' }]);
+
+    el._togglePillFilter(map, 'shelly', 'area', 'stofa');
+    expect(map.shelly).toEqual([{ kind: 'cat', value: 'diagnostic' }]);
+
+    expect(el._togglePillFilter(map, 'shelly', 'cat', 'diagnostic')).toBe(false);
+    expect('shelly' in map).toBe(false);
+  });
+
+  it('persists both maps so filters survive a reload', () => {
+    el._togglePillFilter(el.integrationHeaderFilter, 'shelly', 'label', 'lbl_critical');
+    el._togglePillFilter(el.deviceHeaderFilter, 'dev_shelly', 'cat', 'sensors');
+
+    expect(JSON.parse(localStorage.getItem('em-intg-pill-filters')))
+      .toEqual({ shelly: [{ kind: 'label', value: 'lbl_critical' }] });
+    expect(el._loadPillFilters('em-device-pill-filters'))
+      .toEqual({ dev_shelly: [{ kind: 'cat', value: 'sensors' }] });
+  });
+});
+
+describe('_loadPillFilters(key)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('survives junk in localStorage and drops malformed entries', () => {
+    const el = makePillPanel();
+    localStorage.setItem('em-intg-pill-filters', 'not json{');
+    expect(el._loadPillFilters('em-intg-pill-filters')).toEqual({});
+
+    localStorage.setItem('em-intg-pill-filters', JSON.stringify({
+      good: [{ kind: 'area', value: 'stofa' }, { kind: 'area' }, null, 'nope'],
+      empty: [],
+      wrong: 'string',
+    }));
+    expect(el._loadPillFilters('em-intg-pill-filters'))
+      .toEqual({ good: [{ kind: 'area', value: 'stofa' }] });
+  });
+});
+
+describe('_filteredActionsHtml(entityIds)', () => {
+  it('is empty with no filter, and names the count when there is one', () => {
+    const el = makePillPanel();
+    expect(el._filteredActionsHtml([])).toBe('');
+
+    const html = el._filteredActionsHtml(['switch.lamp', 'sensor.rssi']);
+    expect(html).toContain('Select 2 entities');
+    expect(html).toContain('Enable 2 entities');
+    expect(html).toContain('Disable 2 entities');
+    expect(html).toContain('data-entity-ids="switch.lamp,sensor.rssi"');
+
+    expect(el._filteredActionsHtml(['switch.lamp'])).toContain('Select 1 entity');
   });
 });

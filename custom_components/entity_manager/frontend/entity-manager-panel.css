@@ -1952,6 +1952,18 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .integration-menu .integration-menu-item.integration-menu-good { color: var(--em-success); }
 .integration-menu .integration-menu-item.integration-menu-bad  { color: var(--em-danger); }
 
+/* Heading above the actions that apply to the active pill filter only */
+.integration-menu .integration-menu-sep {
+  margin: 4px 0 2px;
+  padding: 4px 10px 0;
+  border-top: 1px solid var(--em-border);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--em-text-secondary);
+}
+
 .integration-menu .integration-menu-item.btn-primary {
   background: var(--em-primary) !important;
   color: #fff !important;
