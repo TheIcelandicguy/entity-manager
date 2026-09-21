@@ -915,3 +915,30 @@ describe('_filteredActionsHtml(entityIds)', () => {
     expect(el._filteredActionsHtml(['switch.lamp'])).toContain('Select 1 entity');
   });
 });
+
+describe('integration header pill counts', () => {
+  it('counts entities on every pill, with devices only in the Hardware tooltip', () => {
+    const el = makePillPanel();
+    el.integrationHeaderFilter = {};
+    el.expandedIntegrations = new Set();
+    el.expandedDevices = new Set();
+    el.selectedEntities = new Set();
+    const html = el.renderIntegration({
+      integration: 'shelly',
+      devices: {
+        dev_shelly: { entities: [LAMP, RSSI] },
+        dev_cloud: { entities: [{ entity_id: 'sensor.cloudy' }] },
+      },
+    });
+    // The hardware pill shows its 2 entities, not its 1 device
+    expect(html).toMatch(/data-pill-value="hardware"[^>]*>[^<]*: 2</);
+    expect(html).toMatch(/data-pill-value="cloud"[^>]*>[^<]*: 1</);
+    // The device count lives in the tooltip
+    expect(html).toContain('1 device • 2 entities');
+    expect(html).toContain('1 device • 1 entity');
+    // Categories count entities too: one switch, one sensor, one diagnostic.
+    // Their labels carry an inline icon, so the count is matched loosely.
+    expect(html).toMatch(/data-pill-value="controls"[\s\S]{0,400}?: 1</);
+    expect(html).toMatch(/data-pill-value="diagnostic"[\s\S]{0,400}?: 1</);
+  });
+});

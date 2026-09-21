@@ -9365,11 +9365,13 @@ class EntityManagerPanel extends HTMLElement {
     const allEntities = [];
     const categoryCounts = new Map();
     const areaIds = new Set();
-    const typeCounts = new Map();
+    const typeCounts = new Map();        // device type → devices, for the Hardware tooltip
+    const typeEntityCounts = new Map();  // device type → entities, what the pill shows
     Object.entries(integration.devices).forEach(([deviceId, device]) => {
       if (deviceId !== 'no_device') {
         const dtype = this.getDeviceType(deviceId);
         typeCounts.set(dtype, (typeCounts.get(dtype) || 0) + 1);
+        typeEntityCounts.set(dtype, (typeEntityCounts.get(dtype) || 0) + device.entities.length);
       }
       const devAreaId = this.deviceInfo?.[deviceId]?.area_id;
       if (devAreaId) areaIds.add(devAreaId);
@@ -9393,8 +9395,8 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     // ── Header filter pills: Categories / Hardware / Areas / Labels ──
-    // Every pill is "<name>: <entity or device count>" and filters this integration's
-    // device list to what it names (see _intgPillMatches). Click again to clear.
+    // Every pill is "<name>: <entities>" — one unit everywhere, so the number always says
+    // how far the list will shrink. Hardware keeps its device count in the tooltip.
     const intName = this._escapeAttr(integration.integration);
     const pillFilter = this.integrationHeaderFilter[integration.integration];
     const showAllPills = this._intgPillsShowAll.has(integration.integration);
@@ -9440,8 +9442,9 @@ class EntityManagerPanel extends HTMLElement {
     const typeMeta = this._deviceTypeMeta();
     const hwPills = Object.keys(typeMeta)
       .filter(t => typeCounts.get(t) > 0)
-      .map(t => pill('hw', t, `${typeMeta[t].emoji} ${this._escapeHtml(typeMeta[t].label)}`, typeCounts.get(t), typeMeta[t].color,
-        `${typeCounts.get(t)} device${typeCounts.get(t) !== 1 ? 's' : ''} — click to filter`))
+      .map(t => pill('hw', t, `${typeMeta[t].emoji} ${this._escapeHtml(typeMeta[t].label)}`,
+        typeEntityCounts.get(t) || 0, typeMeta[t].color,
+        `${typeCounts.get(t)} device${typeCounts.get(t) !== 1 ? 's' : ''} • ${typeEntityCounts.get(t) || 0} entit${(typeEntityCounts.get(t) || 0) !== 1 ? 'ies' : 'y'}`))
       .join('');
 
     const neutral = 'var(--em-text-secondary)';
