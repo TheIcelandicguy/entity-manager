@@ -433,3 +433,19 @@ async def test_resolve_prefers_the_lamp_over_its_own_diagnostic_sensor(
         "Skrifstofa Hue color lamp 3 light level",
     )
     assert _resolve_entity_id(hass, "hue lamp 3") == "light.skrifstofa_hue_color_lamp_3"
+
+
+async def test_a_short_unrelated_name_does_not_win_the_tiebreak(
+    hass: HomeAssistant,
+) -> None:
+    """A diagnostic sensor often has a bare name ("Zigbee connectivity") next to
+    its long object ID. The extra-word count must come from the name that
+    actually matched, not the shortest one the entity happens to have."""
+    entity_reg = _hue_lamps(hass)
+    entry = _register(
+        entity_reg,
+        "sensor.skrifstofa_hue_color_lamp_3_zigbee_connectivity",
+        "Zigbee connectivity",
+    )
+    assert entry.entity_id.startswith("sensor.")
+    assert _resolve_entity_id(hass, "hue lamp 3") == "light.skrifstofa_hue_color_lamp_3"

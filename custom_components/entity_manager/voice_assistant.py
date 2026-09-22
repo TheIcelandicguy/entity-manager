@@ -106,17 +106,25 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
         else:
             # Word-wise, so "hue lamp 3" still finds "Hue color lamp 3" and a
             # misheard word does not sink the rest of the phrase
-            name_words = {w for form in forms for w in form.split()}
-            hits = len(target_words & name_words)
-            if hits:
-                # Extra words are how far the name goes beyond what was said.
-                # A lamp's own diagnostic sensor carries the lamp's whole name
-                # plus "zigbee connectivity", so both cover the phrase equally
-                # and only this tells them apart.
-                extra = min(
-                    len(set(form.split()) - target_words) for form in forms if form
+            # Score each name separately and keep that entity's best. Scoring
+            # the union of its names, or counting extra words across all of
+            # them, lets a short unrelated name ("Zigbee connectivity") supply
+            # the extra-word count for a long one that did the matching.
+            best_form = max(
+                (
+                    (
+                        len(target_words & set(form.split())),
+                        -len(set(form.split()) - target_words),
+                    )
+                    for form in forms
+                    if form
+                ),
+                default=(0, 0),
+            )
+            if best_form[0]:
+                scored.append(
+                    (best_form[0] / len(target_words), best_form[1], entry.entity_id)
                 )
-                scored.append((hits / len(target_words), -extra, entry.entity_id))
 
     matches = exact or partial
     if not matches and scored:
