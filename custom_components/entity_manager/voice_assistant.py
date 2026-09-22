@@ -116,23 +116,21 @@ class _EntityManagerIntentHandler(intent.IntentHandler):
 
     verb = ""  # "enable" / "disable"
 
-    async def _async_apply(self, entity_id: str) -> None:
+    async def _async_apply(self, hass: HomeAssistant, entity_id: str) -> None:
         """Write the registry change. Implemented by each subclass."""
         raise NotImplementedError
 
     async def async_handle(self, intent_obj) -> intent.IntentResponse:
         """Resolve the entity, check the user is an admin, then apply."""
         response = intent_obj.create_response()
+        # An IntentHandler has no self.hass; hass comes with the intent.
+        hass: HomeAssistant = intent_obj.hass
 
         # Admin gate mirroring @websocket_api.require_admin. Unlike the
         # services, a voice request with no user context is refused: it is a
         # person speaking, not HA starting up.
         user_id = intent_obj.context.user_id
-        user = (
-            await self.hass.auth.async_get_user(user_id)  # type: ignore[attr-defined]
-            if user_id
-            else None
-        )
+        user = await hass.auth.async_get_user(user_id) if user_id else None
         if not user or not user.is_admin:
             response.async_set_speech(
                 f"Only administrators can {self.verb} entities",
@@ -151,13 +149,13 @@ class _EntityManagerIntentHandler(intent.IntentHandler):
             return response
 
         try:
-            entity_id = _resolve_entity_id(self.hass, spoken)  # type: ignore[attr-defined]
+            entity_id = _resolve_entity_id(hass, spoken)
         except _EntityIdError as err:
             response.async_set_speech(str(err))
             return response
 
         try:
-            await self._async_apply(entity_id)
+            await self._async_apply(hass, entity_id)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("Error running %s on %s: %s", self.verb, entity_id, err)
             response.async_set_speech(f"Failed to {self.verb} {entity_id}")
@@ -173,11 +171,9 @@ class EnableEntityIntentHandler(_EntityManagerIntentHandler):
     intent_type = INTENT_ENABLE_ENTITY
     verb = "enable"
 
-    async def _async_apply(self, entity_id: str) -> None:
+    async def _async_apply(self, hass: HomeAssistant, entity_id: str) -> None:
         """Clear disabled_by on the entity."""
-        er.async_get(self.hass).async_update_entity(  # type: ignore[attr-defined]
-            entity_id, disabled_by=None
-        )
+        er.async_get(hass).async_update_entity(entity_id, disabled_by=None)
 
 
 class DisableEntityIntentHandler(_EntityManagerIntentHandler):
@@ -186,9 +182,9 @@ class DisableEntityIntentHandler(_EntityManagerIntentHandler):
     intent_type = INTENT_DISABLE_ENTITY
     verb = "disable"
 
-    async def _async_apply(self, entity_id: str) -> None:
+    async def _async_apply(self, hass: HomeAssistant, entity_id: str) -> None:
         """Disable the entity as a user action."""
-        er.async_get(self.hass).async_update_entity(  # type: ignore[attr-defined]
+        er.async_get(hass).async_update_entity(
             entity_id, disabled_by=er.RegistryEntryDisabler.USER
         )
 

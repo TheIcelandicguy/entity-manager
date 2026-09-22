@@ -3,15 +3,19 @@
 from pathlib import Path
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import intent
 
 from custom_components.entity_manager import SENTENCE_MARKER, _install_sentences
 from custom_components.entity_manager.voice_assistant import (
+    INTENT_DISABLE_ENTITY,
+    INTENT_ENABLE_ENTITY,
     _EntityIdError,
     _folded_form,
     _resolve_entity_id,
     _spoken_form,
+    async_setup_intents,
 )
 
 
@@ -251,3 +255,91 @@ async def test_accentless_query_still_prefers_an_exact_match(
     _register(entity_reg, "light.stofa", "Stofa")
     _register(entity_reg, "sensor.stofa_hiti", "Stofa Hiti")
     assert _resolve_entity_id(hass, "stofa") == "light.stofa"
+
+
+# ---------------------------------------------------------------------------
+# The intent handlers, driven the way HA drives them
+# ---------------------------------------------------------------------------
+
+
+async def _speak(hass: HomeAssistant, intent_type: str, said: str, user_id: str | None):
+    """Run a sentence through the registered handler, as the agent would."""
+    return await intent.async_handle(
+        hass,
+        "entity_manager",
+        intent_type,
+        {"em_entity": {"value": said}},
+        context=Context(user_id=user_id),
+    )
+
+
+async def test_enable_intent_enables_the_entity(
+    hass: HomeAssistant, hass_admin_user
+) -> None:
+    """The handler takes hass from the intent; it has no self.hass of its own."""
+    await async_setup_intents(hass)
+    entity_reg = er.async_get(hass)
+    entry = _register(entity_reg, "switch.lamp", "Lamp")
+    entity_reg.async_update_entity(
+        entry.entity_id, disabled_by=er.RegistryEntryDisabler.USER
+    )
+
+    response = await _speak(hass, INTENT_ENABLE_ENTITY, "lamp", hass_admin_user.id)
+
+    assert "Enabled switch.lamp" in response.speech["plain"]["speech"]
+    assert entity_reg.async_get("switch.lamp").disabled_by is None
+
+
+async def test_disable_intent_disables_the_entity(
+    hass: HomeAssistant, hass_admin_user
+) -> None:
+    """The disable side writes disabled_by = user."""
+    await async_setup_intents(hass)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp", "Lamp")
+
+    response = await _speak(hass, INTENT_DISABLE_ENTITY, "lamp", hass_admin_user.id)
+
+    assert "Disabled switch.lamp" in response.speech["plain"]["speech"]
+    assert (
+        entity_reg.async_get("switch.lamp").disabled_by is er.RegistryEntryDisabler.USER
+    )
+
+
+async def test_intent_refuses_a_non_admin(
+    hass: HomeAssistant, hass_read_only_user
+) -> None:
+    """Mirrors require_admin on the WS commands."""
+    await async_setup_intents(hass)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp", "Lamp")
+
+    response = await _speak(hass, INTENT_DISABLE_ENTITY, "lamp", hass_read_only_user.id)
+
+    assert "Only administrators" in response.speech["plain"]["speech"]
+    assert entity_reg.async_get("switch.lamp").disabled_by is None
+
+
+async def test_intent_refuses_when_there_is_no_user(hass: HomeAssistant) -> None:
+    """A voice request is a person speaking; no user context means no."""
+    await async_setup_intents(hass)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp", "Lamp")
+
+    response = await _speak(hass, INTENT_DISABLE_ENTITY, "lamp", None)
+
+    assert "Only administrators" in response.speech["plain"]["speech"]
+    assert entity_reg.async_get("switch.lamp").disabled_by is None
+
+
+async def test_intent_reports_an_unknown_name(
+    hass: HomeAssistant, hass_admin_user
+) -> None:
+    """A name that matches nothing is spoken back, not silently ignored."""
+    await async_setup_intents(hass)
+
+    response = await _speak(hass, INTENT_ENABLE_ENTITY, "toaster", hass_admin_user.id)
+
+    assert (
+        "could not find an entity called toaster" in response.speech["plain"]["speech"]
+    )
