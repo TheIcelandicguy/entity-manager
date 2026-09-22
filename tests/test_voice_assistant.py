@@ -414,3 +414,22 @@ async def test_word_matching_reports_a_tie(hass: HomeAssistant) -> None:
     _register(entity_reg, "light.hue_two", "Hue color lamp two")
     with pytest.raises(_EntityIdError, match="2 entities match"):
         _resolve_entity_id(hass, "hue lamp")
+
+
+async def test_resolve_prefers_the_lamp_over_its_own_diagnostic_sensor(
+    hass: HomeAssistant,
+) -> None:
+    """A lamp's own sensors carry its whole name plus more, so they cover the
+    spoken phrase just as well. The closest name wins: fewest extra words."""
+    entity_reg = _hue_lamps(hass)
+    _register(
+        entity_reg,
+        "sensor.skrifstofa_hue_color_lamp_3_zigbee_connectivity",
+        "Skrifstofa Hue color lamp 3 Zigbee connectivity",
+    )
+    _register(
+        entity_reg,
+        "sensor.skrifstofa_hue_color_lamp_3_light_level",
+        "Skrifstofa Hue color lamp 3 light level",
+    )
+    assert _resolve_entity_id(hass, "hue lamp 3") == "light.skrifstofa_hue_color_lamp_3"
