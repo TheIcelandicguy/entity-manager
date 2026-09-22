@@ -246,5 +246,11 @@ gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
   is no longer `SENTENCE_MARKER` counts as user-edited and is never overwritten.
   The sentences use a **wildcard** slot, not HA's built-in `{name}` list: that
   list is built from exposed entities, and a disabled entity has no state, so it
-  could never match the entities these intents exist for.
+  could never match the entities these intents exist for. `_resolve_entity_id`
+  matches exact → substring → word by word (`_MIN_WORD_MATCH`, closest name
+  wins), over name, original_name, object ID and **aliases**, each name scored
+  separately. Verified on live HA 2026.9.3; a voice request with no user context
+  is refused, so a Voice satellite cannot use these intents, and Google
+  Assistant never reaches them at all — it maps exposed entities to traits and
+  never consults the conversation agent.
 - `strings.json` contains vestigial `options` strings; there is no options flow.
