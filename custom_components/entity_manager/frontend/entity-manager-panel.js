@@ -9338,9 +9338,9 @@ class EntityManagerPanel extends HTMLElement {
   _pillFilterLabel(filter) {
     switch (filter.kind) {
       case 'cat': {
-        const meta = this._categoryMeta().find(m => m.key === filter.value);
-        // The category label carries an inline icon; the summary wants words only
-        return meta ? meta.label.replace(/<[^>]*>/g, '').trim() : filter.value;
+        // `label` carries an inline icon; `text` is the same words without markup,
+        // so the chip never has to strip tags out of a string
+        return this._categoryMeta().find(m => m.key === filter.value)?.text || filter.value;
       }
       case 'hw': {
         const meta = this._deviceTypeMeta()[filter.value];
@@ -9783,11 +9783,11 @@ class EntityManagerPanel extends HTMLElement {
    *  category cards and the integration-level category-count badges. */
   _categoryMeta() {
     return [
-      { key: 'controls',     label: `${this._icon(EM_ICONS.automation, '14px')} Controls`,      cls: 'cat-controls' },
-      { key: 'sensors',      label: `${this._icon(EM_ICONS.thermometer, '14px')} Sensors`,       cls: 'cat-sensors' },
-      { key: 'config',       label: `${this._icon(EM_ICONS.cog, '14px')} Configuration`,         cls: 'cat-config' },
-      { key: 'diagnostic',   label: `${this._icon(EM_ICONS.helper, '14px')} Diagnostic`,         cls: 'cat-diagnostic' },
-      { key: 'connectivity', label: `${this._icon('mdi:access-point', '14px')} Connectivity`,    cls: 'cat-connectivity' },
+      { key: 'controls',     text: 'Controls',      label: `${this._icon(EM_ICONS.automation, '14px')} Controls`,      cls: 'cat-controls' },
+      { key: 'sensors',      text: 'Sensors',       label: `${this._icon(EM_ICONS.thermometer, '14px')} Sensors`,       cls: 'cat-sensors' },
+      { key: 'config',       text: 'Configuration', label: `${this._icon(EM_ICONS.cog, '14px')} Configuration`,         cls: 'cat-config' },
+      { key: 'diagnostic',   text: 'Diagnostic',    label: `${this._icon(EM_ICONS.helper, '14px')} Diagnostic`,         cls: 'cat-diagnostic' },
+      { key: 'connectivity', text: 'Connectivity',  label: `${this._icon('mdi:access-point', '14px')} Connectivity`,    cls: 'cat-connectivity' },
     ];
   }
 
