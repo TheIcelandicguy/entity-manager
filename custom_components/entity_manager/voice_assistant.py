@@ -9,6 +9,7 @@ registry here.
 
 import logging
 import re
+import unicodedata
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -38,6 +39,22 @@ def _spoken_form(text: str) -> str:
     return re.sub(r"[\s_.-]+", " ", text.casefold()).strip()
 
 
+# Icelandic letters with no accent to strip; the transliteration entity IDs
+# already use (Uppþvottavél → uppthvottavel).
+_TRANSLITERATE = str.maketrans({"þ": "th", "ð": "d", "æ": "ae", "ø": "o", "ß": "ss"})
+
+
+def _folded_form(text: str) -> str:
+    """The spoken form with accents removed, so eldhus finds Eldhús.
+
+    An English speech-to-text engine drops Icelandic accents, and typing them
+    is a nuisance, so every name is also compared in this form.
+    """
+    folded = _spoken_form(text).translate(_TRANSLITERATE)
+    decomposed = unicodedata.normalize("NFKD", folded)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
 def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
     """Resolve what the user said to one entity ID, disabled entities included.
 
@@ -55,19 +72,26 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
     target = _spoken_form(said)
     if not target:
         raise _EntityIdError("Please say which entity you mean")
+    targets = {target, _folded_form(said)}
 
     exact: list[str] = []
     partial: list[str] = []
     for entry in entity_reg.entities.values():
         names = [
             name
-            for name in (entry.name, entry.original_name, entry.entity_id.split(".")[1])
+            for name in (
+                entry.name,
+                entry.original_name,
+                entry.entity_id.split(".")[1],
+                *(entry.aliases or ()),  # HA's own answer to an awkward name
+            )
             if name
         ]
         forms = {_spoken_form(name) for name in names}
-        if target in forms:
+        forms |= {_folded_form(name) for name in names}
+        if targets & forms:
             exact.append(entry.entity_id)
-        elif any(target in form for form in forms):
+        elif any(t in form for t in targets for form in forms):
             partial.append(entry.entity_id)
 
     matches = exact or partial

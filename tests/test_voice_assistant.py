@@ -9,6 +9,7 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.entity_manager import SENTENCE_MARKER, _install_sentences
 from custom_components.entity_manager.voice_assistant import (
     _EntityIdError,
+    _folded_form,
     _resolve_entity_id,
     _spoken_form,
 )
@@ -192,3 +193,61 @@ def test_install_never_overwrites_an_edited_copy(tmp_path: Path) -> None:
 
     assert _install_sentences(source_dir, config_dir) == []
     assert target.read_text(encoding="utf-8") == mine
+
+
+# ---------------------------------------------------------------------------
+# Icelandic names
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Eldhús Ljós", "eldhus ljos"),
+        ("Baðherbergi Hiti", "badherbergi hiti"),
+        ("Þvottahús", "thvottahus"),
+        ("Bílskúr Hurð", "bilskur hurd"),
+        ("Tafla B Gr.13 Uppþvottavél", "tafla b gr 13 uppthvottavel"),
+        ("Öryggi Úti", "oryggi uti"),
+    ],
+)
+def test_folded_form_transliterates_icelandic(raw: str, expected: str) -> None:
+    """Accents go, and þ/ð/æ become the letters the entity IDs already use."""
+    assert _folded_form(raw) == expected
+
+
+async def test_resolve_finds_an_icelandic_name_without_accents(
+    hass: HomeAssistant,
+) -> None:
+    """An English STT drops the accents; typing them is a nuisance either way."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.eldhus_ljos", "Eldhús Ljós")
+    assert _resolve_entity_id(hass, "eldhus ljos") == "light.eldhus_ljos"
+    assert _resolve_entity_id(hass, "Eldhús Ljós") == "light.eldhus_ljos"
+
+
+async def test_resolve_transliterates_thorn_and_eth(hass: HomeAssistant) -> None:
+    """Uppþvottavél is reachable as uppthvottavel, the way its ID is spelled."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.tafla_b_gr_13", "Tafla B Gr.13 Uppþvottavél")
+    assert _resolve_entity_id(hass, "uppthvottavel") == "switch.tafla_b_gr_13"
+    _register(entity_reg, "binary_sensor.bad", "Baðherbergi Raki")
+    assert _resolve_entity_id(hass, "badherbergi raki") == "binary_sensor.bad"
+
+
+async def test_resolve_matches_an_alias(hass: HomeAssistant) -> None:
+    """Aliases are HA's own answer to a name a voice assistant cannot hear."""
+    entity_reg = er.async_get(hass)
+    entry = _register(entity_reg, "switch.tafla_b_gr_13", "Tafla B Gr.13 Uppþvottavél")
+    entity_reg.async_update_entity(entry.entity_id, aliases={"dishwasher"})
+    assert _resolve_entity_id(hass, "dishwasher") == "switch.tafla_b_gr_13"
+
+
+async def test_accentless_query_still_prefers_an_exact_match(
+    hass: HomeAssistant,
+) -> None:
+    """Folding must not turn an exact name into an ambiguous partial one."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.stofa", "Stofa")
+    _register(entity_reg, "sensor.stofa_hiti", "Stofa Hiti")
+    assert _resolve_entity_id(hass, "stofa") == "light.stofa"
