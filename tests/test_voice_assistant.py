@@ -343,3 +343,18 @@ async def test_intent_reports_an_unknown_name(
     assert (
         "could not find an entity called toaster" in response.speech["plain"]["speech"]
     )
+
+
+async def test_resolve_survives_a_non_string_name(hass: HomeAssistant) -> None:
+    """HA 2026.9 puts a ComputedNameType sentinel in `name` for derived names."""
+
+    class _Sentinel:
+        """Stands in for ComputedNameType: not a string, and truthy."""
+
+    entity_reg = er.async_get(hass)
+    entry = _register(entity_reg, "light.hue_lamp_3", "Hue color lamp 3")
+    object.__setattr__(entry, "name", _Sentinel())
+
+    # Falls back to the other names rather than raising
+    assert _resolve_entity_id(hass, "hue color lamp 3") == "light.hue_lamp_3"
+    assert _resolve_entity_id(hass, "hue lamp 3") == "light.hue_lamp_3"

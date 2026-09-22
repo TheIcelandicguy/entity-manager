@@ -77,6 +77,8 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
     exact: list[str] = []
     partial: list[str] = []
     for entry in entity_reg.entities.values():
+        # isinstance, not truthiness: HA 2026.9 puts a ComputedNameType sentinel
+        # in `name` for entities whose name is derived from their device.
         names = [
             name
             for name in (
@@ -85,7 +87,7 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
                 entry.entity_id.split(".")[1],
                 *(entry.aliases or ()),  # HA's own answer to an awkward name
             )
-            if name
+            if isinstance(name, str) and name
         ]
         forms = {_spoken_form(name) for name in names}
         forms |= {_folded_form(name) for name in names}
