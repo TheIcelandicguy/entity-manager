@@ -83,7 +83,7 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
 
     exact: list[str] = []
     partial: list[str] = []
-    scored: list[tuple[float, str]] = []
+    scored: list[tuple[float, int, str]] = []
     for entry in entity_reg.entities.values():
         # isinstance, not truthiness: HA 2026.9 puts a ComputedNameType sentinel
         # in `name` for entities whose name is derived from their device.
@@ -109,13 +109,25 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
             name_words = {w for form in forms for w in form.split()}
             hits = len(target_words & name_words)
             if hits:
-                scored.append((hits / len(target_words), entry.entity_id))
+                # Extra words are how far the name goes beyond what was said.
+                # A lamp's own diagnostic sensor carries the lamp's whole name
+                # plus "zigbee connectivity", so both cover the phrase equally
+                # and only this tells them apart.
+                extra = min(
+                    len(set(form.split()) - target_words) for form in forms if form
+                )
+                scored.append((hits / len(target_words), -extra, entry.entity_id))
 
     matches = exact or partial
     if not matches and scored:
-        best = max(score for score, _ in scored)
+        best = max(score for score, _, _ in scored)
         if best >= _MIN_WORD_MATCH:
-            matches = [entity_id for score, entity_id in scored if score == best]
+            closest = max(rank for score, rank, _ in scored if score == best)
+            matches = [
+                entity_id
+                for score, rank, entity_id in scored
+                if score == best and rank == closest
+            ]
 
     if not matches:
         raise _EntityIdError(f"I could not find an entity called {said}")
