@@ -9447,14 +9447,15 @@ class EntityManagerPanel extends HTMLElement {
         `${typeCounts.get(t)} device${typeCounts.get(t) !== 1 ? 's' : ''} • ${typeEntityCounts.get(t) || 0} entit${(typeEntityCounts.get(t) || 0) !== 1 ? 'ies' : 'y'}`))
       .join('');
 
-    const neutral = 'var(--em-text-secondary)';
+    // Areas and floors take the accent the device-area chip uses, so both views agree
+    const areaColor = 'var(--em-primary)';
     const areaPills = [
       ...[...floorCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([name, n]) => pill('floor', name, `${this._icon(EM_ICONS.floor, '12px')} ${this._escapeHtml(name)}`, n, neutral)),
+        .map(([name, n]) => pill('floor', name, `${this._icon(EM_ICONS.floor, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
       ...[...areaCounts.entries()]
         .map(([id, n]) => [id, this.areaLookup?.get?.(id)?.areaName || id, n])
         .sort((a, b) => a[1].localeCompare(b[1]))
-        .map(([id, name, n]) => pill('area', id, `${this._icon(EM_ICONS.area, '12px')} ${this._escapeHtml(name)}`, n, neutral)),
+        .map(([id, name, n]) => pill('area', id, `${this._icon(EM_ICONS.area, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
       ...(noAreaCount && areaCounts.size ? [pill('area', '__none__', `${this._icon(EM_ICONS.area, '12px')} No area`, noAreaCount, 'var(--em-danger)')] : []),
     ];
 
@@ -9833,14 +9834,14 @@ class EntityManagerPanel extends HTMLElement {
         }
         this._effectiveEntityLabels(e).forEach(({ labelId }) => labelCounts.set(labelId, (labelCounts.get(labelId) || 0) + 1));
       });
-      const neutral = 'var(--em-text-secondary)';
+      const areaColor = 'var(--em-primary)';
       const areaPills = areaCounts.size ? [
         ...[...floorCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-          .map(([name, n]) => pill('floor', name, `${this._icon(EM_ICONS.floor, '12px')} ${this._escapeHtml(name)}`, n, neutral)),
+          .map(([name, n]) => pill('floor', name, `${this._icon(EM_ICONS.floor, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
         ...[...areaCounts.entries()]
           .map(([id, n]) => [id, this.areaLookup?.get?.(id)?.areaName || id, n])
           .sort((a, b) => a[1].localeCompare(b[1]))
-          .map(([id, name, n]) => pill('area', id, `${this._icon(EM_ICONS.area, '12px')} ${this._escapeHtml(name)}`, n, neutral)),
+          .map(([id, name, n]) => pill('area', id, `${this._icon(EM_ICONS.area, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
         ...(noAreaCount ? [pill('area', '__none__', `${this._icon(EM_ICONS.area, '12px')} No area`, noAreaCount, 'var(--em-danger)')] : []),
       ].join('') : areaChipHtml;
 

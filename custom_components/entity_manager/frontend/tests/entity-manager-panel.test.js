@@ -942,3 +942,25 @@ describe('integration header pill counts', () => {
     expect(html).toMatch(/data-pill-value="diagnostic"[\s\S]{0,400}?: 1</);
   });
 });
+
+describe('integration header pill colours', () => {
+  it('gives areas and floors the accent, and labels their own colour', () => {
+    const el = makePillPanel();
+    el.integrationHeaderFilter = {};
+    el.expandedIntegrations = new Set();
+    el.expandedDevices = new Set();
+    el.selectedEntities = new Set();
+    const html = el.renderIntegration({
+      integration: 'shelly',
+      devices: { dev_shelly: { entities: [LAMP, RSSI] } },
+    });
+    // Matches .device-area-chip in the Devices view, which is drawn in the accent
+    expect(html).toMatch(/data-pill-value="stofa"[^>]*--pill-c:var\(--em-primary\)/);
+    expect(html).toMatch(/data-pill-kind="floor"[^>]*--pill-c:var\(--em-primary\)/);
+    // A label keeps its HA colour
+    const red = el._labelColorCss('red');
+    expect(html).toContain(`--pill-c:${red}`);
+    // A label with no colour falls back to the accent
+    expect(el._labelPillColor('lbl_device')).toBe('var(--em-primary)');
+  });
+});
