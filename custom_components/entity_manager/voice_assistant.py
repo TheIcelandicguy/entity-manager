@@ -29,6 +29,11 @@ _SLOT_NAMES = ("em_entity", "entity")
 # How many candidates to read back when what was said matches several entities
 _MAX_AMBIGUOUS = 3
 
+# When nothing matches outright, how much of what was said must appear in a
+# name before it counts as a candidate. Speech-to-text mishears a word or two
+# of an Icelandic name, and says "colour" where the entity says "color".
+_MIN_WORD_MATCH = 0.6
+
 
 class _EntityIdError(Exception):
     """What the user said could not be resolved to exactly one entity."""
@@ -74,8 +79,11 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
         raise _EntityIdError("Please say which entity you mean")
     targets = {target, _folded_form(said)}
 
+    target_words = {w for t in targets for w in t.split()}
+
     exact: list[str] = []
     partial: list[str] = []
+    scored: list[tuple[float, str]] = []
     for entry in entity_reg.entities.values():
         # isinstance, not truthiness: HA 2026.9 puts a ComputedNameType sentinel
         # in `name` for entities whose name is derived from their device.
@@ -95,8 +103,20 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
             exact.append(entry.entity_id)
         elif any(t in form for t in targets for form in forms):
             partial.append(entry.entity_id)
+        else:
+            # Word-wise, so "hue lamp 3" still finds "Hue color lamp 3" and a
+            # misheard word does not sink the rest of the phrase
+            name_words = {w for form in forms for w in form.split()}
+            hits = len(target_words & name_words)
+            if hits:
+                scored.append((hits / len(target_words), entry.entity_id))
 
     matches = exact or partial
+    if not matches and scored:
+        best = max(score for score, _ in scored)
+        if best >= _MIN_WORD_MATCH:
+            matches = [entity_id for score, entity_id in scored if score == best]
+
     if not matches:
         raise _EntityIdError(f"I could not find an entity called {said}")
     if len(matches) > 1:

@@ -358,3 +358,59 @@ async def test_resolve_survives_a_non_string_name(hass: HomeAssistant) -> None:
     # Falls back to the other names rather than raising
     assert _resolve_entity_id(hass, "hue color lamp 3") == "light.hue_lamp_3"
     assert _resolve_entity_id(hass, "hue lamp 3") == "light.hue_lamp_3"
+
+
+# ---------------------------------------------------------------------------
+# Word-wise matching — what live voice testing actually said
+# ---------------------------------------------------------------------------
+
+
+def _hue_lamps(hass: HomeAssistant) -> er.EntityRegistry:
+    """The three office Hue lamps, named the way the Hue integration names them."""
+    entity_reg = er.async_get(hass)
+    for i in (1, 2, 3):
+        _register(
+            entity_reg,
+            f"light.skrifstofa_hue_color_lamp_{i}",
+            f"Skrifstofa Hue color lamp {i}",
+        )
+    return entity_reg
+
+
+async def test_resolve_matches_words_out_of_order(hass: HomeAssistant) -> None:
+    """ "Hue lamp 3" drops the word color, which substring matching could not."""
+    _hue_lamps(hass)
+    assert _resolve_entity_id(hass, "hue lamp 3") == "light.skrifstofa_hue_color_lamp_3"
+
+
+async def test_resolve_tolerates_a_british_spelling(hass: HomeAssistant) -> None:
+    """Speech-to-text writes "colour"; the entity says "color"."""
+    _hue_lamps(hass)
+    assert (
+        _resolve_entity_id(hass, "hue colour lamp 3")
+        == "light.skrifstofa_hue_color_lamp_3"
+    )
+
+
+async def test_resolve_still_refuses_a_badly_misheard_name(hass: HomeAssistant) -> None:
+    """Half the words wrong is a guess, not a match — say so instead."""
+    _hue_lamps(hass)
+    with pytest.raises(_EntityIdError, match="could not find"):
+        _resolve_entity_id(hass, "screen store hue colour lamp 3")
+
+
+async def test_word_matching_does_not_beat_an_exact_name(hass: HomeAssistant) -> None:
+    """An exact or substring match still wins before any word scoring."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.lamp", "Lamp")
+    _register(entity_reg, "sensor.lamp_power_meter", "Lamp power meter")
+    assert _resolve_entity_id(hass, "lamp") == "light.lamp"
+
+
+async def test_word_matching_reports_a_tie(hass: HomeAssistant) -> None:
+    """Two names matching equally well ask which, rather than picking one."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.hue_one", "Hue color lamp one")
+    _register(entity_reg, "light.hue_two", "Hue color lamp two")
+    with pytest.raises(_EntityIdError, match="2 entities match"):
+        _resolve_entity_id(hass, "hue lamp")
