@@ -964,3 +964,53 @@ describe('integration header pill colours', () => {
     expect(el._labelPillColor('lbl_device')).toBe('var(--em-primary)');
   });
 });
+
+describe('active filter summary and banner', () => {
+  let el;
+  beforeEach(() => {
+    el = makePillPanel();
+    el.integrationHeaderFilter = {};
+    el.deviceHeaderFilter = {};
+  });
+
+  it('names each kind of filter in words', () => {
+    expect(el._pillFilterLabel({ kind: 'area', value: 'stofa' })).toBe('Stofa');
+    expect(el._pillFilterLabel({ kind: 'area', value: '__none__' })).toBe('No area');
+    expect(el._pillFilterLabel({ kind: 'floor', value: 'Efri hæð' })).toBe('Efri hæð');
+    expect(el._pillFilterLabel({ kind: 'label', value: 'lbl_critical' })).toBe('Critical');
+    // The category label carries an inline icon; the chip wants words only
+    expect(el._pillFilterLabel({ kind: 'cat', value: 'diagnostic' })).toBe('Diagnostic');
+    expect(el._pillFilterLabel({ kind: 'cat', value: 'diagnostic' })).not.toContain('<');
+  });
+
+  it('is empty with no filters, and lists removable chips with a count when there are', () => {
+    expect(el._filterSummaryHtml('data-integration="shelly"', [], 0, 12)).toBe('');
+
+    const html = el._filterSummaryHtml(
+      'data-integration="shelly"',
+      [{ kind: 'cat', value: 'diagnostic' }, { kind: 'area', value: 'stofa' }],
+      3,
+      12,
+    );
+    expect(html).toContain('Diagnostic');
+    expect(html).toContain('Stofa');
+    expect(html).toContain('3 of 12 entities');
+    expect(html).toContain('pill-clear-one');
+    expect(html).toContain('pill-clear-scope');
+  });
+
+  it('counts pills and headers in the banner, and says nothing when clear', () => {
+    expect(el._activeFiltersBannerHtml()).toBe('');
+
+    el.integrationHeaderFilter = { shelly: [{ kind: 'cat', value: 'diagnostic' }] };
+    el.deviceHeaderFilter = {
+      dev_shelly: [{ kind: 'area', value: 'stofa' }, { kind: 'label', value: 'lbl_critical' }],
+    };
+    const banner = el._activeFiltersBannerHtml();
+    expect(banner).toContain('3 pill filters active on 2 headers');
+    expect(banner).toContain('pill-clear-all');
+
+    el.deviceHeaderFilter = {};
+    expect(el._activeFiltersBannerHtml()).toContain('1 pill filter active on 1 header');
+  });
+});

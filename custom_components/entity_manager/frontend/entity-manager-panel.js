@@ -8889,7 +8889,7 @@ class EntityManagerPanel extends HTMLElement {
         });
         
         this._renderedSmartGroups = filteredGroups;
-        contentEl.innerHTML = this._renderSmartGroups(filteredGroups);
+        contentEl.innerHTML = this._activeFiltersBannerHtml() + this._renderSmartGroups(filteredGroups);
         this.attachIntegrationListeners();
         if (this._playAnimations) {
           contentEl.querySelectorAll('.smart-group').forEach((el, i) => {
@@ -8917,7 +8917,7 @@ class EntityManagerPanel extends HTMLElement {
       return;
     }
 
-    contentEl.innerHTML = sortedData.map(integration =>
+    contentEl.innerHTML = this._activeFiltersBannerHtml() + sortedData.map(integration =>
       this.renderIntegration(integration)
     ).join('');
 
@@ -9035,11 +9035,34 @@ class EntityManagerPanel extends HTMLElement {
     }).join('');
   }
 
+  /** How many headers are filtering right now, across both views. */
+  _activeFilterScopes() {
+    return [
+      ...Object.entries(this.integrationHeaderFilter || {}),
+      ...Object.entries(this.deviceHeaderFilter || {}),
+    ].filter(([, filters]) => filters?.length);
+  }
+
+  /** Banner above the list. Pill filters persist across reloads, so a shortened
+   *  list must never look like missing data. */
+  _activeFiltersBannerHtml() {
+    const scopes = this._activeFilterScopes();
+    if (!scopes.length) return '';
+    const pills = scopes.reduce((n, [, filters]) => n + filters.length, 0);
+    return `
+      <div class="em-filter-banner">
+        ${this._icon('mdi:filter-variant', '16px')}
+        <span>${pills} pill filter${pills !== 1 ? 's' : ''} active on ${scopes.length} ${scopes.length !== 1 ? 'headers' : 'header'} — lists below are narrowed</span>
+        <button type="button" class="em-filter-clear pill-clear-all">Clear all filters</button>
+      </div>`;
+  }
+
   _renderIntegrationsView(sortedData) {
     if (!sortedData.length) {
       return `<div class="empty-state"><h2>No integrations found</h2><p>Try adjusting your filters</p></div>`;
     }
-    return sortedData.map(integration => this.renderIntegration(integration)).join('');
+    return this._activeFiltersBannerHtml()
+      + sortedData.map(integration => this.renderIntegration(integration)).join('');
   }
 
   _renderDevicesView(sortedData) {
@@ -9068,9 +9091,10 @@ class EntityManagerPanel extends HTMLElement {
 
     filteredDevices.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
-    return filteredDevices.map(({ deviceId, device, integration }) =>
-      this._renderDeviceCard(deviceId, device, integration)
-    ).join('');
+    return this._activeFiltersBannerHtml()
+      + filteredDevices.map(({ deviceId, device, integration }) =>
+        this._renderDeviceCard(deviceId, device, integration)
+      ).join('');
   }
 
   _showIntegrationDetailDialog(integrationName) {
@@ -9310,6 +9334,56 @@ class EntityManagerPanel extends HTMLElement {
       title="${this._escapeAttr(title || (active ? 'Click to clear filter' : 'Click to filter'))}">${text}: ${count}</button>`;
   }
 
+  /** What one active pill is called, for the summary bar. */
+  _pillFilterLabel(filter) {
+    switch (filter.kind) {
+      case 'cat': {
+        const meta = this._categoryMeta().find(m => m.key === filter.value);
+        // The category label carries an inline icon; the summary wants words only
+        return meta ? meta.label.replace(/<[^>]*>/g, '').trim() : filter.value;
+      }
+      case 'hw': {
+        const meta = this._deviceTypeMeta()[filter.value];
+        return meta ? `${meta.emoji} ${meta.label}` : filter.value;
+      }
+      case 'area':
+        return filter.value === '__none__'
+          ? 'No area' : (this.areaLookup?.get?.(filter.value)?.areaName || filter.value);
+      case 'floor': return filter.value;
+      case 'label': return this.labelLookup?.get(filter.value)?.name || filter.value;
+      default: return filter.value;
+    }
+  }
+
+  /** Colour for a summary chip — the same one its pill carries. */
+  _pillFilterColor(filter) {
+    switch (filter.kind) {
+      case 'cat':   return this._categoryPillColor(filter.value);
+      case 'hw':    return this._deviceTypeMeta()[filter.value]?.color || 'var(--em-primary)';
+      case 'area':  return filter.value === '__none__' ? 'var(--em-danger)' : 'var(--em-primary)';
+      case 'floor': return 'var(--em-primary)';
+      case 'label': return this._labelPillColor(filter.value);
+      default:      return 'var(--em-primary)';
+    }
+  }
+
+  /** The bar under a header naming what is filtering, each chip removable. */
+  _filterSummaryHtml(scopeAttrs, filters, shownCount, totalCount) {
+    if (!filters?.length) return '';
+    const chips = filters.map(f => `
+        <button type="button" class="em-filter-chip pill-clear-one" ${scopeAttrs}
+          data-pill-kind="${f.kind}" data-pill-value="${this._escapeAttr(f.value)}"
+          style="--pill-c:${this._escapeAttr(this._pillFilterColor(f))}"
+          title="Remove this filter">${this._escapeHtml(this._pillFilterLabel(f))} ✕</button>`).join('');
+    return `
+      <div class="em-filter-summary">
+        <span class="em-filter-summary-label">${this._icon('mdi:filter-variant', '14px')} Filtered</span>
+        ${chips}
+        <span class="em-filter-summary-count">${shownCount} of ${totalCount} entit${totalCount !== 1 ? 'ies' : 'y'}</span>
+        <button type="button" class="em-filter-clear pill-clear-scope" ${scopeAttrs}>Clear</button>
+      </div>`;
+  }
+
   /** Menu entries that act on exactly what the active pills show. Empty when nothing filters. */
   _filteredActionsHtml(entityIds) {
     if (!entityIds.length) return '';
@@ -9526,6 +9600,7 @@ class EntityManagerPanel extends HTMLElement {
             </div>
           </div>
         </div>
+        ${this._filterSummaryHtml(`data-integration="${intName}"`, pillFilter, filteredIds.length, entityCount)}
         ${isExpanded ? `
           <div class="integration-devices" data-integration="${intName}">
             ${pillFilter?.length && !shownDevices.length ? '<p class="integration-pill-empty">Nothing matches these filters.</p>' : ''}
@@ -9915,6 +9990,7 @@ class EntityManagerPanel extends HTMLElement {
           <button class="device-suggestion-apply" data-device-id="${deviceIdEsc}" data-area-id="${this._escapeAttr(deviceAreaSuggestion.areaId)}" data-area-name="${this._escapeAttr(deviceAreaSuggestion.areaName)}" title="Apply suggested area to this device">${this._icon(EM_ICONS.success, '14px')} Apply</button>
           <button class="device-suggestion-ignore" data-device-id="${deviceIdEsc}" title="Ignore this suggestion for this session">${this._icon(EM_ICONS.close, '14px')} Ignore</button>
         </div>` : ''}
+        ${this._filterSummaryHtml(`data-device-id="${deviceIdEsc}"`, devPillFilter, devFilteredIds.length, device.entities.length)}
         ${isExpanded ? `<div class="device-name-group-body">${catCardsHtml || (devPillFilter?.length ? '<p class="integration-pill-empty">Nothing matches these filters.</p>' : '')}</div>` : ''}
       </div>
     `;
@@ -10286,6 +10362,38 @@ class EntityManagerPanel extends HTMLElement {
           this.expandedIntegrations.add(integration);
           this._autoExpandLoneDevice(integration);
         }
+        this.updateView();
+      });
+    });
+
+    // Summary-bar chips and Clear buttons
+    this.content.querySelectorAll('.pill-clear-one').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const { deviceId, integration, pillKind: kind, pillValue: value } = btn.dataset;
+        const map = deviceId !== undefined ? this.deviceHeaderFilter : this.integrationHeaderFilter;
+        this._togglePillFilter(map, deviceId !== undefined ? deviceId : integration, kind, value);
+        this.updateView();
+      });
+    });
+
+    this.content.querySelectorAll('.pill-clear-scope').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const { deviceId, integration } = btn.dataset;
+        if (deviceId !== undefined) delete this.deviceHeaderFilter[deviceId];
+        else delete this.integrationHeaderFilter[integration];
+        this._savePillFilters();
+        this.updateView();
+      });
+    });
+
+    this.content.querySelectorAll('.pill-clear-all').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.integrationHeaderFilter = {};
+        this.deviceHeaderFilter = {};
+        this._savePillFilters();
         this.updateView();
       });
     });

@@ -10,7 +10,8 @@ The counts in an integration or device header used to be there to read. Now they
 - **Areas and Labels show six pills and a `+N`** that reveals the rest, so an integration spanning the whole house does not flood its header
 - **Pills stack.** Pills of the same kind widen the filter (Stofa *or* Eldhús), pills of different kinds narrow it (Diagnostic *and* Stofa)
 - **Act on what the filter shows.** With pills active, the ⋯ menu gains Select, Enable and Disable for exactly those entities, counted in the label
-- **Filters are remembered** per browser, so a reload picks up where you left off
+- **Filters are remembered** per browser, so a reload picks up where you left off. A banner at the top of the list says how many are active, with one button to clear them all, so a narrowed list never looks like missing data
+- **A filtered header says what it is filtering by**: a row of removable chips, how many entities are left of the total, and a Clear for that header alone
 - **Every pill counts entities**, so the number always says how far the list will shrink. The Hardware pill keeps its device count in the tooltip ("6 devices • 84 entities")
 - **Clicking a pill opens the integration**, and says so plainly when nothing matches
 - **A device's Hardware pill assigns the type** rather than filtering, because a device only has one. Assigning a type to an integration's unknown devices moved into the integration menu
