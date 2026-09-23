@@ -223,14 +223,22 @@ npm test                                                  # vitest run
 npm run test:watch
 npm run lint                                              # eslint .
 npx eslint custom_components/entity_manager/frontend/     # what CI runs
-pytest tests/ -v --tb=short
 ruff check custom_components/
 ruff format --check custom_components/
 mypy custom_components/entity_manager --ignore-missing-imports
 node --check custom_components/entity_manager/frontend/entity-manager-panel.js
 bandit -r custom_components/ --severity-level medium
+pytest tests/ -v --tb=short                               # CI only — see below
 ```
 
+- **`pytest` does not run on this machine.** Home Assistant does not support
+  Windows: its own runner module imports `fcntl` and `resource`
+  unconditionally, so collection dies before the first test, and stubbing those
+  only gets as far as HA's event loop policy, which expects a Unix loop.
+  DAVIDPC has Python 3.14 only, and no supported combination exists — the
+  Python tests run in CI (Linux, 3.12) and nowhere else. Write them carefully:
+  a PR is the first place they execute. Everything else in the list above does
+  run locally, so there is no excuse for pushing a lint, type or Vitest failure.
 - `pytest.ini` sets `asyncio_mode = auto`.
 - Vitest uses jsdom with `testTransformMode: { ssr: ['**/*'] }` — without it the
   setup file's `node:fs` import is stubbed and every run fails with
