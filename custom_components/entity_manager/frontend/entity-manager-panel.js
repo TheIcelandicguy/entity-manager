@@ -3029,6 +3029,7 @@ class EntityManagerPanel extends HTMLElement {
               </div>
               <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
               <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+              <label class="bulk-rename-opt-label" title="Only entities whose shown name repeats their device name"><input type="checkbox" id="brp-only-doubled"> Duplicate names</label>
               <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
             </div>
             <div class="bulk-rename-picker-list" id="brp-list">
@@ -3157,12 +3158,15 @@ class EntityManagerPanel extends HTMLElement {
         } catch (_) { /* invalid regex — ignore */ }
       }
 
+      const onlyDoubled = view.querySelector('#brp-only-doubled')?.checked;
+
       view.querySelectorAll('#brp-list .bulk-rename-picker-row').forEach(row => {
         const id = row.dataset.entityId;
         const name = this._hass?.states[id]?.attributes?.friendly_name || '';
         const searchMatch = !q || id.toLowerCase().includes(q.toLowerCase()) || name.toLowerCase().includes(q.toLowerCase());
         const findMatch = !findPattern || findPattern.test(id) || findPattern.test(name);
-        row.style.display = (searchMatch && findMatch) ? '' : 'none';
+        const doubledMatch = !onlyDoubled || this._hasDoubledName(id, name);
+        row.style.display = (searchMatch && findMatch && doubledMatch) ? '' : 'none';
       });
       // Hide device groups with no visible rows
       view.querySelectorAll('#brp-list .brp-dev-group').forEach(dg => {
@@ -3177,6 +3181,7 @@ class EntityManagerPanel extends HTMLElement {
     };
 
     view.querySelector('#brp-search').addEventListener('input', filterPickerList);
+    view.querySelector('#brp-only-doubled').addEventListener('change', filterPickerList);
     view.querySelector('#bulk-find').addEventListener('input', filterPickerList);
     view.querySelector('#bulk-find-regex').addEventListener('change', filterPickerList);
     view.querySelector('#bulk-find-case').addEventListener('change', filterPickerList);
@@ -17472,6 +17477,22 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** Does the name Home Assistant shows for this entity read its device name
+   *  twice? The same rule the Duplicate Names card uses, for one entity. */
+  _hasDoubledName(entityId, friendlyName = null) {
+    const entity = this._findEntityById(entityId);
+    const deviceId = entity?.device_id || this.entityDeviceMap?.get(entityId);
+    const deviceName = deviceId ? this.getDeviceName(deviceId) : '';
+    if (!deviceName) return false;
+    const shown = friendlyName
+      || this._hass?.states?.[entityId]?.attributes?.friendly_name
+      || entity?.name || entity?.original_name || '';
+    const deviceWords = this._nameWords(deviceName);
+    const shownWords = this._nameWords(shown);
+    return this._startsWithWords(shownWords, deviceWords)
+      && this._startsWithWords(shownWords.slice(deviceWords.length), deviceWords);
+  }
+
   /** The device line earns its place only when the shown name does not already
    *  begin with the device name — otherwise it repeats what is right above it. */
   _deviceLineWorthShowing(entity, state) {

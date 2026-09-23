@@ -1353,3 +1353,38 @@ describe('_deviceLineWorthShowing(entity, state)', () => {
     )).toBe(true);
   });
 });
+
+describe('_hasDoubledName(entityId, friendlyName)', () => {
+  let el;
+  beforeEach(() => {
+    el = makePanel();
+    el.data = [{
+      integration: 'shelly',
+      devices: {
+        dev_eldhus: {
+          entities: [
+            { entity_id: 'sensor.tafla_h_gr_04_eldhus_power', device_id: 'dev_eldhus', original_name: 'Tafla H Gr.04 Eldhús power' },
+            { entity_id: 'sensor.tafla_h_gr_04_eldhus_rssi', device_id: 'dev_eldhus', original_name: 'Signal strength' },
+          ],
+        },
+      },
+    }];
+    el.deviceInfo = { dev_eldhus: { name: 'Tafla H Gr.04 Eldhús' } };
+  });
+
+  it('is true when the shown name repeats the device name', () => {
+    expect(el._hasDoubledName(
+      'sensor.tafla_h_gr_04_eldhus_power',
+      'Tafla H Gr.04 Eldhús Tafla H Gr.04 Eldhús power',
+    )).toBe(true);
+  });
+
+  it('is false for a name that says the device once, or not at all', () => {
+    expect(el._hasDoubledName('sensor.tafla_h_gr_04_eldhus_power', 'Tafla H Gr.04 Eldhús power')).toBe(false);
+    expect(el._hasDoubledName('sensor.tafla_h_gr_04_eldhus_rssi', 'Tafla H Gr.04 Eldhús Signal strength')).toBe(false);
+  });
+
+  it('is false when the entity has no device to repeat', () => {
+    expect(el._hasDoubledName('sensor.unknown', 'Anything at all')).toBe(false);
+  });
+});
