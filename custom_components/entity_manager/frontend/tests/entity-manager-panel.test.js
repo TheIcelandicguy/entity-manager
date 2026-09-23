@@ -1286,3 +1286,20 @@ describe('_friendlyNamePreview(entityId, typedName)', () => {
     expect(el._friendlyNamePreview('sensor.unknown', '')).toBe('sensor.unknown');
   });
 });
+
+describe('_awaitFriendlyName(entityId, expected)', () => {
+  it('returns as soon as HA reports the new name', async () => {
+    const el = makePanel();
+    el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'Old' } } } };
+    setTimeout(() => {
+      el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'New name' } } } };
+    }, 150);
+    expect(await el._awaitFriendlyName('switch.lamp', 'New name', 2000)).toBe(true);
+  });
+
+  it('gives up rather than hanging when the state never arrives', async () => {
+    const el = makePanel();
+    el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'Old' } } } };
+    expect(await el._awaitFriendlyName('switch.lamp', 'Never', 300)).toBe(false);
+  });
+});

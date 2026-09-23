@@ -17417,6 +17417,19 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** Wait for HA to push the renamed entity's new state, so the card stops
+   *  showing the old friendly name. The registry write returns before the state
+   *  machine catches up, and the hass setter only syncs toggle buttons, so
+   *  without this a rename needs a manual refresh to show. */
+  async _awaitFriendlyName(entityId, expected, timeoutMs = 2500) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this._hass?.states?.[entityId]?.attributes?.friendly_name === expected) return true;
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    return false;
+  }
+
   /** What Home Assistant will show for an entity given a display name.
    *  A display name is used verbatim; the device name is prepended only when
    *  there is none (see _async_get_full_entity_name_generic in HA). */
@@ -17475,6 +17488,12 @@ class EntityManagerPanel extends HTMLElement {
         this._pushUndoAction({ type: 'display_name_change', entityId, oldName: currentName, newName });
         closeDialog();
         this._showToast(`Renamed to "${newName || entityId}"`, 'success');
+        // Show it straight away, then let HA's own state catch up
+        const record = this._findEntityById(entityId);
+        if (record) record.name = newName || null;
+        this.updateView();
+        await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, newName));
+        this.updateView();
         onSave?.(newName);
       } catch (err) {
         this._showToast(`Rename failed: ${err.message}`, 'error');
