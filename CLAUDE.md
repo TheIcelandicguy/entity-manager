@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.3.1**.
+Home Assistant custom integration, domain `entity_manager`, **v3.4.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -11,9 +11,10 @@ large installs. No Python requirements; `integration_type: service`,
 minimum HA 2024.1.0.
 
 `OVERVIEW.md` in this repo is current and was verified against source — use it
-when you need more depth than this file. The other root docs (`STRUCTURE.md`,
-`PROJECT_SUMMARY.md`, `QUICKSTART.md`, `DEVREF.md`, `cursorrules.md`) are not
-verified; check source before trusting them.
+when you need more depth than this file. The unverified root docs that used to
+sit beside it (STRUCTURE.md, PROJECT_SUMMARY.md, QUICKSTART.md, DEVREF.md,
+INSTALL.md, cursorrules.md) were deleted on 2026-09-22; README.md covers
+installation, and git history has the rest.
 
 Before ending a session, run `python check_docs.py` and update this file.
 The script checks that every path, constant, line count, test count and service

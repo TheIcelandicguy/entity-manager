@@ -703,3 +703,314 @@ describe('_confirmReferencePreview(renameCount, preview)', () => {
     expect(parseFloat(label.style.minWidth)).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Header filter pills
+// ---------------------------------------------------------------------------
+
+/** A panel with one device in Stofa (floor Efri hæð) and one loose entity in Eldhús. */
+function makePillPanel() {
+  const el = makePanel();
+  el.deviceInfo = {
+    dev_shelly: { area_id: 'stofa', connections: [['mac', 'aa:bb']], identifiers: [['shelly', 'x']] },
+    dev_cloud: { area_id: null, connections: [], identifiers: [['cloudy', 'y']] },
+  };
+  el.areaLookup = new Map([
+    ['stofa', { areaName: 'Stofa', floorName: 'Efri hæð' }],
+    ['eldhus', { areaName: 'Eldhús', floorName: 'Neðri hæð' }],
+  ]);
+  el.entityAreaMap = new Map([['sensor.loose', 'eldhus']]);
+  el.entityDeviceMap = new Map();
+  el.entityLabelsMap = new Map([['switch.lamp', ['lbl_critical']]]);
+  el.deviceLabelsMap = new Map([['dev_shelly', ['lbl_device']]]);
+  el.areaLabelsMap = new Map([['stofa', ['lbl_downstairs']]]);
+  el.labelLookup = new Map([
+    ['lbl_critical', { name: 'Critical', color: 'red' }],
+    ['lbl_device', { name: 'Device', color: null }],
+  ]);
+  return el;
+}
+
+const LAMP = { entity_id: 'switch.lamp', device_id: 'dev_shelly' };
+const RSSI = { entity_id: 'sensor.rssi', device_id: 'dev_shelly', entity_category: 'diagnostic' };
+const LOOSE = { entity_id: 'sensor.loose', device_id: null };
+
+describe('_intgEntityAreaId(entity, deviceId)', () => {
+  it('prefers the entity override, then the device area, else null', () => {
+    const el = makePillPanel();
+    expect(el._intgEntityAreaId(LAMP, 'dev_shelly')).toBe('stofa');
+    expect(el._intgEntityAreaId(LOOSE, 'no_device')).toBe('eldhus');
+    expect(el._intgEntityAreaId({ entity_id: 'sensor.nowhere' }, 'dev_cloud')).toBeNull();
+  });
+
+  it('lets an entity-level area override the device it belongs to', () => {
+    const el = makePillPanel();
+    el.entityAreaMap.set('switch.lamp', 'eldhus');
+    expect(el._intgEntityAreaId(LAMP, 'dev_shelly')).toBe('eldhus');
+  });
+});
+
+describe('_intgPillMatches(filter, entity, deviceId)', () => {
+  let el;
+  beforeEach(() => { el = makePillPanel(); });
+
+  it('matches on category', () => {
+    expect(el._intgPillMatches({ kind: 'cat', value: 'diagnostic' }, RSSI, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'cat', value: 'diagnostic' }, LAMP, 'dev_shelly')).toBe(false);
+    expect(el._intgPillMatches({ kind: 'cat', value: 'controls' }, LAMP, 'dev_shelly')).toBe(true);
+  });
+
+  it('matches on hardware type, never for entities with no device', () => {
+    expect(el._intgPillMatches({ kind: 'hw', value: 'hardware' }, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'hw', value: 'cloud' }, LAMP, 'dev_shelly')).toBe(false);
+    expect(el._intgPillMatches({ kind: 'hw', value: 'cloud' }, LOOSE, 'no_device')).toBe(false);
+  });
+
+  it('matches on area, with __none__ for entities that have none', () => {
+    expect(el._intgPillMatches({ kind: 'area', value: 'stofa' }, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'area', value: 'eldhus' }, LOOSE, 'no_device')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'area', value: '__none__' }, LAMP, 'dev_shelly')).toBe(false);
+    expect(el._intgPillMatches({ kind: 'area', value: '__none__' },
+      { entity_id: 'sensor.nowhere' }, 'dev_cloud')).toBe(true);
+  });
+
+  it('matches on floor through the entity effective area', () => {
+    expect(el._intgPillMatches({ kind: 'floor', value: 'Efri hæð' }, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'floor', value: 'Neðri hæð' }, LOOSE, 'no_device')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'floor', value: 'Efri hæð' },
+      { entity_id: 'sensor.nowhere' }, 'dev_cloud')).toBe(false);
+  });
+
+  it('matches labels at entity, device and area scope alike', () => {
+    expect(el._intgPillMatches({ kind: 'label', value: 'lbl_critical' }, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'label', value: 'lbl_device' }, RSSI, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'label', value: 'lbl_downstairs' }, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._intgPillMatches({ kind: 'label', value: 'lbl_critical' }, RSSI, 'dev_shelly')).toBe(false);
+  });
+
+  it('keeps everything for an unknown filter kind', () => {
+    expect(el._intgPillMatches({ kind: 'nonsense', value: 'x' }, LAMP, 'dev_shelly')).toBe(true);
+  });
+});
+
+describe('_headerPill(scopeAttrs, activeFilter, kind, value, text, count, color)', () => {
+  let el;
+  beforeEach(() => { el = makePillPanel(); });
+
+  it('marks only the matching pill active and carries kind, value and colour', () => {
+    const active = [{ kind: 'area', value: 'stofa' }];
+    const html = el._headerPill('data-integration="shelly"', active, 'area', 'stofa', 'Stofa', 4, 'var(--em-primary)');
+    expect(html).toContain('integration-pill active');
+    expect(html).toContain('data-pill-kind="area"');
+    expect(html).toContain('data-pill-value="stofa"');
+    expect(html).toContain('--pill-c:var(--em-primary)');
+    expect(html).toContain('Stofa: 4');
+    expect(html).toContain('Click to clear filter');
+
+    const other = el._headerPill('data-integration="shelly"', active, 'area', 'eldhus', 'Eldhús', 2, 'var(--em-primary)');
+    expect(other).not.toContain('active');
+    expect(other).toContain('Click to filter');
+  });
+
+  it('escapes a value that would otherwise break out of the attribute', () => {
+    const html = el._headerPill('data-device-id="d"', [], 'label', 'a"><script>x</script>', 'Odd', 1, 'red');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&quot;');
+  });
+});
+
+describe('label pill colour', () => {
+  it('uses the HA label colour, and the primary accent when a label has none', () => {
+    const el = makePillPanel();
+    expect(el._labelPillColor('lbl_critical')).toBe(el._labelColorCss('red'));
+    expect(el._labelPillColor('lbl_device')).toBe('var(--em-primary)');
+    expect(el._labelPillColor('lbl_unknown')).toBe('var(--em-primary)');
+  });
+});
+
+describe('_pillMatchesAll(filters, entity, deviceId)', () => {
+  let el;
+  beforeEach(() => { el = makePillPanel(); });
+
+  it('keeps everything when nothing is filtering', () => {
+    expect(el._pillMatchesAll([], LAMP, 'dev_shelly')).toBe(true);
+    expect(el._pillMatchesAll(undefined, LAMP, 'dev_shelly')).toBe(true);
+  });
+
+  it('ORs pills of the same kind', () => {
+    const areas = [{ kind: 'area', value: 'stofa' }, { kind: 'area', value: 'eldhus' }];
+    expect(el._pillMatchesAll(areas, LAMP, 'dev_shelly')).toBe(true);
+    expect(el._pillMatchesAll(areas, LOOSE, 'no_device')).toBe(true);
+    expect(el._pillMatchesAll(areas, { entity_id: 'sensor.nowhere' }, 'dev_cloud')).toBe(false);
+  });
+
+  it('ANDs pills of different kinds', () => {
+    const diagnosticInStofa = [{ kind: 'cat', value: 'diagnostic' }, { kind: 'area', value: 'stofa' }];
+    expect(el._pillMatchesAll(diagnosticInStofa, RSSI, 'dev_shelly')).toBe(true);
+    // Right area, wrong category
+    expect(el._pillMatchesAll(diagnosticInStofa, LAMP, 'dev_shelly')).toBe(false);
+    // Right category, wrong area
+    el.entityAreaMap.set('sensor.rssi', 'eldhus');
+    expect(el._pillMatchesAll(diagnosticInStofa, RSSI, 'dev_shelly')).toBe(false);
+  });
+});
+
+describe('_togglePillFilter(map, scope, kind, value)', () => {
+  let el;
+  beforeEach(() => { el = makePillPanel(); localStorage.clear(); });
+
+  it('adds, stacks and removes, dropping the scope when the last pill goes', () => {
+    const map = {};
+    expect(el._togglePillFilter(map, 'shelly', 'area', 'stofa')).toBe(true);
+    el._togglePillFilter(map, 'shelly', 'cat', 'diagnostic');
+    expect(map.shelly).toEqual([{ kind: 'area', value: 'stofa' }, { kind: 'cat', value: 'diagnostic' }]);
+
+    el._togglePillFilter(map, 'shelly', 'area', 'stofa');
+    expect(map.shelly).toEqual([{ kind: 'cat', value: 'diagnostic' }]);
+
+    expect(el._togglePillFilter(map, 'shelly', 'cat', 'diagnostic')).toBe(false);
+    expect('shelly' in map).toBe(false);
+  });
+
+  it('persists both maps so filters survive a reload', () => {
+    el._togglePillFilter(el.integrationHeaderFilter, 'shelly', 'label', 'lbl_critical');
+    el._togglePillFilter(el.deviceHeaderFilter, 'dev_shelly', 'cat', 'sensors');
+
+    expect(JSON.parse(localStorage.getItem('em-intg-pill-filters')))
+      .toEqual({ shelly: [{ kind: 'label', value: 'lbl_critical' }] });
+    expect(el._loadPillFilters('em-device-pill-filters'))
+      .toEqual({ dev_shelly: [{ kind: 'cat', value: 'sensors' }] });
+  });
+});
+
+describe('_loadPillFilters(key)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('survives junk in localStorage and drops malformed entries', () => {
+    const el = makePillPanel();
+    localStorage.setItem('em-intg-pill-filters', 'not json{');
+    expect(el._loadPillFilters('em-intg-pill-filters')).toEqual({});
+
+    localStorage.setItem('em-intg-pill-filters', JSON.stringify({
+      good: [{ kind: 'area', value: 'stofa' }, { kind: 'area' }, null, 'nope'],
+      empty: [],
+      wrong: 'string',
+    }));
+    expect(el._loadPillFilters('em-intg-pill-filters'))
+      .toEqual({ good: [{ kind: 'area', value: 'stofa' }] });
+  });
+});
+
+describe('_filteredActionsHtml(entityIds)', () => {
+  it('is empty with no filter, and names the count when there is one', () => {
+    const el = makePillPanel();
+    expect(el._filteredActionsHtml([])).toBe('');
+
+    const html = el._filteredActionsHtml(['switch.lamp', 'sensor.rssi']);
+    expect(html).toContain('Select 2 entities');
+    expect(html).toContain('Enable 2 entities');
+    expect(html).toContain('Disable 2 entities');
+    expect(html).toContain('data-entity-ids="switch.lamp,sensor.rssi"');
+
+    expect(el._filteredActionsHtml(['switch.lamp'])).toContain('Select 1 entity');
+  });
+});
+
+describe('integration header pill counts', () => {
+  it('counts entities on every pill, with devices only in the Hardware tooltip', () => {
+    const el = makePillPanel();
+    el.integrationHeaderFilter = {};
+    el.expandedIntegrations = new Set();
+    el.expandedDevices = new Set();
+    el.selectedEntities = new Set();
+    const html = el.renderIntegration({
+      integration: 'shelly',
+      devices: {
+        dev_shelly: { entities: [LAMP, RSSI] },
+        dev_cloud: { entities: [{ entity_id: 'sensor.cloudy' }] },
+      },
+    });
+    // The hardware pill shows its 2 entities, not its 1 device
+    expect(html).toMatch(/data-pill-value="hardware"[^>]*>[^<]*: 2</);
+    expect(html).toMatch(/data-pill-value="cloud"[^>]*>[^<]*: 1</);
+    // The device count lives in the tooltip
+    expect(html).toContain('1 device • 2 entities');
+    expect(html).toContain('1 device • 1 entity');
+    // Categories count entities too: one switch, one sensor, one diagnostic.
+    // Their labels carry an inline icon, so the count is matched loosely.
+    expect(html).toMatch(/data-pill-value="controls"[\s\S]{0,400}?: 1</);
+    expect(html).toMatch(/data-pill-value="diagnostic"[\s\S]{0,400}?: 1</);
+  });
+});
+
+describe('integration header pill colours', () => {
+  it('gives areas and floors the accent, and labels their own colour', () => {
+    const el = makePillPanel();
+    el.integrationHeaderFilter = {};
+    el.expandedIntegrations = new Set();
+    el.expandedDevices = new Set();
+    el.selectedEntities = new Set();
+    const html = el.renderIntegration({
+      integration: 'shelly',
+      devices: { dev_shelly: { entities: [LAMP, RSSI] } },
+    });
+    // Matches .device-area-chip in the Devices view, which is drawn in the accent
+    expect(html).toMatch(/data-pill-value="stofa"[^>]*--pill-c:var\(--em-primary\)/);
+    expect(html).toMatch(/data-pill-kind="floor"[^>]*--pill-c:var\(--em-primary\)/);
+    // A label keeps its HA colour
+    const red = el._labelColorCss('red');
+    expect(html).toContain(`--pill-c:${red}`);
+    // A label with no colour falls back to the accent
+    expect(el._labelPillColor('lbl_device')).toBe('var(--em-primary)');
+  });
+});
+
+describe('active filter summary and banner', () => {
+  let el;
+  beforeEach(() => {
+    el = makePillPanel();
+    el.integrationHeaderFilter = {};
+    el.deviceHeaderFilter = {};
+  });
+
+  it('names each kind of filter in words', () => {
+    expect(el._pillFilterLabel({ kind: 'area', value: 'stofa' })).toBe('Stofa');
+    expect(el._pillFilterLabel({ kind: 'area', value: '__none__' })).toBe('No area');
+    expect(el._pillFilterLabel({ kind: 'floor', value: 'Efri hæð' })).toBe('Efri hæð');
+    expect(el._pillFilterLabel({ kind: 'label', value: 'lbl_critical' })).toBe('Critical');
+    // The category label carries an inline icon; the chip wants words only
+    expect(el._pillFilterLabel({ kind: 'cat', value: 'diagnostic' })).toBe('Diagnostic');
+    expect(el._pillFilterLabel({ kind: 'cat', value: 'diagnostic' })).not.toContain('<');
+  });
+
+  it('is empty with no filters, and lists removable chips with a count when there are', () => {
+    expect(el._filterSummaryHtml('data-integration="shelly"', [], 0, 12)).toBe('');
+
+    const html = el._filterSummaryHtml(
+      'data-integration="shelly"',
+      [{ kind: 'cat', value: 'diagnostic' }, { kind: 'area', value: 'stofa' }],
+      3,
+      12,
+    );
+    expect(html).toContain('Diagnostic');
+    expect(html).toContain('Stofa');
+    expect(html).toContain('3 of 12 entities');
+    expect(html).toContain('pill-clear-one');
+    expect(html).toContain('pill-clear-scope');
+  });
+
+  it('counts pills and headers in the banner, and says nothing when clear', () => {
+    expect(el._activeFiltersBannerHtml()).toBe('');
+
+    el.integrationHeaderFilter = { shelly: [{ kind: 'cat', value: 'diagnostic' }] };
+    el.deviceHeaderFilter = {
+      dev_shelly: [{ kind: 'area', value: 'stofa' }, { kind: 'label', value: 'lbl_critical' }],
+    };
+    const banner = el._activeFiltersBannerHtml();
+    expect(banner).toContain('3 pill filters active on 2 headers');
+    expect(banner).toContain('pill-clear-all');
+
+    el.deviceHeaderFilter = {};
+    expect(el._activeFiltersBannerHtml()).toContain('1 pill filter active on 1 header');
+  });
+});
