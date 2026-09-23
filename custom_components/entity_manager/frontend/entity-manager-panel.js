@@ -9716,8 +9716,8 @@ class EntityManagerPanel extends HTMLElement {
         ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${areaSuggestionChip}${floorChip}${labelChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
-          ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
-          ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
+          ${col('name') ? this._entityNameLinesHtml(entity, state) : ''}
+          ${col('device') && entity.deviceName ? `<div class="entity-device-name"><span class="entity-name-kind">Device</span>${this._escapeHtml(entity.deviceName)}</div>` : ''}
           ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
         ${col('status') ? `<span class="entity-badge ${entity.is_disabled ? 'entity-badge--disabled' : 'entity-badge--enabled'}">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
@@ -10308,6 +10308,18 @@ class EntityManagerPanel extends HTMLElement {
         e.stopPropagation();
         const ents = this._deviceEntitiesById(chip.dataset.deviceId);
         if (ents.length) this._showAssignDialog(ents, { focus: 'area' });
+      });
+    });
+
+    // Suggested-name buttons on entity cards
+    this.content.querySelectorAll('.em-name-suggest-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showDisplayNameEditDialog(
+          btn.dataset.entityId,
+          btn.dataset.suggestion,
+          () => this.loadData(),
+        );
       });
     });
 
@@ -14623,6 +14635,64 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * The name lines of an entity card, each saying which name it is.
+   *
+   * "Friendly" is what Home Assistant shows everywhere else — for an entity
+   * with has_entity_name it is "<device name> <entity name>", which is how a
+   * name comes to read twice. "Entity" is the entity's own registry name, and
+   * "Display" the one set by hand. Shown only when they differ, so a plain
+   * entity still shows one line.
+   */
+  _entityNameLinesHtml(entity, state) {
+    const own = entity.original_name || '';
+    const display = entity.name || '';
+    const friendly = state?.attributes?.friendly_name || '';
+    const line = (kind, value, cls = 'entity-name') =>
+      `<div class="${cls}"><span class="entity-name-kind">${kind}</span>${this._escapeHtml(value)}</div>`;
+
+    const out = [];
+    if (friendly && friendly !== own) out.push(line('Friendly', friendly, 'entity-name entity-name-friendly'));
+    if (display) out.push(line('Display', display));
+    if (own && own !== display) out.push(line('Entity', own));
+
+    // Nothing of its own to show, or a name that only repeats the device
+    const deviceWords = this._nameWords(entity.deviceName || '');
+    const doubled = entity.deviceName
+      && this._startsWithWords(this._nameWords(display || own), deviceWords);
+    if (!out.length || doubled) {
+      const suggestion = this._suggestEntityName(entity, entity.deviceName);
+      if (suggestion) {
+        out.push(`<div class="entity-name-suggest">
+          <span class="entity-name-kind">Suggested</span>
+          <button type="button" class="em-name-suggest-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
+            data-suggestion="${this._escapeAttr(suggestion)}"
+            title="Set this as the display name">${this._escapeHtml(suggestion)}</button>
+        </div>`);
+      }
+    }
+    return out.join('');
+  }
+
+  /** A name to suggest for an entity that has none of its own worth showing.
+   *  Built from the object ID with the device's part removed, so
+   *  sensor.tafla_h_gr_04_eldhus_power suggests "Power". When nothing is left —
+   *  the entity IS the device, like a Shelly's main switch — the domain answers
+   *  for it: switch → "Switch". */
+  _suggestEntityName(entity, deviceName) {
+    const objectId = String(entity.entity_id || '').split('.').slice(1).join('.');
+    const words = this._nameWords(objectId);
+    const deviceWords = this._nameWords(deviceName || '');
+    const rest = this._startsWithWords(words, deviceWords)
+      ? words.slice(deviceWords.length)
+      : words;
+    const source = rest.length ? rest : [String(entity.entity_id || '').split('.')[0]];
+    return source
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+      .trim();
+  }
+
   /** Words of a name, folded for comparison: lowercase, accent-free, þ/ð/æ spelled out.
    *  Mirrors _folded_form in voice_assistant.py. */
   _nameWords(text) {
@@ -14845,7 +14915,9 @@ class EntityManagerPanel extends HTMLElement {
     container.querySelectorAll('.em-dupname-rename').forEach(btn => {
       btn.addEventListener('click', () => {
         const r = needName.find(x => x.entity_id === btn.dataset.entityId);
-        this._showDisplayNameEditDialog(btn.dataset.entityId, r?.suggested || '', () => {
+        const prefill = r?.suggested
+          || this._suggestEntityName({ entity_id: btn.dataset.entityId }, r?.deviceName);
+        this._showDisplayNameEditDialog(btn.dataset.entityId, prefill, () => {
           this.loadData().then(() => this._refreshView());
         });
       });

@@ -7661,3 +7661,39 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     padding: 5px 10px;
   }
 }
+
+/* Which name is which on an entity card: Friendly / Display / Entity / Device */
+.entity-name-kind {
+  display: inline-block;
+  min-width: 52px;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--em-text-secondary);
+  opacity: 0.75;
+}
+.entity-name-friendly {
+  color: var(--em-text-primary);
+  font-weight: 600;
+}
+.entity-name-suggest {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.em-name-suggest-btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-primary);
+  border: 1px dashed var(--em-primary);
+  background: transparent;
+}
+.em-name-suggest-btn:hover {
+  background: color-mix(in srgb, var(--em-primary) 16%, transparent);
+}

@@ -1168,3 +1168,82 @@ describe('_computeDuplicateNames()', () => {
     expect(mismatched).toEqual([]);
   });
 });
+
+describe('_suggestEntityName(entity, deviceName)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('uses what is left of the object ID after the device part', () => {
+    expect(el._suggestEntityName(
+      { entity_id: 'sensor.tafla_h_gr_04_eldhus_power' }, 'Tafla H Gr.04 Eldhús',
+    )).toBe('Power');
+    expect(el._suggestEntityName(
+      { entity_id: 'binary_sensor.tafla_h_gr_04_eldhus_restart_required' }, 'Tafla H Gr.04 Eldhús',
+    )).toBe('Restart Required');
+  });
+
+  it('falls back to the domain when the entity is the device', () => {
+    // A Shelly's main switch: object ID and device name are the same
+    expect(el._suggestEntityName(
+      { entity_id: 'switch.tafla_h_gr_04_eldhus' }, 'Tafla H Gr.04 Eldhús',
+    )).toBe('Switch');
+  });
+
+  it('keeps the whole object ID when it does not start with the device name', () => {
+    expect(el._suggestEntityName({ entity_id: 'sensor.loose_reading' }, 'Some Device'))
+      .toBe('Loose Reading');
+  });
+});
+
+describe('_entityNameLinesHtml(entity, state)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('labels each name and shows the friendly one when it differs', () => {
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'sensor.tafla_h_gr_04_eldhus_power',
+        original_name: 'power',
+        deviceName: 'Tafla H Gr.04 Eldhús',
+      },
+      { attributes: { friendly_name: 'Tafla H Gr.04 Eldhús power' } },
+    );
+    expect(html).toContain('>Friendly<');
+    expect(html).toContain('Tafla H Gr.04 Eldhús power');
+    expect(html).toContain('>Entity<');
+    expect(html).not.toContain('>Display<');
+  });
+
+  it('shows a set display name alongside the entity name', () => {
+    const html = el._entityNameLinesHtml(
+      { entity_id: 'switch.lamp', original_name: 'Lamp', name: 'Reading lamp', deviceName: 'Hue' },
+      { attributes: { friendly_name: 'Hue Reading lamp' } },
+    );
+    expect(html).toContain('>Display<');
+    expect(html).toContain('Reading lamp');
+    expect(html).toContain('>Entity<');
+    expect(html).toContain('Lamp');
+  });
+
+  it('offers a suggestion when the name only repeats the device', () => {
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'switch.tafla_h_gr_04_eldhus',
+        original_name: 'Tafla H Gr.04 Eldhús',
+        deviceName: 'Tafla H Gr.04 Eldhús',
+      },
+      { attributes: { friendly_name: 'Tafla H Gr.04 Eldhús Tafla H Gr.04 Eldhús' } },
+    );
+    expect(html).toContain('>Suggested<');
+    expect(html).toContain('em-name-suggest-btn');
+    expect(html).toContain('data-suggestion="Switch"');
+  });
+
+  it('offers nothing extra for an ordinary entity', () => {
+    const html = el._entityNameLinesHtml(
+      { entity_id: 'sensor.rssi', original_name: 'Signal strength', deviceName: 'Hue' },
+      { attributes: { friendly_name: 'Hue Signal strength' } },
+    );
+    expect(html).not.toContain('Suggested');
+  });
+});
