@@ -64,11 +64,23 @@ A powerful, feature-rich Home Assistant integration for managing entities across
 - **Bulk Rename panel** — opens as a full-width inline view with a split layout: entity picker on the left (grouped by integration → device, collapsible, with per-group checkboxes) and the rename queue on the right
 - **Live preview** in the queue — each entry shows the original entity ID, an editable new name field, and a live preview of the resulting ID (turns green when changed)
 - **Find & Replace** at the top filters the entity picker in real time as you type; supports regex and case-sensitive matching
+- **Duplicate names filter** — show only entities whose displayed name repeats their device name, the same set the Health & Cleanup card finds
+- **Rename a device** — the **Device** button on any device in the picker renames the device itself and queues its entities to follow: entity IDs whose slug follows the device, display names that start with it, either half optional and both previewed before anything is written. The entity changes go through the normal queue, so they keep the reference preview, the undo steps and the per-entity result reporting
 - **Domain preservation** — the `sensor.`, `light.`, etc. prefix is always locked
 - **Automatic propagation** across automations, scripts, and helpers
 - Conflict validation prevents duplicate entity IDs
 ### Search & Filtering
-Entity Manager provides multiple ways to find exactly what you need:
+Entity Manager provides multiple ways to find exactly what you need.
+
+**Header filter pills** — the Categories, Hardware, Areas and Labels counts in
+every integration and device header are buttons. Click one to narrow that header
+to what it names; click again to clear. Pills stack: two of the same kind widen
+the filter (Stofa *or* Eldhús), two of different kinds narrow it (Diagnostic
+*and* Stofa). A filtered header lists what it is filtering by, with a Clear for
+that header, and a banner above the list clears them all. Filters are remembered
+per browser. With pills active the ⋯ menu can Select, Enable or Disable exactly
+the entities they show.
+
 
 | Filter Type | Description |
 |---|---|
@@ -277,13 +289,30 @@ Right-click any entity (or multi-selection) for a full context menu:
 - Delete Selected (with confirmation)
 
 ### Voice Assistant
-Control Entity Manager hands-free with voice commands:
+Enable and disable entities by voice or by typing in Assist:
 - *"Enable entity {name}"*
 - *"Disable entity {name}"*
 - *"Activate entity {name}"*
 - *"Deactivate entity {name}"*
 - *"Registry enable/disable {name}"*
-Voice commands enforce admin-only access for safety.
+
+The word **entity** is what sends the sentence to Entity Manager rather than to
+Home Assistant's own light and switch handling.
+
+Say the entity's **name** or its full ID. The name is matched against the entity
+registry — not against exposed entities — so **disabled entities are reachable**,
+which they could never be otherwise: a disabled entity has no state, so Home
+Assistant's own name list cannot contain it. Matching runs exact, then
+substring, then word by word, so "hue lamp 3" finds "Skrifstofa Hue color lamp
+3" rather than its Zigbee sensor. Accents are optional — "badherbergi loftljos"
+finds Baðherbergi Loftljós — and **aliases are matched too**, which is the way
+round a speech-to-text engine mishearing a name. When several entities match,
+the reply reads back the entity IDs to choose from instead of guessing.
+
+The sentences are installed into `<config>/custom_sentences/<language>/` on
+startup, the only place Home Assistant reads them from; a copy you have edited
+is never overwritten. Commands are admin-only, and a request with no user
+behind it — a voice satellite, for instance — is refused.
 
 ### Statistics Dashboard
 The stat wall at the top is split in two rows:
@@ -319,7 +348,8 @@ Each card has a **↗ button** that takes you directly to the right place in HA:
 Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in the main view.
 
 ### Health & Cleanup View
-The **Health & Cleanup** inline view surfaces housekeeping tasks across five sections:
+The **Health & Cleanup** inline view surfaces housekeeping tasks across six sections:
+- **Duplicate names** — Home Assistant puts the device name in front of the entity name, and several integrations already put it there themselves, so the name reads twice: *"Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power"*. Grouped by device, each row showing what it would become, fixable singly or in bulk with undo. Fixing sets a **display name** carrying the whole intended name, because Home Assistant adds the device name only when no display name is set. Entities whose own name *is* the device name are listed apart, since nothing is left after removing it — each offers a name built from its entity ID. Two further groups are reported without being touched: devices whose entities carry **another device's name**, and **integration entries still named after an old device** (Home Assistant titles an entry when the integration is first added and never revisits it), where the device name can be applied as the title in bulk
 - **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore**, **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog
 - **Orphaned entities** — registry entries whose *owner is gone*, split into three groups: **Missing Device** (`device_id` points at a deleted device), **Missing Config Entry** (the integration entry was removed — classic leftovers), and **Not Loaded** (enabled but nothing provides a state anymore). Entities that are simply device-less by design — automations, scripts, helpers, persons, groups — are **not** treated as orphans. Per-row actions: **Ignore**, **Assign to device** (Missing Device only), **Add to Group**, **Remove**, plus a **Remove All** with confirmation
 - **Stale entities** — value unchanged in 30+ days, using recorder-backed timestamps that survive HA restarts; static-by-design domains (automations, scenes, zones, buttons…) and config-category settings are excluded; Keep (hide for 30 d), Disable, or Remove per entity
