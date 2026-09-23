@@ -1463,3 +1463,29 @@ describe('_computeEntryTitleDrift(devices, entries)', () => {
     expect(drift[0].suggested).toBe('Baðherbergi innstunga');
   });
 });
+
+describe('_commonObjectIdPrefix(entityIds)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('finds what a device shares across its entity IDs, cut at an underscore', () => {
+    expect(el._commonObjectIdPrefix([
+      'sensor.tafla_h_gr_04_eldhus_power',
+      'sensor.tafla_h_gr_04_eldhus_energy',
+      'binary_sensor.tafla_h_gr_04_eldhus_cloud',
+    ])).toBe('tafla_h_gr_04_eldhus');
+  });
+
+  it('does not cut mid-word when two IDs share a partial segment', () => {
+    // "power" and "powering" share "power", but the prefix must end at _
+    expect(el._commonObjectIdPrefix([
+      'sensor.oven_power',
+      'binary_sensor.oven_powering',
+    ])).toBe('oven');
+  });
+
+  it('gives nothing to go on for one entity or unrelated IDs', () => {
+    expect(el._commonObjectIdPrefix(['sensor.only_one'])).toBe('');
+    expect(el._commonObjectIdPrefix(['sensor.alpha', 'sensor.beta'])).toBe('');
+  });
+});

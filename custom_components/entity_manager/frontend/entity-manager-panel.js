@@ -17634,6 +17634,26 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** What a device's entity IDs actually share, cut at an underscore:
+   *  ["tafla_h_gr_04_eldhus_power", "tafla_h_gr_04_eldhus_cloud"] →
+   *  "tafla_h_gr_04_eldhus". Used when a device's name no longer matches its own
+   *  entity IDs, which is the state between a device rename and the queue run. */
+  _commonObjectIdPrefix(entityIds) {
+    const objectIds = entityIds
+      .map(id => id.slice(id.indexOf('.') + 1))
+      .filter(Boolean);
+    if (objectIds.length < 2) return '';
+    let prefix = objectIds[0];
+    for (const objectId of objectIds.slice(1)) {
+      let i = 0;
+      while (i < prefix.length && i < objectId.length && prefix[i] === objectId[i]) i++;
+      prefix = prefix.slice(0, i);
+      if (!prefix) return '';
+    }
+    const cut = prefix.lastIndexOf('_');
+    return cut > 0 ? prefix.slice(0, cut) : '';
+  }
+
   /** The object-ID form of a device name, the way Home Assistant slugifies it:
    *  "Tafla H Gr.04 Eldhús" → "tafla_h_gr_04_eldhus". */
   _deviceSlug(name) {
@@ -17652,29 +17672,39 @@ class EntityManagerPanel extends HTMLElement {
     const info = this.deviceInfo?.[deviceId] || {};
     const oldName = (info.name_by_user || info.name || '').trim();
     const entityIds = (this._deviceEntitiesById(deviceId) || []).map(e => e.entity_id);
-    const oldSlug = this._deviceSlug(oldName);
+    // Rename a device twice and its entity IDs still carry the first name: their
+    // renames are only queued, so they change when the queue runs, not now. So
+    // match against every name this device has had, and fall back to what its
+    // entity IDs actually share.
+    const previousNames = this._deviceNameHistory?.get(deviceId) || [];
+    const candidateNames = [oldName, ...previousNames].filter(Boolean);
+    const idPrefix = this._commonObjectIdPrefix(entityIds);
 
     const plan = (newName) => {
       const newSlug = this._deviceSlug(newName);
-      const oldWords = this._nameWords(oldName);
+      const candidateSlugs = [...new Set(candidateNames.map(n => this._deviceSlug(n)))]
+        .filter(Boolean)
+        .concat(idPrefix ? [idPrefix] : []);
       return entityIds.map(entityId => {
         const dot = entityId.indexOf('.');
         const domain = entityId.slice(0, dot);
         const objectId = entityId.slice(dot + 1);
-        const idFollows = !!oldSlug && objectId.startsWith(oldSlug);
-        const newObjectId = idFollows ? newSlug + objectId.slice(oldSlug.length) : objectId;
+        const matchedSlug = candidateSlugs.find(slug => objectId.startsWith(slug)) || '';
+        const newObjectId = matchedSlug ? newSlug + objectId.slice(matchedSlug.length) : objectId;
         const entity = this._findEntityById(entityId);
         const shown = this._hass?.states?.[entityId]?.attributes?.friendly_name
           || entity?.name || entity?.original_name || '';
-        const nameFollows = !!oldName && this._startsWithWords(this._nameWords(shown), oldWords);
-        const remainder = nameFollows
-          ? shown.trim().slice(oldName.length).replace(/^[\s_.-]+/, '')
+        const shownWords = this._nameWords(shown);
+        const matchedName = candidateNames.find(n =>
+          this._startsWithWords(shownWords, this._nameWords(n))) || '';
+        const remainder = matchedName
+          ? shown.trim().slice(matchedName.length).replace(/^[\s_.-]+/, '')
           : '';
         return {
           entityId,
           newEntityId: `${domain}.${newObjectId}`,
-          idFollows,
-          displayName: nameFollows ? `${newName} ${remainder}`.trim() : '',
+          idFollows: !!matchedSlug && newObjectId !== objectId,
+          displayName: matchedName ? `${newName} ${remainder}`.trim() : '',
         };
       });
     };
@@ -17751,6 +17781,9 @@ class EntityManagerPanel extends HTMLElement {
       }
       this._pushUndoAction({ type: 'device_name_change', deviceId, oldName, newName });
       if (this.deviceInfo?.[deviceId]) this.deviceInfo[deviceId].name_by_user = newName;
+      // Remember what it was called, so a second rename still finds its entities
+      const history = (this._deviceNameHistory ||= new Map()).get(deviceId) || [];
+      this._deviceNameHistory.set(deviceId, [oldName, ...history.filter(n => n !== oldName)]);
 
       let queued = 0;
       for (const row of plan(newName)) {
