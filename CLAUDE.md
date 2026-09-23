@@ -143,6 +143,24 @@ allowed. Everything else is WebSocket-only.
   `localStorage`. `remove_entity` is deliberately undo-exempt.
 - All colour comes from `--em-*` CSS variables, never HA theme variables
   directly, so the theme engine can override light/dark correctly.
+- **Header filter pills.** The Categories / Hardware / Areas / Labels counts in
+  an integration or device header are buttons: clicking one filters that
+  header's devices and entities. A header holds a *list* of filters — same kind
+  OR'd, different kinds AND'd (`_pillMatchesAll`) — persisted per browser under
+  `em-intg-pill-filters` and `em-device-pill-filters`, and validated on load so
+  junk in storage cannot break the panel. Pills count entities everywhere,
+  Hardware keeping its device count in the tooltip. With pills active the ⋯ menu
+  can Select, Enable or Disable exactly what they show, and a banner above the
+  list says how many are active, because a filter that outlives a reload must
+  never look like missing data.
+- **Renaming a device** (the Device button in Bulk Rename) writes only the
+  device's `name_by_user` and puts its entity changes in the rename queue.
+  Entity IDs carry references, and the queue already owns the dry-run preview,
+  the reference update, per-entity failures and undo — a second path writing IDs
+  directly is how the Energy dashboard broke before 3.4.0. It matches entity IDs
+  against every name the device has had this session and, failing that, the
+  prefix its IDs share, because a device renamed twice no longer matches its own
+  entity IDs until the queue runs.
 - Persistent user state lives under `em-*` `localStorage` keys, with three
   legacy camelCase holdouts (`em_undoStack`, `em_redoStack`,
   `em_lastActivityCache`). All of it is per-browser and never synced.

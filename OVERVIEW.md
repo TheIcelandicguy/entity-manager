@@ -52,9 +52,19 @@ entities) who need to clean up, standardize, and audit their setup efficiently.
 - Click-to-rename any entity; the domain prefix (`sensor.`, `light.`…) is locked.
 - **Automatic propagation** of the new entity ID across automations, scripts, and helpers (YAML reference updater).
 - Conflict validation prevents duplicate IDs.
-- **Bulk Rename** inline view: split entity picker + live-preview rename queue, with Find & Replace (regex + case-sensitive).
+- **Bulk Rename** inline view: split entity picker + live-preview rename queue, with Find & Replace (regex + case-sensitive),
+  CSV import/export, and a **Duplicate names** filter.
+- **Rename a device** from the picker: it writes the device's name and queues its entity IDs and display names to follow,
+  previewed first. The changes go through the rename queue rather than a second write path, so they keep its reference
+  update, undo and per-entity reporting.
+- **Reference rewriting** reaches YAML, storage dashboards, config entry data/options, persons, Assist pipelines and the
+  **Energy dashboard preferences** — the last of these because energy sources are statistic IDs, which for a
+  recorder-backed sensor is the entity ID, so a rename used to leave those circuits charting nothing.
 
 ### Search, Filtering & Grouping
+- **Header filter pills**: the Categories / Hardware / Areas / Labels counts in an integration or device header are
+  buttons. Same kind OR's, different kinds AND's; filters persist per browser and are summarised in a banner above the
+  list, and the ⋯ menu can act on exactly what they show.
 - **Fuzzy search**, text search, domain filter, state filter (All/Enabled/Disabled), integration filter, label filter.
 - **Filter presets** (save/load filter combos) and entity-ID presets.
 - **Grouping modes**: Integration (default), Room/Area, Type, Floor, Device Name, plus custom groups.
@@ -67,6 +77,14 @@ entities) who need to clean up, standardize, and audit their setup efficiently.
 - **Health & Cleanup** — unavailable / orphaned / stale entities, ghost devices, never-triggered automations, with Ignore/Restore.
 - **Suggestions** — six colour-coded sections (Health Issues, Disable Candidates, Naming, Area, Area Mismatch, Label Suggestions across 21 semantic categories).
 - **Automations/Scripts/Helpers**, **Templates**, **HACS Store**, **Card Types**, **Browsers** views.
+
+### Names
+- **Duplicate Names** card in Health & Cleanup: entities whose displayed name repeats their device name, fixed in bulk by
+  setting a display name that carries the whole intended name. Entities whose own name *is* the device name, devices
+  whose entities carry another device's name, and integration entries still titled after an old device are reported —
+  the last of these fixable where an entry owns exactly one device.
+- Entity cards label each name (Name / Entity / Device), mark a name set by hand, suggest one where a name is missing or
+  merely repeats the device, and offer Undo straight after a rename.
 
 ### Cross-Cutting Tools
 - **Undo / Redo** — up to 50 steps, combined timeline dialog, persisted to localStorage.
