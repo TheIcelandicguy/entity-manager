@@ -138,6 +138,16 @@ allowed. Everything else is WebSocket-only.
   `npm version`), the README badge, and `EM_VERSION` at the top of
   `entity-manager-panel.js` — the panel prints that constant in its header when
   the panel config carries no version. `check_docs.py` now fails on a stale one.
+- The **Duplicate Names** card in Cleanup & Health finds entities whose displayed
+  name repeats their device name — HA composes `<device> <entity>` when
+  `has_entity_name` is set, and several integrations already put the device name
+  in the entity name. Detection is frontend-only from
+  `config/{entity,device}_registry/list`; matching is whole-word and
+  accent-folded (`_nameWords` mirrors `_folded_form` in `voice_assistant.py`),
+  because a substring test flags "Back" inside "Backpack". The fix **sets** a
+  display name to the remainder via `update_entity_display_name` — clearing it
+  would fall back to the bad `original_name`. Entities whose own name *is* the
+  device name, and devices carrying another device's name, are reported only.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.

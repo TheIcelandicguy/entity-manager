@@ -1014,3 +1014,157 @@ describe('active filter summary and banner', () => {
     expect(el._activeFiltersBannerHtml()).toContain('1 pill filter active on 1 header');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Duplicate-name audit
+// ---------------------------------------------------------------------------
+
+/** A panel whose WS calls answer with the given registries. */
+function makeAuditPanel(entities, devices) {
+  const el = makePanel();
+  el._hass.callWS = vi.fn(({ type }) =>
+    Promise.resolve(type === 'config/device_registry/list' ? devices : entities));
+  return el;
+}
+
+const DEVICES = [
+  { id: 'dev_dish', name: 'Tafla B Gr.13 Uppþvottavél' },
+  { id: 'dev_backup', name: 'Backup' },
+  { id: 'dev_screen', name: 'Forstofa skjár app' },
+  { id: 'dev_old', name: 'Forstofa skjár' },
+];
+
+describe('_nameWords and _startsWithWords', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('folds Icelandic the way the entity IDs are spelled', () => {
+    expect(el._nameWords('Tafla B Gr.13 Uppþvottavél'))
+      .toEqual(['tafla', 'b', 'gr', '13', 'uppthvottavel']);
+    expect(el._nameWords('Baðherbergi Loftljós')).toEqual(['badherbergi', 'loftljos']);
+  });
+
+  it('matches whole words only', () => {
+    expect(el._startsWithWords(['backup', 'manager', 'state'], ['backup'])).toBe(true);
+    expect(el._startsWithWords(['backup', 'manager', 'state'], ['backup', 'manager'])).toBe(true);
+    // The prefix must be whole words, not a substring: "back" is not "backup"
+    expect(el._startsWithWords(['backup', 'manager'], ['back'])).toBe(false);
+    expect(el._startsWithWords(['backup'], ['backup', 'manager'])).toBe(false);
+    expect(el._startsWithWords(['anything'], [])).toBe(false);
+  });
+});
+
+describe('_computeDuplicateNames()', () => {
+  it('finds the device name repeated, and what the entity would become', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.tafla_b_gr_13_uppthvottavel_power',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Tafla B Gr.13 Uppþvottavél power',
+      },
+      {
+        entity_id: 'binary_sensor.tafla_b_gr_13_uppthvottavel_cloud',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Cloud',
+      },
+    ], DEVICES);
+
+    const { doubled, needName, mismatched } = await el._computeDuplicateNames();
+    expect(doubled).toHaveLength(1);
+    expect(doubled[0].entity_id).toBe('sensor.tafla_b_gr_13_uppthvottavel_power');
+    expect(doubled[0].current).toBe('Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power');
+    expect(doubled[0].suggested).toBe('power');
+    expect(needName).toEqual([]);
+    expect(mismatched).toEqual([]);
+  });
+
+  it('catches a one-word device name repeated, like HA core Backup', async () => {
+    // Verified on live HA: friendly_name really is "Backup Backup Manager state"
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backup_backup_manager_state',
+        device_id: 'dev_backup',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Backup Manager state',
+      },
+    ], DEVICES);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toHaveLength(1);
+    expect(doubled[0].current).toBe('Backup Backup Manager state');
+    expect(doubled[0].suggested).toBe('Manager state');
+  });
+
+  it('does not flag a device name that is only a partial word', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backpack_weight',
+        device_id: 'dev_back',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Backpack weight',
+      },
+    ], [{ id: 'dev_back', name: 'Back' }]);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+  });
+
+  it('separates the ones with nothing left after the device name', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'switch.tafla_b_gr_13_uppthvottavel',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Tafla B Gr.13 Uppþvottavél',
+      },
+    ], DEVICES);
+
+    const { doubled, needName } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+    expect(needName).toHaveLength(1);
+    expect(needName[0].suggested).toBe('');
+  });
+
+  it('reports entities carrying another device name, grouped by device', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.forstofa_skjar_battery',
+        device_id: 'dev_screen',
+        has_entity_name: false,
+        name: null,
+        original_name: 'Forstofa skjár battery',
+      },
+      {
+        entity_id: 'sensor.forstofa_skjar_wifi',
+        device_id: 'dev_screen',
+        has_entity_name: false,
+        name: null,
+        original_name: 'Forstofa skjár wifi',
+      },
+    ], DEVICES);
+
+    const { mismatched } = await el._computeDuplicateNames();
+    expect(mismatched).toHaveLength(1);
+    expect(mismatched[0].deviceName).toBe('Forstofa skjár app');
+    expect(mismatched[0].groups).toEqual([['Forstofa skjár', 2]]);
+  });
+
+  it('ignores entities with no name and entities with no device', async () => {
+    const el = makeAuditPanel([
+      { entity_id: 'sensor.nameless', device_id: 'dev_dish', has_entity_name: true, name: null, original_name: null },
+      { entity_id: 'sensor.loose', device_id: null, has_entity_name: false, name: 'Tafla B Gr.13 Uppþvottavél power', original_name: null },
+    ], DEVICES);
+
+    const { doubled, needName, mismatched } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+    expect(needName).toEqual([]);
+    expect(mismatched).toEqual([]);
+  });
+});

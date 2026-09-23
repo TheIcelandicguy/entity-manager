@@ -150,6 +150,7 @@ const EM_STAT_TINT = {
   lovelace:      'em-sug-naming',
   'config-health': 'em-sug-area',
   cleanup:       'em-sug-disable',
+  'duplicate-names': 'em-sug-naming',
 };
 
 // Unified ignore-list type metadata (label + accent color), shared by the
@@ -2386,7 +2387,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
     contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
-    await this._renderMergedEntitySections(['cleanup', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
+    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
     this._attachDialogSearch(contentEl);
   }
 
@@ -2398,8 +2399,9 @@ class EntityManagerPanel extends HTMLElement {
       'config-health': 'Config Errors',
       'unavailable':   'Unavailable Entities',
       'cleanup':       'Cleanup',
+      'duplicate-names': 'Duplicate Names',
     };
-    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup };
+    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate' };
 
     // Build all section shells upfront as collapsible groups with a loading placeholder
     let html = '';
@@ -2419,7 +2421,7 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners (and the bulk-action bar) remain live; skip the
           // temp+move pattern, which silently dropped the bulk bar and tint wrapper for
@@ -2429,6 +2431,8 @@ class EntityManagerPanel extends HTMLElement {
             await this._showConfigEntryHealthDialog({ inline: true, container: groupBody });
           } else if (t === 'cleanup') {
             await this._showCleanupDialog({ inline: true, container: groupBody });
+          } else if (t === 'duplicate-names') {
+            await this._showDuplicateNamesSection(groupBody);
           } else if (t === 'automation' || t === 'script' || t === 'helper') {
             // skipOuterGroup avoids a duplicate section header, since this section
             // shell already provides one (built above via _collGroup).
@@ -14617,6 +14621,235 @@ class EntityManagerPanel extends HTMLElement {
         }
       });
     }
+  }
+
+  /** Words of a name, folded for comparison: lowercase, accent-free, þ/ð/æ spelled out.
+   *  Mirrors _folded_form in voice_assistant.py. */
+  _nameWords(text) {
+    const folded = String(text || '')
+      .toLowerCase()
+      .replace(/þ/g, 'th').replace(/ð/g, 'd').replace(/æ/g, 'ae').replace(/ø/g, 'o')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    return folded.split(/[\s_.\-]+/).filter(Boolean);
+  }
+
+  /** Does `words` start with every word of `prefix`, whole words only?
+   *  Substring matching would flag HA's own "Backup" device for an entity
+   *  called "Backup Manager state". */
+  _startsWithWords(words, prefix) {
+    return prefix.length > 0 && prefix.length <= words.length
+      && prefix.every((w, i) => words[i] === w);
+  }
+
+  /**
+   * Entities whose displayed name repeats their device name, and devices whose
+   * entities are named after some other device.
+   *
+   * HA composes "<device name> <entity name>" when has_entity_name is set, so an
+   * integration that already puts the device name in the entity name produces
+   * "Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power".
+   */
+  async _computeDuplicateNames() {
+    const [entityRegistry, deviceRegistry] = await Promise.all([
+      this._hass.callWS({ type: 'config/entity_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config/device_registry/list' }).catch(() => []),
+    ]);
+    const deviceName = new Map(
+      (deviceRegistry || []).map(d => [d.id, (d.name_by_user || d.name || '').trim()])
+    );
+    // Device names of two words or more; one-word names match far too much
+    const knownDeviceNames = [...new Set([...deviceName.values()].filter(Boolean))]
+      .map(name => ({ name, words: this._nameWords(name) }))
+      .filter(d => d.words.length >= 2);
+
+    const doubled = [];   // fixable: a real remainder is left
+    const needName = [];  // the entity's own name IS the device name
+    const foreign = new Map();  // device_id → Map(other device name → count)
+
+    for (const entry of entityRegistry || []) {
+      const dName = deviceName.get(entry.device_id) || '';
+      const own = entry.name || entry.original_name || '';
+      if (!own) continue;
+      const ownWords = this._nameWords(own);
+
+      if (dName && entry.has_entity_name) {
+        const dWords = this._nameWords(dName);
+        if (this._startsWithWords(ownWords, dWords)) {
+          const rest = own.trim().slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          const row = {
+            entity_id: entry.entity_id,
+            deviceName: dName,
+            current: `${dName} ${own}`.trim(),
+            suggested: rest,
+            userNamed: !!entry.name,
+          };
+          (rest ? doubled : needName).push(row);
+          continue;
+        }
+      }
+
+      // An entity carrying a different device's name — a device renamed while its
+      // entities kept the old one, or one physical device split across two registry devices
+      if (!entry.device_id) continue;
+      const other = knownDeviceNames.find(d =>
+        d.name !== dName && this._startsWithWords(ownWords, d.words));
+      if (other) {
+        if (!foreign.has(entry.device_id)) foreign.set(entry.device_id, new Map());
+        const counts = foreign.get(entry.device_id);
+        counts.set(other.name, (counts.get(other.name) || 0) + 1);
+      }
+    }
+
+    const mismatched = [...foreign.entries()].map(([deviceId, counts]) => ({
+      deviceId,
+      deviceName: deviceName.get(deviceId) || deviceId,
+      groups: [...counts.entries()].sort((a, b) => b[1] - a[1]),
+    })).sort((a, b) => a.deviceName.localeCompare(b.deviceName));
+
+    doubled.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    needName.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    return { doubled, needName, mismatched };
+  }
+
+  /** Apply the suggested display names, one call each, with undo per entity. */
+  async _fixDuplicateNames(rows, btn) {
+    if (!rows.length) return;
+    if (!(await this._confirmAsync(
+      'Fix duplicate names',
+      `Set the display name of ${rows.length} entit${rows.length !== 1 ? 'ies' : 'y'}? ` +
+      'Entity IDs do not change, so nothing that references them breaks. This can be undone.',
+    ))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Fixing…'; }
+    let ok = 0;
+    const failed = [];
+    for (const row of rows) {
+      try {
+        await this._hass.callWS({
+          type: 'entity_manager/update_entity_display_name',
+          entity_id: row.entity_id,
+          name: row.suggested,
+        });
+        this._pushUndoAction({
+          type: 'display_name_change',
+          entityId: row.entity_id,
+          oldName: row.userNamed ? row.current : '',
+          newName: row.suggested,
+        });
+        ok++;
+      } catch (err) {
+        failed.push(`${row.entity_id}: ${err.message}`);
+      }
+    }
+    this._showToast(
+      failed.length
+        ? `Renamed ${ok}, ${failed.length} failed — ${failed[0]}`
+        : `Renamed ${ok} entit${ok !== 1 ? 'ies' : 'y'}`,
+      failed.length ? 'error' : 'success',
+    );
+    await this.loadData();
+    this._refreshView();
+  }
+
+  /** The Duplicate Names section of Cleanup & Health. */
+  async _showDuplicateNamesSection(container) {
+    const { doubled, needName, mismatched } = await this._computeDuplicateNames();
+    this._dupNameRows = doubled;
+
+    if (!doubled.length && !needName.length && !mismatched.length) {
+      container.innerHTML = '<p style="text-align:center;padding:24px;opacity:0.6">No duplicated names — every entity reads cleanly under its device.</p>';
+      return;
+    }
+
+    const row = (r, fixable) => this._renderMiniEntityCard({
+      entity_id: r.entity_id,
+      name: r.current,
+      state: fixable ? 'doubled' : 'no name left',
+      stateColor: fixable ? 'var(--em-warning)' : 'var(--em-danger)',
+      infoLine: fixable
+        ? `${this._icon('mdi:arrow-right-thin', '14px')} becomes <strong>${this._escapeHtml(r.deviceName)} ${this._escapeHtml(r.suggested)}</strong>`
+        : `${this._icon(EM_ICONS.warning, '14px')} its own name is just the device name — give it one by hand`,
+      extraClass: 'em-dupname-row',
+      checkboxHtml: fixable
+        ? `<input type="checkbox" class="em-dupname-sel" data-entity-id="${this._escapeAttr(r.entity_id)}" checked style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`
+        : '',
+      actionsHtml: fixable
+        ? `<button class="em-dialog-btn em-dialog-btn-outline-primary em-dupname-fix-one" data-entity-id="${this._escapeAttr(r.entity_id)}">Fix</button>`
+        : `<button class="em-dialog-btn em-dialog-btn-outline-primary em-dupname-rename" data-entity-id="${this._escapeAttr(r.entity_id)}">Rename…</button>`,
+    });
+
+    const byDevice = new Map();
+    doubled.forEach(r => {
+      if (!byDevice.has(r.deviceName)) byDevice.set(r.deviceName, []);
+      byDevice.get(r.deviceName).push(r);
+    });
+
+    const doubledHtml = doubled.length ? `
+      <div class="em-sug-section em-sug-naming" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon('mdi:content-duplicate', '16px')} Device name twice (${doubled.length})`,
+          this._sectionHint('Home Assistant already puts the device name in front, so these read it twice. '
+            + 'Fixing sets a display name — the entity ID never changes, so automations and dashboards are untouched.', 'help-dupnames')
+          + `<div class="em-dupname-actions" style="padding:6px 12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+               <label style="margin-right:auto;font-size:12px;display:flex;gap:6px;align-items:center">
+                 <input type="checkbox" id="em-dupname-all" checked style="accent-color:var(--em-primary)"> Select all
+               </label>
+               <button class="em-dialog-btn em-dialog-btn-primary" id="em-dupname-fix-selected">Fix selected</button>
+             </div>`
+          + [...byDevice.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([dev, rows]) => this._collGroup(`${this._escapeHtml(dev)} (${rows.length})`,
+                rows.map(r => row(r, true)).join('')))
+              .join(''))}
+      </div>` : '';
+
+    const needNameHtml = needName.length ? `
+      <div class="em-sug-section em-sug-health" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon(EM_ICONS.warning, '16px')} Needs a name (${needName.length})`,
+          this._sectionHint('The entity\'s own name is exactly the device name, so there is nothing left after '
+            + 'removing it. Give these a name yourself — a guess would be worse than the doubling.', 'help-dupnames-manual')
+          + needName.map(r => row(r, false)).join(''))}
+      </div>` : '';
+
+    const mismatchHtml = mismatched.length ? `
+      <div class="em-sug-section em-sug-area" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon('mdi:swap-horizontal', '16px')} Named after another device (${mismatched.length})`,
+          this._sectionHint('These devices have entities carrying a different device\'s name — usually a device renamed '
+            + 'while its entities kept the old name, or one physical device split across two registry entries. '
+            + 'Reported only: which name is right is your call.', 'help-dupnames-foreign')
+          + mismatched.map(m => `
+            <div class="em-dupname-foreign" style="padding:8px 14px;border-top:1px solid var(--em-border)">
+              <div style="font-weight:600">${this._escapeHtml(m.deviceName)}</div>
+              <div style="font-size:12px;color:var(--em-text-secondary)">
+                ${m.groups.map(([name, n]) => `${n} entit${n !== 1 ? 'ies' : 'y'} named “${this._escapeHtml(name)}”`).join(' · ')}
+              </div>
+            </div>`).join(''))}
+      </div>` : '';
+
+    container.innerHTML = doubledHtml + needNameHtml + mismatchHtml;
+    this._reAttachCollapsibles(container);
+
+    const selected = () => [...container.querySelectorAll('.em-dupname-sel:checked')]
+      .map(cb => doubled.find(r => r.entity_id === cb.dataset.entityId))
+      .filter(Boolean);
+
+    container.querySelector('#em-dupname-all')?.addEventListener('change', (e) => {
+      container.querySelectorAll('.em-dupname-sel').forEach(cb => { cb.checked = e.target.checked; });
+    });
+    container.querySelector('#em-dupname-fix-selected')?.addEventListener('click', (e) => {
+      this._fixDuplicateNames(selected(), e.target);
+    });
+    container.querySelectorAll('.em-dupname-fix-one').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = doubled.find(x => x.entity_id === btn.dataset.entityId);
+        if (r) this._fixDuplicateNames([r], btn);
+      });
+    });
+    container.querySelectorAll('.em-dupname-rename').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = needName.find(x => x.entity_id === btn.dataset.entityId);
+        this._showDisplayNameEditDialog(btn.dataset.entityId, r?.suggested || '', () => {
+          this.loadData().then(() => this._refreshView());
+        });
+      });
+    });
   }
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {
