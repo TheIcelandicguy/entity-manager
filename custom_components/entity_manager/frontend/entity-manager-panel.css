@@ -7734,3 +7734,24 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
   background: color-mix(in srgb, var(--em-primary) 12%, transparent);
 }
+
+/* "Device" button on a device group in the Bulk Rename picker */
+.brp-dev-rename {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--em-primary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: transparent;
+  flex-shrink: 0;
+}
+.brp-dev-rename:hover {
+  background: color-mix(in srgb, var(--em-primary) 16%, transparent);
+}

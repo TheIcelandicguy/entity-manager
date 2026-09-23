@@ -1388,3 +1388,12 @@ describe('_hasDoubledName(entityId, friendlyName)', () => {
     expect(el._hasDoubledName('sensor.unknown', 'Anything at all')).toBe(false);
   });
 });
+
+describe('_deviceSlug(name)', () => {
+  it('slugifies a device name the way entity IDs are spelled', () => {
+    const el = makePanel();
+    expect(el._deviceSlug('Tafla H Gr.04 Eldhús')).toBe('tafla_h_gr_04_eldhus');
+    expect(el._deviceSlug('Baðherbergi Loftljós')).toBe('badherbergi_loftljos');
+    expect(el._deviceSlug('Þvottahús')).toBe('thvottahus');
+  });
+});
