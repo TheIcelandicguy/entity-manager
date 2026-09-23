@@ -1316,10 +1316,12 @@ async def test_ws_resolve_voice_target_flags_unroutable_wording(
     entity_reg.async_update_entity("switch.lamp", name="Lamp")
 
     conn = _mock_conn()
+    # A bare name with no Entity Manager wording around it: the entity is found,
+    # but Home Assistant would handle the sentence itself and never send it here.
     msg = {
         "id": 41,
         "type": "entity_manager/resolve_voice_target",
-        "phrase": "turn on lamp",
+        "phrase": "lamp",
     }
 
     handle_resolve_voice_target(hass, conn, msg)
@@ -1327,6 +1329,7 @@ async def test_ws_resolve_voice_target_flags_unroutable_wording(
 
     result = conn.send_result.call_args[0][1]
     assert result["intent"] is None
+    assert result["spoken"] == "lamp"
     assert result["entity_id"] == "switch.lamp"
 
 
