@@ -10,6 +10,7 @@ registry here.
 import logging
 import re
 import unicodedata
+from dataclasses import dataclass, field
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -60,23 +61,51 @@ def _folded_form(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
-def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
-    """Resolve what the user said to one entity ID, disabled entities included.
+@dataclass
+class VoiceResolution:
+    """What resolving a phrase decided.
 
-    Accepts a literal entity ID, a display name, or part of one. Raises
-    _EntityIdError with speakable text when there is no match or several.
+    The intents only need the entity ID or the error text, but the panel's
+    phrase tester shows the rest: how the match was made, what else matched,
+    and — when nothing did — which names came closest and by how much.
+    """
+
+    spoken: str
+    entity_id: str | None = None
+    # entity_id | exact | substring | words | none
+    method: str = "none"
+    matches: list[str] = field(default_factory=list)
+    near_misses: list[tuple[str, float]] = field(default_factory=list)
+    error: str | None = None
+
+
+# How many near misses the tester reports when nothing matched
+_MAX_NEAR_MISSES = 5
+
+
+def resolve_voice_target(hass: HomeAssistant, spoken: str) -> VoiceResolution:
+    """Resolve what the user said to one entity, disabled entities included.
+
+    Accepts a literal entity ID, a display name, or part of one. Never writes
+    anything, so the panel can run it on whatever is typed.
     """
     entity_reg = er.async_get(hass)
     said = spoken.strip()
+    result = VoiceResolution(spoken=said)
 
     if VALID_ENTITY_ID.match(said):
+        result.method = "entity_id"
         if entity_reg.async_get(said) is None:
-            raise _EntityIdError(f"There is no entity called {said}")
-        return said
+            result.error = f"There is no entity called {said}"
+            return result
+        result.entity_id = said
+        result.matches = [said]
+        return result
 
     target = _spoken_form(said)
     if not target:
-        raise _EntityIdError("Please say which entity you mean")
+        result.error = "Please say which entity you mean"
+        return result
     targets = {target, _folded_form(said)}
 
     target_words = {w for t in targets for w in t.split()}
@@ -127,6 +156,7 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
                 )
 
     matches = exact or partial
+    method = "exact" if exact else "substring" if partial else "none"
     if not matches and scored:
         best = max(score for score, _, _ in scored)
         if best >= _MIN_WORD_MATCH:
@@ -136,21 +166,42 @@ def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
                 for score, rank, entity_id in scored
                 if score == best and rank == closest
             ]
+            method = "words"
 
     if not matches:
-        raise _EntityIdError(f"I could not find an entity called {said}")
+        # What came closest, so the tester can say why it was not enough.
+        result.near_misses = [
+            (entity_id, round(score, 2))
+            for score, _, entity_id in sorted(scored, reverse=True)[:_MAX_NEAR_MISSES]
+        ]
+        result.error = f"I could not find an entity called {said}"
+        return result
+
+    result.method = method
+    result.matches = sorted(matches)
     if len(matches) > 1:
-        listed = ", ".join(sorted(matches)[:_MAX_AMBIGUOUS])
+        listed = ", ".join(result.matches[:_MAX_AMBIGUOUS])
         more = (
             f", and {len(matches) - _MAX_AMBIGUOUS} more"
             if len(matches) > _MAX_AMBIGUOUS
             else ""
         )
-        raise _EntityIdError(
+        result.error = (
             f"{len(matches)} entities match {said}: {listed}{more}. "
             "Please say the entity ID."
         )
-    return matches[0]
+        return result
+
+    result.entity_id = matches[0]
+    return result
+
+
+def _resolve_entity_id(hass: HomeAssistant, spoken: str) -> str:
+    """Resolve what the user said to one entity ID, or raise with the reason."""
+    result = resolve_voice_target(hass, spoken)
+    if result.error or result.entity_id is None:
+        raise _EntityIdError(result.error or "Please say which entity you mean")
+    return result.entity_id
 
 
 class _EntityManagerIntentHandler(intent.IntentHandler):

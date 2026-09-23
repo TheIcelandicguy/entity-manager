@@ -16,6 +16,7 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from .const import DOMAIN
 from .websocket_api import async_setup_ws_api, enable_entity, disable_entity
 from .voice_assistant import async_setup_intents
+from .voice_sentences import async_install_sentences
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,64 +35,6 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
-# First line of the shipped sentence files. A copy that still carries it is
-# ours to refresh; a copy without it has been edited and is left alone.
-SENTENCE_MARKER = "# Managed by Entity Manager."
-
-
-def _install_sentences(source_dir: Path, config_dir: Path) -> list[str]:
-    """Copy sentence files into <config>/custom_sentences/<lang>/.
-
-    HA's conversation agent only reads custom sentences from that directory,
-    and offers integrations no way to register their own, so the files have to
-    be put there. Returns the languages whose files changed.
-    """
-    changed: list[str] = []
-    for source in sorted(source_dir.glob("*/*.yaml")):
-        language = source.parent.name
-        target = config_dir / "custom_sentences" / language / source.name
-        shipped = source.read_text(encoding="utf-8")
-        if target.exists():
-            current = target.read_text(encoding="utf-8")
-            if current == shipped:
-                continue
-            if not current.lstrip().startswith(SENTENCE_MARKER):
-                _LOGGER.debug(
-                    "Leaving edited sentence file alone: %s",
-                    target,
-                )
-                continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(shipped, encoding="utf-8")
-        changed.append(language)
-    return changed
-
-
-async def _async_install_sentences(hass: HomeAssistant) -> None:
-    """Install the voice sentences and reload the agent if they changed."""
-    source_dir = Path(__file__).parent / "sentences"
-    if not source_dir.is_dir():
-        return
-    try:
-        changed = await hass.async_add_executor_job(
-            _install_sentences, source_dir, Path(hass.config.config_dir)
-        )
-    except OSError as err:
-        _LOGGER.warning("Could not install voice sentences: %s", err)
-        return
-    if not changed:
-        return
-    _LOGGER.info("Installed Entity Manager voice sentences for: %s", ", ".join(changed))
-    # Without a reload the agent keeps the intents it cached at startup.
-    if hass.services.has_service("conversation", "reload"):
-        try:
-            await hass.services.async_call("conversation", "reload", blocking=True)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning(
-                "Sentences installed but conversation reload failed: %s", err
-            )
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Entity Manager from a config entry."""
 
@@ -106,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Set up voice assistant intents
     await async_setup_intents(hass)
-    await _async_install_sentences(hass)
+    await async_install_sentences(hass)
 
     # Register services (delegates to shared helpers in websocket_api)
     def _make_service_handler(action, fn):
