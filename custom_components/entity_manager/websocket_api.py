@@ -6,7 +6,7 @@ import re
 import uuid as uuid_module
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
@@ -140,6 +140,11 @@ async def handle_get_disabled_entities(
                         if entity.disabled_by
                         else None,
                         "original_name": entity.original_name,
+                        # The display name the user set, if any. Without it the
+                        # panel can only show the integration's name, so a
+                        # rename looks like it did nothing.
+                        "name": entity.name,
+                        "has_entity_name": entity.has_entity_name,
                         "entity_category": entity.entity_category.value
                         if entity.entity_category
                         else None,
@@ -865,9 +870,9 @@ async def handle_update_yaml_references(
 
     Takes one ``old_entity_id``/``new_entity_id`` pair or a ``renames`` list.
     Rewrites YAML config files, storage-mode dashboards, config entry
-    data/options (UI helpers keep their source entity there), persons and
-    Assist pipelines, then reloads automations/scripts/scenes/templates if YAML
-    changed. Integration Stores in .storage and files under custom_components
+    data/options (UI helpers keep their source entity there), persons,
+    Assist pipelines and the Energy dashboard preferences, then reloads
+    automations/scripts/scenes/templates if YAML changed. Integration Stores in .storage and files under custom_components
     are only reported in ``manual_references``.
 
     When dry_run=True nothing is modified; the response lists what *would*
@@ -946,6 +951,7 @@ async def handle_update_yaml_references(
         ("config_entry", _replace_in_config_entries),
         ("person", _replace_in_persons),
         ("assist_pipeline", _replace_in_pipelines),
+        ("energy", _replace_in_energy_prefs),
     ):
         for label, count, error in await rewrite(
             hass, rewriter, dry_run, _write_backup
@@ -1014,6 +1020,7 @@ _YAML_SKIP = {
 _STORAGE_REPORT_SKIP = re.compile(
     r"^(core\.(entity_registry|device_registry|restore_state|config_entries)"
     r"|lovelace|person$|assist_pipeline\.|trace\.|auth|http|cloud|onboarding"
+    r"|energy$"
     r"|hacs\.|repairs\.|homeassistant\.exposed_entities|entity_manager_backups"
     r"|google\.|local_calendar\.|local_todo\.|bluetooth\.|backup$)"
     r"|\.(pem|ics)$|bak|pre-|rollback",
@@ -1232,6 +1239,56 @@ async def _replace_in_pipelines(
                 continue
         out.append((label, len(changes), None))
     return out
+
+
+# The keys EnergyManager.async_update merges; it ignores anything else.
+_ENERGY_PREF_KEYS = ("energy_sources", "device_consumption", "device_consumption_water")
+
+
+async def _replace_in_energy_prefs(
+    hass: HomeAssistant, rewriter: _Rewriter, dry_run: bool, write_backup: Any
+) -> list[tuple[str, int, str | None]]:
+    """Rewrite statistic references in the Energy dashboard preferences.
+
+    The Energy dashboard stores a statistic ID per source, which for a
+    recorder-backed sensor is its entity ID. A rename leaves those pointing at
+    an ID that no longer exists and the affected circuits silently stop
+    charting, so they are rewritten here through the energy manager's own API.
+    Statistics themselves are migrated by the recorder with the rename.
+    """
+    try:
+        from homeassistant.components.energy.data import (  # noqa: PLC0415
+            async_get_manager,
+        )
+    except ImportError:  # energy not available in this HA build
+        return []
+
+    label = "energy preferences"
+    try:
+        manager = await async_get_manager(hass)
+    except Exception as exc:  # noqa: BLE001
+        return [(label, 0, str(exc))]
+
+    prefs = manager.data
+    if not prefs:
+        return []
+
+    new_prefs, count = _replace_in_obj(dict(prefs), rewriter)
+    if not count:
+        return []
+    if not dry_run:
+        try:
+            await hass.async_add_executor_job(write_backup, "energy", dict(prefs))
+            # Only the keys the manager merges; anything else it would drop.
+            update = {
+                key: value
+                for key, value in new_prefs.items()
+                if key in _ENERGY_PREF_KEYS
+            }
+            await manager.async_update(cast(Any, update))
+        except Exception as exc:  # noqa: BLE001
+            return [(label, 0, str(exc))]
+    return [(label, count, None)]
 
 
 def _scan_manual_references(

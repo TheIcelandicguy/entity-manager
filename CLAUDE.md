@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.3.1**.
+Home Assistant custom integration, domain `entity_manager`, **v3.4.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -11,9 +11,10 @@ large installs. No Python requirements; `integration_type: service`,
 minimum HA 2024.1.0.
 
 `OVERVIEW.md` in this repo is current and was verified against source — use it
-when you need more depth than this file. The other root docs (`STRUCTURE.md`,
-`PROJECT_SUMMARY.md`, `QUICKSTART.md`, `DEVREF.md`, `cursorrules.md`) are not
-verified; check source before trusting them.
+when you need more depth than this file. The unverified root docs that used to
+sit beside it (STRUCTURE.md, PROJECT_SUMMARY.md, QUICKSTART.md, DEVREF.md,
+INSTALL.md, cursorrules.md) were deleted on 2026-09-22; README.md covers
+installation, and git history has the rest.
 
 Before ending a session, run `python check_docs.py` and update this file.
 The script checks that every path, constant, line count, test count and service
@@ -101,9 +102,12 @@ allowed. Everything else is WebSocket-only.
   swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
   (`async_load` / `async_save`), **config entry data/options**
   (`async_update_entry` — UI helpers keep their source entity there),
-  **persons** (`device_trackers`) and **Assist pipelines**
-  (`async_update_pipeline`) through HA's APIs — never by editing `.storage` on
-  disk, which HA would overwrite from memory, so no HA stop is needed. Each gets
+  **persons** (`device_trackers`), **Assist pipelines**
+  (`async_update_pipeline`) and the **Energy dashboard preferences**
+  (`async_get_manager` → `manager.async_update`, only the three keys
+  `EnergyManager.async_update` merges) through HA's APIs — never by editing
+  `.storage` on disk, which HA would overwrite from memory, so no HA stop is
+  needed. Each gets
   a JSON backup under `.storage/entity_manager_backups/`. After a YAML write it
   reloads `automation`, `script`, `scene`, `template`. Integration Stores in
   `.storage` and files under `custom_components` are only **reported** in
@@ -140,6 +144,25 @@ allowed. Everything else is WebSocket-only.
   `npm version`), the README badge, and `EM_VERSION` at the top of
   `entity-manager-panel.js` — the panel prints that constant in its header when
   the panel config carries no version. `check_docs.py` now fails on a stale one.
+- The **Duplicate Names** card in Cleanup & Health finds entities whose displayed
+  name repeats their device name — HA composes `<device> <entity>` when
+  `has_entity_name` is set, and several integrations already put the device name
+  in the entity name. Detection is frontend-only from
+  `config/{entity,device}_registry/list`; matching is whole-word and
+  accent-folded (`_nameWords` mirrors `_folded_form` in `voice_assistant.py`),
+  because a substring test flags "Back" inside "Backpack". The fix **sets** the
+  whole intended name (`<device> <remainder>`) via `update_entity_display_name`.
+  Two HA rules make that the right shape: clearing the name falls back to the
+  bad `original_name`, and a display name is used **verbatim** — HA prepends the
+  device name only when no display name is set
+  (`_async_get_full_entity_name_generic`), so setting just "power" would read as
+  "Power" with the device lost. Entities whose own name *is* the
+  device name, and devices carrying another device's name, are reported only.
+  A third section compares each **integration entry title** with its device:
+  HA titles an entry when the integration is first added and never revisits it,
+  so 58 of 71 Shelly entries here still read the name their device had on setup
+  day. Retitling goes through native `config_entries/update`, and only when the
+  entry owns exactly one device — with several, the name is a judgement call.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.
@@ -193,7 +216,7 @@ underlying script for muscle memory and old permission lists. It copies
 `custom_components\entity_manager` →
 `Z:\custom_components\entity_manager` with `robocopy /E /R:2 /W:2` (`/E`,
 never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.claude`, `.venv`,
-`tests` and the files `*.pyc`, `*.pyo`, `settings.local.json`, `test_*.py`.
+`tests` and the files `*.pyc`, `*.pyo`, `test_*.py` plus local settings files.
 Before copying it refuses to run unless `Z:\configuration.yaml` exists and
 warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
 edit on the HA side about to be overwritten); afterwards it lists files on
