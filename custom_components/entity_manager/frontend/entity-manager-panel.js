@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '3.3.1';
+const EM_VERSION = '3.4.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -150,6 +150,7 @@ const EM_STAT_TINT = {
   lovelace:      'em-sug-naming',
   'config-health': 'em-sug-area',
   cleanup:       'em-sug-disable',
+  'duplicate-names': 'em-sug-naming',
 };
 
 // Unified ignore-list type metadata (label + accent color), shared by the
@@ -277,6 +278,7 @@ class EntityManagerPanel extends HTMLElement {
     this.deviceInfo = {};
     this.expandedIntegrations = new Set();
     this.expandedDevices = new Set();
+    this.expandedCatCards = new Set(); // `${deviceId}::${bucketLabel}` — survives re-renders
     this.selectedEntities = new Set();
     this.selectedUpdates = new Set();
     this._searchTerm = localStorage.getItem('em-search-term') || '';
@@ -293,6 +295,11 @@ class EntityManagerPanel extends HTMLElement {
     this.selectedIntegrationFilter = null; // Filter to show only one integration
     this.integrationViewFilter = {};       // Per-integration entity state filter: 'enabled' | 'disabled' | undefined
     this.deviceViewFilter = {};            // Per-device entity state filter: 'enabled' | 'disabled' | undefined
+    // Header pill filters: integration/device id → [{ kind: 'cat'|'hw'|'area'|'floor'|'label', value }].
+    // Pills of the same kind are OR'd, different kinds AND'd. Persisted per browser.
+    this.integrationHeaderFilter = this._loadPillFilters('em-intg-pill-filters');
+    this.deviceHeaderFilter = this._loadPillFilters('em-device-pill-filters');
+    this._intgPillsShowAll = new Set();    // Integrations whose Areas/Labels pills are uncapped
     this.showAllSidebarIntegrations = false; // Show all integrations in sidebar
     this.updateFilter = 'all'; // all, stable, beta
     this.selectedUpdateType = 'all'; // all, device, integration
@@ -2380,7 +2387,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
     contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
-    await this._renderMergedEntitySections(['cleanup', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
+    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
     this._attachDialogSearch(contentEl);
   }
 
@@ -2392,8 +2399,9 @@ class EntityManagerPanel extends HTMLElement {
       'config-health': 'Config Errors',
       'unavailable':   'Unavailable Entities',
       'cleanup':       'Cleanup',
+      'duplicate-names': 'Duplicate Names',
     };
-    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup };
+    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate' };
 
     // Build all section shells upfront as collapsible groups with a loading placeholder
     let html = '';
@@ -2413,7 +2421,7 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners (and the bulk-action bar) remain live; skip the
           // temp+move pattern, which silently dropped the bulk bar and tint wrapper for
@@ -2423,6 +2431,8 @@ class EntityManagerPanel extends HTMLElement {
             await this._showConfigEntryHealthDialog({ inline: true, container: groupBody });
           } else if (t === 'cleanup') {
             await this._showCleanupDialog({ inline: true, container: groupBody });
+          } else if (t === 'duplicate-names') {
+            await this._showDuplicateNamesSection(groupBody);
           } else if (t === 'automation' || t === 'script' || t === 'helper') {
             // skipOuterGroup avoids a duplicate section header, since this section
             // shell already provides one (built above via _collGroup).
@@ -2911,6 +2921,8 @@ class EntityManagerPanel extends HTMLElement {
             ${chevronCollapsed}
             <span class="brp-dev-name">${this._escapeHtml(devName)}</span>
             <span class="brp-group-count">${entities.length}</span>
+            ${deviceId === 'no_device' ? '' : `<button type="button" class="brp-dev-rename" data-device-id="${this._escapeAttr(deviceId)}"
+              title="Rename this device and queue its entities">${this._icon('mdi:pencil-outline', '13px')} Device</button>`}
           </div>
           <div class="brp-dev-body" style="display:none">${rowsHtml}</div>
         </div>`;
@@ -3019,6 +3031,7 @@ class EntityManagerPanel extends HTMLElement {
               </div>
               <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
               <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+              <label class="bulk-rename-opt-label" title="Only entities whose shown name repeats their device name"><input type="checkbox" id="brp-only-doubled"> Duplicate names</label>
               <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
             </div>
             <div class="bulk-rename-picker-list" id="brp-list">
@@ -3147,12 +3160,15 @@ class EntityManagerPanel extends HTMLElement {
         } catch (_) { /* invalid regex — ignore */ }
       }
 
+      const onlyDoubled = view.querySelector('#brp-only-doubled')?.checked;
+
       view.querySelectorAll('#brp-list .bulk-rename-picker-row').forEach(row => {
         const id = row.dataset.entityId;
         const name = this._hass?.states[id]?.attributes?.friendly_name || '';
         const searchMatch = !q || id.toLowerCase().includes(q.toLowerCase()) || name.toLowerCase().includes(q.toLowerCase());
         const findMatch = !findPattern || findPattern.test(id) || findPattern.test(name);
-        row.style.display = (searchMatch && findMatch) ? '' : 'none';
+        const doubledMatch = !onlyDoubled || this._hasDoubledName(id, name);
+        row.style.display = (searchMatch && findMatch && doubledMatch) ? '' : 'none';
       });
       // Hide device groups with no visible rows
       view.querySelectorAll('#brp-list .brp-dev-group').forEach(dg => {
@@ -3166,7 +3182,16 @@ class EntityManagerPanel extends HTMLElement {
       });
     };
 
+    // Rename a device, and line its entities up in the queue
+    view.querySelector('#brp-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('.brp-dev-rename');
+      if (!btn) return;
+      e.stopPropagation();  // not a group collapse
+      this._showDeviceRenameDialog(btn.dataset.deviceId, { addToQueue, syncRenameBtn, view });
+    });
+
     view.querySelector('#brp-search').addEventListener('input', filterPickerList);
+    view.querySelector('#brp-only-doubled').addEventListener('change', filterPickerList);
     view.querySelector('#bulk-find').addEventListener('input', filterPickerList);
     view.querySelector('#bulk-find-regex').addEventListener('change', filterPickerList);
     view.querySelector('#bulk-find-case').addEventListener('change', filterPickerList);
@@ -4605,6 +4630,22 @@ class EntityManagerPanel extends HTMLElement {
         this.floorsData = null;
         this._showToast(`${verb} area assignment`, 'info');
         break;
+      case 'config_entry_title_change':
+        await this._hass.callWS({
+          type: 'config_entries/update',
+          entry_id: action.entryId,
+          title: isUndo ? action.oldTitle : action.newTitle,
+        });
+        this._showToast(`${verb} entry rename`, 'info');
+        break;
+      case 'device_name_change':
+        await this._hass.callWS({
+          type: 'config/device_registry/update',
+          device_id: action.deviceId,
+          name_by_user: (isUndo ? action.oldName : action.newName) || null,
+        });
+        this._showToast(`${verb} device rename`, 'info');
+        break;
       case 'assign_device_area':
         await this._hass.callWS({ type: 'config/device_registry/update', device_id: action.deviceId, area_id: isUndo ? action.oldAreaId : action.newAreaId });
         this.floorsData = null;
@@ -4728,6 +4769,10 @@ class EntityManagerPanel extends HTMLElement {
         return `Assigned ${action.entityId} to area`;
       case 'assign_device_area':
         return `Assigned device to area`;
+      case 'device_name_change':
+        return `Renamed device to "${action.newName}"`;
+      case 'config_entry_title_change':
+        return `Renamed entry to "${action.newTitle}"`;
       default:
         return action.type ?? 'Unknown action';
     }
@@ -8883,7 +8928,7 @@ class EntityManagerPanel extends HTMLElement {
         });
         
         this._renderedSmartGroups = filteredGroups;
-        contentEl.innerHTML = this._renderSmartGroups(filteredGroups);
+        contentEl.innerHTML = this._activeFiltersBannerHtml() + this._renderSmartGroups(filteredGroups);
         this.attachIntegrationListeners();
         if (this._playAnimations) {
           contentEl.querySelectorAll('.smart-group').forEach((el, i) => {
@@ -8911,7 +8956,7 @@ class EntityManagerPanel extends HTMLElement {
       return;
     }
 
-    contentEl.innerHTML = sortedData.map(integration =>
+    contentEl.innerHTML = this._activeFiltersBannerHtml() + sortedData.map(integration =>
       this.renderIntegration(integration)
     ).join('');
 
@@ -9029,11 +9074,34 @@ class EntityManagerPanel extends HTMLElement {
     }).join('');
   }
 
+  /** How many headers are filtering right now, across both views. */
+  _activeFilterScopes() {
+    return [
+      ...Object.entries(this.integrationHeaderFilter || {}),
+      ...Object.entries(this.deviceHeaderFilter || {}),
+    ].filter(([, filters]) => filters?.length);
+  }
+
+  /** Banner above the list. Pill filters persist across reloads, so a shortened
+   *  list must never look like missing data. */
+  _activeFiltersBannerHtml() {
+    const scopes = this._activeFilterScopes();
+    if (!scopes.length) return '';
+    const pills = scopes.reduce((n, [, filters]) => n + filters.length, 0);
+    return `
+      <div class="em-filter-banner">
+        ${this._icon('mdi:filter-variant', '16px')}
+        <span>${pills} pill filter${pills !== 1 ? 's' : ''} active on ${scopes.length} ${scopes.length !== 1 ? 'headers' : 'header'} — lists below are narrowed</span>
+        <button type="button" class="em-filter-clear pill-clear-all">Clear all filters</button>
+      </div>`;
+  }
+
   _renderIntegrationsView(sortedData) {
     if (!sortedData.length) {
       return `<div class="empty-state"><h2>No integrations found</h2><p>Try adjusting your filters</p></div>`;
     }
-    return sortedData.map(integration => this.renderIntegration(integration)).join('');
+    return this._activeFiltersBannerHtml()
+      + sortedData.map(integration => this.renderIntegration(integration)).join('');
   }
 
   _renderDevicesView(sortedData) {
@@ -9062,9 +9130,10 @@ class EntityManagerPanel extends HTMLElement {
 
     filteredDevices.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
-    return filteredDevices.map(({ deviceId, device, integration }) =>
-      this._renderDeviceCard(deviceId, device, integration)
-    ).join('');
+    return this._activeFiltersBannerHtml()
+      + filteredDevices.map(({ deviceId, device, integration }) =>
+        this._renderDeviceCard(deviceId, device, integration)
+      ).join('');
   }
 
   _showIntegrationDetailDialog(integrationName) {
@@ -9243,6 +9312,159 @@ class EntityManagerPanel extends HTMLElement {
     return true;
   }
 
+  /** Effective area of an entity: its own area override, else its device's area. */
+  _intgEntityAreaId(entity, deviceId) {
+    return this.entityAreaMap?.get?.(entity.entity_id)
+      || (deviceId && deviceId !== 'no_device' ? this.deviceInfo?.[deviceId]?.area_id : null)
+      || null;
+  }
+
+  /** Read a persisted pill-filter map, dropping anything that is not the shape we write. */
+  _loadPillFilters(key) {
+    try {
+      const raw = JSON.parse(localStorage.getItem(key) || '{}');
+      const out = {};
+      for (const [scope, filters] of Object.entries(raw)) {
+        const clean = (Array.isArray(filters) ? filters : [])
+          .filter(f => f && typeof f.kind === 'string' && typeof f.value === 'string');
+        if (clean.length) out[scope] = clean;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  _savePillFilters() {
+    try {
+      localStorage.setItem('em-intg-pill-filters', JSON.stringify(this.integrationHeaderFilter));
+      localStorage.setItem('em-device-pill-filters', JSON.stringify(this.deviceHeaderFilter));
+    } catch {
+      // Private mode or a full quota — filters just do not survive the reload
+    }
+  }
+
+  /** Add or remove one pill in a scope's filter list. Returns true if the scope now filters. */
+  _togglePillFilter(map, scope, kind, value) {
+    const filters = (map[scope] || []).slice();
+    const at = filters.findIndex(f => f.kind === kind && f.value === value);
+    if (at >= 0) filters.splice(at, 1);
+    else filters.push({ kind, value });
+    if (filters.length) map[scope] = filters;
+    else delete map[scope];
+    this._savePillFilters();
+    return filters.length > 0;
+  }
+
+  /** Does an entity pass every active pill? Same kind is OR, different kinds AND. */
+  _pillMatchesAll(filters, entity, deviceId) {
+    if (!filters?.length) return true;
+    const byKind = new Map();
+    filters.forEach(f => byKind.set(f.kind, [...(byKind.get(f.kind) || []), f]));
+    return [...byKind.values()].every(group =>
+      group.some(f => this._intgPillMatches(f, entity, deviceId)));
+  }
+
+  /** One header filter pill (integration or device header). `scopeAttrs` says which header owns it. */
+  _headerPill(scopeAttrs, activeFilters, kind, value, text, count, color, title = '') {
+    const active = (activeFilters || []).some(f => f.kind === kind && f.value === value);
+    return `<button type="button" class="integration-pill${active ? ' active' : ''}" ${scopeAttrs}
+      data-pill-kind="${kind}" data-pill-value="${this._escapeAttr(value)}" style="--pill-c:${this._escapeAttr(color)}"
+      title="${this._escapeAttr(title || (active ? 'Click to clear filter' : 'Click to filter'))}">${text}: ${count}</button>`;
+  }
+
+  /** What one active pill is called, for the summary bar. */
+  _pillFilterLabel(filter) {
+    switch (filter.kind) {
+      case 'cat': {
+        // `label` carries an inline icon; `text` is the same words without markup,
+        // so the chip never has to strip tags out of a string
+        return this._categoryMeta().find(m => m.key === filter.value)?.text || filter.value;
+      }
+      case 'hw': {
+        const meta = this._deviceTypeMeta()[filter.value];
+        return meta ? `${meta.emoji} ${meta.label}` : filter.value;
+      }
+      case 'area':
+        return filter.value === '__none__'
+          ? 'No area' : (this.areaLookup?.get?.(filter.value)?.areaName || filter.value);
+      case 'floor': return filter.value;
+      case 'label': return this.labelLookup?.get(filter.value)?.name || filter.value;
+      default: return filter.value;
+    }
+  }
+
+  /** Colour for a summary chip — the same one its pill carries. */
+  _pillFilterColor(filter) {
+    switch (filter.kind) {
+      case 'cat':   return this._categoryPillColor(filter.value);
+      case 'hw':    return this._deviceTypeMeta()[filter.value]?.color || 'var(--em-primary)';
+      case 'area':  return filter.value === '__none__' ? 'var(--em-danger)' : 'var(--em-primary)';
+      case 'floor': return 'var(--em-primary)';
+      case 'label': return this._labelPillColor(filter.value);
+      default:      return 'var(--em-primary)';
+    }
+  }
+
+  /** The bar under a header naming what is filtering, each chip removable. */
+  _filterSummaryHtml(scopeAttrs, filters, shownCount, totalCount) {
+    if (!filters?.length) return '';
+    const chips = filters.map(f => `
+        <button type="button" class="em-filter-chip pill-clear-one" ${scopeAttrs}
+          data-pill-kind="${f.kind}" data-pill-value="${this._escapeAttr(f.value)}"
+          style="--pill-c:${this._escapeAttr(this._pillFilterColor(f))}"
+          title="Remove this filter">${this._escapeHtml(this._pillFilterLabel(f))} ✕</button>`).join('');
+    return `
+      <div class="em-filter-summary">
+        <span class="em-filter-summary-label">${this._icon('mdi:filter-variant', '14px')} Filtered</span>
+        ${chips}
+        <span class="em-filter-summary-count">${shownCount} of ${totalCount} entit${totalCount !== 1 ? 'ies' : 'y'}</span>
+        <button type="button" class="em-filter-clear pill-clear-scope" ${scopeAttrs}>Clear</button>
+      </div>`;
+  }
+
+  /** Menu entries that act on exactly what the active pills show. Empty when nothing filters. */
+  _filteredActionsHtml(entityIds) {
+    if (!entityIds.length) return '';
+    const n = entityIds.length;
+    const ents = `${n} entit${n !== 1 ? 'ies' : 'y'}`;
+    const ids = this._escapeAttr(entityIds.join(','));
+    return `
+              <div class="integration-menu-sep">Filtered</div>
+              <button class="integration-menu-item pill-select-filtered" data-entity-ids="${ids}">${this._icon(EM_ICONS.success, '14px')} Select ${ents}</button>
+              <button class="integration-menu-item integration-menu-good pill-enable-filtered" data-entity-ids="${ids}">Enable ${ents}</button>
+              <button class="integration-menu-item integration-menu-bad pill-disable-filtered" data-entity-ids="${ids}">Disable ${ents}</button>`;
+  }
+
+  /** Label pills colour: the HA label colour, or primary when it has none. */
+  _labelPillColor(labelId) {
+    const color = this.labelLookup?.get(labelId)?.color;
+    return color ? this._labelColorCss(color) : 'var(--em-primary)';
+  }
+
+  _categoryPillColor(key) {
+    return { controls: 'var(--em-success)', sensors: 'var(--em-primary)', config: 'var(--em-primary)',
+      diagnostic: 'var(--em-warning)', connectivity: 'var(--em-success)' }[key] || 'var(--em-primary)';
+  }
+
+  /** Does an entity pass a header pill filter ({ kind, value })? */
+  _intgPillMatches(filter, entity, deviceId) {
+    switch (filter.kind) {
+      case 'cat':   return this._categorizeEntity(entity) === filter.value;
+      case 'hw':    return deviceId !== 'no_device' && this.getDeviceType(deviceId) === filter.value;
+      case 'area': {
+        const areaId = this._intgEntityAreaId(entity, deviceId);
+        return filter.value === '__none__' ? !areaId : areaId === filter.value;
+      }
+      case 'floor': {
+        const areaId = this._intgEntityAreaId(entity, deviceId);
+        return !!areaId && this.areaLookup?.get?.(areaId)?.floorName === filter.value;
+      }
+      case 'label': return this._effectiveEntityLabels(entity).some(l => l.labelId === filter.value);
+      default:      return true;
+    }
+  }
+
   renderIntegration(integration) {
     const isExpanded = this.expandedIntegrations.has(integration.integration);
     const deviceCount = Object.keys(integration.devices).length;
@@ -9256,11 +9478,13 @@ class EntityManagerPanel extends HTMLElement {
     const allEntities = [];
     const categoryCounts = new Map();
     const areaIds = new Set();
-    const typeCounts = new Map();
+    const typeCounts = new Map();        // device type → devices, for the Hardware tooltip
+    const typeEntityCounts = new Map();  // device type → entities, what the pill shows
     Object.entries(integration.devices).forEach(([deviceId, device]) => {
       if (deviceId !== 'no_device') {
         const dtype = this.getDeviceType(deviceId);
         typeCounts.set(dtype, (typeCounts.get(dtype) || 0) + 1);
+        typeEntityCounts.set(dtype, (typeEntityCounts.get(dtype) || 0) + device.entities.length);
       }
       const devAreaId = this.deviceInfo?.[deviceId]?.area_id;
       if (devAreaId) areaIds.add(devAreaId);
@@ -9283,79 +9507,95 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    // Resolve area ids to unique area/floor names for the header meta box
-    const areaNames = new Set();
-    const floorNames = new Set();
-    areaIds.forEach(id => {
-      const a = this.areaLookup?.get?.(id);
-      if (a?.areaName) areaNames.add(a.areaName);
-      if (a?.floorName) floorNames.add(a.floorName);
-    });
+    // ── Header filter pills: Categories / Hardware / Areas / Labels ──
+    // Every pill is "<name>: <entities>" — one unit everywhere, so the number always says
+    // how far the list will shrink. Hardware keeps its device count in the tooltip.
+    const intName = this._escapeAttr(integration.integration);
+    const pillFilter = this.integrationHeaderFilter[integration.integration];
+    const showAllPills = this._intgPillsShowAll.has(integration.integration);
 
-    const categoryBadgesHtml = this._categoryMeta()
-      .filter(m => categoryCounts.get(m.key) > 0)
-      .map(m => `<span class="integration-cat-badge ${m.cls}">${m.label}: ${categoryCounts.get(m.key)}</span>`)
-      .join('');
-
-    // Union every entity's effective labels (entity/device/area scoped) into one rollup,
-    // keeping the broadest scope seen per label — display-only, no single click subject exists.
-    const labelScopeOrder = { A: 0, D: 1, E: 2 };
-    const labelRollupMap = new Map();
+    const areaCounts = new Map();   // areaId → entities
+    const floorCounts = new Map();  // floor name → entities
+    const labelCounts = new Map();  // labelId → entities
+    let noAreaCount = 0;
     allEntities.forEach(entity => {
-      this._effectiveEntityLabels(entity).forEach(({ labelId, scope }) => {
-        const existingScope = labelRollupMap.get(labelId);
-        if (!existingScope || labelScopeOrder[scope] < labelScopeOrder[existingScope]) {
-          labelRollupMap.set(labelId, scope);
-        }
+      const areaId = this._intgEntityAreaId(entity, entity.deviceId);
+      if (areaId) {
+        areaCounts.set(areaId, (areaCounts.get(areaId) || 0) + 1);
+        const floorName = this.areaLookup?.get?.(areaId)?.floorName;
+        if (floorName) floorCounts.set(floorName, (floorCounts.get(floorName) || 0) + 1);
+      } else {
+        noAreaCount++;
+      }
+      this._effectiveEntityLabels(entity).forEach(({ labelId }) => {
+        labelCounts.set(labelId, (labelCounts.get(labelId) || 0) + 1);
       });
     });
-    const labelRollup = Array.from(labelRollupMap, ([labelId, scope]) => ({ labelId, scope }))
-      .sort((a, b) => labelScopeOrder[a.scope] - labelScopeOrder[b.scope]);
-    const labelRollupHtml = labelRollup.length
-      ? `<div class="integration-label-rollup">${this._renderLabelChips(labelRollup, '')
-          .replace(/ em-chip-clickable/g, '')
-          .replace(/ — click to manage/g, '')}</div>`
-      : '';
 
-    // Area/floor chips for the meta box — capped so sprawling integrations don't flood the header
-    const capChips = (names, cls, icon, cap = 4) => {
-      const sorted = [...names].sort((a, b) => a.localeCompare(b));
-      const shown = sorted.slice(0, cap)
-        .map(n => `<span class="${cls}">${this._icon(icon, '11px')} ${this._escapeHtml(n)}</span>`)
-        .join('');
-      const extra = sorted.length - cap;
-      return shown + (extra > 0 ? `<span class="${cls} integration-chip-more">+${extra}</span>` : '');
+    const pill = (kind, value, text, count, color, title = '') =>
+      this._headerPill(`data-integration="${intName}"`, pillFilter, kind, value, text, count, color, title);
+    // Areas and labels can sprawl — cap them, with a +N pill that reveals the rest
+    const capPills = (pills) => {
+      const cap = 6;
+      if (showAllPills || pills.length <= cap + 1) return pills.join('');
+      return pills.slice(0, cap).join('') +
+        `<button type="button" class="integration-pill integration-pill-more" data-integration="${intName}" title="Show all">+${pills.length - cap}</button>`;
     };
-    const areaChipsHtml = areaNames.size ? capChips(areaNames, 'integration-area-chip', EM_ICONS.area) : '';
-    const floorChipsHtml = floorNames.size ? capChips(floorNames, 'integration-floor-chip', EM_ICONS.floor) : '';
-
-    const catsBoxHtml = categoryBadgesHtml ? `
-      <div class="integration-box integration-box-cats">
-        <div class="integration-box-title">Categories</div>
-        <div class="integration-box-chips">${categoryBadgesHtml}</div>
+    const box = (cls, title, inner) => inner ? `
+      <div class="integration-box ${cls}">
+        <div class="integration-box-title">${title}</div>
+        <div class="integration-box-chips">${inner}</div>
       </div>` : '';
-    // Hardware box — device-type counts; the Unknown chip is clickable to bulk-assign a type
-    const typeMeta = this._deviceTypeMeta();
-    const hwChipsHtml = Object.keys(typeMeta)
-      .filter(t => typeCounts.get(t) > 0)
-      .map(t => t === 'unknown'
-        ? `<span class="integration-hw-chip integration-hw-unknown" data-integration="${this._escapeAttr(integration.integration)}"
-             style="color:${typeMeta[t].color};border-color:${typeMeta[t].color}"
-             title="Click to assign a type to the unknown devices">${typeMeta[t].emoji} ${typeMeta[t].label}: ${typeCounts.get(t)}</span>`
-        : `<span class="integration-hw-chip" style="color:${typeMeta[t].color};border-color:${typeMeta[t].color}">${typeMeta[t].emoji} ${typeMeta[t].label}: ${typeCounts.get(t)}</span>`)
+
+    const catPills = this._categoryMeta()
+      .filter(m => categoryCounts.get(m.key) > 0)
+      .map(m => pill('cat', m.key, m.label, categoryCounts.get(m.key), this._categoryPillColor(m.key)))
       .join('');
-    const hwBoxHtml = hwChipsHtml ? `
-      <div class="integration-box integration-box-hw">
-        <div class="integration-box-title">Hardware</div>
-        <div class="integration-box-chips">${hwChipsHtml}</div>
-      </div>` : '';
-    const metaBoxHtml = (areaChipsHtml || floorChipsHtml || labelRollupHtml) ? `
-      <div class="integration-box integration-box-meta">
-        <div class="integration-box-title">Areas &amp; Labels</div>
-        <div class="integration-box-chips">${areaChipsHtml}${floorChipsHtml}${labelRollupHtml}</div>
-      </div>` : '';
 
-    const intName = this._escapeAttr(integration.integration);
+    const typeMeta = this._deviceTypeMeta();
+    const hwPills = Object.keys(typeMeta)
+      .filter(t => typeCounts.get(t) > 0)
+      .map(t => pill('hw', t, `${typeMeta[t].emoji} ${this._escapeHtml(typeMeta[t].label)}`,
+        typeEntityCounts.get(t) || 0, typeMeta[t].color,
+        `${typeCounts.get(t)} device${typeCounts.get(t) !== 1 ? 's' : ''} • ${typeEntityCounts.get(t) || 0} entit${(typeEntityCounts.get(t) || 0) !== 1 ? 'ies' : 'y'}`))
+      .join('');
+
+    // Areas and floors take the accent the device-area chip uses, so both views agree
+    const areaColor = 'var(--em-primary)';
+    const areaPills = [
+      ...[...floorCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([name, n]) => pill('floor', name, `${this._icon(EM_ICONS.floor, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
+      ...[...areaCounts.entries()]
+        .map(([id, n]) => [id, this.areaLookup?.get?.(id)?.areaName || id, n])
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([id, name, n]) => pill('area', id, `${this._icon(EM_ICONS.area, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
+      ...(noAreaCount && areaCounts.size ? [pill('area', '__none__', `${this._icon(EM_ICONS.area, '12px')} No area`, noAreaCount, 'var(--em-danger)')] : []),
+    ];
+
+    const labelPills = [...labelCounts.entries()]
+      .map(([id, n]) => [id, this.labelLookup?.get(id) || {}, n])
+      .sort((a, b) => (a[1].name || a[0]).localeCompare(b[1].name || b[0]))
+      .map(([id, meta, n]) => pill('label', id, `${this._icon(EM_ICONS.labels, '12px')} ${this._escapeHtml(meta.name || id)}`, n,
+        this._labelPillColor(id)));
+
+    const boxesHtml = `
+      <div class="integration-boxes">
+        ${box('integration-box-cats', 'Categories', catPills)}
+        ${box('integration-box-hw', 'Hardware', hwPills)}
+        ${box('integration-box-areas', 'Areas', capPills(areaPills))}
+        ${box('integration-box-labels', 'Labels', capPills(labelPills))}
+      </div>`;
+    const hasUnknownDevices = typeCounts.get('unknown') > 0;
+
+    // Devices shown when expanded — narrowed by the active pill, entities included
+    const shownDevices = !pillFilter?.length ? Object.entries(integration.devices) : Object.entries(integration.devices)
+      .map(([deviceId, device]) => [deviceId, { ...device,
+        entities: device.entities.filter(e => this._pillMatchesAll(pillFilter, e, deviceId)) }])
+      .filter(([, device]) => device.entities.length > 0);
+    // What "act on filtered" would touch — enabled or disabled alike
+    const filteredIds = pillFilter?.length
+      ? shownDevices.flatMap(([, device]) => device.entities.map(e => e.entity_id)) : [];
+
     const intDisplay = this._escapeHtml(integration.integration.charAt(0).toUpperCase() + integration.integration.slice(1));
     const intInitial = this._escapeHtml(integration.integration.charAt(0).toUpperCase());
 
@@ -9385,9 +9625,7 @@ class EntityManagerPanel extends HTMLElement {
             <div class="integration-name">${intDisplay}</div>
             <div class="integration-stats">${deviceCount} device${deviceCount !== 1 ? 's' : ''} • ${entityCount} entit${entityCount !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
           </div>
-          ${catsBoxHtml}
-          ${hwBoxHtml}
-          ${metaBoxHtml}
+          ${boxesHtml}
           <div class="integration-menu-wrap">
             <button class="em-mini-btn integration-menu-btn ${_ivf ? 'btn-primary' : ''}" data-integration="${intName}" title="Integration actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
             <div class="integration-menu">
@@ -9396,12 +9634,16 @@ class EntityManagerPanel extends HTMLElement {
               <button class="integration-menu-item integration-menu-good enable-integration" data-integration="${intName}">Enable All</button>
               <button class="integration-menu-item integration-menu-bad disable-integration" data-integration="${intName}">Disable All</button>
               <button class="integration-menu-item integration-color-btn" data-integration="${intName}">${this._icon('mdi:pencil-outline', '14px')} Accent color…</button>
+              ${hasUnknownDevices ? `<button class="integration-menu-item integration-hw-unknown" data-integration="${intName}">${this._icon('mdi:help-circle-outline', '14px')} Assign type to unknown devices…</button>` : ''}
+              ${this._filteredActionsHtml(filteredIds)}
             </div>
           </div>
         </div>
+        ${this._filterSummaryHtml(`data-integration="${intName}"`, pillFilter, filteredIds.length, entityCount)}
         ${isExpanded ? `
           <div class="integration-devices" data-integration="${intName}">
-            ${Object.entries(integration.devices)
+            ${pillFilter?.length && !shownDevices.length ? '<p class="integration-pill-empty">Nothing matches these filters.</p>' : ''}
+            ${shownDevices
               .sort(([idA], [idB]) =>
                 this.getDeviceName(idA).localeCompare(this.getDeviceName(idB), undefined, { sensitivity: 'base' })
               )
@@ -9509,8 +9751,9 @@ class EntityManagerPanel extends HTMLElement {
         ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${areaSuggestionChip}${floorChip}${labelChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
-          ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
-          ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
+          ${col('name') ? this._entityNameLinesHtml(entity, state) : ''}
+          ${col('device') && entity.deviceName && this._deviceLineWorthShowing(entity, state)
+            ? `<div class="entity-device-name"><span class="entity-name-kind">Device</span>${this._escapeHtml(entity.deviceName)}</div>` : ''}
           ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
         ${col('status') ? `<span class="entity-badge ${entity.is_disabled ? 'entity-badge--disabled' : 'entity-badge--enabled'}">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
@@ -9580,11 +9823,11 @@ class EntityManagerPanel extends HTMLElement {
    *  category cards and the integration-level category-count badges. */
   _categoryMeta() {
     return [
-      { key: 'controls',     label: `${this._icon(EM_ICONS.automation, '14px')} Controls`,      cls: 'cat-controls' },
-      { key: 'sensors',      label: `${this._icon(EM_ICONS.thermometer, '14px')} Sensors`,       cls: 'cat-sensors' },
-      { key: 'config',       label: `${this._icon(EM_ICONS.cog, '14px')} Configuration`,         cls: 'cat-config' },
-      { key: 'diagnostic',   label: `${this._icon(EM_ICONS.helper, '14px')} Diagnostic`,         cls: 'cat-diagnostic' },
-      { key: 'connectivity', label: `${this._icon('mdi:access-point', '14px')} Connectivity`,    cls: 'cat-connectivity' },
+      { key: 'controls',     text: 'Controls',      label: `${this._icon(EM_ICONS.automation, '14px')} Controls`,      cls: 'cat-controls' },
+      { key: 'sensors',      text: 'Sensors',       label: `${this._icon(EM_ICONS.thermometer, '14px')} Sensors`,       cls: 'cat-sensors' },
+      { key: 'config',       text: 'Configuration', label: `${this._icon(EM_ICONS.cog, '14px')} Configuration`,         cls: 'cat-config' },
+      { key: 'diagnostic',   text: 'Diagnostic',    label: `${this._icon(EM_ICONS.helper, '14px')} Diagnostic`,         cls: 'cat-diagnostic' },
+      { key: 'connectivity', text: 'Connectivity',  label: `${this._icon('mdi:access-point', '14px')} Connectivity`,    cls: 'cat-connectivity' },
     ];
   }
 
@@ -9618,13 +9861,21 @@ class EntityManagerPanel extends HTMLElement {
     const devName = this.getDeviceName(deviceId);
     const deviceIdEsc = this._escapeAttr(deviceId);
     const CAT_BUCKETS = this._categoryMeta().map(m => ({ ...m, match: e => this._categorizeEntity(e) === m.key }));
-    const allEntitiesForDevice = device.entities.map(e => ({ ...e, deviceName: devName, integration }));
+    // Devices view header pills narrow the entity list (the pill counts stay whole-device)
+    const devPillFilter = richHeader ? this.deviceHeaderFilter[deviceId] : null;
+    // Note: the pill counts below stay whole-device, so a pill never hides its own way back.
+    const allEntitiesForDevice = device.entities
+      .filter(e => this._pillMatchesAll(devPillFilter, e, deviceId))
+      .map(e => ({ ...e, deviceName: devName, integration }));
+    const devFilteredIds = devPillFilter?.length
+      ? allEntitiesForDevice.map(e => e.entity_id) : [];
     const catCardsHtml = isExpanded ? CAT_BUCKETS
       .map(b => ({ ...b, entities: allEntitiesForDevice.filter(b.match).sort((a, z) =>
         (a.original_name || a.entity_id).localeCompare(z.original_name || z.entity_id, undefined, { sensitivity: 'base' })
       )}))
       .filter(b => b.entities.length > 0)
-      .map(b => this._renderCatCard(devName, b.label, b.cls, b.entities, deviceId))
+      .map(b => this._renderCatCard(devName, b.label, b.cls, b.entities, deviceId,
+        this.expandedCatCards.has(`${deviceId}::${b.label}`)))
       .join('') : '';
 
     const devType = this.getDeviceType(deviceId);
@@ -9661,26 +9912,67 @@ class EntityManagerPanel extends HTMLElement {
         const c = this._categorizeEntity(e);
         categoryCounts.set(c, (categoryCounts.get(c) || 0) + 1);
       });
-      const catBadges = this._categoryMeta()
+      const pill = (kind, value, text, count, color) =>
+        this._headerPill(`data-device-id="${deviceIdEsc}"`, devPillFilter, kind, value, text, count, color);
+      const box = (cls, title, inner) => inner ? `
+          <div class="integration-box ${cls}">
+            <div class="integration-box-title">${title}</div>
+            <div class="integration-box-chips">${inner}</div>
+          </div>` : '';
+
+      const catPills = this._categoryMeta()
         .filter(m => categoryCounts.get(m.key) > 0)
-        .map(m => `<span class="integration-cat-badge ${m.cls}">${m.label}: ${categoryCounts.get(m.key)}</span>`)
+        .map(m => pill('cat', m.key, m.label, categoryCounts.get(m.key), this._categoryPillColor(m.key)))
         .join('');
-      const catsBox = catBadges ? `
-          <div class="integration-box integration-box-cats">
-            <div class="integration-box-title">Categories</div>
-            <div class="integration-box-chips">${catBadges}</div>
-          </div>` : '';
-      const hwBox = deviceId !== 'no_device' ? `
-          <div class="integration-box integration-box-hw">
-            <div class="integration-box-title">Hardware</div>
-            <div class="integration-box-chips">${typeBadge}</div>
-          </div>` : '';
-      const floorName = areaId ? this.areaLookup?.get(areaId)?.floorName : null;
-      const floorChipHtml = floorName ? `<span class="integration-floor-chip">${this._icon(EM_ICONS.floor, '11px')} ${this._escapeHtml(floorName)}</span>` : '';
-      const metaBox = `
-          <div class="integration-box integration-box-meta">
-            <div class="integration-box-title">Areas &amp; Labels</div>
-            <div class="integration-box-chips">${areaChipHtml}${floorChipHtml}${labelChipsHtml}</div>
+
+      // Hardware: one device has one type, so this pill edits the type rather than filtering
+      const typeMeta = this._deviceTypeMeta()[devType] || this._deviceTypeMeta().unknown;
+      const hwPill = deviceId === 'no_device' ? '' : typeEditable
+        ? `<button type="button" class="integration-pill device-type-badge-editable" data-type-device-id="${deviceIdEsc}"
+             style="--pill-c:${this._escapeAttr(typeMeta.color)}" title="${devType === 'unknown' ? 'Unknown type — click to assign' : 'Manually assigned — click to change'}">${typeMeta.emoji} ${this._escapeHtml(typeMeta.label)} ✎</button>`
+        : `<span class="integration-pill integration-pill-static" style="--pill-c:${this._escapeAttr(typeMeta.color)}">${typeMeta.emoji} ${this._escapeHtml(typeMeta.label)}</span>`;
+
+      // Areas: entity overrides can put a device's entities in several rooms. With no area
+      // anywhere, keep the clickable "No area" chip that opens the Assign dialog.
+      const areaCounts = new Map();
+      const floorCounts = new Map();
+      let noAreaCount = 0;
+      const labelCounts = new Map();
+      device.entities.forEach(e => {
+        const aId = this._intgEntityAreaId(e, deviceId);
+        if (aId) {
+          areaCounts.set(aId, (areaCounts.get(aId) || 0) + 1);
+          const fl = this.areaLookup?.get?.(aId)?.floorName;
+          if (fl) floorCounts.set(fl, (floorCounts.get(fl) || 0) + 1);
+        } else {
+          noAreaCount++;
+        }
+        this._effectiveEntityLabels(e).forEach(({ labelId }) => labelCounts.set(labelId, (labelCounts.get(labelId) || 0) + 1));
+      });
+      const areaColor = 'var(--em-primary)';
+      const areaPills = areaCounts.size ? [
+        ...[...floorCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([name, n]) => pill('floor', name, `${this._icon(EM_ICONS.floor, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
+        ...[...areaCounts.entries()]
+          .map(([id, n]) => [id, this.areaLookup?.get?.(id)?.areaName || id, n])
+          .sort((a, b) => a[1].localeCompare(b[1]))
+          .map(([id, name, n]) => pill('area', id, `${this._icon(EM_ICONS.area, '12px')} ${this._escapeHtml(name)}`, n, areaColor)),
+        ...(noAreaCount ? [pill('area', '__none__', `${this._icon(EM_ICONS.area, '12px')} No area`, noAreaCount, 'var(--em-danger)')] : []),
+      ].join('') : areaChipHtml;
+
+      // Labels: with no label anywhere, keep the clickable "No label" chip
+      const labelPills = labelCounts.size ? [...labelCounts.entries()]
+        .map(([id, n]) => [id, this.labelLookup?.get(id)?.name || id, n])
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([id, name, n]) => pill('label', id, `${this._icon(EM_ICONS.labels, '12px')} ${this._escapeHtml(name)}`, n, this._labelPillColor(id)))
+        .join('') : labelChipsHtml;
+
+      const boxesHtml = `
+          <div class="integration-boxes">
+            ${box('integration-box-cats', 'Categories', catPills)}
+            ${box('integration-box-hw', 'Hardware', hwPill)}
+            ${box('integration-box-areas', 'Areas', areaPills)}
+            ${box('integration-box-labels', 'Labels', labelPills)}
           </div>`;
       headerHtml = `
         <div class="device-header device-header-rich" data-device="${deviceIdEsc}">
@@ -9692,9 +9984,7 @@ class EntityManagerPanel extends HTMLElement {
             </div>
             <div class="integration-stats">${this._escapeHtml(integration)} • ${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'} (<span style="color:var(--em-success)">${enabledCount} enabled</span> / <span style="color:var(--em-danger)">${disabledCount} disabled</span>)</div>
           </div>
-          ${catsBox}
-          ${hwBox}
-          ${metaBox}
+          ${boxesHtml}
           <div class="integration-menu-wrap device-bulk-actions" data-device-entities="${deviceEntityIds}">
             <button class="em-mini-btn integration-menu-btn device-menu-btn ${filterClass ? 'btn-primary' : ''}" data-device-id="${deviceIdEsc}" title="Device actions">${this._icon('mdi:dots-horizontal', '16px')}</button>
             <div class="integration-menu">
@@ -9702,6 +9992,9 @@ class EntityManagerPanel extends HTMLElement {
               <button class="integration-menu-item view-device-disabled ${filterClass === 'em-filter-disabled' ? 'btn-primary' : 'btn-secondary'}" data-device-id="${deviceIdEsc}" title="Show only disabled entities">View Disabled</button>
               <button class="integration-menu-item integration-menu-good device-enable-all" data-device="${deviceIdEsc}" title="Enable all entities in this device">Enable All</button>
               <button class="integration-menu-item integration-menu-bad device-disable-all" data-device="${deviceIdEsc}" title="Disable all entities in this device">Disable All</button>
+              <button class="integration-menu-item device-menu-assign" data-device-id="${deviceIdEsc}" data-focus="area">${this._icon(EM_ICONS.area, '14px')} Change area…</button>
+              <button class="integration-menu-item device-menu-assign" data-device-id="${deviceIdEsc}" data-focus="labels">${this._icon(EM_ICONS.labels, '14px')} Labels…</button>
+              ${this._filteredActionsHtml(devFilteredIds)}
             </div>
           </div>
         </div>`;
@@ -9737,7 +10030,8 @@ class EntityManagerPanel extends HTMLElement {
           <button class="device-suggestion-apply" data-device-id="${deviceIdEsc}" data-area-id="${this._escapeAttr(deviceAreaSuggestion.areaId)}" data-area-name="${this._escapeAttr(deviceAreaSuggestion.areaName)}" title="Apply suggested area to this device">${this._icon(EM_ICONS.success, '14px')} Apply</button>
           <button class="device-suggestion-ignore" data-device-id="${deviceIdEsc}" title="Ignore this suggestion for this session">${this._icon(EM_ICONS.close, '14px')} Ignore</button>
         </div>` : ''}
-        ${isExpanded ? `<div class="device-name-group-body">${catCardsHtml}</div>` : ''}
+        ${this._filterSummaryHtml(`data-device-id="${deviceIdEsc}"`, devPillFilter, devFilteredIds.length, device.entities.length)}
+        ${isExpanded ? `<div class="device-name-group-body">${catCardsHtml || (devPillFilter?.length ? '<p class="integration-pill-empty">Nothing matches these filters.</p>' : '')}</div>` : ''}
       </div>
     `;
   }
@@ -9753,7 +10047,7 @@ class EntityManagerPanel extends HTMLElement {
 
     return `
       <div class="device-item">
-        <div class="device-header em-cat-card-toggle">
+        <div class="device-header em-cat-card-toggle" data-cat-key="${this._escapeAttr(`${primaryDeviceId}::${label}`)}">
           <span class="device-icon ${preExpanded ? 'expanded' : ''}"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
           <span class="device-name-wrap"><span class="device-name">${this._escapeHtml(name)}</span></span>
           <span class="device-count">${entities.length} entit${entities.length !== 1 ? 'ies' : 'y'} (<span class="count-enabled">${enabledCount}</span>/<span class="count-disabled">${disabledCount}</span>)</span>
@@ -9794,6 +10088,10 @@ class EntityManagerPanel extends HTMLElement {
         const hidden = body.style.display === 'none';
         body.style.display = hidden ? '' : 'none';
         if (icon) icon.classList.toggle('expanded', hidden);
+        // Remember it — enable/disable/rename all end in loadData() → updateView(), which
+        // rebuilds this card from HTML and would otherwise snap it shut.
+        const key = header.dataset.catKey;
+        if (key) hidden ? this.expandedCatCards.add(key) : this.expandedCatCards.delete(key);
       });
     });
 
@@ -9905,6 +10203,7 @@ class EntityManagerPanel extends HTMLElement {
       header.addEventListener('click', (e) => {
         if (e.target.closest('.integration-select-wrapper')) return;
         if (e.target.closest('.integration-hw-unknown')) return; // handled by the type-picker listener
+        if (e.target.closest('.integration-pill')) return;       // handled by the pill filter listener
         const integration = header.dataset.integration;
         if (this.expandedIntegrations.has(integration)) {
           this.expandedIntegrations.delete(integration);
@@ -9968,6 +10267,7 @@ class EntityManagerPanel extends HTMLElement {
         if (e.target.closest('.device-bulk-actions')) return;
         if (e.target.closest('.device-select-label')) return;
         if (e.target.closest('.device-type-badge-editable')) return; // handled by the type-picker listener
+        if (e.target.closest('.integration-pill')) return;           // handled by the pill filter listener
         const deviceId = header.dataset.device;
         if (this.expandedDevices.has(deviceId)) {
           this.expandedDevices.delete(deviceId);
@@ -10047,6 +10347,58 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    // Undo on a card just renamed — puts the previous name back
+    this.content.querySelectorAll('.em-name-undo-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const entityId = btn.dataset.entityId;
+        const previous = this._recentRenames?.get(entityId);
+        if (!previous) return;
+        btn.disabled = true;
+        try {
+          await this._hass.callWS({
+            type: 'entity_manager/update_entity_display_name',
+            entity_id: entityId,
+            name: previous.oldName || null,
+          });
+          this._recentRenames.delete(entityId);
+          const record = this._findEntityById(entityId);
+          if (record) record.name = previous.oldName || null;
+          this.updateView();
+          await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, previous.oldName));
+          this.updateView();
+          this._showToast(previous.oldName ? `Back to “${previous.oldName}”` : 'Display name cleared', 'success');
+        } catch (err) {
+          btn.disabled = false;
+          this._showToast(`Undo failed: ${err.message}`, 'error');
+        }
+      });
+    });
+
+    // Suggested-name buttons on entity cards
+    this.content.querySelectorAll('.em-name-suggest-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showDisplayNameEditDialog(
+          btn.dataset.entityId,
+          btn.dataset.suggestion,
+          () => this.loadData(),
+        );
+      });
+    });
+    // Devices view ⋯ menu — Change area… / Labels… (the header pills filter instead)
+    this.content.querySelectorAll('.device-menu-assign').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        btn.closest('.integration-menu')?.classList.remove('open');
+        const ents = this._deviceEntitiesById(btn.dataset.deviceId);
+        if (!ents.length) return;
+        this._showAssignDialog(ents, btn.dataset.focus === 'labels'
+          ? { focus: 'labels', labelTarget: 'device' }
+          : { focus: 'area' });
+      });
+    });
+
     // Device header label chips — open Labels section (device target) for the device's entities
     this.content.querySelectorAll('.device-header .entity-header-label').forEach(chip => {
       chip.addEventListener('click', (e) => {
@@ -10063,7 +10415,90 @@ class EntityManagerPanel extends HTMLElement {
         this._showDeviceTypePickerDialog([badge.dataset.typeDeviceId]);
       });
     });
-    // Integration Hardware box's Unknown chip — bulk-assign that integration's unknown devices
+    // Integration header pills — filter the integration's devices/entities to what the pill names
+    this.content.querySelectorAll('.integration-pill[data-pill-kind], .integration-pill-more').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Devices view header pill — same toggle, keyed by device
+        if (btn.dataset.deviceId !== undefined) {
+          const deviceId = btn.dataset.deviceId;
+          const { pillKind: kind, pillValue: value } = btn.dataset;
+          if (this._togglePillFilter(this.deviceHeaderFilter, deviceId, kind, value)) {
+            this.expandedDevices.add(deviceId);
+          }
+          this.updateView();
+          return;
+        }
+        const integration = btn.dataset.integration;
+        if (btn.classList.contains('integration-pill-more')) {
+          this._intgPillsShowAll.add(integration);
+          this.updateView();
+          return;
+        }
+        const { pillKind: kind, pillValue: value } = btn.dataset;
+        if (this._togglePillFilter(this.integrationHeaderFilter, integration, kind, value)
+            && !this.expandedIntegrations.has(integration)) {
+          this.expandedIntegrations.add(integration);
+          this._autoExpandLoneDevice(integration);
+        }
+        this.updateView();
+      });
+    });
+
+    // Summary-bar chips and Clear buttons
+    this.content.querySelectorAll('.pill-clear-one').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const { deviceId, integration, pillKind: kind, pillValue: value } = btn.dataset;
+        const map = deviceId !== undefined ? this.deviceHeaderFilter : this.integrationHeaderFilter;
+        this._togglePillFilter(map, deviceId !== undefined ? deviceId : integration, kind, value);
+        this.updateView();
+      });
+    });
+
+    this.content.querySelectorAll('.pill-clear-scope').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const { deviceId, integration } = btn.dataset;
+        if (deviceId !== undefined) delete this.deviceHeaderFilter[deviceId];
+        else delete this.integrationHeaderFilter[integration];
+        this._savePillFilters();
+        this.updateView();
+      });
+    });
+
+    this.content.querySelectorAll('.pill-clear-all').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.integrationHeaderFilter = {};
+        this.deviceHeaderFilter = {};
+        this._savePillFilters();
+        this.updateView();
+      });
+    });
+
+    // "Filtered" menu actions — operate on exactly the entities the active pills show
+    this.content.querySelectorAll('.pill-select-filtered').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        btn.closest('.integration-menu')?.classList.remove('open');
+        const ids = (btn.dataset.entityIds || '').split(',').filter(Boolean);
+        ids.forEach(id => this.selectedEntities.add(id));
+        this.updateView();
+        this._showToast(`Selected ${ids.length} entit${ids.length !== 1 ? 'ies' : 'y'}`, 'success');
+      });
+    });
+
+    this.content.querySelectorAll('.pill-enable-filtered, .pill-disable-filtered').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btn.closest('.integration-menu')?.classList.remove('open');
+        const ids = (btn.dataset.entityIds || '').split(',').filter(Boolean);
+        await this._bulkToggleGroup(btn, ids, btn.classList.contains('pill-enable-filtered'));
+      });
+    });
+
+    // Integration ⋯ menu "Assign type to unknown devices…" — bulk-assign that integration's unknown devices
     this.content.querySelectorAll('.integration-hw-unknown').forEach(chip => {
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -14263,6 +14698,466 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * The name lines of an entity card, each saying which name it is.
+   *
+   * "Friendly" is what Home Assistant shows everywhere else — for an entity
+   * with has_entity_name it is "<device name> <entity name>", which is how a
+   * name comes to read twice. "Entity" is the entity's own registry name, and
+   * "Display" the one set by hand. Shown only when they differ, so a plain
+   * entity still shows one line.
+   */
+  _entityNameLinesHtml(entity, state) {
+    const own = entity.original_name || '';
+    const display = entity.name || '';
+    const friendly = state?.attributes?.friendly_name || '';
+    const line = (kind, value, cls = 'entity-name') =>
+      `<div class="${cls}"><span class="entity-name-kind">${kind}</span>${this._escapeHtml(value)}</div>`;
+
+    // One line for the name as Home Assistant shows it, and the others only when
+    // they say something different. A display name IS the friendly name, and a
+    // fixed entity's own name differs from it by case at most, so showing all
+    // four turns into the same sentence four times.
+    const shown = friendly || display || own;
+    const out = [];
+    if (shown) {
+      out.push(`<div class="entity-name entity-name-friendly">
+        <span class="entity-name-kind">Name</span>${this._escapeHtml(shown)}${display
+          ? '<span class="entity-name-custom" title="A display name you set; Home Assistant shows it exactly as written">custom</span>'
+          : ''}</div>`);
+    }
+    const ownDiffers = own
+      && this._nameWords(own).join(' ') !== this._nameWords(shown).join(' ');
+    if (ownDiffers) out.push(line('Entity', own));
+
+    // Just renamed: offer the way back instead of another suggestion
+    const undone = this._recentRenames?.get(entity.entity_id);
+    if (undone) {
+      out.push(`<div class="entity-name-suggest">
+        <span class="entity-name-kind">Renamed</span>
+        <button type="button" class="em-name-undo-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
+          title="Put the previous name back">${this._icon('mdi:undo-variant', '13px')} Undo${undone.oldName ? ` — back to “${this._escapeHtml(undone.oldName)}”` : ' — clear the display name'}</button>
+      </div>`);
+      return out.join('');
+    }
+
+    // Suggest only when the name as shown is wrong: nothing of its own, or the
+    // device name reads twice. Testing the stored name instead would flag a
+    // correctly fixed entity, whose display name starts with the device once.
+    const deviceWords = this._nameWords(entity.deviceName || '');
+    const shownWords = this._nameWords(shown);
+    const doubled = deviceWords.length > 0
+      && this._startsWithWords(shownWords, deviceWords)
+      && this._startsWithWords(shownWords.slice(deviceWords.length), deviceWords);
+    if (!out.length || doubled) {
+      const suggestion = this._suggestEntityName(entity, entity.deviceName);
+      if (suggestion && suggestion !== shown) {
+        out.push(`<div class="entity-name-suggest">
+          <span class="entity-name-kind">Suggested</span>
+          <button type="button" class="em-name-suggest-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
+            data-suggestion="${this._escapeAttr(suggestion)}"
+            title="Set this as the display name">${this._escapeHtml(suggestion)}</button>
+        </div>`);
+      }
+    }
+    return out.join('');
+  }
+
+  /** A name to suggest for an entity that has none of its own worth showing.
+   *  Built from the object ID with the device's part removed, so
+   *  sensor.tafla_h_gr_04_eldhus_power suggests "Power". When nothing is left —
+   *  the entity IS the device, like a Shelly's main switch — the domain answers
+   *  for it: switch → "Switch". */
+  _suggestEntityName(entity, deviceName) {
+    const objectId = String(entity.entity_id || '').split('.').slice(1).join('.');
+    const words = this._nameWords(objectId);
+    const deviceWords = this._nameWords(deviceName || '');
+    const rest = this._startsWithWords(words, deviceWords)
+      ? words.slice(deviceWords.length)
+      : words;
+    const source = rest.length ? rest : [String(entity.entity_id || '').split('.')[0]];
+    const part = source
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+      .trim();
+    // Home Assistant shows a display name exactly as set — it prepends the
+    // device name only when there is none — so the suggestion carries it.
+    return deviceName ? `${deviceName} ${part}`.trim() : part;
+  }
+
+  /** Words of a name, folded for comparison: lowercase, accent-free, þ/ð/æ spelled out.
+   *  Mirrors _folded_form in voice_assistant.py. */
+  _nameWords(text) {
+    const folded = String(text || '')
+      .toLowerCase()
+      .replace(/þ/g, 'th').replace(/ð/g, 'd').replace(/æ/g, 'ae').replace(/ø/g, 'o')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    return folded.split(/[\s_.\-]+/).filter(Boolean);
+  }
+
+  /** Does `words` start with every word of `prefix`, whole words only?
+   *  Substring matching would flag HA's own "Backup" device for an entity
+   *  called "Backup Manager state". */
+  _startsWithWords(words, prefix) {
+    return prefix.length > 0 && prefix.length <= words.length
+      && prefix.every((w, i) => words[i] === w);
+  }
+
+  /**
+   * Entities whose displayed name repeats their device name, and devices whose
+   * entities are named after some other device.
+   *
+   * HA composes "<device name> <entity name>" when has_entity_name is set, so an
+   * integration that already puts the device name in the entity name produces
+   * "Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power".
+   */
+  async _computeDuplicateNames() {
+    const [entityRegistry, deviceRegistry, configEntries] = await Promise.all([
+      this._hass.callWS({ type: 'config/entity_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config/device_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config_entries/get' }).catch(() => []),
+    ]);
+    const deviceName = new Map(
+      (deviceRegistry || []).map(d => [d.id, (d.name_by_user || d.name || '').trim()])
+    );
+    // Device names of two words or more; one-word names match far too much
+    const knownDeviceNames = [...new Set([...deviceName.values()].filter(Boolean))]
+      .map(name => ({ name, words: this._nameWords(name) }))
+      .filter(d => d.words.length >= 2);
+
+    const doubled = [];   // fixable: a real remainder is left
+    const needName = [];  // the entity's own name IS the device name
+    const foreign = new Map();  // device_id → Map(other device name → count)
+
+    for (const entry of entityRegistry || []) {
+      const dName = deviceName.get(entry.device_id) || '';
+      const own = entry.name || entry.original_name || '';
+      if (!own) continue;
+      const ownWords = this._nameWords(own);
+
+      if (dName) {
+        // What Home Assistant shows: a display name verbatim, otherwise the
+        // device name in front of the entity's own name when has_entity_name.
+        const shown = entry.name
+          ? entry.name
+          : (entry.has_entity_name ? `${dName} ${own}`.trim() : own);
+        const dWords = this._nameWords(dName);
+        const shownWords = this._nameWords(shown);
+        // Doubled means the device name reads TWICE. Asking only whether the
+        // name starts with the device name re-flags a fixed entity — "Backup
+        // Manager state" on device "Backup" is correct, not doubled — and
+        // offers a fix that changes nothing.
+        const isDoubled = this._startsWithWords(shownWords, dWords)
+          && this._startsWithWords(shownWords.slice(dWords.length), dWords);
+        if (isDoubled) {
+          // Drop one device name from the front; keep the rest as it reads
+          const rest = shown.trim().slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          const remainder = rest.slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          const row = {
+            entity_id: entry.entity_id,
+            deviceName: dName,
+            current: shown,
+            remainder,
+            suggested: remainder ? rest : '',
+            userNamed: !!entry.name,
+          };
+          (remainder ? doubled : needName).push(row);
+          continue;
+        }
+      }
+
+      // An entity carrying a different device's name — a device renamed while its
+      // entities kept the old one, or one physical device split across two registry devices
+      if (!entry.device_id) continue;
+      const other = knownDeviceNames.find(d =>
+        d.name !== dName && this._startsWithWords(ownWords, d.words));
+      if (other) {
+        if (!foreign.has(entry.device_id)) foreign.set(entry.device_id, new Map());
+        const counts = foreign.get(entry.device_id);
+        counts.set(other.name, (counts.get(other.name) || 0) + 1);
+      }
+    }
+
+    const mismatched = [...foreign.entries()].map(([deviceId, counts]) => ({
+      deviceId,
+      deviceName: deviceName.get(deviceId) || deviceId,
+      groups: [...counts.entries()].sort((a, b) => b[1] - a[1]),
+    })).sort((a, b) => a.deviceName.localeCompare(b.deviceName));
+
+    doubled.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    needName.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    return {
+      doubled,
+      needName,
+      mismatched,
+      entryDrift: this._computeEntryTitleDrift(deviceRegistry, configEntries),
+    };
+  }
+
+  /**
+   * Integration entries whose title no longer says what the device is called.
+   *
+   * Home Assistant titles an entry when the integration is first added and
+   * never revisits it, so renaming a device leaves the integrations page
+   * showing the name it had on the day it was set up.
+   *
+   * Only an entry owning exactly one device can be fixed automatically; with
+   * several, which name to use is a judgement call, so those are reported.
+   */
+  _computeEntryTitleDrift(deviceRegistry, configEntries) {
+    const byEntry = new Map();
+    for (const device of deviceRegistry || []) {
+      const entryId = device.primary_config_entry
+        || (Array.isArray(device.config_entries) ? device.config_entries[0] : null);
+      if (!entryId) continue;
+      const name = (device.name_by_user || device.name || '').trim();
+      if (!name) continue;
+      if (!byEntry.has(entryId)) byEntry.set(entryId, []);
+      byEntry.get(entryId).push(name);
+    }
+
+    const drift = [];
+    for (const entry of configEntries || []) {
+      const devices = byEntry.get(entry.entry_id);
+      if (!devices?.length) continue;
+      const title = (entry.title || '').trim();
+      if (!title) continue;
+      const folded = this._nameWords(title).join(' ');
+      // One device naming the entry, or any device already saying it, is fine
+      if (devices.some(name => {
+        const dev = this._nameWords(name).join(' ');
+        return dev === folded || dev.includes(folded) || folded.includes(dev);
+      })) continue;
+      drift.push({
+        entryId: entry.entry_id,
+        domain: entry.domain,
+        title,
+        devices,
+        suggested: devices.length === 1 ? devices[0] : '',
+      });
+    }
+    return drift.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /** Rename integration entries to match their device. */
+  async _fixEntryTitles(rows, btn) {
+    if (!rows.length) return;
+    if (!(await this._confirmAsync(
+      'Rename integration entries',
+      `Retitle ${rows.length} entr${rows.length !== 1 ? 'ies' : 'y'} to match the device? ` +
+      'This changes only what the integrations page shows. It can be undone.',
+    ))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Renaming…'; }
+    let ok = 0;
+    const failed = [];
+    for (const row of rows) {
+      try {
+        await this._hass.callWS({
+          type: 'config_entries/update',
+          entry_id: row.entryId,
+          title: row.suggested,
+        });
+        this._pushUndoAction({
+          type: 'config_entry_title_change',
+          entryId: row.entryId,
+          oldTitle: row.title,
+          newTitle: row.suggested,
+        });
+        ok++;
+      } catch (err) {
+        failed.push(`${row.title}: ${err.message}`);
+      }
+    }
+    this._showToast(
+      failed.length ? `Renamed ${ok}, ${failed.length} failed — ${failed[0]}` : `Renamed ${ok} entr${ok !== 1 ? 'ies' : 'y'}`,
+      failed.length ? 'error' : 'success',
+    );
+    this._refreshView();
+  }
+
+  /** Apply the suggested display names, one call each, with undo per entity. */
+  async _fixDuplicateNames(rows, btn) {
+    if (!rows.length) return;
+    if (!(await this._confirmAsync(
+      'Fix duplicate names',
+      `Set the display name of ${rows.length} entit${rows.length !== 1 ? 'ies' : 'y'}? ` +
+      'Entity IDs do not change, so nothing that references them breaks. This can be undone.',
+    ))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Fixing…'; }
+    let ok = 0;
+    const failed = [];
+    for (const row of rows) {
+      try {
+        await this._hass.callWS({
+          type: 'entity_manager/update_entity_display_name',
+          entity_id: row.entity_id,
+          name: row.suggested,
+        });
+        this._pushUndoAction({
+          type: 'display_name_change',
+          entityId: row.entity_id,
+          oldName: row.userNamed ? row.current : '',
+          newName: row.suggested,
+        });
+        ok++;
+      } catch (err) {
+        failed.push(`${row.entity_id}: ${err.message}`);
+      }
+    }
+    this._showToast(
+      failed.length
+        ? `Renamed ${ok}, ${failed.length} failed — ${failed[0]}`
+        : `Renamed ${ok} entit${ok !== 1 ? 'ies' : 'y'}`,
+      failed.length ? 'error' : 'success',
+    );
+    await this.loadData();
+    this._refreshView();
+  }
+
+  /** The Duplicate Names section of Cleanup & Health. */
+  async _showDuplicateNamesSection(container) {
+    const { doubled, needName, mismatched, entryDrift } = await this._computeDuplicateNames();
+    this._dupNameRows = doubled;
+
+    if (!doubled.length && !needName.length && !mismatched.length && !entryDrift.length) {
+      container.innerHTML = '<p style="text-align:center;padding:24px;opacity:0.6">No duplicated names — every entity reads cleanly under its device.</p>';
+      return;
+    }
+
+    const row = (r, fixable) => this._renderMiniEntityCard({
+      entity_id: r.entity_id,
+      name: r.current,
+      state: fixable ? 'doubled' : 'no name left',
+      stateColor: fixable ? 'var(--em-warning)' : 'var(--em-danger)',
+      infoLine: fixable
+        ? `${this._icon('mdi:arrow-right-thin', '14px')} becomes <strong>${this._escapeHtml(r.suggested)}</strong>`
+        : `${this._icon(EM_ICONS.warning, '14px')} its own name is just the device name — give it one by hand`,
+      extraClass: 'em-dupname-row',
+      checkboxHtml: fixable
+        ? `<input type="checkbox" class="em-dupname-sel" data-entity-id="${this._escapeAttr(r.entity_id)}" checked style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`
+        : '',
+      actionsHtml: fixable
+        ? `<button class="em-dialog-btn em-dialog-btn-outline-primary em-dupname-fix-one" data-entity-id="${this._escapeAttr(r.entity_id)}">Fix</button>`
+        : `<button class="em-dialog-btn em-dialog-btn-outline-primary em-dupname-rename" data-entity-id="${this._escapeAttr(r.entity_id)}">Rename…</button>`,
+    });
+
+    const byDevice = new Map();
+    doubled.forEach(r => {
+      if (!byDevice.has(r.deviceName)) byDevice.set(r.deviceName, []);
+      byDevice.get(r.deviceName).push(r);
+    });
+
+    const doubledHtml = doubled.length ? `
+      <div class="em-sug-section em-sug-naming" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon('mdi:content-duplicate', '16px')} Device name twice (${doubled.length})`,
+          this._sectionHint('Home Assistant already puts the device name in front, so these read it twice. '
+            + 'Fixing sets a display name — the entity ID never changes, so automations and dashboards are untouched.', 'help-dupnames')
+          + `<div class="em-dupname-actions" style="padding:6px 12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+               <label style="margin-right:auto;font-size:12px;display:flex;gap:6px;align-items:center">
+                 <input type="checkbox" id="em-dupname-all" checked style="accent-color:var(--em-primary)"> Select all
+               </label>
+               <button class="em-dialog-btn em-dialog-btn-primary" id="em-dupname-fix-selected">Fix selected</button>
+             </div>`
+          + [...byDevice.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([dev, rows]) => this._collGroup(`${this._escapeHtml(dev)} (${rows.length})`,
+                rows.map(r => row(r, true)).join('')))
+              .join(''))}
+      </div>` : '';
+
+    const needNameHtml = needName.length ? `
+      <div class="em-sug-section em-sug-health" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon(EM_ICONS.warning, '16px')} Needs a name (${needName.length})`,
+          this._sectionHint('The entity\'s own name is exactly the device name, so there is nothing left after '
+            + 'removing it. Give these a name yourself — a guess would be worse than the doubling.', 'help-dupnames-manual')
+          + needName.map(r => row(r, false)).join(''))}
+      </div>` : '';
+
+    const mismatchHtml = mismatched.length ? `
+      <div class="em-sug-section em-sug-area" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon('mdi:swap-horizontal', '16px')} Named after another device (${mismatched.length})`,
+          this._sectionHint('These devices have entities carrying a different device\'s name — usually a device renamed '
+            + 'while its entities kept the old name, or one physical device split across two registry entries. '
+            + 'Reported only: which name is right is your call.', 'help-dupnames-foreign')
+          + mismatched.map(m => `
+            <div class="em-dupname-foreign" style="padding:8px 14px;border-top:1px solid var(--em-border)">
+              <div style="font-weight:600">${this._escapeHtml(m.deviceName)}</div>
+              <div style="font-size:12px;color:var(--em-text-secondary)">
+                ${m.groups.map(([name, n]) => `${n} entit${n !== 1 ? 'ies' : 'y'} named “${this._escapeHtml(name)}”`).join(' · ')}
+              </div>
+            </div>`).join(''))}
+      </div>` : '';
+
+    const fixableDrift = entryDrift.filter(d => d.suggested);
+    const entryDriftHtml = entryDrift.length ? `
+      <div class="em-sug-section em-sug-labels" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon(EM_ICONS.integration, '16px')} Integration entry named differently (${entryDrift.length})`,
+          this._sectionHint('Home Assistant titles an integration entry when it is first added and never revisits it, '
+            + 'so the integrations page can still show the name a device had on the day it was set up. '
+            + 'Only the title changes here — no entity, device or ID is touched.', 'help-entry-drift')
+          + (fixableDrift.length ? `<div style="padding:6px 12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+               <label style="margin-right:auto;font-size:12px;display:flex;gap:6px;align-items:center">
+                 <input type="checkbox" id="em-entry-all" checked style="accent-color:var(--em-primary)"> Select all
+               </label>
+               <button class="em-dialog-btn em-dialog-btn-primary" id="em-entry-fix-selected">Use the device name</button>
+             </div>` : '')
+          + entryDrift.map(d => `
+            <div class="em-dupname-foreign" style="padding:8px 14px;border-top:1px solid var(--em-border);display:flex;gap:10px;align-items:flex-start">
+              ${d.suggested
+                ? `<input type="checkbox" class="em-entry-sel" data-entry-id="${this._escapeAttr(d.entryId)}" checked style="margin-top:3px;accent-color:var(--em-primary)">`
+                : '<span style="width:13px"></span>'}
+              <div style="min-width:0">
+                <div style="font-weight:600">${this._escapeHtml(d.title)}</div>
+                <div style="font-size:12px;color:var(--em-text-secondary)">
+                  ${d.suggested
+                    ? `${this._icon('mdi:arrow-right-thin', '13px')} ${this._escapeHtml(d.suggested)}`
+                    : `${d.devices.length} devices: ${this._escapeHtml(d.devices.slice(0, 3).join(', '))}${d.devices.length > 3 ? '…' : ''} — pick a name yourself`}
+                  · ${this._escapeHtml(d.domain)}
+                </div>
+              </div>
+            </div>`).join(''))}
+      </div>` : '';
+
+    container.innerHTML = doubledHtml + needNameHtml + mismatchHtml + entryDriftHtml;
+    this._reAttachCollapsibles(container);
+
+    const selected = () => [...container.querySelectorAll('.em-dupname-sel:checked')]
+      .map(cb => doubled.find(r => r.entity_id === cb.dataset.entityId))
+      .filter(Boolean);
+
+    container.querySelector('#em-dupname-all')?.addEventListener('change', (e) => {
+      container.querySelectorAll('.em-dupname-sel').forEach(cb => { cb.checked = e.target.checked; });
+    });
+    container.querySelector('#em-dupname-fix-selected')?.addEventListener('click', (e) => {
+      this._fixDuplicateNames(selected(), e.target);
+    });
+    container.querySelectorAll('.em-dupname-fix-one').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = doubled.find(x => x.entity_id === btn.dataset.entityId);
+        if (r) this._fixDuplicateNames([r], btn);
+      });
+    });
+    container.querySelector('#em-entry-all')?.addEventListener('change', (e) => {
+      container.querySelectorAll('.em-entry-sel').forEach(cb => { cb.checked = e.target.checked; });
+    });
+    container.querySelector('#em-entry-fix-selected')?.addEventListener('click', (e) => {
+      const picked = [...container.querySelectorAll('.em-entry-sel:checked')]
+        .map(cb => entryDrift.find(d => d.entryId === cb.dataset.entryId))
+        .filter(d => d?.suggested);
+      this._fixEntryTitles(picked, e.target);
+    });
+
+    container.querySelectorAll('.em-dupname-rename').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = needName.find(x => x.entity_id === btn.dataset.entityId);
+        const prefill = r?.suggested
+          || this._suggestEntityName({ entity_id: btn.dataset.entityId }, r?.deviceName);
+        this._showDisplayNameEditDialog(btn.dataset.entityId, prefill, () => {
+          this.loadData().then(() => this._refreshView());
+        });
+      });
+    });
+  }
+
   async _showCleanupDialog({ inline = false, container = null } = {}) {
     const dismissed = this._loadFromStorage('em-stale-dismissed', {});
     const states = Object.values(this._hass?.states || {});
@@ -16749,6 +17644,233 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** What a device's entity IDs actually share, cut at an underscore:
+   *  ["tafla_h_gr_04_eldhus_power", "tafla_h_gr_04_eldhus_cloud"] →
+   *  "tafla_h_gr_04_eldhus". Used when a device's name no longer matches its own
+   *  entity IDs, which is the state between a device rename and the queue run. */
+  _commonObjectIdPrefix(entityIds) {
+    const objectIds = entityIds
+      .map(id => id.slice(id.indexOf('.') + 1))
+      .filter(Boolean);
+    if (objectIds.length < 2) return '';
+    let prefix = objectIds[0];
+    for (const objectId of objectIds.slice(1)) {
+      let i = 0;
+      while (i < prefix.length && i < objectId.length && prefix[i] === objectId[i]) i++;
+      prefix = prefix.slice(0, i);
+      if (!prefix) return '';
+    }
+    const cut = prefix.lastIndexOf('_');
+    return cut > 0 ? prefix.slice(0, cut) : '';
+  }
+
+  /** The object-ID form of a device name, the way Home Assistant slugifies it:
+   *  "Tafla H Gr.04 Eldhús" → "tafla_h_gr_04_eldhus". */
+  _deviceSlug(name) {
+    return this._nameWords(name).join('_');
+  }
+
+  /**
+   * Rename a device and line its entities up to follow.
+   *
+   * The device name is written straight away — one reversible registry field.
+   * Entity IDs are not: they go into the existing rename queue, so the run
+   * keeps that queue's reference preview, undo steps and per-entity failure
+   * reporting instead of growing a second path that writes IDs itself.
+   */
+  async _showDeviceRenameDialog(deviceId, { addToQueue, syncRenameBtn, view }) {
+    const info = this.deviceInfo?.[deviceId] || {};
+    const oldName = (info.name_by_user || info.name || '').trim();
+    const entityIds = (this._deviceEntitiesById(deviceId) || []).map(e => e.entity_id);
+    // Rename a device twice and its entity IDs still carry the first name: their
+    // renames are only queued, so they change when the queue runs, not now. So
+    // match against every name this device has had, and fall back to what its
+    // entity IDs actually share.
+    const previousNames = this._deviceNameHistory?.get(deviceId) || [];
+    const candidateNames = [oldName, ...previousNames].filter(Boolean);
+    const idPrefix = this._commonObjectIdPrefix(entityIds);
+
+    const plan = (newName) => {
+      const newSlug = this._deviceSlug(newName);
+      const candidateSlugs = [...new Set(candidateNames.map(n => this._deviceSlug(n)))]
+        .filter(Boolean)
+        .concat(idPrefix ? [idPrefix] : []);
+      return entityIds.map(entityId => {
+        const dot = entityId.indexOf('.');
+        const domain = entityId.slice(0, dot);
+        const objectId = entityId.slice(dot + 1);
+        const matchedSlug = candidateSlugs.find(slug => objectId.startsWith(slug)) || '';
+        const newObjectId = matchedSlug ? newSlug + objectId.slice(matchedSlug.length) : objectId;
+        const entity = this._findEntityById(entityId);
+        const shown = this._hass?.states?.[entityId]?.attributes?.friendly_name
+          || entity?.name || entity?.original_name || '';
+        const shownWords = this._nameWords(shown);
+        const matchedName = candidateNames.find(n =>
+          this._startsWithWords(shownWords, this._nameWords(n))) || '';
+        const remainder = matchedName
+          ? shown.trim().slice(matchedName.length).replace(/^[\s_.-]+/, '')
+          : '';
+        return {
+          entityId,
+          newEntityId: `${domain}.${newObjectId}`,
+          idFollows: !!matchedSlug && newObjectId !== objectId,
+          displayName: matchedName ? `${newName} ${remainder}`.trim() : '',
+        };
+      });
+    };
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Rename device',
+      color: 'var(--em-primary)',
+      contentHtml: `
+        <div style="padding:4px 0">
+          <label style="font-size:0.85em;opacity:0.7;display:block;margin-bottom:6px">Device name</label>
+          <input id="em-dr-input" type="text" value="${this._escapeHtml(oldName)}"
+            style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.95em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)">
+          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:0.85em">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="em-dr-ids" checked style="accent-color:var(--em-primary)"> Queue entity ID changes</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="em-dr-names" checked style="accent-color:var(--em-primary)"> Queue display names</label>
+          </div>
+          <div id="em-dr-preview" style="margin-top:10px;padding:8px 10px;border-radius:6px;font-size:0.85em;max-height:190px;overflow:auto;background:color-mix(in srgb, var(--em-primary) 8%, transparent);border:1px solid color-mix(in srgb, var(--em-primary) 35%, transparent)"></div>
+          <p style="font-size:0.82em;opacity:0.6;margin-top:8px">The device is renamed now. Entity changes go to the rename queue — review them there, then press Rename.</p>
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="em-dr-cancel">Cancel</button>
+                    <button class="btn btn-primary" id="em-dr-save">Rename device</button>`,
+    });
+
+    const input = overlay.querySelector('#em-dr-input');
+    const previewEl = overlay.querySelector('#em-dr-preview');
+    const idsCb = overlay.querySelector('#em-dr-ids');
+    const namesCb = overlay.querySelector('#em-dr-names');
+
+    const renderPreview = () => {
+      const newName = input.value.trim();
+      if (!newName || newName === oldName) {
+        previewEl.innerHTML = '<span style="opacity:0.7">Type a new name to see what would change.</span>';
+        return;
+      }
+      const rows = plan(newName);
+      const idCount = rows.filter(r => r.idFollows).length;
+      const nameCount = rows.filter(r => r.displayName).length;
+      const sample = rows.slice(0, 4).map(r => `
+        <div style="margin-top:4px">
+          <code style="opacity:0.7">${this._escapeHtml(r.entityId)}</code>
+          ${idsCb.checked && r.idFollows ? ` → <code>${this._escapeHtml(r.newEntityId)}</code>` : ''}
+          ${namesCb.checked && r.displayName ? `<div style="opacity:0.8">name: ${this._escapeHtml(r.displayName)}</div>` : ''}
+        </div>`).join('');
+      previewEl.innerHTML = `
+        <div><strong>${this._escapeHtml(oldName)}</strong> → <strong>${this._escapeHtml(newName)}</strong></div>
+        <div style="margin-top:4px;opacity:0.8">
+          ${rows.length} entit${rows.length !== 1 ? 'ies' : 'y'} ·
+          ${idsCb.checked ? idCount : 0} ID${idCount !== 1 ? 's' : ''} ·
+          ${namesCb.checked ? nameCount : 0} name${nameCount !== 1 ? 's' : ''}
+        </div>
+        ${sample}
+        ${rows.length > 4 ? `<div style="margin-top:4px;opacity:0.7">…and ${rows.length - 4} more</div>` : ''}`;
+    };
+    renderPreview();
+    input.addEventListener('input', renderPreview);
+    idsCb.addEventListener('change', renderPreview);
+    namesCb.addEventListener('change', renderPreview);
+    input.focus();
+    input.select();
+
+    overlay.querySelector('#em-dr-cancel').addEventListener('click', closeDialog);
+    overlay.querySelector('#em-dr-save').addEventListener('click', async () => {
+      const newName = input.value.trim();
+      if (!newName || newName === oldName) { closeDialog(); return; }
+      try {
+        await this._hass.callWS({
+          type: 'config/device_registry/update',
+          device_id: deviceId,
+          name_by_user: newName,
+        });
+      } catch (err) {
+        this._showToast(`Device rename failed: ${err.message}`, 'error');
+        return;
+      }
+      this._pushUndoAction({ type: 'device_name_change', deviceId, oldName, newName });
+      if (this.deviceInfo?.[deviceId]) this.deviceInfo[deviceId].name_by_user = newName;
+      // Remember what it was called, so a second rename still finds its entities
+      const history = (this._deviceNameHistory ||= new Map()).get(deviceId) || [];
+      this._deviceNameHistory.set(deviceId, [oldName, ...history.filter(n => n !== oldName)]);
+
+      let queued = 0;
+      for (const row of plan(newName)) {
+        const wantsId = idsCb.checked && row.idFollows;
+        const wantsName = namesCb.checked && !!row.displayName;
+        if (!wantsId && !wantsName) continue;
+        addToQueue(row.entityId);
+        const queueRow = view.querySelector(`#brq-rows [data-old-entity="${CSS.escape(row.entityId)}"]`);
+        if (!queueRow) continue;
+        if (wantsId) {
+          const field = queueRow.querySelector('.bulk-new-name');
+          if (field) field.value = row.newEntityId.slice(row.newEntityId.indexOf('.') + 1);
+        }
+        if (wantsName) queueRow.dataset.displayName = row.displayName;
+        queued++;
+      }
+      syncRenameBtn?.();
+      closeDialog();
+      this._showToast(
+        queued
+          ? `Device renamed — ${queued} entit${queued !== 1 ? 'ies' : 'y'} queued, review and press Rename`
+          : 'Device renamed',
+        'success',
+      );
+    });
+  }
+
+  /** Does the name Home Assistant shows for this entity read its device name
+   *  twice? The same rule the Duplicate Names card uses, for one entity. */
+  _hasDoubledName(entityId, friendlyName = null) {
+    const entity = this._findEntityById(entityId);
+    const deviceId = entity?.device_id || this.entityDeviceMap?.get(entityId);
+    const deviceName = deviceId ? this.getDeviceName(deviceId) : '';
+    if (!deviceName) return false;
+    const shown = friendlyName
+      || this._hass?.states?.[entityId]?.attributes?.friendly_name
+      || entity?.name || entity?.original_name || '';
+    const deviceWords = this._nameWords(deviceName);
+    const shownWords = this._nameWords(shown);
+    return this._startsWithWords(shownWords, deviceWords)
+      && this._startsWithWords(shownWords.slice(deviceWords.length), deviceWords);
+  }
+
+  /** The device line earns its place only when the shown name does not already
+   *  begin with the device name — otherwise it repeats what is right above it. */
+  _deviceLineWorthShowing(entity, state) {
+    const shown = state?.attributes?.friendly_name || entity.name || entity.original_name || '';
+    return !this._startsWithWords(this._nameWords(shown), this._nameWords(entity.deviceName || ''));
+  }
+
+  /** Wait for HA to push the renamed entity's new state, so the card stops
+   *  showing the old friendly name. The registry write returns before the state
+   *  machine catches up, and the hass setter only syncs toggle buttons, so
+   *  without this a rename needs a manual refresh to show. */
+  async _awaitFriendlyName(entityId, expected, timeoutMs = 2500) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this._hass?.states?.[entityId]?.attributes?.friendly_name === expected) return true;
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    return false;
+  }
+
+  /** What Home Assistant will show for an entity given a display name.
+   *  A display name is used verbatim; the device name is prepended only when
+   *  there is none (see _async_get_full_entity_name_generic in HA). */
+  _friendlyNamePreview(entityId, typedName) {
+    const typed = (typedName || '').trim();
+    if (typed) return typed;
+    const entity = this._findEntityById(entityId);
+    const own = entity?.original_name || '';
+    const deviceId = entity?.device_id || this.entityDeviceMap?.get(entityId);
+    const deviceName = deviceId ? this.getDeviceName(deviceId) : '';
+    if (entity?.has_entity_name && deviceName && own) return `${deviceName} ${own}`;
+    return own || entityId;
+  }
+
   async _showDisplayNameEditDialog(entityId, currentName, onSave) {
     const { overlay, closeDialog } = this.createDialog({
       title: 'Rename',
@@ -16759,12 +17881,28 @@ class EntityManagerPanel extends HTMLElement {
           <input id="em-dn-input" type="text" value="${this._escapeHtml(currentName || '')}"
             style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.95em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)"
             placeholder="Enter display name">
+          <div id="em-dn-preview" style="font-size:0.85em;margin-top:10px;padding:8px 10px;border-radius:6px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);border:1px solid color-mix(in srgb, var(--em-primary) 35%, transparent)">
+            <span style="opacity:0.7">Shows as</span>
+            <strong id="em-dn-preview-text"></strong>
+            <div id="em-dn-preview-hint" style="opacity:0.6;margin-top:4px;font-size:0.92em"></div>
+          </div>
           <p style="font-size:0.82em;opacity:0.6;margin-top:8px">${this._escapeHtml(entityId)}</p>
         </div>`,
       actionsHtml: `<button class="btn btn-secondary" id="em-dn-cancel">Cancel</button>
                     <button class="btn btn-primary" id="em-dn-save">Save</button>`,
     });
     const input = overlay.querySelector('#em-dn-input');
+    const previewText = overlay.querySelector('#em-dn-preview-text');
+    const previewHint = overlay.querySelector('#em-dn-preview-hint');
+    const updatePreview = () => {
+      const typed = input.value.trim();
+      previewText.textContent = this._friendlyNamePreview(entityId, typed);
+      previewHint.textContent = typed
+        ? 'Home Assistant shows a display name exactly as written — it does not add the device name.'
+        : 'Empty clears the display name, and Home Assistant falls back to the integration’s own name.';
+    };
+    updatePreview();
+    input.addEventListener('input', updatePreview);
     input.focus(); input.select();
     const doSave = async () => {
       const newName = input.value.trim();
@@ -16777,6 +17915,13 @@ class EntityManagerPanel extends HTMLElement {
         this._pushUndoAction({ type: 'display_name_change', entityId, oldName: currentName, newName });
         closeDialog();
         this._showToast(`Renamed to "${newName || entityId}"`, 'success');
+        // Show it straight away, then let HA's own state catch up
+        const record = this._findEntityById(entityId);
+        if (record) record.name = newName || null;
+        (this._recentRenames ||= new Map()).set(entityId, { oldName: currentName || '', newName });
+        this.updateView();
+        await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, newName));
+        this.updateView();
         onSave?.(newName);
       } catch (err) {
         this._showToast(`Rename failed: ${err.message}`, 'error');

@@ -1830,28 +1830,145 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
 }
 
-/* The label rollup wrapper flows its chips inline with area/floor chips */
-.integration-box-chips .integration-label-rollup {
-  display: contents;
+/* Integration header: Categories / Hardware / Areas / Labels, spread across the row
+   so the four frames line up as columns from one row to the next. */
+.integration-boxes {
+  display: flex;
+  flex: 3 1 520px;
+  gap: 8px;
+  min-width: 0;
+  align-items: stretch;
+}
+.integration-header > .integration-info {
+  flex: 0 1 auto;
+}
+.integration-boxes .integration-box {
+  flex: 1 1 0;
+  max-width: none;
+}
+.integration-boxes .integration-box-cats,
+.integration-boxes .integration-box-labels {
+  flex-grow: 1.4;
 }
 
-.integration-area-chip,
-.integration-floor-chip {
+/* ── Active pill filters: the bar under a header, and the banner above the list ── */
+.em-filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--em-border);
+  background: color-mix(in srgb, var(--em-primary) 6%, transparent);
+}
+.em-filter-summary-label {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--em-text-secondary);
+}
+.em-filter-summary-count {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  margin-left: 2px;
+}
+.em-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 10px;
-  border: 1px solid var(--em-border);
-  color: var(--em-text-secondary);
-  background: var(--em-bg-primary);
+  cursor: pointer;
   white-space: nowrap;
+  color: var(--pill-c, var(--em-text-secondary));
+  border: 1px solid var(--pill-c, var(--em-border));
+  background: color-mix(in srgb, var(--pill-c, currentColor) 18%, transparent);
+  transition: background 0.15s ease;
+}
+.em-filter-chip:hover {
+  background: color-mix(in srgb, var(--pill-c, currentColor) 34%, transparent);
+}
+.em-filter-clear {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  margin-left: auto;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-text-secondary);
+  border: 1px solid var(--em-border);
+  background: transparent;
+}
+.em-filter-clear:hover {
+  color: var(--em-danger);
+  border-color: var(--em-danger);
 }
 
-.integration-chip-more {
-  opacity: 0.7;
+.em-filter-banner {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--em-text-secondary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--em-primary) 10%, transparent);
+}
+
+/* One pill form for every header filter — colour comes from --pill-c */
+.integration-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--pill-c, var(--em-border));
+  color: var(--pill-c, var(--em-text-secondary));
+  background: transparent;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.integration-pill:hover {
+  background: color-mix(in srgb, var(--pill-c, currentColor) 14%, transparent);
+}
+.integration-pill.active {
+  background: color-mix(in srgb, var(--pill-c, currentColor) 28%, transparent);
+  box-shadow: 0 0 0 1px var(--pill-c, currentColor);
+}
+.integration-pill-static {
+  cursor: default;
+}
+.integration-pill-static:hover {
+  background: transparent;
+}
+.integration-pill-more {
+  --pill-c: var(--em-text-secondary);
+  opacity: 0.75;
+}
+.integration-pill-empty {
+  padding: 14px;
+  text-align: center;
+  color: var(--em-text-secondary);
+  font-size: 13px;
 }
 
 /* ── Integration ⋯ actions menu ── */
@@ -1913,6 +2030,18 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 
 .integration-menu .integration-menu-item.integration-menu-good { color: var(--em-success); }
 .integration-menu .integration-menu-item.integration-menu-bad  { color: var(--em-danger); }
+
+/* Heading above the actions that apply to the active pill filter only */
+.integration-menu .integration-menu-sep {
+  margin: 4px 0 2px;
+  padding: 4px 10px 0;
+  border-top: 1px solid var(--em-border);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--em-text-secondary);
+}
 
 .integration-menu .integration-menu-item.btn-primary {
   background: var(--em-primary) !important;
@@ -2043,44 +2172,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .device-cat-chip.cat-diagnostic   { color: var(--em-warning);  border-color: var(--em-warning); }
 .device-cat-chip.cat-connectivity { color: var(--em-success);  border-color: var(--em-success); }
 
-/* Integration-level category-count breakdown (collapsed-state summary) */
-.integration-cat-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-.integration-cat-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid;
-  white-space: nowrap;
-}
-.integration-cat-badge.cat-controls     { color: var(--em-success); border-color: var(--em-success); }
-.integration-cat-badge.cat-sensors      { color: var(--em-primary); border-color: var(--em-primary); }
-.integration-cat-badge.cat-config       { color: var(--em-primary); border-color: var(--em-primary); }
-.integration-cat-badge.cat-diagnostic   { color: var(--em-warning); border-color: var(--em-warning); }
-.integration-cat-badge.cat-connectivity { color: var(--em-success); border-color: var(--em-success); }
-
-/* Integration header Hardware box — device-type counts (colors set inline per _deviceTypeMeta) */
-.integration-hw-chip {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid;
-  white-space: nowrap;
-}
-.integration-hw-unknown {
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-.integration-hw-unknown:hover {
-  background: color-mix(in srgb, currentColor 12%, transparent);
-}
-
 /* Device-type picker dialog */
 .em-dtp-subject {
   font-size: 12.5px;
@@ -2151,7 +2242,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   align-items: center;
 }
 .device-header-rich .integration-info {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 .device-header-rich .device-name-rich .device-name {
@@ -2173,16 +2264,6 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   position: relative;
 }
 
-/* Integration-level HA Label rollup — display-only, no click target */
-.integration-label-rollup {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-.integration-label-rollup .entity-header-label {
-  cursor: default;
-}
 
 
 .entity-list {
@@ -3112,6 +3193,10 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   .integration-box {
     flex-basis: 100%;
     max-width: none;
+  }
+  .integration-boxes {
+    flex-basis: 100%;
+    flex-direction: column;
   }
   
   .device-list {
@@ -7575,4 +7660,98 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     font-size: 12px;
     padding: 5px 10px;
   }
+}
+
+/* Which name is which on an entity card: Friendly / Display / Entity / Device */
+.entity-name-kind {
+  display: inline-block;
+  min-width: 52px;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--em-text-secondary);
+  opacity: 0.75;
+}
+.entity-name-friendly {
+  color: var(--em-text-primary);
+  font-weight: 600;
+}
+.entity-name-suggest {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.em-name-suggest-btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-primary);
+  border: 1px dashed var(--em-primary);
+  background: transparent;
+}
+.em-name-suggest-btn:hover {
+  background: color-mix(in srgb, var(--em-primary) 16%, transparent);
+}
+
+/* Undo, offered on a card whose name was just changed */
+.em-name-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-warning);
+  border: 1px solid var(--em-warning);
+  background: transparent;
+}
+.em-name-undo-btn:hover {
+  background: color-mix(in srgb, var(--em-warning) 16%, transparent);
+}
+.em-name-undo-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Marks a name the user set, since HA shows it exactly as written */
+.entity-name-custom {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--em-primary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
+}
+
+/* "Device" button on a device group in the Bulk Rename picker */
+.brp-dev-rename {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--em-primary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: transparent;
+  flex-shrink: 0;
+}
+.brp-dev-rename:hover {
+  background: color-mix(in srgb, var(--em-primary) 16%, transparent);
 }

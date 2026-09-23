@@ -137,7 +137,17 @@ panel appears in the sidebar.
 - **Right-click** any entity (or multi-selection) for a full context menu (rename, enable/disable,
   favorites, labels, aliases, assign to area/device, copy ID, open in HA, delete).
 - **Voice** (hands-free, admin-only): *"enable/disable/activate/deactivate entity {name}"*,
-  *"registry enable/disable {name}"* — sentence patterns in `sentences/en/entity_manager.yaml`.
+  *"registry enable/disable {name}"*. The word **entity** is what routes the sentence here
+  rather than to HA's own light handling. Say the entity's name or its ID; the name is matched
+  against the registry, so disabled entities are reachable too. Matching goes exact → substring
+  → word by word (at least 60% of the spoken words in one name, closest name winning), so
+  "hue lamp 3" finds "Skrifstofa Hue color lamp 3" and not its Zigbee sensor. An ambiguous name
+  is read back with the IDs to choose from. Accents are optional — "badherbergi loftljos" finds
+  Baðherbergi Loftljós — but an **English speech-to-text engine mishears Icelandic names**
+  ("Skrifstofa" came back as *screen Store*), so give such entities an alias: aliases are
+  matched too. The patterns ship in
+  `custom_components/entity_manager/sentences/en/entity_manager.yaml` and are copied to
+  `<config>/custom_sentences/en/` on setup, which is the only place HA reads them from.
 
 ---
 
@@ -167,12 +177,13 @@ entity-manager/
 │   │   ├── entity-manager-panel.js   # Full UI web component (~16,100 lines)
 │   │   ├── entity-manager-panel.css  # Stylesheet (~7,050 lines, all --em-* vars)
 │   │   └── tests/                     # Vitest frontend tests + setup
+│   ├── sentences/en/entity_manager.yaml  # Voice sentences, installed into <config>/custom_sentences/
 │   └── brand/                  # Icons/logos
-├── sentences/en/entity_manager.yaml  # Voice sentence patterns
-├── tests/                     # Python pytest: test_const.py, test_websocket_api.py, conftest.py
+├── tests/                     # Python pytest: test_const.py, test_websocket_api.py,
+│                              #   test_voice_assistant.py, conftest.py
 ├── .github/workflows/ci.yml   # CI pipeline
 ├── sync-to-ha.ps1             # Deploy repo → Z:\ HA config (robocopy)
-└── docs: README.md, CLAUDE.md, STRUCTURE.md, DEVREF.md, QUICKSTART.md, INSTALL.md, CHANGELOG.md, PROJECT_SUMMARY.md
+└── docs: README.md, CLAUDE.md, OVERVIEW.md, CHANGELOG.md
 ```
 
 ### Backend Modules

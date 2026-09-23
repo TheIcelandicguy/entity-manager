@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.3.1**.
+Home Assistant custom integration, domain `entity_manager`, **v3.4.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -11,9 +11,10 @@ large installs. No Python requirements; `integration_type: service`,
 minimum HA 2024.1.0.
 
 `OVERVIEW.md` in this repo is current and was verified against source — use it
-when you need more depth than this file. The other root docs (`STRUCTURE.md`,
-`PROJECT_SUMMARY.md`, `QUICKSTART.md`, `DEVREF.md`, `cursorrules.md`) are not
-verified; check source before trusting them.
+when you need more depth than this file. The unverified root docs that used to
+sit beside it (STRUCTURE.md, PROJECT_SUMMARY.md, QUICKSTART.md, DEVREF.md,
+INSTALL.md, cursorrules.md) were deleted on 2026-09-22; README.md covers
+installation, and git history has the rest.
 
 Before ending a session, run `python check_docs.py` and update this file.
 The script checks that every path, constant, line count, test count and service
@@ -21,19 +22,21 @@ this file quotes still matches the repo, and exits 1 when one does not.
 
 ## Layout
 
-All paths below are relative to the repo root. Note that `tests/` and
-`sentences/` live at the **root**, not inside the component directory.
+All paths below are relative to the repo root. Note that `tests/` lives at the
+**root**, not inside the component directory.
 
 | Path | Responsibility |
 |---|---|
-| `custom_components/entity_manager/__init__.py` | 131 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
+| `custom_components/entity_manager/__init__.py` | 189 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
+(`_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
 | `.../websocket_api.py` | 1,655 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
-| `.../voice_assistant.py` | Enable/Disable intent handlers; patterns in `sentences/en/entity_manager.yaml`. |
+| `.../voice_assistant.py` | Enable/Disable intent handlers and `_resolve_entity_id`, which turns what was said into an entity ID. |
+| `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
 | `.../frontend/entity-manager-panel.js` | 16,790 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 7,458 lines, all `--em-*` variables. |
-| `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `conftest.py`. |
+| `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
@@ -99,9 +102,12 @@ allowed. Everything else is WebSocket-only.
   swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
   (`async_load` / `async_save`), **config entry data/options**
   (`async_update_entry` — UI helpers keep their source entity there),
-  **persons** (`device_trackers`) and **Assist pipelines**
-  (`async_update_pipeline`) through HA's APIs — never by editing `.storage` on
-  disk, which HA would overwrite from memory, so no HA stop is needed. Each gets
+  **persons** (`device_trackers`), **Assist pipelines**
+  (`async_update_pipeline`) and the **Energy dashboard preferences**
+  (`async_get_manager` → `manager.async_update`, only the three keys
+  `EnergyManager.async_update` merges) through HA's APIs — never by editing
+  `.storage` on disk, which HA would overwrite from memory, so no HA stop is
+  needed. Each gets
   a JSON backup under `.storage/entity_manager_backups/`. After a YAML write it
   reloads `automation`, `script`, `scene`, `template`. Integration Stores in
   `.storage` and files under `custom_components` are only **reported** in
@@ -138,6 +144,25 @@ allowed. Everything else is WebSocket-only.
   `npm version`), the README badge, and `EM_VERSION` at the top of
   `entity-manager-panel.js` — the panel prints that constant in its header when
   the panel config carries no version. `check_docs.py` now fails on a stale one.
+- The **Duplicate Names** card in Cleanup & Health finds entities whose displayed
+  name repeats their device name — HA composes `<device> <entity>` when
+  `has_entity_name` is set, and several integrations already put the device name
+  in the entity name. Detection is frontend-only from
+  `config/{entity,device}_registry/list`; matching is whole-word and
+  accent-folded (`_nameWords` mirrors `_folded_form` in `voice_assistant.py`),
+  because a substring test flags "Back" inside "Backpack". The fix **sets** the
+  whole intended name (`<device> <remainder>`) via `update_entity_display_name`.
+  Two HA rules make that the right shape: clearing the name falls back to the
+  bad `original_name`, and a display name is used **verbatim** — HA prepends the
+  device name only when no display name is set
+  (`_async_get_full_entity_name_generic`), so setting just "power" would read as
+  "Power" with the device lost. Entities whose own name *is* the
+  device name, and devices carrying another device's name, are reported only.
+  A third section compares each **integration entry title** with its device:
+  HA titles an entry when the integration is first added and never revisits it,
+  so 58 of 71 Shelly entries here still read the name their device had on setup
+  day. Retitling goes through native `config_entries/update`, and only when the
+  entry owns exactly one device — with several, the name is a judgement call.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.
@@ -209,7 +234,7 @@ underlying script for muscle memory and old permission lists. It copies
 `custom_components\entity_manager` →
 `Z:\custom_components\entity_manager` with `robocopy /E /R:2 /W:2` (`/E`,
 never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.claude`, `.venv`,
-`tests` and the files `*.pyc`, `*.pyo`, `settings.local.json`, `test_*.py`.
+`tests` and the files `*.pyc`, `*.pyo`, `test_*.py` plus local settings files.
 Before copying it refuses to run unless `Z:\configuration.yaml` exists and
 warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
 edit on the HA side about to be overwritten); afterwards it lists files on
@@ -255,4 +280,18 @@ gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
   letter, not an underscore. Validate against it before any registry write.
 - `remove_entity` is irreversible, and YAML-defined entities can return on the
   next HA restart.
+- **Voice sentences only work from `<config>/custom_sentences/<lang>/`.** HA's
+  conversation agent reads nowhere else and gives integrations no way to
+  register their own, so `_install_sentences` copies the shipped file there on
+  setup and calls `conversation.reload` when it changed. A copy whose first line
+  is no longer `SENTENCE_MARKER` counts as user-edited and is never overwritten.
+  The sentences use a **wildcard** slot, not HA's built-in `{name}` list: that
+  list is built from exposed entities, and a disabled entity has no state, so it
+  could never match the entities these intents exist for. `_resolve_entity_id`
+  matches exact → substring → word by word (`_MIN_WORD_MATCH`, closest name
+  wins), over name, original_name, object ID and **aliases**, each name scored
+  separately. Verified on live HA 2026.9.3; a voice request with no user context
+  is refused, so a Voice satellite cannot use these intents, and Google
+  Assistant never reaches them at all — it maps exposed entities to traits and
+  never consults the conversation agent.
 - `strings.json` contains vestigial `options` strings; there is no options flow.
