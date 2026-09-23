@@ -1014,3 +1014,531 @@ describe('active filter summary and banner', () => {
     expect(el._activeFiltersBannerHtml()).toContain('1 pill filter active on 1 header');
   });
 });
+// ---------------------------------------------------------------------------
+// Duplicate-name audit
+// ---------------------------------------------------------------------------
+
+/** A panel whose WS calls answer with the given registries. */
+function makeAuditPanel(entities, devices) {
+  const el = makePanel();
+  el._hass.callWS = vi.fn(({ type }) =>
+    Promise.resolve(type === 'config/device_registry/list' ? devices : entities));
+  return el;
+}
+
+const DEVICES = [
+  { id: 'dev_dish', name: 'Tafla B Gr.13 Uppþvottavél' },
+  { id: 'dev_backup', name: 'Backup' },
+  { id: 'dev_screen', name: 'Forstofa skjár app' },
+  { id: 'dev_old', name: 'Forstofa skjár' },
+];
+
+describe('_nameWords and _startsWithWords', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('folds Icelandic the way the entity IDs are spelled', () => {
+    expect(el._nameWords('Tafla B Gr.13 Uppþvottavél'))
+      .toEqual(['tafla', 'b', 'gr', '13', 'uppthvottavel']);
+    expect(el._nameWords('Baðherbergi Loftljós')).toEqual(['badherbergi', 'loftljos']);
+  });
+
+  it('matches whole words only', () => {
+    expect(el._startsWithWords(['backup', 'manager', 'state'], ['backup'])).toBe(true);
+    expect(el._startsWithWords(['backup', 'manager', 'state'], ['backup', 'manager'])).toBe(true);
+    // The prefix must be whole words, not a substring: "back" is not "backup"
+    expect(el._startsWithWords(['backup', 'manager'], ['back'])).toBe(false);
+    expect(el._startsWithWords(['backup'], ['backup', 'manager'])).toBe(false);
+    expect(el._startsWithWords(['anything'], [])).toBe(false);
+  });
+});
+
+describe('_computeDuplicateNames()', () => {
+  it('finds the device name repeated, and what the entity would become', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.tafla_b_gr_13_uppthvottavel_power',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Tafla B Gr.13 Uppþvottavél power',
+      },
+      {
+        entity_id: 'binary_sensor.tafla_b_gr_13_uppthvottavel_cloud',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Cloud',
+      },
+    ], DEVICES);
+
+    const { doubled, needName, mismatched } = await el._computeDuplicateNames();
+    expect(doubled).toHaveLength(1);
+    expect(doubled[0].entity_id).toBe('sensor.tafla_b_gr_13_uppthvottavel_power');
+    expect(doubled[0].current).toBe('Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power');
+    expect(doubled[0].suggested).toBe('Tafla B Gr.13 Uppþvottavél power');
+    expect(doubled[0].remainder).toBe('power');
+    expect(needName).toEqual([]);
+    expect(mismatched).toEqual([]);
+  });
+
+  it('catches a one-word device name repeated, like HA core Backup', async () => {
+    // Verified on live HA: friendly_name really is "Backup Backup Manager state"
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backup_backup_manager_state',
+        device_id: 'dev_backup',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Backup Manager state',
+      },
+    ], DEVICES);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toHaveLength(1);
+    expect(doubled[0].current).toBe('Backup Backup Manager state');
+    expect(doubled[0].suggested).toBe('Backup Manager state');
+  });
+
+  it('does not flag a device name that is only a partial word', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backpack_weight',
+        device_id: 'dev_back',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Backpack weight',
+      },
+    ], [{ id: 'dev_back', name: 'Back' }]);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+  });
+
+  it('separates the ones with nothing left after the device name', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'switch.tafla_b_gr_13_uppthvottavel',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Tafla B Gr.13 Uppþvottavél',
+      },
+    ], DEVICES);
+
+    const { doubled, needName } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+    expect(needName).toHaveLength(1);
+    expect(needName[0].suggested).toBe('');
+  });
+
+  it('reports entities carrying another device name, grouped by device', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.forstofa_skjar_battery',
+        device_id: 'dev_screen',
+        has_entity_name: false,
+        name: null,
+        original_name: 'Forstofa skjár battery',
+      },
+      {
+        entity_id: 'sensor.forstofa_skjar_wifi',
+        device_id: 'dev_screen',
+        has_entity_name: false,
+        name: null,
+        original_name: 'Forstofa skjár wifi',
+      },
+    ], DEVICES);
+
+    const { mismatched } = await el._computeDuplicateNames();
+    expect(mismatched).toHaveLength(1);
+    expect(mismatched[0].deviceName).toBe('Forstofa skjár app');
+    expect(mismatched[0].groups).toEqual([['Forstofa skjár', 2]]);
+  });
+
+  it('ignores entities with no name and entities with no device', async () => {
+    const el = makeAuditPanel([
+      { entity_id: 'sensor.nameless', device_id: 'dev_dish', has_entity_name: true, name: null, original_name: null },
+      { entity_id: 'sensor.loose', device_id: null, has_entity_name: false, name: 'Tafla B Gr.13 Uppþvottavél power', original_name: null },
+    ], DEVICES);
+
+    const { doubled, needName, mismatched } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+    expect(needName).toEqual([]);
+    expect(mismatched).toEqual([]);
+  });
+});
+
+describe('_suggestEntityName(entity, deviceName)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('uses what is left of the object ID after the device part', () => {
+    expect(el._suggestEntityName(
+      { entity_id: 'sensor.tafla_h_gr_04_eldhus_power' }, 'Tafla H Gr.04 Eldhús',
+    )).toBe('Tafla H Gr.04 Eldhús Power');
+    expect(el._suggestEntityName(
+      { entity_id: 'binary_sensor.tafla_h_gr_04_eldhus_restart_required' }, 'Tafla H Gr.04 Eldhús',
+    )).toBe('Tafla H Gr.04 Eldhús Restart Required');
+  });
+
+  it('falls back to the domain when the entity is the device', () => {
+    // A Shelly's main switch: object ID and device name are the same
+    expect(el._suggestEntityName(
+      { entity_id: 'switch.tafla_h_gr_04_eldhus' }, 'Tafla H Gr.04 Eldhús',
+    )).toBe('Tafla H Gr.04 Eldhús Switch');
+  });
+
+  it('keeps the whole object ID when it does not start with the device name', () => {
+    expect(el._suggestEntityName({ entity_id: 'sensor.loose_reading' }, 'Some Device'))
+      .toBe('Some Device Loose Reading');
+    // With no device there is nothing to carry
+    expect(el._suggestEntityName({ entity_id: 'sensor.loose_reading' }, ''))
+      .toBe('Loose Reading');
+  });
+});
+
+describe('_entityNameLinesHtml(entity, state)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('shows the name as HA shows it, plus the entity name when it differs', () => {
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'sensor.tafla_h_gr_04_eldhus_power',
+        original_name: 'power',
+        deviceName: 'Tafla H Gr.04 Eldhús',
+      },
+      { attributes: { friendly_name: 'Tafla H Gr.04 Eldhús power' } },
+    );
+    expect(html).toContain('>Name<');
+    expect(html).toContain('Tafla H Gr.04 Eldhús power');
+    expect(html).toContain('>Entity<');
+    expect(html).not.toContain('entity-name-custom');
+  });
+
+  it('marks a name the user set, and drops the entity line when it only differs by case', () => {
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'sensor.oven_power',
+        original_name: 'Oven power',
+        name: 'Oven Power',
+        deviceName: 'Oven',
+      },
+      { attributes: { friendly_name: 'Oven Power' } },
+    );
+    expect(html).toContain('>Name<');
+    expect(html).toContain('entity-name-custom');
+    // "Oven power" and "Oven Power" are the same words — one line is enough
+    expect(html).not.toContain('>Entity<');
+  });
+
+  it('offers a suggestion when the shown name reads the device twice', () => {
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'switch.tafla_h_gr_04_eldhus',
+        original_name: 'Tafla H Gr.04 Eldhús',
+        deviceName: 'Tafla H Gr.04 Eldhús',
+      },
+      { attributes: { friendly_name: 'Tafla H Gr.04 Eldhús Tafla H Gr.04 Eldhús' } },
+    );
+    expect(html).toContain('>Suggested<');
+    expect(html).toContain('em-name-suggest-btn');
+    expect(html).toContain('data-suggestion="Tafla H Gr.04 Eldhús Switch"');
+  });
+
+  it('stops suggesting once the name is fixed', () => {
+    // The display name starts with the device name ONCE, which is correct
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'sensor.tafla_h_gr_03_bakaraofn_efri_current',
+        original_name: 'Tafla H Gr.03 Bakaraofn efri current',
+        name: 'Tafla H Gr.03 Bakaraofn efri Current',
+        deviceName: 'Tafla H Gr.03 Bakaraofn efri',
+      },
+      { attributes: { friendly_name: 'Tafla H Gr.03 Bakaraofn efri Current' } },
+    );
+    expect(html).not.toContain('Suggested');
+  });
+
+  it('offers undo instead of a suggestion right after a rename', () => {
+    el._recentRenames = new Map([['switch.lamp', { oldName: 'Lamp', newName: 'Hue Lamp' }]]);
+    const html = el._entityNameLinesHtml(
+      { entity_id: 'switch.lamp', original_name: 'Lamp', name: 'Hue Lamp', deviceName: 'Hue' },
+      { attributes: { friendly_name: 'Hue Lamp' } },
+    );
+    expect(html).toContain('>Renamed<');
+    expect(html).toContain('em-name-undo-btn');
+    expect(html).toContain('Lamp');
+    expect(html).not.toContain('Suggested');
+  });
+
+  it('offers nothing extra for an ordinary entity', () => {
+    const html = el._entityNameLinesHtml(
+      { entity_id: 'sensor.rssi', original_name: 'Signal strength', deviceName: 'Hue' },
+      { attributes: { friendly_name: 'Hue Signal strength' } },
+    );
+    expect(html).not.toContain('Suggested');
+  });
+});
+
+describe('_friendlyNamePreview(entityId, typedName)', () => {
+  let el;
+  beforeEach(() => {
+    el = makePanel();
+    el.data = [{
+      integration: 'shelly',
+      devices: {
+        dev_oven: {
+          entities: [{
+            entity_id: 'sensor.tafla_h_gr_03_bakaraofn_efri_current',
+            original_name: 'Tafla H Gr.03 Bakaraofn efri current',
+            has_entity_name: true,
+            device_id: 'dev_oven',
+          }],
+        },
+      },
+    }];
+    el.deviceInfo = { dev_oven: { name: 'Tafla H Gr.03 Bakaraofn efri' } };
+  });
+
+  it('shows a typed name exactly as typed — HA does not add the device', () => {
+    expect(el._friendlyNamePreview('sensor.tafla_h_gr_03_bakaraofn_efri_current', 'Current'))
+      .toBe('Current');
+  });
+
+  it('falls back to device plus entity name when the field is empty', () => {
+    expect(el._friendlyNamePreview('sensor.tafla_h_gr_03_bakaraofn_efri_current', ''))
+      .toBe('Tafla H Gr.03 Bakaraofn efri Tafla H Gr.03 Bakaraofn efri current');
+  });
+
+  it('falls back to the entity ID when nothing is known', () => {
+    expect(el._friendlyNamePreview('sensor.unknown', '')).toBe('sensor.unknown');
+  });
+});
+
+describe('_awaitFriendlyName(entityId, expected)', () => {
+  it('returns as soon as HA reports the new name', async () => {
+    const el = makePanel();
+    el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'Old' } } } };
+    setTimeout(() => {
+      el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'New name' } } } };
+    }, 150);
+    expect(await el._awaitFriendlyName('switch.lamp', 'New name', 2000)).toBe(true);
+  });
+
+  it('gives up rather than hanging when the state never arrives', async () => {
+    const el = makePanel();
+    el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'Old' } } } };
+    expect(await el._awaitFriendlyName('switch.lamp', 'Never', 300)).toBe(false);
+  });
+});
+
+describe('_deviceLineWorthShowing(entity, state)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('is hidden when the name already begins with the device name', () => {
+    expect(el._deviceLineWorthShowing(
+      { entity_id: 'sensor.oven_power', deviceName: 'Tafla H Gr.03 Bakaraofn efri' },
+      { attributes: { friendly_name: 'Tafla H Gr.03 Bakaraofn efri Power' } },
+    )).toBe(false);
+  });
+
+  it('is shown when the name says nothing about the device', () => {
+    expect(el._deviceLineWorthShowing(
+      { entity_id: 'sensor.oven_power', deviceName: 'Tafla H Gr.03 Bakaraofn efri' },
+      { attributes: { friendly_name: 'Current' } },
+    )).toBe(true);
+  });
+});
+
+describe('_hasDoubledName(entityId, friendlyName)', () => {
+  let el;
+  beforeEach(() => {
+    el = makePanel();
+    el.data = [{
+      integration: 'shelly',
+      devices: {
+        dev_eldhus: {
+          entities: [
+            { entity_id: 'sensor.tafla_h_gr_04_eldhus_power', device_id: 'dev_eldhus', original_name: 'Tafla H Gr.04 Eldhús power' },
+            { entity_id: 'sensor.tafla_h_gr_04_eldhus_rssi', device_id: 'dev_eldhus', original_name: 'Signal strength' },
+          ],
+        },
+      },
+    }];
+    el.deviceInfo = { dev_eldhus: { name: 'Tafla H Gr.04 Eldhús' } };
+  });
+
+  it('is true when the shown name repeats the device name', () => {
+    expect(el._hasDoubledName(
+      'sensor.tafla_h_gr_04_eldhus_power',
+      'Tafla H Gr.04 Eldhús Tafla H Gr.04 Eldhús power',
+    )).toBe(true);
+  });
+
+  it('is false for a name that says the device once, or not at all', () => {
+    expect(el._hasDoubledName('sensor.tafla_h_gr_04_eldhus_power', 'Tafla H Gr.04 Eldhús power')).toBe(false);
+    expect(el._hasDoubledName('sensor.tafla_h_gr_04_eldhus_rssi', 'Tafla H Gr.04 Eldhús Signal strength')).toBe(false);
+  });
+
+  it('is false when the entity has no device to repeat', () => {
+    expect(el._hasDoubledName('sensor.unknown', 'Anything at all')).toBe(false);
+  });
+});
+
+describe('_deviceSlug(name)', () => {
+  it('slugifies a device name the way entity IDs are spelled', () => {
+    const el = makePanel();
+    expect(el._deviceSlug('Tafla H Gr.04 Eldhús')).toBe('tafla_h_gr_04_eldhus');
+    expect(el._deviceSlug('Baðherbergi Loftljós')).toBe('badherbergi_loftljos');
+    expect(el._deviceSlug('Þvottahús')).toBe('thvottahus');
+  });
+});
+
+describe('_computeEntryTitleDrift(devices, entries)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('flags a title that no longer says what the device is called', () => {
+    // The real case: entry titled when the Shelly was added in Nov 2024
+    const drift = el._computeEntryTitleDrift(
+      [{ id: 'dev_eldhus', name: 'Tafla H Gr.04 Eldhús', primary_config_entry: 'entry_4' }],
+      [{ entry_id: 'entry_4', domain: 'shelly', title: 'Gr.4 Þvottavél' }],
+    );
+    expect(drift).toHaveLength(1);
+    expect(drift[0].title).toBe('Gr.4 Þvottavél');
+    expect(drift[0].suggested).toBe('Tafla H Gr.04 Eldhús');
+  });
+
+  it('accepts a title the device name contains, or the same name spelled differently', () => {
+    const entries = [{ entry_id: 'e', domain: 'shelly', title: 'Uppþvottavél' }];
+    // The device name carries the title inside it
+    expect(el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Tafla H Gr.05 Uppþvottavél', primary_config_entry: 'e' }], entries,
+    )).toEqual([]);
+    // Accents and þ are folded, so this is the same name
+    expect(el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'uppthvottavel', primary_config_entry: 'e' }], entries,
+    )).toEqual([]);
+  });
+
+  it('flags a title that names the same circuit differently', () => {
+    // "Gr.5" vs "Gr.05", and the board is missing — worth reporting
+    const drift = el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Tafla H Gr.05 Uppþvottavél', primary_config_entry: 'e' }],
+      [{ entry_id: 'e', domain: 'shelly', title: 'Gr.5 Uppþvottavél' }],
+    );
+    expect(drift).toHaveLength(1);
+    expect(drift[0].suggested).toBe('Tafla H Gr.05 Uppþvottavél');
+  });
+
+  it('reports an entry with several devices but offers no name', () => {
+    const drift = el._computeEntryTitleDrift(
+      [
+        { id: 'd1', name: 'Gólfhiti Stofa 1', primary_config_entry: 'e' },
+        { id: 'd2', name: 'Gólfhiti Stofa 2', primary_config_entry: 'e' },
+      ],
+      [{ entry_id: 'e', domain: 'shelly', title: 'Gólfhiti stofa1' }],
+    );
+    expect(drift).toHaveLength(1);
+    expect(drift[0].suggested).toBe('');
+    expect(drift[0].devices).toHaveLength(2);
+  });
+
+  it('ignores entries with no device, and devices with no entry', () => {
+    expect(el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Some device' }],
+      [{ entry_id: 'e', domain: 'shelly', title: 'Whatever' }],
+    )).toEqual([]);
+  });
+
+  it('reads config_entries when primary_config_entry is absent', () => {
+    const drift = el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Baðherbergi innstunga', config_entries: ['e'] }],
+      [{ entry_id: 'e', domain: 'shelly', title: 'shellyplug-s-B4D047' }],
+    );
+    expect(drift[0].suggested).toBe('Baðherbergi innstunga');
+  });
+});
+
+describe('_commonObjectIdPrefix(entityIds)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('finds what a device shares across its entity IDs, cut at an underscore', () => {
+    expect(el._commonObjectIdPrefix([
+      'sensor.tafla_h_gr_04_eldhus_power',
+      'sensor.tafla_h_gr_04_eldhus_energy',
+      'binary_sensor.tafla_h_gr_04_eldhus_cloud',
+    ])).toBe('tafla_h_gr_04_eldhus');
+  });
+
+  it('does not cut mid-word when two IDs share a partial segment', () => {
+    // "power" and "powering" share "power", but the prefix must end at _
+    expect(el._commonObjectIdPrefix([
+      'sensor.oven_power',
+      'binary_sensor.oven_powering',
+    ])).toBe('oven');
+  });
+
+  it('gives nothing to go on for one entity or unrelated IDs', () => {
+    expect(el._commonObjectIdPrefix(['sensor.only_one'])).toBe('');
+    expect(el._commonObjectIdPrefix(['sensor.alpha', 'sensor.beta'])).toBe('');
+  });
+});
+
+describe('_computeDuplicateNames() after a fix', () => {
+  it('does not re-flag an entity whose display name was already fixed', async () => {
+    // The live case: sensor.backup_backup_manager_state read "Backup Backup
+    // Manager state"; after the fix HA holds name = "Backup Manager state",
+    // which starts with the device name once and is correct.
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backup_backup_manager_state',
+        device_id: 'dev_backup',
+        has_entity_name: true,
+        name: 'Backup Manager state',
+        original_name: 'Backup Manager state',
+      },
+    ], DEVICES);
+
+    const { doubled, needName } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+    expect(needName).toEqual([]);
+  });
+
+  it('still flags it before the fix, and offers the name that ends the doubling', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backup_backup_manager_state',
+        device_id: 'dev_backup',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Backup Manager state',
+      },
+    ], DEVICES);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toHaveLength(1);
+    expect(doubled[0].current).toBe('Backup Backup Manager state');
+    expect(doubled[0].suggested).toBe('Backup Manager state');
+  });
+
+  it('leaves an entity alone once its own doubled name has been overridden', async () => {
+    // has_entity_name with a doubled original_name, but a display name set
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.tafla_b_gr_13_uppthvottavel_power',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: 'Tafla B Gr.13 Uppþvottavél power',
+        original_name: 'Tafla B Gr.13 Uppþvottavél power',
+      },
+    ], DEVICES);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+  });
+});

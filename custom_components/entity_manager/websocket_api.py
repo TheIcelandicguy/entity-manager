@@ -140,6 +140,11 @@ async def handle_get_disabled_entities(
                         if entity.disabled_by
                         else None,
                         "original_name": entity.original_name,
+                        # The display name the user set, if any. Without it the
+                        # panel can only show the integration's name, so a
+                        # rename looks like it did nothing.
+                        "name": entity.name,
+                        "has_entity_name": entity.has_entity_name,
                         "entity_category": entity.entity_category.value
                         if entity.entity_category
                         else None,

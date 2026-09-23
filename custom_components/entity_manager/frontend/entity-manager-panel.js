@@ -150,6 +150,7 @@ const EM_STAT_TINT = {
   lovelace:      'em-sug-naming',
   'config-health': 'em-sug-area',
   cleanup:       'em-sug-disable',
+  'duplicate-names': 'em-sug-naming',
 };
 
 // Unified ignore-list type metadata (label + accent color), shared by the
@@ -2386,7 +2387,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
     contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
-    await this._renderMergedEntitySections(['cleanup', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
+    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
     this._attachDialogSearch(contentEl);
   }
 
@@ -2398,8 +2399,9 @@ class EntityManagerPanel extends HTMLElement {
       'config-health': 'Config Errors',
       'unavailable':   'Unavailable Entities',
       'cleanup':       'Cleanup',
+      'duplicate-names': 'Duplicate Names',
     };
-    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup };
+    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate' };
 
     // Build all section shells upfront as collapsible groups with a loading placeholder
     let html = '';
@@ -2419,7 +2421,7 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners (and the bulk-action bar) remain live; skip the
           // temp+move pattern, which silently dropped the bulk bar and tint wrapper for
@@ -2429,6 +2431,8 @@ class EntityManagerPanel extends HTMLElement {
             await this._showConfigEntryHealthDialog({ inline: true, container: groupBody });
           } else if (t === 'cleanup') {
             await this._showCleanupDialog({ inline: true, container: groupBody });
+          } else if (t === 'duplicate-names') {
+            await this._showDuplicateNamesSection(groupBody);
           } else if (t === 'automation' || t === 'script' || t === 'helper') {
             // skipOuterGroup avoids a duplicate section header, since this section
             // shell already provides one (built above via _collGroup).
@@ -2917,6 +2921,8 @@ class EntityManagerPanel extends HTMLElement {
             ${chevronCollapsed}
             <span class="brp-dev-name">${this._escapeHtml(devName)}</span>
             <span class="brp-group-count">${entities.length}</span>
+            ${deviceId === 'no_device' ? '' : `<button type="button" class="brp-dev-rename" data-device-id="${this._escapeAttr(deviceId)}"
+              title="Rename this device and queue its entities">${this._icon('mdi:pencil-outline', '13px')} Device</button>`}
           </div>
           <div class="brp-dev-body" style="display:none">${rowsHtml}</div>
         </div>`;
@@ -3025,6 +3031,7 @@ class EntityManagerPanel extends HTMLElement {
               </div>
               <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-regex"> Regex</label>
               <label class="bulk-rename-opt-label"><input type="checkbox" id="bulk-case"> Case sensitive</label>
+              <label class="bulk-rename-opt-label" title="Only entities whose shown name repeats their device name"><input type="checkbox" id="brp-only-doubled"> Duplicate names</label>
               <span id="brp-sel-count" style="font-size:11px;color:var(--em-primary);font-weight:600;white-space:nowrap;flex-shrink:0;padding:2px 9px;background:rgba(33,150,243,0.1);border:1px solid rgba(33,150,243,0.3);border-radius:10px;">${preSelected.size} selected</span>
             </div>
             <div class="bulk-rename-picker-list" id="brp-list">
@@ -3153,12 +3160,15 @@ class EntityManagerPanel extends HTMLElement {
         } catch (_) { /* invalid regex — ignore */ }
       }
 
+      const onlyDoubled = view.querySelector('#brp-only-doubled')?.checked;
+
       view.querySelectorAll('#brp-list .bulk-rename-picker-row').forEach(row => {
         const id = row.dataset.entityId;
         const name = this._hass?.states[id]?.attributes?.friendly_name || '';
         const searchMatch = !q || id.toLowerCase().includes(q.toLowerCase()) || name.toLowerCase().includes(q.toLowerCase());
         const findMatch = !findPattern || findPattern.test(id) || findPattern.test(name);
-        row.style.display = (searchMatch && findMatch) ? '' : 'none';
+        const doubledMatch = !onlyDoubled || this._hasDoubledName(id, name);
+        row.style.display = (searchMatch && findMatch && doubledMatch) ? '' : 'none';
       });
       // Hide device groups with no visible rows
       view.querySelectorAll('#brp-list .brp-dev-group').forEach(dg => {
@@ -3172,7 +3182,16 @@ class EntityManagerPanel extends HTMLElement {
       });
     };
 
+    // Rename a device, and line its entities up in the queue
+    view.querySelector('#brp-list').addEventListener('click', (e) => {
+      const btn = e.target.closest('.brp-dev-rename');
+      if (!btn) return;
+      e.stopPropagation();  // not a group collapse
+      this._showDeviceRenameDialog(btn.dataset.deviceId, { addToQueue, syncRenameBtn, view });
+    });
+
     view.querySelector('#brp-search').addEventListener('input', filterPickerList);
+    view.querySelector('#brp-only-doubled').addEventListener('change', filterPickerList);
     view.querySelector('#bulk-find').addEventListener('input', filterPickerList);
     view.querySelector('#bulk-find-regex').addEventListener('change', filterPickerList);
     view.querySelector('#bulk-find-case').addEventListener('change', filterPickerList);
@@ -4611,6 +4630,22 @@ class EntityManagerPanel extends HTMLElement {
         this.floorsData = null;
         this._showToast(`${verb} area assignment`, 'info');
         break;
+      case 'config_entry_title_change':
+        await this._hass.callWS({
+          type: 'config_entries/update',
+          entry_id: action.entryId,
+          title: isUndo ? action.oldTitle : action.newTitle,
+        });
+        this._showToast(`${verb} entry rename`, 'info');
+        break;
+      case 'device_name_change':
+        await this._hass.callWS({
+          type: 'config/device_registry/update',
+          device_id: action.deviceId,
+          name_by_user: (isUndo ? action.oldName : action.newName) || null,
+        });
+        this._showToast(`${verb} device rename`, 'info');
+        break;
       case 'assign_device_area':
         await this._hass.callWS({ type: 'config/device_registry/update', device_id: action.deviceId, area_id: isUndo ? action.oldAreaId : action.newAreaId });
         this.floorsData = null;
@@ -4734,6 +4769,10 @@ class EntityManagerPanel extends HTMLElement {
         return `Assigned ${action.entityId} to area`;
       case 'assign_device_area':
         return `Assigned device to area`;
+      case 'device_name_change':
+        return `Renamed device to "${action.newName}"`;
+      case 'config_entry_title_change':
+        return `Renamed entry to "${action.newTitle}"`;
       default:
         return action.type ?? 'Unknown action';
     }
@@ -9712,8 +9751,9 @@ class EntityManagerPanel extends HTMLElement {
         ${hasHeader ? `<div class="entity-card-header">${deviceChip}${areaChip}${areaSuggestionChip}${floorChip}${labelChip}${stateChip}${timeChip}</div>` : ''}
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
-          ${col('name') && entity.original_name ? `<div class="entity-name">${this._escapeHtml(entity.original_name)}</div>` : ''}
-          ${col('device') && entity.deviceName ? `<div class="entity-device-name">${this._escapeHtml(entity.deviceName)}</div>` : ''}
+          ${col('name') ? this._entityNameLinesHtml(entity, state) : ''}
+          ${col('device') && entity.deviceName && this._deviceLineWorthShowing(entity, state)
+            ? `<div class="entity-device-name"><span class="entity-name-kind">Device</span>${this._escapeHtml(entity.deviceName)}</div>` : ''}
           ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
         ${col('status') ? `<span class="entity-badge ${entity.is_disabled ? 'entity-badge--disabled' : 'entity-badge--enabled'}">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
@@ -10307,6 +10347,45 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    // Undo on a card just renamed — puts the previous name back
+    this.content.querySelectorAll('.em-name-undo-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const entityId = btn.dataset.entityId;
+        const previous = this._recentRenames?.get(entityId);
+        if (!previous) return;
+        btn.disabled = true;
+        try {
+          await this._hass.callWS({
+            type: 'entity_manager/update_entity_display_name',
+            entity_id: entityId,
+            name: previous.oldName || null,
+          });
+          this._recentRenames.delete(entityId);
+          const record = this._findEntityById(entityId);
+          if (record) record.name = previous.oldName || null;
+          this.updateView();
+          await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, previous.oldName));
+          this.updateView();
+          this._showToast(previous.oldName ? `Back to “${previous.oldName}”` : 'Display name cleared', 'success');
+        } catch (err) {
+          btn.disabled = false;
+          this._showToast(`Undo failed: ${err.message}`, 'error');
+        }
+      });
+    });
+
+    // Suggested-name buttons on entity cards
+    this.content.querySelectorAll('.em-name-suggest-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._showDisplayNameEditDialog(
+          btn.dataset.entityId,
+          btn.dataset.suggestion,
+          () => this.loadData(),
+        );
+      });
+    });
     // Devices view ⋯ menu — Change area… / Labels… (the header pills filter instead)
     this.content.querySelectorAll('.device-menu-assign').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -14619,6 +14698,466 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * The name lines of an entity card, each saying which name it is.
+   *
+   * "Friendly" is what Home Assistant shows everywhere else — for an entity
+   * with has_entity_name it is "<device name> <entity name>", which is how a
+   * name comes to read twice. "Entity" is the entity's own registry name, and
+   * "Display" the one set by hand. Shown only when they differ, so a plain
+   * entity still shows one line.
+   */
+  _entityNameLinesHtml(entity, state) {
+    const own = entity.original_name || '';
+    const display = entity.name || '';
+    const friendly = state?.attributes?.friendly_name || '';
+    const line = (kind, value, cls = 'entity-name') =>
+      `<div class="${cls}"><span class="entity-name-kind">${kind}</span>${this._escapeHtml(value)}</div>`;
+
+    // One line for the name as Home Assistant shows it, and the others only when
+    // they say something different. A display name IS the friendly name, and a
+    // fixed entity's own name differs from it by case at most, so showing all
+    // four turns into the same sentence four times.
+    const shown = friendly || display || own;
+    const out = [];
+    if (shown) {
+      out.push(`<div class="entity-name entity-name-friendly">
+        <span class="entity-name-kind">Name</span>${this._escapeHtml(shown)}${display
+          ? '<span class="entity-name-custom" title="A display name you set; Home Assistant shows it exactly as written">custom</span>'
+          : ''}</div>`);
+    }
+    const ownDiffers = own
+      && this._nameWords(own).join(' ') !== this._nameWords(shown).join(' ');
+    if (ownDiffers) out.push(line('Entity', own));
+
+    // Just renamed: offer the way back instead of another suggestion
+    const undone = this._recentRenames?.get(entity.entity_id);
+    if (undone) {
+      out.push(`<div class="entity-name-suggest">
+        <span class="entity-name-kind">Renamed</span>
+        <button type="button" class="em-name-undo-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
+          title="Put the previous name back">${this._icon('mdi:undo-variant', '13px')} Undo${undone.oldName ? ` — back to “${this._escapeHtml(undone.oldName)}”` : ' — clear the display name'}</button>
+      </div>`);
+      return out.join('');
+    }
+
+    // Suggest only when the name as shown is wrong: nothing of its own, or the
+    // device name reads twice. Testing the stored name instead would flag a
+    // correctly fixed entity, whose display name starts with the device once.
+    const deviceWords = this._nameWords(entity.deviceName || '');
+    const shownWords = this._nameWords(shown);
+    const doubled = deviceWords.length > 0
+      && this._startsWithWords(shownWords, deviceWords)
+      && this._startsWithWords(shownWords.slice(deviceWords.length), deviceWords);
+    if (!out.length || doubled) {
+      const suggestion = this._suggestEntityName(entity, entity.deviceName);
+      if (suggestion && suggestion !== shown) {
+        out.push(`<div class="entity-name-suggest">
+          <span class="entity-name-kind">Suggested</span>
+          <button type="button" class="em-name-suggest-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
+            data-suggestion="${this._escapeAttr(suggestion)}"
+            title="Set this as the display name">${this._escapeHtml(suggestion)}</button>
+        </div>`);
+      }
+    }
+    return out.join('');
+  }
+
+  /** A name to suggest for an entity that has none of its own worth showing.
+   *  Built from the object ID with the device's part removed, so
+   *  sensor.tafla_h_gr_04_eldhus_power suggests "Power". When nothing is left —
+   *  the entity IS the device, like a Shelly's main switch — the domain answers
+   *  for it: switch → "Switch". */
+  _suggestEntityName(entity, deviceName) {
+    const objectId = String(entity.entity_id || '').split('.').slice(1).join('.');
+    const words = this._nameWords(objectId);
+    const deviceWords = this._nameWords(deviceName || '');
+    const rest = this._startsWithWords(words, deviceWords)
+      ? words.slice(deviceWords.length)
+      : words;
+    const source = rest.length ? rest : [String(entity.entity_id || '').split('.')[0]];
+    const part = source
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+      .trim();
+    // Home Assistant shows a display name exactly as set — it prepends the
+    // device name only when there is none — so the suggestion carries it.
+    return deviceName ? `${deviceName} ${part}`.trim() : part;
+  }
+
+  /** Words of a name, folded for comparison: lowercase, accent-free, þ/ð/æ spelled out.
+   *  Mirrors _folded_form in voice_assistant.py. */
+  _nameWords(text) {
+    const folded = String(text || '')
+      .toLowerCase()
+      .replace(/þ/g, 'th').replace(/ð/g, 'd').replace(/æ/g, 'ae').replace(/ø/g, 'o')
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    return folded.split(/[\s_.\-]+/).filter(Boolean);
+  }
+
+  /** Does `words` start with every word of `prefix`, whole words only?
+   *  Substring matching would flag HA's own "Backup" device for an entity
+   *  called "Backup Manager state". */
+  _startsWithWords(words, prefix) {
+    return prefix.length > 0 && prefix.length <= words.length
+      && prefix.every((w, i) => words[i] === w);
+  }
+
+  /**
+   * Entities whose displayed name repeats their device name, and devices whose
+   * entities are named after some other device.
+   *
+   * HA composes "<device name> <entity name>" when has_entity_name is set, so an
+   * integration that already puts the device name in the entity name produces
+   * "Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power".
+   */
+  async _computeDuplicateNames() {
+    const [entityRegistry, deviceRegistry, configEntries] = await Promise.all([
+      this._hass.callWS({ type: 'config/entity_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config/device_registry/list' }).catch(() => []),
+      this._hass.callWS({ type: 'config_entries/get' }).catch(() => []),
+    ]);
+    const deviceName = new Map(
+      (deviceRegistry || []).map(d => [d.id, (d.name_by_user || d.name || '').trim()])
+    );
+    // Device names of two words or more; one-word names match far too much
+    const knownDeviceNames = [...new Set([...deviceName.values()].filter(Boolean))]
+      .map(name => ({ name, words: this._nameWords(name) }))
+      .filter(d => d.words.length >= 2);
+
+    const doubled = [];   // fixable: a real remainder is left
+    const needName = [];  // the entity's own name IS the device name
+    const foreign = new Map();  // device_id → Map(other device name → count)
+
+    for (const entry of entityRegistry || []) {
+      const dName = deviceName.get(entry.device_id) || '';
+      const own = entry.name || entry.original_name || '';
+      if (!own) continue;
+      const ownWords = this._nameWords(own);
+
+      if (dName) {
+        // What Home Assistant shows: a display name verbatim, otherwise the
+        // device name in front of the entity's own name when has_entity_name.
+        const shown = entry.name
+          ? entry.name
+          : (entry.has_entity_name ? `${dName} ${own}`.trim() : own);
+        const dWords = this._nameWords(dName);
+        const shownWords = this._nameWords(shown);
+        // Doubled means the device name reads TWICE. Asking only whether the
+        // name starts with the device name re-flags a fixed entity — "Backup
+        // Manager state" on device "Backup" is correct, not doubled — and
+        // offers a fix that changes nothing.
+        const isDoubled = this._startsWithWords(shownWords, dWords)
+          && this._startsWithWords(shownWords.slice(dWords.length), dWords);
+        if (isDoubled) {
+          // Drop one device name from the front; keep the rest as it reads
+          const rest = shown.trim().slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          const remainder = rest.slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          const row = {
+            entity_id: entry.entity_id,
+            deviceName: dName,
+            current: shown,
+            remainder,
+            suggested: remainder ? rest : '',
+            userNamed: !!entry.name,
+          };
+          (remainder ? doubled : needName).push(row);
+          continue;
+        }
+      }
+
+      // An entity carrying a different device's name — a device renamed while its
+      // entities kept the old one, or one physical device split across two registry devices
+      if (!entry.device_id) continue;
+      const other = knownDeviceNames.find(d =>
+        d.name !== dName && this._startsWithWords(ownWords, d.words));
+      if (other) {
+        if (!foreign.has(entry.device_id)) foreign.set(entry.device_id, new Map());
+        const counts = foreign.get(entry.device_id);
+        counts.set(other.name, (counts.get(other.name) || 0) + 1);
+      }
+    }
+
+    const mismatched = [...foreign.entries()].map(([deviceId, counts]) => ({
+      deviceId,
+      deviceName: deviceName.get(deviceId) || deviceId,
+      groups: [...counts.entries()].sort((a, b) => b[1] - a[1]),
+    })).sort((a, b) => a.deviceName.localeCompare(b.deviceName));
+
+    doubled.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    needName.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+    return {
+      doubled,
+      needName,
+      mismatched,
+      entryDrift: this._computeEntryTitleDrift(deviceRegistry, configEntries),
+    };
+  }
+
+  /**
+   * Integration entries whose title no longer says what the device is called.
+   *
+   * Home Assistant titles an entry when the integration is first added and
+   * never revisits it, so renaming a device leaves the integrations page
+   * showing the name it had on the day it was set up.
+   *
+   * Only an entry owning exactly one device can be fixed automatically; with
+   * several, which name to use is a judgement call, so those are reported.
+   */
+  _computeEntryTitleDrift(deviceRegistry, configEntries) {
+    const byEntry = new Map();
+    for (const device of deviceRegistry || []) {
+      const entryId = device.primary_config_entry
+        || (Array.isArray(device.config_entries) ? device.config_entries[0] : null);
+      if (!entryId) continue;
+      const name = (device.name_by_user || device.name || '').trim();
+      if (!name) continue;
+      if (!byEntry.has(entryId)) byEntry.set(entryId, []);
+      byEntry.get(entryId).push(name);
+    }
+
+    const drift = [];
+    for (const entry of configEntries || []) {
+      const devices = byEntry.get(entry.entry_id);
+      if (!devices?.length) continue;
+      const title = (entry.title || '').trim();
+      if (!title) continue;
+      const folded = this._nameWords(title).join(' ');
+      // One device naming the entry, or any device already saying it, is fine
+      if (devices.some(name => {
+        const dev = this._nameWords(name).join(' ');
+        return dev === folded || dev.includes(folded) || folded.includes(dev);
+      })) continue;
+      drift.push({
+        entryId: entry.entry_id,
+        domain: entry.domain,
+        title,
+        devices,
+        suggested: devices.length === 1 ? devices[0] : '',
+      });
+    }
+    return drift.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  /** Rename integration entries to match their device. */
+  async _fixEntryTitles(rows, btn) {
+    if (!rows.length) return;
+    if (!(await this._confirmAsync(
+      'Rename integration entries',
+      `Retitle ${rows.length} entr${rows.length !== 1 ? 'ies' : 'y'} to match the device? ` +
+      'This changes only what the integrations page shows. It can be undone.',
+    ))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Renaming…'; }
+    let ok = 0;
+    const failed = [];
+    for (const row of rows) {
+      try {
+        await this._hass.callWS({
+          type: 'config_entries/update',
+          entry_id: row.entryId,
+          title: row.suggested,
+        });
+        this._pushUndoAction({
+          type: 'config_entry_title_change',
+          entryId: row.entryId,
+          oldTitle: row.title,
+          newTitle: row.suggested,
+        });
+        ok++;
+      } catch (err) {
+        failed.push(`${row.title}: ${err.message}`);
+      }
+    }
+    this._showToast(
+      failed.length ? `Renamed ${ok}, ${failed.length} failed — ${failed[0]}` : `Renamed ${ok} entr${ok !== 1 ? 'ies' : 'y'}`,
+      failed.length ? 'error' : 'success',
+    );
+    this._refreshView();
+  }
+
+  /** Apply the suggested display names, one call each, with undo per entity. */
+  async _fixDuplicateNames(rows, btn) {
+    if (!rows.length) return;
+    if (!(await this._confirmAsync(
+      'Fix duplicate names',
+      `Set the display name of ${rows.length} entit${rows.length !== 1 ? 'ies' : 'y'}? ` +
+      'Entity IDs do not change, so nothing that references them breaks. This can be undone.',
+    ))) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Fixing…'; }
+    let ok = 0;
+    const failed = [];
+    for (const row of rows) {
+      try {
+        await this._hass.callWS({
+          type: 'entity_manager/update_entity_display_name',
+          entity_id: row.entity_id,
+          name: row.suggested,
+        });
+        this._pushUndoAction({
+          type: 'display_name_change',
+          entityId: row.entity_id,
+          oldName: row.userNamed ? row.current : '',
+          newName: row.suggested,
+        });
+        ok++;
+      } catch (err) {
+        failed.push(`${row.entity_id}: ${err.message}`);
+      }
+    }
+    this._showToast(
+      failed.length
+        ? `Renamed ${ok}, ${failed.length} failed — ${failed[0]}`
+        : `Renamed ${ok} entit${ok !== 1 ? 'ies' : 'y'}`,
+      failed.length ? 'error' : 'success',
+    );
+    await this.loadData();
+    this._refreshView();
+  }
+
+  /** The Duplicate Names section of Cleanup & Health. */
+  async _showDuplicateNamesSection(container) {
+    const { doubled, needName, mismatched, entryDrift } = await this._computeDuplicateNames();
+    this._dupNameRows = doubled;
+
+    if (!doubled.length && !needName.length && !mismatched.length && !entryDrift.length) {
+      container.innerHTML = '<p style="text-align:center;padding:24px;opacity:0.6">No duplicated names — every entity reads cleanly under its device.</p>';
+      return;
+    }
+
+    const row = (r, fixable) => this._renderMiniEntityCard({
+      entity_id: r.entity_id,
+      name: r.current,
+      state: fixable ? 'doubled' : 'no name left',
+      stateColor: fixable ? 'var(--em-warning)' : 'var(--em-danger)',
+      infoLine: fixable
+        ? `${this._icon('mdi:arrow-right-thin', '14px')} becomes <strong>${this._escapeHtml(r.suggested)}</strong>`
+        : `${this._icon(EM_ICONS.warning, '14px')} its own name is just the device name — give it one by hand`,
+      extraClass: 'em-dupname-row',
+      checkboxHtml: fixable
+        ? `<input type="checkbox" class="em-dupname-sel" data-entity-id="${this._escapeAttr(r.entity_id)}" checked style="flex-shrink:0;cursor:pointer;accent-color:var(--em-primary)">`
+        : '',
+      actionsHtml: fixable
+        ? `<button class="em-dialog-btn em-dialog-btn-outline-primary em-dupname-fix-one" data-entity-id="${this._escapeAttr(r.entity_id)}">Fix</button>`
+        : `<button class="em-dialog-btn em-dialog-btn-outline-primary em-dupname-rename" data-entity-id="${this._escapeAttr(r.entity_id)}">Rename…</button>`,
+    });
+
+    const byDevice = new Map();
+    doubled.forEach(r => {
+      if (!byDevice.has(r.deviceName)) byDevice.set(r.deviceName, []);
+      byDevice.get(r.deviceName).push(r);
+    });
+
+    const doubledHtml = doubled.length ? `
+      <div class="em-sug-section em-sug-naming" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon('mdi:content-duplicate', '16px')} Device name twice (${doubled.length})`,
+          this._sectionHint('Home Assistant already puts the device name in front, so these read it twice. '
+            + 'Fixing sets a display name — the entity ID never changes, so automations and dashboards are untouched.', 'help-dupnames')
+          + `<div class="em-dupname-actions" style="padding:6px 12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+               <label style="margin-right:auto;font-size:12px;display:flex;gap:6px;align-items:center">
+                 <input type="checkbox" id="em-dupname-all" checked style="accent-color:var(--em-primary)"> Select all
+               </label>
+               <button class="em-dialog-btn em-dialog-btn-primary" id="em-dupname-fix-selected">Fix selected</button>
+             </div>`
+          + [...byDevice.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([dev, rows]) => this._collGroup(`${this._escapeHtml(dev)} (${rows.length})`,
+                rows.map(r => row(r, true)).join('')))
+              .join(''))}
+      </div>` : '';
+
+    const needNameHtml = needName.length ? `
+      <div class="em-sug-section em-sug-health" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon(EM_ICONS.warning, '16px')} Needs a name (${needName.length})`,
+          this._sectionHint('The entity\'s own name is exactly the device name, so there is nothing left after '
+            + 'removing it. Give these a name yourself — a guess would be worse than the doubling.', 'help-dupnames-manual')
+          + needName.map(r => row(r, false)).join(''))}
+      </div>` : '';
+
+    const mismatchHtml = mismatched.length ? `
+      <div class="em-sug-section em-sug-area" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon('mdi:swap-horizontal', '16px')} Named after another device (${mismatched.length})`,
+          this._sectionHint('These devices have entities carrying a different device\'s name — usually a device renamed '
+            + 'while its entities kept the old name, or one physical device split across two registry entries. '
+            + 'Reported only: which name is right is your call.', 'help-dupnames-foreign')
+          + mismatched.map(m => `
+            <div class="em-dupname-foreign" style="padding:8px 14px;border-top:1px solid var(--em-border)">
+              <div style="font-weight:600">${this._escapeHtml(m.deviceName)}</div>
+              <div style="font-size:12px;color:var(--em-text-secondary)">
+                ${m.groups.map(([name, n]) => `${n} entit${n !== 1 ? 'ies' : 'y'} named “${this._escapeHtml(name)}”`).join(' · ')}
+              </div>
+            </div>`).join(''))}
+      </div>` : '';
+
+    const fixableDrift = entryDrift.filter(d => d.suggested);
+    const entryDriftHtml = entryDrift.length ? `
+      <div class="em-sug-section em-sug-labels" style="margin:0 8px 8px">
+        ${this._collGroup(`${this._icon(EM_ICONS.integration, '16px')} Integration entry named differently (${entryDrift.length})`,
+          this._sectionHint('Home Assistant titles an integration entry when it is first added and never revisits it, '
+            + 'so the integrations page can still show the name a device had on the day it was set up. '
+            + 'Only the title changes here — no entity, device or ID is touched.', 'help-entry-drift')
+          + (fixableDrift.length ? `<div style="padding:6px 12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
+               <label style="margin-right:auto;font-size:12px;display:flex;gap:6px;align-items:center">
+                 <input type="checkbox" id="em-entry-all" checked style="accent-color:var(--em-primary)"> Select all
+               </label>
+               <button class="em-dialog-btn em-dialog-btn-primary" id="em-entry-fix-selected">Use the device name</button>
+             </div>` : '')
+          + entryDrift.map(d => `
+            <div class="em-dupname-foreign" style="padding:8px 14px;border-top:1px solid var(--em-border);display:flex;gap:10px;align-items:flex-start">
+              ${d.suggested
+                ? `<input type="checkbox" class="em-entry-sel" data-entry-id="${this._escapeAttr(d.entryId)}" checked style="margin-top:3px;accent-color:var(--em-primary)">`
+                : '<span style="width:13px"></span>'}
+              <div style="min-width:0">
+                <div style="font-weight:600">${this._escapeHtml(d.title)}</div>
+                <div style="font-size:12px;color:var(--em-text-secondary)">
+                  ${d.suggested
+                    ? `${this._icon('mdi:arrow-right-thin', '13px')} ${this._escapeHtml(d.suggested)}`
+                    : `${d.devices.length} devices: ${this._escapeHtml(d.devices.slice(0, 3).join(', '))}${d.devices.length > 3 ? '…' : ''} — pick a name yourself`}
+                  · ${this._escapeHtml(d.domain)}
+                </div>
+              </div>
+            </div>`).join(''))}
+      </div>` : '';
+
+    container.innerHTML = doubledHtml + needNameHtml + mismatchHtml + entryDriftHtml;
+    this._reAttachCollapsibles(container);
+
+    const selected = () => [...container.querySelectorAll('.em-dupname-sel:checked')]
+      .map(cb => doubled.find(r => r.entity_id === cb.dataset.entityId))
+      .filter(Boolean);
+
+    container.querySelector('#em-dupname-all')?.addEventListener('change', (e) => {
+      container.querySelectorAll('.em-dupname-sel').forEach(cb => { cb.checked = e.target.checked; });
+    });
+    container.querySelector('#em-dupname-fix-selected')?.addEventListener('click', (e) => {
+      this._fixDuplicateNames(selected(), e.target);
+    });
+    container.querySelectorAll('.em-dupname-fix-one').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = doubled.find(x => x.entity_id === btn.dataset.entityId);
+        if (r) this._fixDuplicateNames([r], btn);
+      });
+    });
+    container.querySelector('#em-entry-all')?.addEventListener('change', (e) => {
+      container.querySelectorAll('.em-entry-sel').forEach(cb => { cb.checked = e.target.checked; });
+    });
+    container.querySelector('#em-entry-fix-selected')?.addEventListener('click', (e) => {
+      const picked = [...container.querySelectorAll('.em-entry-sel:checked')]
+        .map(cb => entryDrift.find(d => d.entryId === cb.dataset.entryId))
+        .filter(d => d?.suggested);
+      this._fixEntryTitles(picked, e.target);
+    });
+
+    container.querySelectorAll('.em-dupname-rename').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const r = needName.find(x => x.entity_id === btn.dataset.entityId);
+        const prefill = r?.suggested
+          || this._suggestEntityName({ entity_id: btn.dataset.entityId }, r?.deviceName);
+        this._showDisplayNameEditDialog(btn.dataset.entityId, prefill, () => {
+          this.loadData().then(() => this._refreshView());
+        });
+      });
+    });
+  }
+
   async _showCleanupDialog({ inline = false, container = null } = {}) {
     const dismissed = this._loadFromStorage('em-stale-dismissed', {});
     const states = Object.values(this._hass?.states || {});
@@ -17105,6 +17644,233 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** What a device's entity IDs actually share, cut at an underscore:
+   *  ["tafla_h_gr_04_eldhus_power", "tafla_h_gr_04_eldhus_cloud"] →
+   *  "tafla_h_gr_04_eldhus". Used when a device's name no longer matches its own
+   *  entity IDs, which is the state between a device rename and the queue run. */
+  _commonObjectIdPrefix(entityIds) {
+    const objectIds = entityIds
+      .map(id => id.slice(id.indexOf('.') + 1))
+      .filter(Boolean);
+    if (objectIds.length < 2) return '';
+    let prefix = objectIds[0];
+    for (const objectId of objectIds.slice(1)) {
+      let i = 0;
+      while (i < prefix.length && i < objectId.length && prefix[i] === objectId[i]) i++;
+      prefix = prefix.slice(0, i);
+      if (!prefix) return '';
+    }
+    const cut = prefix.lastIndexOf('_');
+    return cut > 0 ? prefix.slice(0, cut) : '';
+  }
+
+  /** The object-ID form of a device name, the way Home Assistant slugifies it:
+   *  "Tafla H Gr.04 Eldhús" → "tafla_h_gr_04_eldhus". */
+  _deviceSlug(name) {
+    return this._nameWords(name).join('_');
+  }
+
+  /**
+   * Rename a device and line its entities up to follow.
+   *
+   * The device name is written straight away — one reversible registry field.
+   * Entity IDs are not: they go into the existing rename queue, so the run
+   * keeps that queue's reference preview, undo steps and per-entity failure
+   * reporting instead of growing a second path that writes IDs itself.
+   */
+  async _showDeviceRenameDialog(deviceId, { addToQueue, syncRenameBtn, view }) {
+    const info = this.deviceInfo?.[deviceId] || {};
+    const oldName = (info.name_by_user || info.name || '').trim();
+    const entityIds = (this._deviceEntitiesById(deviceId) || []).map(e => e.entity_id);
+    // Rename a device twice and its entity IDs still carry the first name: their
+    // renames are only queued, so they change when the queue runs, not now. So
+    // match against every name this device has had, and fall back to what its
+    // entity IDs actually share.
+    const previousNames = this._deviceNameHistory?.get(deviceId) || [];
+    const candidateNames = [oldName, ...previousNames].filter(Boolean);
+    const idPrefix = this._commonObjectIdPrefix(entityIds);
+
+    const plan = (newName) => {
+      const newSlug = this._deviceSlug(newName);
+      const candidateSlugs = [...new Set(candidateNames.map(n => this._deviceSlug(n)))]
+        .filter(Boolean)
+        .concat(idPrefix ? [idPrefix] : []);
+      return entityIds.map(entityId => {
+        const dot = entityId.indexOf('.');
+        const domain = entityId.slice(0, dot);
+        const objectId = entityId.slice(dot + 1);
+        const matchedSlug = candidateSlugs.find(slug => objectId.startsWith(slug)) || '';
+        const newObjectId = matchedSlug ? newSlug + objectId.slice(matchedSlug.length) : objectId;
+        const entity = this._findEntityById(entityId);
+        const shown = this._hass?.states?.[entityId]?.attributes?.friendly_name
+          || entity?.name || entity?.original_name || '';
+        const shownWords = this._nameWords(shown);
+        const matchedName = candidateNames.find(n =>
+          this._startsWithWords(shownWords, this._nameWords(n))) || '';
+        const remainder = matchedName
+          ? shown.trim().slice(matchedName.length).replace(/^[\s_.-]+/, '')
+          : '';
+        return {
+          entityId,
+          newEntityId: `${domain}.${newObjectId}`,
+          idFollows: !!matchedSlug && newObjectId !== objectId,
+          displayName: matchedName ? `${newName} ${remainder}`.trim() : '',
+        };
+      });
+    };
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Rename device',
+      color: 'var(--em-primary)',
+      contentHtml: `
+        <div style="padding:4px 0">
+          <label style="font-size:0.85em;opacity:0.7;display:block;margin-bottom:6px">Device name</label>
+          <input id="em-dr-input" type="text" value="${this._escapeHtml(oldName)}"
+            style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.95em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)">
+          <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:0.85em">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="em-dr-ids" checked style="accent-color:var(--em-primary)"> Queue entity ID changes</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="em-dr-names" checked style="accent-color:var(--em-primary)"> Queue display names</label>
+          </div>
+          <div id="em-dr-preview" style="margin-top:10px;padding:8px 10px;border-radius:6px;font-size:0.85em;max-height:190px;overflow:auto;background:color-mix(in srgb, var(--em-primary) 8%, transparent);border:1px solid color-mix(in srgb, var(--em-primary) 35%, transparent)"></div>
+          <p style="font-size:0.82em;opacity:0.6;margin-top:8px">The device is renamed now. Entity changes go to the rename queue — review them there, then press Rename.</p>
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="em-dr-cancel">Cancel</button>
+                    <button class="btn btn-primary" id="em-dr-save">Rename device</button>`,
+    });
+
+    const input = overlay.querySelector('#em-dr-input');
+    const previewEl = overlay.querySelector('#em-dr-preview');
+    const idsCb = overlay.querySelector('#em-dr-ids');
+    const namesCb = overlay.querySelector('#em-dr-names');
+
+    const renderPreview = () => {
+      const newName = input.value.trim();
+      if (!newName || newName === oldName) {
+        previewEl.innerHTML = '<span style="opacity:0.7">Type a new name to see what would change.</span>';
+        return;
+      }
+      const rows = plan(newName);
+      const idCount = rows.filter(r => r.idFollows).length;
+      const nameCount = rows.filter(r => r.displayName).length;
+      const sample = rows.slice(0, 4).map(r => `
+        <div style="margin-top:4px">
+          <code style="opacity:0.7">${this._escapeHtml(r.entityId)}</code>
+          ${idsCb.checked && r.idFollows ? ` → <code>${this._escapeHtml(r.newEntityId)}</code>` : ''}
+          ${namesCb.checked && r.displayName ? `<div style="opacity:0.8">name: ${this._escapeHtml(r.displayName)}</div>` : ''}
+        </div>`).join('');
+      previewEl.innerHTML = `
+        <div><strong>${this._escapeHtml(oldName)}</strong> → <strong>${this._escapeHtml(newName)}</strong></div>
+        <div style="margin-top:4px;opacity:0.8">
+          ${rows.length} entit${rows.length !== 1 ? 'ies' : 'y'} ·
+          ${idsCb.checked ? idCount : 0} ID${idCount !== 1 ? 's' : ''} ·
+          ${namesCb.checked ? nameCount : 0} name${nameCount !== 1 ? 's' : ''}
+        </div>
+        ${sample}
+        ${rows.length > 4 ? `<div style="margin-top:4px;opacity:0.7">…and ${rows.length - 4} more</div>` : ''}`;
+    };
+    renderPreview();
+    input.addEventListener('input', renderPreview);
+    idsCb.addEventListener('change', renderPreview);
+    namesCb.addEventListener('change', renderPreview);
+    input.focus();
+    input.select();
+
+    overlay.querySelector('#em-dr-cancel').addEventListener('click', closeDialog);
+    overlay.querySelector('#em-dr-save').addEventListener('click', async () => {
+      const newName = input.value.trim();
+      if (!newName || newName === oldName) { closeDialog(); return; }
+      try {
+        await this._hass.callWS({
+          type: 'config/device_registry/update',
+          device_id: deviceId,
+          name_by_user: newName,
+        });
+      } catch (err) {
+        this._showToast(`Device rename failed: ${err.message}`, 'error');
+        return;
+      }
+      this._pushUndoAction({ type: 'device_name_change', deviceId, oldName, newName });
+      if (this.deviceInfo?.[deviceId]) this.deviceInfo[deviceId].name_by_user = newName;
+      // Remember what it was called, so a second rename still finds its entities
+      const history = (this._deviceNameHistory ||= new Map()).get(deviceId) || [];
+      this._deviceNameHistory.set(deviceId, [oldName, ...history.filter(n => n !== oldName)]);
+
+      let queued = 0;
+      for (const row of plan(newName)) {
+        const wantsId = idsCb.checked && row.idFollows;
+        const wantsName = namesCb.checked && !!row.displayName;
+        if (!wantsId && !wantsName) continue;
+        addToQueue(row.entityId);
+        const queueRow = view.querySelector(`#brq-rows [data-old-entity="${CSS.escape(row.entityId)}"]`);
+        if (!queueRow) continue;
+        if (wantsId) {
+          const field = queueRow.querySelector('.bulk-new-name');
+          if (field) field.value = row.newEntityId.slice(row.newEntityId.indexOf('.') + 1);
+        }
+        if (wantsName) queueRow.dataset.displayName = row.displayName;
+        queued++;
+      }
+      syncRenameBtn?.();
+      closeDialog();
+      this._showToast(
+        queued
+          ? `Device renamed — ${queued} entit${queued !== 1 ? 'ies' : 'y'} queued, review and press Rename`
+          : 'Device renamed',
+        'success',
+      );
+    });
+  }
+
+  /** Does the name Home Assistant shows for this entity read its device name
+   *  twice? The same rule the Duplicate Names card uses, for one entity. */
+  _hasDoubledName(entityId, friendlyName = null) {
+    const entity = this._findEntityById(entityId);
+    const deviceId = entity?.device_id || this.entityDeviceMap?.get(entityId);
+    const deviceName = deviceId ? this.getDeviceName(deviceId) : '';
+    if (!deviceName) return false;
+    const shown = friendlyName
+      || this._hass?.states?.[entityId]?.attributes?.friendly_name
+      || entity?.name || entity?.original_name || '';
+    const deviceWords = this._nameWords(deviceName);
+    const shownWords = this._nameWords(shown);
+    return this._startsWithWords(shownWords, deviceWords)
+      && this._startsWithWords(shownWords.slice(deviceWords.length), deviceWords);
+  }
+
+  /** The device line earns its place only when the shown name does not already
+   *  begin with the device name — otherwise it repeats what is right above it. */
+  _deviceLineWorthShowing(entity, state) {
+    const shown = state?.attributes?.friendly_name || entity.name || entity.original_name || '';
+    return !this._startsWithWords(this._nameWords(shown), this._nameWords(entity.deviceName || ''));
+  }
+
+  /** Wait for HA to push the renamed entity's new state, so the card stops
+   *  showing the old friendly name. The registry write returns before the state
+   *  machine catches up, and the hass setter only syncs toggle buttons, so
+   *  without this a rename needs a manual refresh to show. */
+  async _awaitFriendlyName(entityId, expected, timeoutMs = 2500) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this._hass?.states?.[entityId]?.attributes?.friendly_name === expected) return true;
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+    return false;
+  }
+
+  /** What Home Assistant will show for an entity given a display name.
+   *  A display name is used verbatim; the device name is prepended only when
+   *  there is none (see _async_get_full_entity_name_generic in HA). */
+  _friendlyNamePreview(entityId, typedName) {
+    const typed = (typedName || '').trim();
+    if (typed) return typed;
+    const entity = this._findEntityById(entityId);
+    const own = entity?.original_name || '';
+    const deviceId = entity?.device_id || this.entityDeviceMap?.get(entityId);
+    const deviceName = deviceId ? this.getDeviceName(deviceId) : '';
+    if (entity?.has_entity_name && deviceName && own) return `${deviceName} ${own}`;
+    return own || entityId;
+  }
+
   async _showDisplayNameEditDialog(entityId, currentName, onSave) {
     const { overlay, closeDialog } = this.createDialog({
       title: 'Rename',
@@ -17115,12 +17881,28 @@ class EntityManagerPanel extends HTMLElement {
           <input id="em-dn-input" type="text" value="${this._escapeHtml(currentName || '')}"
             style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.95em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)"
             placeholder="Enter display name">
+          <div id="em-dn-preview" style="font-size:0.85em;margin-top:10px;padding:8px 10px;border-radius:6px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);border:1px solid color-mix(in srgb, var(--em-primary) 35%, transparent)">
+            <span style="opacity:0.7">Shows as</span>
+            <strong id="em-dn-preview-text"></strong>
+            <div id="em-dn-preview-hint" style="opacity:0.6;margin-top:4px;font-size:0.92em"></div>
+          </div>
           <p style="font-size:0.82em;opacity:0.6;margin-top:8px">${this._escapeHtml(entityId)}</p>
         </div>`,
       actionsHtml: `<button class="btn btn-secondary" id="em-dn-cancel">Cancel</button>
                     <button class="btn btn-primary" id="em-dn-save">Save</button>`,
     });
     const input = overlay.querySelector('#em-dn-input');
+    const previewText = overlay.querySelector('#em-dn-preview-text');
+    const previewHint = overlay.querySelector('#em-dn-preview-hint');
+    const updatePreview = () => {
+      const typed = input.value.trim();
+      previewText.textContent = this._friendlyNamePreview(entityId, typed);
+      previewHint.textContent = typed
+        ? 'Home Assistant shows a display name exactly as written — it does not add the device name.'
+        : 'Empty clears the display name, and Home Assistant falls back to the integration’s own name.';
+    };
+    updatePreview();
+    input.addEventListener('input', updatePreview);
     input.focus(); input.select();
     const doSave = async () => {
       const newName = input.value.trim();
@@ -17133,6 +17915,13 @@ class EntityManagerPanel extends HTMLElement {
         this._pushUndoAction({ type: 'display_name_change', entityId, oldName: currentName, newName });
         closeDialog();
         this._showToast(`Renamed to "${newName || entityId}"`, 'success');
+        // Show it straight away, then let HA's own state catch up
+        const record = this._findEntityById(entityId);
+        if (record) record.name = newName || null;
+        (this._recentRenames ||= new Map()).set(entityId, { oldName: currentName || '', newName });
+        this.updateView();
+        await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, newName));
+        this.updateView();
         onSave?.(newName);
       } catch (err) {
         this._showToast(`Rename failed: ${err.message}`, 'error');

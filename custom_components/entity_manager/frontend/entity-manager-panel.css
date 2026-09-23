@@ -7661,3 +7661,97 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
     padding: 5px 10px;
   }
 }
+
+/* Which name is which on an entity card: Friendly / Display / Entity / Device */
+.entity-name-kind {
+  display: inline-block;
+  min-width: 52px;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--em-text-secondary);
+  opacity: 0.75;
+}
+.entity-name-friendly {
+  color: var(--em-text-primary);
+  font-weight: 600;
+}
+.entity-name-suggest {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.em-name-suggest-btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-primary);
+  border: 1px dashed var(--em-primary);
+  background: transparent;
+}
+.em-name-suggest-btn:hover {
+  background: color-mix(in srgb, var(--em-primary) 16%, transparent);
+}
+
+/* Undo, offered on a card whose name was just changed */
+.em-name-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-warning);
+  border: 1px solid var(--em-warning);
+  background: transparent;
+}
+.em-name-undo-btn:hover {
+  background: color-mix(in srgb, var(--em-warning) 16%, transparent);
+}
+.em-name-undo-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Marks a name the user set, since HA shows it exactly as written */
+.entity-name-custom {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--em-primary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
+}
+
+/* "Device" button on a device group in the Bulk Rename picker */
+.brp-dev-rename {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--em-primary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: transparent;
+  flex-shrink: 0;
+}
+.brp-dev-rename:hover {
+  background: color-mix(in srgb, var(--em-primary) 16%, transparent);
+}
