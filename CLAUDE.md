@@ -30,12 +30,12 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 189 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 1,655 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 1,806 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `_resolve_entity_id`, which turns what was said into an entity ID. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 16,790 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
-| `.../frontend/entity-manager-panel.css` | 7,458 lines, all `--em-*` variables. |
+| `.../frontend/entity-manager-panel.js` | 18,445 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.css` | 7,757 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |

@@ -1,10 +1,16 @@
 # Changelog
 
-## Version 3.4.0 - Filter by the Header Pills
+## Version 3.4.0 - Filter Pills, Duplicate Names and Voice
 
-The counts in an integration or device header used to be there to read. Now they are buttons.
+Four pieces of work, all aimed at a house with three thousand entities in it.
+The counts in every header became filters you can act on. The names that read
+their device twice — 191 of them — can now be found and fixed in one place,
+along with the integration entries still called what a device was called on
+setup day. Voice enable and disable were made to work at all, having never
+matched a sentence. And renaming an entity now takes the Energy dashboard with
+it, instead of quietly leaving its circuits blank.
 
-### 🔎 Filter pills
+### Filter pills
 
 - **Categories, Hardware, Areas and Labels each get a box of pills** in the integration and device headers. Click one to narrow that header to the entities it names, and click it again to clear
 - **Areas and Labels show six pills and a `+N`** that reveals the rest, so an integration spanning the whole house does not flood its header
@@ -17,10 +23,33 @@ The counts in an integration or device header used to be there to read. Now they
 - **A device's Hardware pill assigns the type** rather than filtering, because a device only has one. Assigning a type to an integration's unknown devices moved into the integration menu
 - **The device menu gained "Change area…" and "Labels…"**, which the header chips used to do
 
-### 🩹 Also
+### Names that read the device twice
+
+- **A Duplicate Names card in Cleanup & Health.** Home Assistant puts the device name in front of the entity name, and several integrations already put it there themselves, so the name reads twice: "Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power". Grouped by device, with what each would become, fixed singly or in bulk, with undo
+- **Fixing sets a display name to the whole name**, not the leftover piece. Home Assistant adds the device name only when no display name is set, so a bare "power" would read as "Power" with the circuit lost
+- **Entities whose own name is the device name** are listed apart, since nothing is left after removing it. They need a name you choose, and each row offers one built from the entity ID
+- **Integration entries still named after an old device.** Home Assistant titles an entry when the integration is first added and never revisits it, so the integrations page can show a name from years ago. The device name is offered as the title, where the entry owns a single device
+- **Each name line on an entity card says which name it is** — Name, Entity, Device — and appears only when it says something different. A name you set is marked, because Home Assistant shows those exactly as written
+- **Rename a device from Bulk Rename** and its entities follow: IDs and display names, previewed before anything is written, queued so they keep the reference update and undo the rename queue already has
+- **A Duplicate names filter** in the Bulk Rename picker
+
+### Voice
+
+- **Enable and disable by voice now work.** They never had: the sentences were never installed where Home Assistant reads them, they used a slot that does not exist, and the handler wanted an entity ID spoken aloud
+- **Say the name.** What you say is matched against the entity registry, so disabled entities are reachable — they have no state, so Home Assistant's own name list can never contain them
+- **Icelandic names match without accents** — "eldhus ljos" finds Eldhús Ljós — and aliases are matched too, which is the way round an English recogniser mishearing an Icelandic word
+- **An ambiguous name is read back** with the entity IDs to choose from, rather than acting on a guess
+
+### Energy
+
+- **The Energy dashboard follows a rename.** Its sources are statistic IDs, which for a recorder-backed sensor is the entity ID, so a rename left the affected circuits charting nothing. They are now rewritten with everything else, with a backup written first
+
+### Also
 
 - **An open category card stays open** when an entity inside it is enabled, disabled or renamed
 - The four boxes stack on a narrow screen
+- Folders named "snapshots" are left alone when references are rewritten — archived copies of automations are not live config
+- Unused screenshots and six unverified documents removed from the repo
 
 ## Version 3.3.1 - CSV Import and Export on Phones and Tablets
 
