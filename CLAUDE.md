@@ -152,6 +152,11 @@ allowed. Everything else is WebSocket-only.
   (`_async_get_full_entity_name_generic`), so setting just "power" would read as
   "Power" with the device lost. Entities whose own name *is* the
   device name, and devices carrying another device's name, are reported only.
+  A third section compares each **integration entry title** with its device:
+  HA titles an entry when the integration is first added and never revisits it,
+  so 58 of 71 Shelly entries here still read the name their device had on setup
+  day. Retitling goes through native `config_entries/update`, and only when the
+  entry owns exactly one device — with several, the name is a judgement call.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.

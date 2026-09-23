@@ -1397,3 +1397,69 @@ describe('_deviceSlug(name)', () => {
     expect(el._deviceSlug('Þvottahús')).toBe('thvottahus');
   });
 });
+
+describe('_computeEntryTitleDrift(devices, entries)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('flags a title that no longer says what the device is called', () => {
+    // The real case: entry titled when the Shelly was added in Nov 2024
+    const drift = el._computeEntryTitleDrift(
+      [{ id: 'dev_eldhus', name: 'Tafla H Gr.04 Eldhús', primary_config_entry: 'entry_4' }],
+      [{ entry_id: 'entry_4', domain: 'shelly', title: 'Gr.4 Þvottavél' }],
+    );
+    expect(drift).toHaveLength(1);
+    expect(drift[0].title).toBe('Gr.4 Þvottavél');
+    expect(drift[0].suggested).toBe('Tafla H Gr.04 Eldhús');
+  });
+
+  it('accepts a title the device name contains, or the same name spelled differently', () => {
+    const entries = [{ entry_id: 'e', domain: 'shelly', title: 'Uppþvottavél' }];
+    // The device name carries the title inside it
+    expect(el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Tafla H Gr.05 Uppþvottavél', primary_config_entry: 'e' }], entries,
+    )).toEqual([]);
+    // Accents and þ are folded, so this is the same name
+    expect(el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'uppthvottavel', primary_config_entry: 'e' }], entries,
+    )).toEqual([]);
+  });
+
+  it('flags a title that names the same circuit differently', () => {
+    // "Gr.5" vs "Gr.05", and the board is missing — worth reporting
+    const drift = el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Tafla H Gr.05 Uppþvottavél', primary_config_entry: 'e' }],
+      [{ entry_id: 'e', domain: 'shelly', title: 'Gr.5 Uppþvottavél' }],
+    );
+    expect(drift).toHaveLength(1);
+    expect(drift[0].suggested).toBe('Tafla H Gr.05 Uppþvottavél');
+  });
+
+  it('reports an entry with several devices but offers no name', () => {
+    const drift = el._computeEntryTitleDrift(
+      [
+        { id: 'd1', name: 'Gólfhiti Stofa 1', primary_config_entry: 'e' },
+        { id: 'd2', name: 'Gólfhiti Stofa 2', primary_config_entry: 'e' },
+      ],
+      [{ entry_id: 'e', domain: 'shelly', title: 'Gólfhiti stofa1' }],
+    );
+    expect(drift).toHaveLength(1);
+    expect(drift[0].suggested).toBe('');
+    expect(drift[0].devices).toHaveLength(2);
+  });
+
+  it('ignores entries with no device, and devices with no entry', () => {
+    expect(el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Some device' }],
+      [{ entry_id: 'e', domain: 'shelly', title: 'Whatever' }],
+    )).toEqual([]);
+  });
+
+  it('reads config_entries when primary_config_entry is absent', () => {
+    const drift = el._computeEntryTitleDrift(
+      [{ id: 'd', name: 'Baðherbergi innstunga', config_entries: ['e'] }],
+      [{ entry_id: 'e', domain: 'shelly', title: 'shellyplug-s-B4D047' }],
+    );
+    expect(drift[0].suggested).toBe('Baðherbergi innstunga');
+  });
+});
