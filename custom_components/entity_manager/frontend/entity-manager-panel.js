@@ -14836,22 +14836,33 @@ class EntityManagerPanel extends HTMLElement {
       if (!own) continue;
       const ownWords = this._nameWords(own);
 
-      if (dName && entry.has_entity_name) {
+      if (dName) {
+        // What Home Assistant shows: a display name verbatim, otherwise the
+        // device name in front of the entity's own name when has_entity_name.
+        const shown = entry.name
+          ? entry.name
+          : (entry.has_entity_name ? `${dName} ${own}`.trim() : own);
         const dWords = this._nameWords(dName);
-        if (this._startsWithWords(ownWords, dWords)) {
-          const rest = own.trim().slice(dName.trim().length).replace(/^[\s_.-]+/, '');
-          // The whole name, not just the remainder: Home Assistant only adds the
-          // device name when no display name is set (_async_get_full_entity_name_generic),
-          // so a bare "current" would read as "Current" with the device lost.
+        const shownWords = this._nameWords(shown);
+        // Doubled means the device name reads TWICE. Asking only whether the
+        // name starts with the device name re-flags a fixed entity — "Backup
+        // Manager state" on device "Backup" is correct, not doubled — and
+        // offers a fix that changes nothing.
+        const isDoubled = this._startsWithWords(shownWords, dWords)
+          && this._startsWithWords(shownWords.slice(dWords.length), dWords);
+        if (isDoubled) {
+          // Drop one device name from the front; keep the rest as it reads
+          const rest = shown.trim().slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          const remainder = rest.slice(dName.trim().length).replace(/^[\s_.-]+/, '');
           const row = {
             entity_id: entry.entity_id,
             deviceName: dName,
-            current: `${dName} ${own}`.trim(),
-            remainder: rest,
-            suggested: rest ? `${dName} ${rest}` : '',
+            current: shown,
+            remainder,
+            suggested: remainder ? rest : '',
             userNamed: !!entry.name,
           };
-          (rest ? doubled : needName).push(row);
+          (remainder ? doubled : needName).push(row);
           continue;
         }
       }

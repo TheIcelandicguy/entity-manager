@@ -1489,3 +1489,57 @@ describe('_commonObjectIdPrefix(entityIds)', () => {
     expect(el._commonObjectIdPrefix(['sensor.alpha', 'sensor.beta'])).toBe('');
   });
 });
+
+describe('_computeDuplicateNames() after a fix', () => {
+  it('does not re-flag an entity whose display name was already fixed', async () => {
+    // The live case: sensor.backup_backup_manager_state read "Backup Backup
+    // Manager state"; after the fix HA holds name = "Backup Manager state",
+    // which starts with the device name once and is correct.
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backup_backup_manager_state',
+        device_id: 'dev_backup',
+        has_entity_name: true,
+        name: 'Backup Manager state',
+        original_name: 'Backup Manager state',
+      },
+    ], DEVICES);
+
+    const { doubled, needName } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+    expect(needName).toEqual([]);
+  });
+
+  it('still flags it before the fix, and offers the name that ends the doubling', async () => {
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.backup_backup_manager_state',
+        device_id: 'dev_backup',
+        has_entity_name: true,
+        name: null,
+        original_name: 'Backup Manager state',
+      },
+    ], DEVICES);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toHaveLength(1);
+    expect(doubled[0].current).toBe('Backup Backup Manager state');
+    expect(doubled[0].suggested).toBe('Backup Manager state');
+  });
+
+  it('leaves an entity alone once its own doubled name has been overridden', async () => {
+    // has_entity_name with a doubled original_name, but a display name set
+    const el = makeAuditPanel([
+      {
+        entity_id: 'sensor.tafla_b_gr_13_uppthvottavel_power',
+        device_id: 'dev_dish',
+        has_entity_name: true,
+        name: 'Tafla B Gr.13 Uppþvottavél power',
+        original_name: 'Tafla B Gr.13 Uppþvottavél power',
+      },
+    ], DEVICES);
+
+    const { doubled } = await el._computeDuplicateNames();
+    expect(doubled).toEqual([]);
+  });
+});
