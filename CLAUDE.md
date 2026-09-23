@@ -35,7 +35,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,176 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.js` | 19,182 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 7,989 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
@@ -168,7 +168,8 @@ allowed. Everything else is WebSocket-only.
   so 58 of 71 Shelly entries here still read the name their device had on setup
   day. Retitling goes through native `config_entries/update`, and only when the
   entry owns exactly one device — with several, the name is a judgement call.
-- The **Voice** view (stats-nav tile → `_renderVoiceView`) has four tabs, and
+- The **Voice** view (sidebar Actions and the stats-nav tile, both reaching
+  `_openView('voice')` → `_renderVoiceView`) has four tabs, and
   the reason it exists is that HA's own UI does these badly or not at all.
   **Test a phrase** calls `resolve_voice_target` and writes nothing; it reports
   routing and resolution *separately*, because a name can resolve perfectly

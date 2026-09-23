@@ -6569,6 +6569,10 @@ class EntityManagerPanel extends HTMLElement {
             <span class="label">History</span>
             ${this.undoStack.length > 0 ? `<span class="count">${this.undoStack.length}</span>` : ''}
           </div>
+          <div class="sidebar-item" data-action="voice">
+            <span class="icon">${this._icon(EM_ICONS.voice)}</span>
+            <span class="label">Voice</span>
+          </div>
           <div class="sidebar-item" data-action="naming-improvements">
             <span class="icon">${this._icon(EM_ICONS.namingFix)}</span>
             <span class="label">Naming Improvements</span>
@@ -8471,6 +8475,8 @@ class EntityManagerPanel extends HTMLElement {
 
     if (action === 'activity-timeline') {
       this._openView('activity-timeline');
+    } else if (action === 'voice') {
+      this._openView('voice');
     } else if (action === 'activity-log') {
       this._openView('activity-log');
     } else if (action === 'columns') {

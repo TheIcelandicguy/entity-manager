@@ -1727,3 +1727,17 @@ describe('the Voice view', () => {
     expect(rows[0].innerHTML).toContain('office ceiling light');
   });
 });
+
+
+describe('the Voice sidebar action', () => {
+  it('opens the Voice view, like the stat tile does', async () => {
+    const el = makePanel();
+    el._openView = vi.fn();
+    const item = document.createElement('div');
+    item.dataset.action = 'voice';
+
+    await el._handleSidebarItemAction(item);
+
+    expect(el._openView).toHaveBeenCalledWith('voice');
+  });
+});
