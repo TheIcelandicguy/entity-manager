@@ -22,19 +22,21 @@ this file quotes still matches the repo, and exits 1 when one does not.
 
 ## Layout
 
-All paths below are relative to the repo root. Note that `tests/` and
-`sentences/` live at the **root**, not inside the component directory.
+All paths below are relative to the repo root. Note that `tests/` lives at the
+**root**, not inside the component directory.
 
 | Path | Responsibility |
 |---|---|
-| `custom_components/entity_manager/__init__.py` | 131 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
+| `custom_components/entity_manager/__init__.py` | 189 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
+(`_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
 | `.../websocket_api.py` | 1,655 lines. All 21 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
-| `.../voice_assistant.py` | Enable/Disable intent handlers; patterns in `sentences/en/entity_manager.yaml`. |
+| `.../voice_assistant.py` | Enable/Disable intent handlers and `_resolve_entity_id`, which turns what was said into an entity ID. |
+| `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
 | `.../frontend/entity-manager-panel.js` | 16,790 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 7,458 lines, all `--em-*` variables. |
-| `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `conftest.py`. |
+| `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
@@ -260,4 +262,18 @@ gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
   letter, not an underscore. Validate against it before any registry write.
 - `remove_entity` is irreversible, and YAML-defined entities can return on the
   next HA restart.
+- **Voice sentences only work from `<config>/custom_sentences/<lang>/`.** HA's
+  conversation agent reads nowhere else and gives integrations no way to
+  register their own, so `_install_sentences` copies the shipped file there on
+  setup and calls `conversation.reload` when it changed. A copy whose first line
+  is no longer `SENTENCE_MARKER` counts as user-edited and is never overwritten.
+  The sentences use a **wildcard** slot, not HA's built-in `{name}` list: that
+  list is built from exposed entities, and a disabled entity has no state, so it
+  could never match the entities these intents exist for. `_resolve_entity_id`
+  matches exact → substring → word by word (`_MIN_WORD_MATCH`, closest name
+  wins), over name, original_name, object ID and **aliases**, each name scored
+  separately. Verified on live HA 2026.9.3; a voice request with no user context
+  is refused, so a Voice satellite cannot use these intents, and Google
+  Assistant never reaches them at all — it maps exposed entities to traits and
+  never consults the conversation agent.
 - `strings.json` contains vestigial `options` strings; there is no options flow.

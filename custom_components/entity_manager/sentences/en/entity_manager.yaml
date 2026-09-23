@@ -1,0 +1,25 @@
+# Managed by Entity Manager. This file is copied to
+# <config>/custom_sentences/en/entity_manager.yaml on startup, and the copy is
+# refreshed on upgrade. To customise the wording, remove this header line from
+# the copy — Entity Manager then leaves it alone.
+language: "en"
+intents:
+  entity_manager_enable_entity:
+    data:
+      - sentences:
+          - "enable entity {em_entity}"
+          - "enable the entity {em_entity}"
+          - "activate entity {em_entity}"
+          - "registry enable {em_entity}"
+  entity_manager_disable_entity:
+    data:
+      - sentences:
+          - "disable entity {em_entity}"
+          - "disable the entity {em_entity}"
+          - "deactivate entity {em_entity}"
+          - "registry disable {em_entity}"
+lists:
+  # Free text: a disabled entity has no state, so HA's built-in {name} list
+  # cannot contain it. The handler resolves what was said against the registry.
+  em_entity:
+    wildcard: true
