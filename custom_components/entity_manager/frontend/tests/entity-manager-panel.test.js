@@ -1229,7 +1229,7 @@ describe('_entityNameLinesHtml(entity, state)', () => {
     expect(html).toContain('Lamp');
   });
 
-  it('offers a suggestion when the name only repeats the device', () => {
+  it('offers a suggestion when the shown name reads the device twice', () => {
     const html = el._entityNameLinesHtml(
       {
         entity_id: 'switch.tafla_h_gr_04_eldhus',
@@ -1241,6 +1241,32 @@ describe('_entityNameLinesHtml(entity, state)', () => {
     expect(html).toContain('>Suggested<');
     expect(html).toContain('em-name-suggest-btn');
     expect(html).toContain('data-suggestion="Tafla H Gr.04 Eldhús Switch"');
+  });
+
+  it('stops suggesting once the name is fixed', () => {
+    // The display name starts with the device name ONCE, which is correct
+    const html = el._entityNameLinesHtml(
+      {
+        entity_id: 'sensor.tafla_h_gr_03_bakaraofn_efri_current',
+        original_name: 'Tafla H Gr.03 Bakaraofn efri current',
+        name: 'Tafla H Gr.03 Bakaraofn efri Current',
+        deviceName: 'Tafla H Gr.03 Bakaraofn efri',
+      },
+      { attributes: { friendly_name: 'Tafla H Gr.03 Bakaraofn efri Current' } },
+    );
+    expect(html).not.toContain('Suggested');
+  });
+
+  it('offers undo instead of a suggestion right after a rename', () => {
+    el._recentRenames = new Map([['switch.lamp', { oldName: 'Lamp', newName: 'Hue Lamp' }]]);
+    const html = el._entityNameLinesHtml(
+      { entity_id: 'switch.lamp', original_name: 'Lamp', name: 'Hue Lamp', deviceName: 'Hue' },
+      { attributes: { friendly_name: 'Hue Lamp' } },
+    );
+    expect(html).toContain('>Renamed<');
+    expect(html).toContain('em-name-undo-btn');
+    expect(html).toContain('Lamp');
+    expect(html).not.toContain('Suggested');
   });
 
   it('offers nothing extra for an ordinary entity', () => {

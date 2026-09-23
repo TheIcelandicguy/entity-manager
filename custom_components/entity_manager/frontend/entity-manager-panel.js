@@ -10311,6 +10311,34 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    // Undo on a card just renamed — puts the previous name back
+    this.content.querySelectorAll('.em-name-undo-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const entityId = btn.dataset.entityId;
+        const previous = this._recentRenames?.get(entityId);
+        if (!previous) return;
+        btn.disabled = true;
+        try {
+          await this._hass.callWS({
+            type: 'entity_manager/update_entity_display_name',
+            entity_id: entityId,
+            name: previous.oldName || null,
+          });
+          this._recentRenames.delete(entityId);
+          const record = this._findEntityById(entityId);
+          if (record) record.name = previous.oldName || null;
+          this.updateView();
+          await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, previous.oldName));
+          this.updateView();
+          this._showToast(previous.oldName ? `Back to “${previous.oldName}”` : 'Display name cleared', 'success');
+        } catch (err) {
+          btn.disabled = false;
+          this._showToast(`Undo failed: ${err.message}`, 'error');
+        }
+      });
+    });
+
     // Suggested-name buttons on entity cards
     this.content.querySelectorAll('.em-name-suggest-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -14656,13 +14684,29 @@ class EntityManagerPanel extends HTMLElement {
     if (display) out.push(line('Display', display));
     if (own && own !== display) out.push(line('Entity', own));
 
-    // Nothing of its own to show, or a name that only repeats the device
+    // Just renamed: offer the way back instead of another suggestion
+    const undone = this._recentRenames?.get(entity.entity_id);
+    if (undone) {
+      out.push(`<div class="entity-name-suggest">
+        <span class="entity-name-kind">Renamed</span>
+        <button type="button" class="em-name-undo-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
+          title="Put the previous name back">${this._icon('mdi:undo-variant', '13px')} Undo${undone.oldName ? ` — back to “${this._escapeHtml(undone.oldName)}”` : ' — clear the display name'}</button>
+      </div>`);
+      return out.join('');
+    }
+
+    // Suggest only when the name as shown is wrong: nothing of its own, or the
+    // device name reads twice. Testing the stored name instead would flag a
+    // correctly fixed entity, whose display name starts with the device once.
+    const shown = friendly || (display || own);
     const deviceWords = this._nameWords(entity.deviceName || '');
-    const doubled = entity.deviceName
-      && this._startsWithWords(this._nameWords(display || own), deviceWords);
+    const shownWords = this._nameWords(shown);
+    const doubled = deviceWords.length > 0
+      && this._startsWithWords(shownWords, deviceWords)
+      && this._startsWithWords(shownWords.slice(deviceWords.length), deviceWords);
     if (!out.length || doubled) {
       const suggestion = this._suggestEntityName(entity, entity.deviceName);
-      if (suggestion) {
+      if (suggestion && suggestion !== shown) {
         out.push(`<div class="entity-name-suggest">
           <span class="entity-name-kind">Suggested</span>
           <button type="button" class="em-name-suggest-btn" data-entity-id="${this._escapeAttr(entity.entity_id)}"
@@ -17491,6 +17535,7 @@ class EntityManagerPanel extends HTMLElement {
         // Show it straight away, then let HA's own state catch up
         const record = this._findEntityById(entityId);
         if (record) record.name = newName || null;
+        (this._recentRenames ||= new Map()).set(entityId, { oldName: currentName || '', newName });
         this.updateView();
         await this._awaitFriendlyName(entityId, this._friendlyNamePreview(entityId, newName));
         this.updateView();

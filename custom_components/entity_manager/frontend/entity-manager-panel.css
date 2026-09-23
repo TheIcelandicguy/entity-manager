@@ -7697,3 +7697,26 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .em-name-suggest-btn:hover {
   background: color-mix(in srgb, var(--em-primary) 16%, transparent);
 }
+
+/* Undo, offered on a card whose name was just changed */
+.em-name-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--em-warning);
+  border: 1px solid var(--em-warning);
+  background: transparent;
+}
+.em-name-undo-btn:hover {
+  background: color-mix(in srgb, var(--em-warning) 16%, transparent);
+}
+.em-name-undo-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
