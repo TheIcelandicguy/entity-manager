@@ -144,9 +144,13 @@ allowed. Everything else is WebSocket-only.
   in the entity name. Detection is frontend-only from
   `config/{entity,device}_registry/list`; matching is whole-word and
   accent-folded (`_nameWords` mirrors `_folded_form` in `voice_assistant.py`),
-  because a substring test flags "Back" inside "Backpack". The fix **sets** a
-  display name to the remainder via `update_entity_display_name` — clearing it
-  would fall back to the bad `original_name`. Entities whose own name *is* the
+  because a substring test flags "Back" inside "Backpack". The fix **sets** the
+  whole intended name (`<device> <remainder>`) via `update_entity_display_name`.
+  Two HA rules make that the right shape: clearing the name falls back to the
+  bad `original_name`, and a display name is used **verbatim** — HA prepends the
+  device name only when no display name is set
+  (`_async_get_full_entity_name_generic`), so setting just "power" would read as
+  "Power" with the device lost. Entities whose own name *is* the
   device name, and devices carrying another device's name, are reported only.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to

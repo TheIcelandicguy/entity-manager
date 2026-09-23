@@ -14687,10 +14687,13 @@ class EntityManagerPanel extends HTMLElement {
       ? words.slice(deviceWords.length)
       : words;
     const source = rest.length ? rest : [String(entity.entity_id || '').split('.')[0]];
-    return source
+    const part = source
       .map(w => w.charAt(0).toUpperCase() + w.slice(1))
       .join(' ')
       .trim();
+    // Home Assistant shows a display name exactly as set — it prepends the
+    // device name only when there is none — so the suggestion carries it.
+    return deviceName ? `${deviceName} ${part}`.trim() : part;
   }
 
   /** Words of a name, folded for comparison: lowercase, accent-free, þ/ð/æ spelled out.
@@ -14746,11 +14749,15 @@ class EntityManagerPanel extends HTMLElement {
         const dWords = this._nameWords(dName);
         if (this._startsWithWords(ownWords, dWords)) {
           const rest = own.trim().slice(dName.trim().length).replace(/^[\s_.-]+/, '');
+          // The whole name, not just the remainder: Home Assistant only adds the
+          // device name when no display name is set (_async_get_full_entity_name_generic),
+          // so a bare "current" would read as "Current" with the device lost.
           const row = {
             entity_id: entry.entity_id,
             deviceName: dName,
             current: `${dName} ${own}`.trim(),
-            suggested: rest,
+            remainder: rest,
+            suggested: rest ? `${dName} ${rest}` : '',
             userNamed: !!entry.name,
           };
           (rest ? doubled : needName).push(row);
@@ -14836,7 +14843,7 @@ class EntityManagerPanel extends HTMLElement {
       state: fixable ? 'doubled' : 'no name left',
       stateColor: fixable ? 'var(--em-warning)' : 'var(--em-danger)',
       infoLine: fixable
-        ? `${this._icon('mdi:arrow-right-thin', '14px')} becomes <strong>${this._escapeHtml(r.deviceName)} ${this._escapeHtml(r.suggested)}</strong>`
+        ? `${this._icon('mdi:arrow-right-thin', '14px')} becomes <strong>${this._escapeHtml(r.suggested)}</strong>`
         : `${this._icon(EM_ICONS.warning, '14px')} its own name is just the device name — give it one by hand`,
       extraClass: 'em-dupname-row',
       checkboxHtml: fixable
@@ -17410,6 +17417,20 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** What Home Assistant will show for an entity given a display name.
+   *  A display name is used verbatim; the device name is prepended only when
+   *  there is none (see _async_get_full_entity_name_generic in HA). */
+  _friendlyNamePreview(entityId, typedName) {
+    const typed = (typedName || '').trim();
+    if (typed) return typed;
+    const entity = this._findEntityById(entityId);
+    const own = entity?.original_name || '';
+    const deviceId = entity?.device_id || this.entityDeviceMap?.get(entityId);
+    const deviceName = deviceId ? this.getDeviceName(deviceId) : '';
+    if (entity?.has_entity_name && deviceName && own) return `${deviceName} ${own}`;
+    return own || entityId;
+  }
+
   async _showDisplayNameEditDialog(entityId, currentName, onSave) {
     const { overlay, closeDialog } = this.createDialog({
       title: 'Rename',
@@ -17420,12 +17441,28 @@ class EntityManagerPanel extends HTMLElement {
           <input id="em-dn-input" type="text" value="${this._escapeHtml(currentName || '')}"
             style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--em-border,#e0e0e0);border-radius:4px;font-size:0.95em;background:var(--em-bg-primary,#fff);color:var(--em-text-primary,#212121)"
             placeholder="Enter display name">
+          <div id="em-dn-preview" style="font-size:0.85em;margin-top:10px;padding:8px 10px;border-radius:6px;background:color-mix(in srgb, var(--em-primary) 8%, transparent);border:1px solid color-mix(in srgb, var(--em-primary) 35%, transparent)">
+            <span style="opacity:0.7">Shows as</span>
+            <strong id="em-dn-preview-text"></strong>
+            <div id="em-dn-preview-hint" style="opacity:0.6;margin-top:4px;font-size:0.92em"></div>
+          </div>
           <p style="font-size:0.82em;opacity:0.6;margin-top:8px">${this._escapeHtml(entityId)}</p>
         </div>`,
       actionsHtml: `<button class="btn btn-secondary" id="em-dn-cancel">Cancel</button>
                     <button class="btn btn-primary" id="em-dn-save">Save</button>`,
     });
     const input = overlay.querySelector('#em-dn-input');
+    const previewText = overlay.querySelector('#em-dn-preview-text');
+    const previewHint = overlay.querySelector('#em-dn-preview-hint');
+    const updatePreview = () => {
+      const typed = input.value.trim();
+      previewText.textContent = this._friendlyNamePreview(entityId, typed);
+      previewHint.textContent = typed
+        ? 'Home Assistant shows a display name exactly as written — it does not add the device name.'
+        : 'Empty clears the display name, and Home Assistant falls back to the integration’s own name.';
+    };
+    updatePreview();
+    input.addEventListener('input', updatePreview);
     input.focus(); input.select();
     const doSave = async () => {
       const newName = input.value.trim();

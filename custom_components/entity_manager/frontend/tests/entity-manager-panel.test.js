@@ -1077,7 +1077,8 @@ describe('_computeDuplicateNames()', () => {
     expect(doubled).toHaveLength(1);
     expect(doubled[0].entity_id).toBe('sensor.tafla_b_gr_13_uppthvottavel_power');
     expect(doubled[0].current).toBe('Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power');
-    expect(doubled[0].suggested).toBe('power');
+    expect(doubled[0].suggested).toBe('Tafla B Gr.13 Uppþvottavél power');
+    expect(doubled[0].remainder).toBe('power');
     expect(needName).toEqual([]);
     expect(mismatched).toEqual([]);
   });
@@ -1097,7 +1098,7 @@ describe('_computeDuplicateNames()', () => {
     const { doubled } = await el._computeDuplicateNames();
     expect(doubled).toHaveLength(1);
     expect(doubled[0].current).toBe('Backup Backup Manager state');
-    expect(doubled[0].suggested).toBe('Manager state');
+    expect(doubled[0].suggested).toBe('Backup Manager state');
   });
 
   it('does not flag a device name that is only a partial word', async () => {
@@ -1176,21 +1177,24 @@ describe('_suggestEntityName(entity, deviceName)', () => {
   it('uses what is left of the object ID after the device part', () => {
     expect(el._suggestEntityName(
       { entity_id: 'sensor.tafla_h_gr_04_eldhus_power' }, 'Tafla H Gr.04 Eldhús',
-    )).toBe('Power');
+    )).toBe('Tafla H Gr.04 Eldhús Power');
     expect(el._suggestEntityName(
       { entity_id: 'binary_sensor.tafla_h_gr_04_eldhus_restart_required' }, 'Tafla H Gr.04 Eldhús',
-    )).toBe('Restart Required');
+    )).toBe('Tafla H Gr.04 Eldhús Restart Required');
   });
 
   it('falls back to the domain when the entity is the device', () => {
     // A Shelly's main switch: object ID and device name are the same
     expect(el._suggestEntityName(
       { entity_id: 'switch.tafla_h_gr_04_eldhus' }, 'Tafla H Gr.04 Eldhús',
-    )).toBe('Switch');
+    )).toBe('Tafla H Gr.04 Eldhús Switch');
   });
 
   it('keeps the whole object ID when it does not start with the device name', () => {
     expect(el._suggestEntityName({ entity_id: 'sensor.loose_reading' }, 'Some Device'))
+      .toBe('Some Device Loose Reading');
+    // With no device there is nothing to carry
+    expect(el._suggestEntityName({ entity_id: 'sensor.loose_reading' }, ''))
       .toBe('Loose Reading');
   });
 });
@@ -1236,7 +1240,7 @@ describe('_entityNameLinesHtml(entity, state)', () => {
     );
     expect(html).toContain('>Suggested<');
     expect(html).toContain('em-name-suggest-btn');
-    expect(html).toContain('data-suggestion="Switch"');
+    expect(html).toContain('data-suggestion="Tafla H Gr.04 Eldhús Switch"');
   });
 
   it('offers nothing extra for an ordinary entity', () => {
@@ -1245,5 +1249,40 @@ describe('_entityNameLinesHtml(entity, state)', () => {
       { attributes: { friendly_name: 'Hue Signal strength' } },
     );
     expect(html).not.toContain('Suggested');
+  });
+});
+
+describe('_friendlyNamePreview(entityId, typedName)', () => {
+  let el;
+  beforeEach(() => {
+    el = makePanel();
+    el.data = [{
+      integration: 'shelly',
+      devices: {
+        dev_oven: {
+          entities: [{
+            entity_id: 'sensor.tafla_h_gr_03_bakaraofn_efri_current',
+            original_name: 'Tafla H Gr.03 Bakaraofn efri current',
+            has_entity_name: true,
+            device_id: 'dev_oven',
+          }],
+        },
+      },
+    }];
+    el.deviceInfo = { dev_oven: { name: 'Tafla H Gr.03 Bakaraofn efri' } };
+  });
+
+  it('shows a typed name exactly as typed — HA does not add the device', () => {
+    expect(el._friendlyNamePreview('sensor.tafla_h_gr_03_bakaraofn_efri_current', 'Current'))
+      .toBe('Current');
+  });
+
+  it('falls back to device plus entity name when the field is empty', () => {
+    expect(el._friendlyNamePreview('sensor.tafla_h_gr_03_bakaraofn_efri_current', ''))
+      .toBe('Tafla H Gr.03 Bakaraofn efri Tafla H Gr.03 Bakaraofn efri current');
+  });
+
+  it('falls back to the entity ID when nothing is known', () => {
+    expect(el._friendlyNamePreview('sensor.unknown', '')).toBe('sensor.unknown');
   });
 });
