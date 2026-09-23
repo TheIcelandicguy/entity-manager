@@ -7720,3 +7720,17 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   opacity: 0.5;
   cursor: default;
 }
+
+/* Marks a name the user set, since HA shows it exactly as written */
+.entity-name-custom {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--em-primary);
+  border: 1px solid color-mix(in srgb, var(--em-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--em-primary) 12%, transparent);
+}

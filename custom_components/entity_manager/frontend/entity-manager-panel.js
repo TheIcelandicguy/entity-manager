@@ -9717,7 +9717,8 @@ class EntityManagerPanel extends HTMLElement {
         <div class="entity-card-body">
           ${col('alias') && alias ? `<div class="entity-alias" style="font-size: 13px; color: var(--em-primary); font-weight: 500;">${this._escapeHtml(alias)}</div>` : ''}
           ${col('name') ? this._entityNameLinesHtml(entity, state) : ''}
-          ${col('device') && entity.deviceName ? `<div class="entity-device-name"><span class="entity-name-kind">Device</span>${this._escapeHtml(entity.deviceName)}</div>` : ''}
+          ${col('device') && entity.deviceName && this._deviceLineWorthShowing(entity, state)
+            ? `<div class="entity-device-name"><span class="entity-name-kind">Device</span>${this._escapeHtml(entity.deviceName)}</div>` : ''}
           ${col('id') ? `<div class="entity-id">${this._escapeHtml(entity.entity_id)}</div>` : ''}
         </div>
         ${col('status') ? `<span class="entity-badge ${entity.is_disabled ? 'entity-badge--disabled' : 'entity-badge--enabled'}">${entity.is_disabled ? 'Disabled' : 'Enabled'}</span>` : ''}
@@ -14679,10 +14680,21 @@ class EntityManagerPanel extends HTMLElement {
     const line = (kind, value, cls = 'entity-name') =>
       `<div class="${cls}"><span class="entity-name-kind">${kind}</span>${this._escapeHtml(value)}</div>`;
 
+    // One line for the name as Home Assistant shows it, and the others only when
+    // they say something different. A display name IS the friendly name, and a
+    // fixed entity's own name differs from it by case at most, so showing all
+    // four turns into the same sentence four times.
+    const shown = friendly || display || own;
     const out = [];
-    if (friendly && friendly !== own) out.push(line('Friendly', friendly, 'entity-name entity-name-friendly'));
-    if (display) out.push(line('Display', display));
-    if (own && own !== display) out.push(line('Entity', own));
+    if (shown) {
+      out.push(`<div class="entity-name entity-name-friendly">
+        <span class="entity-name-kind">Name</span>${this._escapeHtml(shown)}${display
+          ? '<span class="entity-name-custom" title="A display name you set; Home Assistant shows it exactly as written">custom</span>'
+          : ''}</div>`);
+    }
+    const ownDiffers = own
+      && this._nameWords(own).join(' ') !== this._nameWords(shown).join(' ');
+    if (ownDiffers) out.push(line('Entity', own));
 
     // Just renamed: offer the way back instead of another suggestion
     const undone = this._recentRenames?.get(entity.entity_id);
@@ -14698,7 +14710,6 @@ class EntityManagerPanel extends HTMLElement {
     // Suggest only when the name as shown is wrong: nothing of its own, or the
     // device name reads twice. Testing the stored name instead would flag a
     // correctly fixed entity, whose display name starts with the device once.
-    const shown = friendly || (display || own);
     const deviceWords = this._nameWords(entity.deviceName || '');
     const shownWords = this._nameWords(shown);
     const doubled = deviceWords.length > 0
@@ -17461,6 +17472,13 @@ class EntityManagerPanel extends HTMLElement {
    * fields. `onSave(newName)` fires after the WS update succeeds so callers
    * can patch their own DOM (a list row, a dialog header, etc.).
    */
+  /** The device line earns its place only when the shown name does not already
+   *  begin with the device name — otherwise it repeats what is right above it. */
+  _deviceLineWorthShowing(entity, state) {
+    const shown = state?.attributes?.friendly_name || entity.name || entity.original_name || '';
+    return !this._startsWithWords(this._nameWords(shown), this._nameWords(entity.deviceName || ''));
+  }
+
   /** Wait for HA to push the renamed entity's new state, so the card stops
    *  showing the old friendly name. The registry write returns before the state
    *  machine catches up, and the hass setter only syncs toggle buttons, so

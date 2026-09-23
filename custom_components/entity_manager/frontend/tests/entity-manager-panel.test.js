@@ -1203,7 +1203,7 @@ describe('_entityNameLinesHtml(entity, state)', () => {
   let el;
   beforeEach(() => { el = makePanel(); });
 
-  it('labels each name and shows the friendly one when it differs', () => {
+  it('shows the name as HA shows it, plus the entity name when it differs', () => {
     const html = el._entityNameLinesHtml(
       {
         entity_id: 'sensor.tafla_h_gr_04_eldhus_power',
@@ -1212,21 +1212,26 @@ describe('_entityNameLinesHtml(entity, state)', () => {
       },
       { attributes: { friendly_name: 'Tafla H Gr.04 Eldhús power' } },
     );
-    expect(html).toContain('>Friendly<');
+    expect(html).toContain('>Name<');
     expect(html).toContain('Tafla H Gr.04 Eldhús power');
     expect(html).toContain('>Entity<');
-    expect(html).not.toContain('>Display<');
+    expect(html).not.toContain('entity-name-custom');
   });
 
-  it('shows a set display name alongside the entity name', () => {
+  it('marks a name the user set, and drops the entity line when it only differs by case', () => {
     const html = el._entityNameLinesHtml(
-      { entity_id: 'switch.lamp', original_name: 'Lamp', name: 'Reading lamp', deviceName: 'Hue' },
-      { attributes: { friendly_name: 'Hue Reading lamp' } },
+      {
+        entity_id: 'sensor.oven_power',
+        original_name: 'Oven power',
+        name: 'Oven Power',
+        deviceName: 'Oven',
+      },
+      { attributes: { friendly_name: 'Oven Power' } },
     );
-    expect(html).toContain('>Display<');
-    expect(html).toContain('Reading lamp');
-    expect(html).toContain('>Entity<');
-    expect(html).toContain('Lamp');
+    expect(html).toContain('>Name<');
+    expect(html).toContain('entity-name-custom');
+    // "Oven power" and "Oven Power" are the same words — one line is enough
+    expect(html).not.toContain('>Entity<');
   });
 
   it('offers a suggestion when the shown name reads the device twice', () => {
@@ -1327,5 +1332,24 @@ describe('_awaitFriendlyName(entityId, expected)', () => {
     const el = makePanel();
     el._hass = { ...el._hass, states: { 'switch.lamp': { attributes: { friendly_name: 'Old' } } } };
     expect(await el._awaitFriendlyName('switch.lamp', 'Never', 300)).toBe(false);
+  });
+});
+
+describe('_deviceLineWorthShowing(entity, state)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('is hidden when the name already begins with the device name', () => {
+    expect(el._deviceLineWorthShowing(
+      { entity_id: 'sensor.oven_power', deviceName: 'Tafla H Gr.03 Bakaraofn efri' },
+      { attributes: { friendly_name: 'Tafla H Gr.03 Bakaraofn efri Power' } },
+    )).toBe(false);
+  });
+
+  it('is shown when the name says nothing about the device', () => {
+    expect(el._deviceLineWorthShowing(
+      { entity_id: 'sensor.oven_power', deviceName: 'Tafla H Gr.03 Bakaraofn efri' },
+      { attributes: { friendly_name: 'Current' } },
+    )).toBe(true);
   });
 });
