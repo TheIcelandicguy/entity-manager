@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '3.4.0';
+const EM_VERSION = '3.5.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -181,6 +181,7 @@ const EM_ICONS = {
   // Sidebar – Actions
   activity:     'mdi:clock-outline',
   activityLog:  'mdi:format-list-bulleted',
+  voice:        'mdi:microphone-message',
   columns:      'mdi:table-column',
   favorites:    'mdi:star',
   enable:       'mdi:toggle-switch',
@@ -2337,6 +2338,7 @@ class EntityManagerPanel extends HTMLElement {
       'browsers':            () => this._showBrowserModDialog(             { inline: true }),
       'activity-log':        () => this._renderActivityLogView(),
       'activity-timeline':   () => this._renderActivityTimelineView(),
+      'voice':               () => this._renderVoiceView(),
     };
     dispatch[this._activeView]?.();
   }
@@ -4663,6 +4665,48 @@ class EntityManagerPanel extends HTMLElement {
         this._showToast(`${verb} label changes`, 'info');
         break;
       }
+      case 'voice_alias_change':
+        await this._hass.callWS({
+          type: 'config/entity_registry/update',
+          entity_id: action.entityId,
+          aliases: isUndo ? action.oldAliases : action.newAliases,
+        });
+        this._showToast(`${verb} alias change`, 'info');
+        break;
+      case 'voice_aliases_bulk': {
+        const rows = isUndo ? action.before : action.after;
+        for (const row of rows) {
+          await this._hass.callWS({
+            type: 'config/entity_registry/update',
+            entity_id: row.entityId,
+            aliases: row.aliases,
+          });
+        }
+        this._showToast(`${verb} aliases on ${rows.length} entities`, 'info');
+        break;
+      }
+      case 'voice_expose_change': {
+        if (isUndo) {
+          // Each entity goes back to what it was, which is not one blanket flip
+          for (const row of action.before) {
+            await this._hass.callWS({
+              type: 'homeassistant/expose_entity',
+              assistants: ['conversation'],
+              entity_ids: [row.entityId],
+              should_expose: row.exposed,
+            });
+          }
+        } else {
+          await this._hass.callWS({
+            type: 'homeassistant/expose_entity',
+            assistants: ['conversation'],
+            entity_ids: action.before.map(r => r.entityId),
+            should_expose: action.exposed,
+          });
+        }
+        this._showToast(`${verb} Assist exposure`, 'info');
+        break;
+      }
       case 'display_name_change':
         await this._hass.callWS({
           type: 'entity_manager/update_entity_display_name',
@@ -4759,6 +4803,12 @@ class EntityManagerPanel extends HTMLElement {
         return `Imported states (${(action.enabledIds?.length || 0) + (action.disabledIds?.length || 0)} entities)`;
       case 'rename':
         return `Renamed ${action.oldId} → ${action.newId}`;
+      case 'voice_alias_change':
+        return `Aliases on ${action.entityId}`;
+      case 'voice_aliases_bulk':
+        return `Aliases on ${action.after.length} entities`;
+      case 'voice_expose_change':
+        return `${action.exposed ? 'Exposed' : 'Unexposed'} ${action.before.length} entities to Assist`;
       case 'display_name_change':
         return `Display name: "${action.newName || '(cleared)'}" on ${action.entityId}`;
       case 'labels_change':
@@ -8772,6 +8822,10 @@ class EntityManagerPanel extends HTMLElement {
         <div class="stat-nav-tile clickable-stat" data-stat-type="lovelace" title="Click to view Lovelace cards">
           <span class="stat-nav-label">Card Types</span>
           <span class="stat-nav-value stat-value-lovelace">${this.lovelaceCardCount}</span>
+        </div>
+        <div class="stat-nav-tile clickable-stat" data-stat-type="voice" title="Set up and test voice control">
+          <span class="stat-nav-label">Voice</span>
+          <span class="stat-nav-value">${this._icon(EM_ICONS.voice, '16px')}</span>
         </div>
         <div class="stat-nav-tile clickable-stat" data-stat-type="suggestions" title="Analyze entities for improvements">
           <span class="stat-nav-label">Suggestions</span>
@@ -18439,6 +18493,683 @@ class EntityManagerPanel extends HTMLElement {
       });
       observer.observe(document.body, { childList: true });
     });
+  }
+
+  // ===== VOICE =====
+  // Setting up and checking voice control. HA's own UI edits aliases one entity
+  // at a time, cannot say what a phrase would match, and never warns when the
+  // chosen pipeline could not work — which is what this section is for.
+
+  // Icelandic → English, for suggesting an alias an English recogniser can hear.
+  // Keyed on the folded form (see _voiceFolded), so accents need not be typed.
+  static VOICE_WORDS = {
+    eldhus: 'kitchen', stofa: 'living room', bordstofa: 'dining room',
+    bordstofuljos: 'dining room light', herbergi: 'room', hjonaherbergi: 'bedroom',
+    svefnherbergi: 'bedroom', badherbergi: 'bathroom', bilskur: 'garage',
+    forstofa: 'hallway', skrifstofa: 'office', thvottahus: 'laundry', hol: 'hall',
+    gangur: 'corridor', uti: 'outside', utidyr: 'front door', svalir: 'balcony',
+    loftljos: 'ceiling light', ljos: 'light', ljosin: 'lights',
+    speglaljos: 'mirror light', undirskapaljos: 'under cabinet light',
+    rofi: 'switch', hiti: 'heating', golfhiti: 'underfloor heating',
+    hurd: 'door', svalahurd: 'balcony door', gluggi: 'window', vaskur: 'sink',
+    vaski: 'sink', hellubord: 'hob', uppthvottavel: 'dishwasher',
+    thvottavel: 'washing machine', thurrkari: 'dryer', bakaraofn: 'oven',
+    ofn: 'oven', eyja: 'island', eyju: 'island', skjar: 'screen', nemi: 'sensor',
+    hurdanemi: 'door sensor', pottur: 'hot tub', potturinn: 'hot tub',
+    pottadaela: 'hot tub pump', daela: 'pump', tafla: 'panel', grein: 'circuit',
+    netbunadur: 'network', oryggi: 'security', husid: 'the house', afl: 'power',
+    yfir: 'over', vid: 'by', efri: 'upper', nedri: 'lower', fyrir: 'for', og: 'and',
+  };
+
+  // Mirrors _folded_form in voice_assistant.py: þ→th, ð→d, accents stripped.
+  _voiceFolded(text) {
+    return String(text || '')
+      .toLowerCase()
+      .replace(/[\s_.-]+/g, ' ')
+      .trim()
+      .replace(/þ/g, 'th').replace(/ð/g, 'd').replace(/æ/g, 'ae').replace(/ø/g, 'o')
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '');
+  }
+
+  /**
+   * An English-sounding alias for an Icelandic name, or '' when there is
+   * nothing to gain. An English recogniser writes "Skrifstofa" as "screen
+   * Store", so the alias — not the name — is what makes the entity reachable.
+   */
+  _suggestVoiceAlias(name) {
+    const words = this._voiceFolded(name).split(' ').filter(Boolean);
+    if (!words.length) return '';
+    const table = EntityManagerPanel.VOICE_WORDS;
+    let translated = 0;
+    const out = [];
+    for (const word of words) {
+      // "gr.12" and other numbered circuits carry no meaning to translate
+      const known = table[word] || table[word.replace(/[0-9]+$/, '')];
+      if (known) {
+        translated++;
+        out.push(known);
+      } else {
+        out.push(word);
+      }
+    }
+    if (!translated) return '';
+    const suggestion = [...new Set(out.join(' ').split(' '))].join(' ').trim();
+    return suggestion === this._voiceFolded(name) ? '' : suggestion;
+  }
+
+  async _renderVoiceView() {
+    const contentEl = this.content.querySelector('#content');
+    // Guard: don't re-render while already loaded (preserves state during hass updates)
+    if (contentEl.querySelector('.em-inline-view[data-view="voice"]')) return;
+
+    const svgBack = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+    const svgRefresh = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+
+    const tabs = [
+      ['test',     'Test a phrase'],
+      ['aliases',  'Aliases'],
+      ['status',   'Status'],
+      ['exposure', 'Exposure'],
+    ];
+    const active = this._loadFromStorage('em-voice-tab', 'test');
+    const current = tabs.some(([id]) => id === active) ? active : 'test';
+
+    contentEl.innerHTML = `
+      <div class="em-inline-view" data-view="voice">
+        <div class="em-inline-view-header" style="flex-wrap:wrap;gap:8px">
+          <button class="em-inline-back-btn">${svgBack} Back</button>
+          <span class="em-inline-view-title">${this._icon(EM_ICONS.voice, '16px')} Voice</span>
+          <div class="em-voice-tabs">
+            ${tabs.map(([id, label]) => `
+              <button class="em-voice-tab${id === current ? ' active' : ''}" data-voice-tab="${id}">${label}</button>
+            `).join('')}
+          </div>
+          <button class="em-inline-refresh-btn" title="Refresh">${svgRefresh}</button>
+        </div>
+        <div class="em-inline-view-body">
+          <div id="em-voice-body" class="em-voice-body"></div>
+        </div>
+      </div>`;
+
+    contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
+    contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
+    contentEl.querySelectorAll('.em-voice-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.voiceTab;
+        this._saveToStorage('em-voice-tab', tab);
+        contentEl.querySelectorAll('.em-voice-tab').forEach(b => b.classList.toggle('active', b === btn));
+        this._renderVoiceTab(tab);
+      });
+    });
+
+    await this._renderVoiceTab(current);
+  }
+
+  async _renderVoiceTab(tab) {
+    const body = this.content.querySelector('#em-voice-body');
+    if (!body) return;
+    body.innerHTML = `<div class="em-voice-loading">Loading…</div>`;
+    try {
+      if (tab === 'test')     return await this._renderVoiceTester(body);
+      if (tab === 'aliases')  return await this._renderVoiceAliases(body);
+      if (tab === 'status')   return await this._renderVoiceStatus(body);
+      if (tab === 'exposure') return await this._renderVoiceExposure(body);
+    } catch (e) {
+      body.innerHTML = `<div class="em-voice-error">⚠ ${this._escapeHtml(e.message || String(e))}</div>`;
+    }
+  }
+
+  // ---- Test a phrase -------------------------------------------------------
+
+  async _renderVoiceTester(body) {
+    body.innerHTML = `
+      <div class="em-voice-card">
+        <h3>Test a phrase</h3>
+        <p class="em-voice-hint">Type what you would say. Nothing is enabled or disabled — this only
+          reports what the voice intents would resolve it to.</p>
+        <div class="em-voice-row">
+          <input id="em-voice-phrase" type="text" class="em-voice-input"
+            placeholder="enable entity eldhús loftljós" autocomplete="off">
+          <button class="btn btn-primary" id="em-voice-test-btn">Test</button>
+        </div>
+        <div id="em-voice-result"></div>
+      </div>`;
+
+    const input = body.querySelector('#em-voice-phrase');
+    const result = body.querySelector('#em-voice-result');
+
+    const run = async () => {
+      const phrase = input.value.trim();
+      if (!phrase) return;
+      result.innerHTML = `<div class="em-voice-loading">Resolving…</div>`;
+      let res;
+      try {
+        res = await this._hass.callWS({ type: 'entity_manager/resolve_voice_target', phrase });
+      } catch (e) {
+        result.innerHTML = `<div class="em-voice-error">⚠ ${this._escapeHtml(e.message || String(e))}</div>`;
+        return;
+      }
+      result.innerHTML = this._voiceResultHtml(res);
+    };
+
+    body.querySelector('#em-voice-test-btn').addEventListener('click', run);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+    input.focus();
+  }
+
+  _voiceResultHtml(res) {
+    const howMatched = {
+      entity_id: 'you gave the entity ID',
+      exact:     'the name matched exactly',
+      substring: 'the name contains what you said',
+      words:     'matched word by word',
+    }[res.method] || '';
+
+    // Routing and resolution fail independently: a name can resolve perfectly
+    // while HA never hands the sentence to Entity Manager in the first place.
+    const routing = res.intent
+      ? `<div class="em-voice-line ok">${this._icon(EM_ICONS.success, '14px')}
+           Routes to <code>${this._escapeHtml(res.intent)}</code>, asking about
+           “${this._escapeHtml(res.spoken)}”</div>`
+      : `<div class="em-voice-line warn">${this._icon(EM_ICONS.warning, '14px')}
+           No Entity Manager phrasing matches this wording, so Home Assistant would handle it
+           itself. Say “enable entity …” or “disable entity …”.</div>`;
+
+    if (!res.entity_id) {
+      const near = (res.near_misses || []).length
+        ? `<div class="em-voice-near">
+             <div class="em-voice-hint">Closest names:</div>
+             ${res.near_misses.map(n => `
+               <div class="em-voice-near-row">
+                 <code>${this._escapeHtml(n.entity_id)}</code>
+                 <span>${Math.round(n.score * 100)}% of your words</span>
+               </div>`).join('')}
+             <div class="em-voice-hint">A name needs 60% to be considered. An alias is the fix.</div>
+           </div>`
+        : '';
+      const candidates = (res.matches || []).length > 1
+        ? `<div class="em-voice-near">
+             ${res.matches.map(id => `<div class="em-voice-near-row"><code>${this._escapeHtml(id)}</code></div>`).join('')}
+           </div>`
+        : '';
+      return `${routing}
+        <div class="em-voice-line bad">${this._icon(EM_ICONS.warning, '14px')}
+          ${this._escapeHtml(res.error || 'No match')}</div>
+        ${candidates}${near}`;
+    }
+
+    const ent = res.entity || {};
+    const aliases = (ent.aliases || []).length
+      ? (ent.aliases || []).map(a => `<span class="em-voice-alias-chip">${this._escapeHtml(a)}</span>`).join('')
+      : '<span class="em-voice-hint">none</span>';
+    return `${routing}
+      <div class="em-voice-line ok">${this._icon(EM_ICONS.success, '14px')}
+        Resolves to <code>${this._escapeHtml(res.entity_id)}</code>${howMatched ? ` — ${howMatched}` : ''}</div>
+      <div class="em-voice-detail">
+        <div><span class="em-voice-key">Name</span>${this._escapeHtml(ent.name || ent.original_name || '—')}</div>
+        <div><span class="em-voice-key">State</span>${ent.disabled ? 'disabled' : this._escapeHtml(ent.state ?? '—')}</div>
+        <div><span class="em-voice-key">Aliases</span>${aliases}</div>
+      </div>`;
+  }
+
+  // ---- Aliases -------------------------------------------------------------
+
+  async _voiceEntityRows() {
+    const registry = await this._hass.callWS({ type: 'config/entity_registry/list' });
+    return (registry || []).map(e => ({
+      entity_id: e.entity_id,
+      name: e.name || e.original_name || e.entity_id,
+      aliases: Array.isArray(e.aliases) ? e.aliases.filter(a => typeof a === 'string' && a) : [],
+      disabled: !!e.disabled_by,
+    })).sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+  }
+
+  async _renderVoiceAliases(body) {
+    const rows = await this._voiceEntityRows();
+    const state = { filter: 'suggested', search: '', selected: new Set() };
+
+    body.innerHTML = `
+      <div class="em-voice-card">
+        <h3>Aliases</h3>
+        <p class="em-voice-hint">An alias is a second name Assist will answer to. Speaking Icelandic to an
+          English recogniser is what makes these necessary — it hears “Skrifstofa” as “screen Store”.</p>
+        <div class="em-voice-row">
+          <input id="em-voice-alias-search" type="text" class="em-voice-input" placeholder="Search entities…" autocomplete="off">
+          <div class="em-voice-filters">
+            ${[['suggested', 'Suggestion available'], ['without', 'No alias'], ['with', 'Has alias'], ['all', 'All']]
+              .map(([id, label]) => `<button class="em-voice-filter${id === state.filter ? ' active' : ''}" data-alias-filter="${id}">${label}</button>`).join('')}
+          </div>
+        </div>
+        <div class="em-voice-bulkbar">
+          <button class="btn btn-secondary" id="em-voice-alias-selall">Select all shown</button>
+          <button class="btn btn-primary" id="em-voice-alias-apply" disabled>Add suggested aliases</button>
+          <span id="em-voice-alias-count" class="em-voice-hint"></span>
+        </div>
+        <div id="em-voice-alias-list" class="em-voice-list"></div>
+      </div>`;
+
+    const list = body.querySelector('#em-voice-alias-list');
+    const applyBtn = body.querySelector('#em-voice-alias-apply');
+    const countEl = body.querySelector('#em-voice-alias-count');
+
+    const shown = () => {
+      const search = state.search.toLowerCase();
+      return rows.filter(r => {
+        if (search && !r.entity_id.toLowerCase().includes(search) && !r.name.toLowerCase().includes(search)) return false;
+        if (state.filter === 'with') return r.aliases.length > 0;
+        if (state.filter === 'without') return r.aliases.length === 0;
+        if (state.filter === 'suggested') {
+          return r.aliases.length === 0 && !!this._suggestVoiceAlias(r.name);
+        }
+        return true;
+      });
+    };
+
+    const renderList = () => {
+      const visible = shown();
+      // Capped like the other large lists here: 3,000 rows of inputs is what
+      // makes a phone give up on this panel.
+      const capped = visible.slice(0, 300);
+      countEl.textContent = `${state.selected.size} selected · showing ${capped.length} of ${visible.length}`;
+      applyBtn.disabled = state.selected.size === 0;
+      list.innerHTML = capped.length ? capped.map(r => {
+        const suggestion = this._suggestVoiceAlias(r.name);
+        return `
+          <div class="em-voice-list-row" data-entity="${this._escapeHtml(r.entity_id)}">
+            <label class="em-voice-check">
+              <input type="checkbox" data-alias-pick="${this._escapeHtml(r.entity_id)}"
+                ${state.selected.has(r.entity_id) ? 'checked' : ''} ${suggestion ? '' : 'disabled'}>
+            </label>
+            <div class="em-voice-list-main">
+              <div class="em-voice-list-name">${this._escapeHtml(r.name)}${r.disabled ? ' <span class="em-voice-hint">(disabled)</span>' : ''}</div>
+              <code class="em-voice-list-id">${this._escapeHtml(r.entity_id)}</code>
+              <div class="em-voice-list-aliases">
+                ${r.aliases.map(a => `
+                  <span class="em-voice-alias-chip">${this._escapeHtml(a)}
+                    <button class="em-voice-alias-x" data-remove-alias="${this._escapeHtml(a)}" data-entity="${this._escapeHtml(r.entity_id)}" title="Remove alias">×</button>
+                  </span>`).join('')}
+                ${suggestion ? `<span class="em-voice-alias-sug">suggested: ${this._escapeHtml(suggestion)}</span>` : ''}
+              </div>
+            </div>
+            <button class="btn btn-secondary em-voice-alias-add" data-entity="${this._escapeHtml(r.entity_id)}">Add…</button>
+          </div>`;
+      }).join('') : `<div class="em-voice-hint" style="padding:12px">Nothing matches this filter.</div>`;
+    };
+
+    body.querySelector('#em-voice-alias-search').addEventListener('input', e => {
+      state.search = e.target.value.trim();
+      renderList();
+    });
+    body.querySelectorAll('.em-voice-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.filter = btn.dataset.aliasFilter;
+        body.querySelectorAll('.em-voice-filter').forEach(b => b.classList.toggle('active', b === btn));
+        renderList();
+      });
+    });
+    body.querySelector('#em-voice-alias-selall').addEventListener('click', () => {
+      shown().forEach(r => { if (this._suggestVoiceAlias(r.name)) state.selected.add(r.entity_id); });
+      renderList();
+    });
+
+    list.addEventListener('change', e => {
+      const pick = e.target.dataset?.aliasPick;
+      if (!pick) return;
+      if (e.target.checked) state.selected.add(pick); else state.selected.delete(pick);
+      renderList();
+    });
+
+    list.addEventListener('click', async e => {
+      const removeBtn = e.target.closest('[data-remove-alias]');
+      if (removeBtn) {
+        const id = removeBtn.dataset.entity;
+        const row = rows.find(r => r.entity_id === id);
+        if (!row) return;
+        const next = row.aliases.filter(a => a !== removeBtn.dataset.removeAlias);
+        if (await this._setVoiceAliases(id, next, row.aliases)) {
+          row.aliases = next;
+          renderList();
+        }
+        return;
+      }
+      const addBtn = e.target.closest('.em-voice-alias-add');
+      if (addBtn) {
+        const id = addBtn.dataset.entity;
+        const row = rows.find(r => r.entity_id === id);
+        if (!row) return;
+        const alias = await this._promptVoiceAlias(row);
+        if (!alias) return;
+        const next = [...new Set([...row.aliases, alias])];
+        if (await this._setVoiceAliases(id, next, row.aliases)) {
+          row.aliases = next;
+          renderList();
+        }
+      }
+    });
+
+    applyBtn.addEventListener('click', async () => {
+      const picked = rows.filter(r => state.selected.has(r.entity_id));
+      if (!picked.length) return;
+      const ok = await this._confirmAsync(
+        'Add suggested aliases',
+        `Add a suggested alias to ${picked.length} ${picked.length === 1 ? 'entity' : 'entities'}? Existing aliases are kept.`,
+      );
+      if (!ok) return;
+      const before = picked.map(r => ({ entityId: r.entity_id, aliases: [...r.aliases] }));
+      let done = 0;
+      for (const row of picked) {
+        const suggestion = this._suggestVoiceAlias(row.name);
+        if (!suggestion) continue;
+        const next = [...new Set([...row.aliases, suggestion])];
+        if (await this._setVoiceAliases(row.entity_id, next, row.aliases, { silent: true, undo: false })) {
+          row.aliases = next;
+          done++;
+        }
+      }
+      if (done) {
+        this._pushUndoAction({
+          type: 'voice_aliases_bulk',
+          before,
+          after: picked.map(r => ({ entityId: r.entity_id, aliases: [...r.aliases] })),
+        });
+      }
+      state.selected.clear();
+      renderList();
+      this._showToast(`Added aliases to ${done} ${done === 1 ? 'entity' : 'entities'}`, done ? 'success' : 'warning');
+    });
+
+    renderList();
+  }
+
+  _promptVoiceAlias(row) {
+    const suggestion = this._suggestVoiceAlias(row.name);
+    return new Promise(resolve => {
+      const { overlay, closeDialog } = this.createDialog({
+        title: `Alias for ${row.name}`,
+        color: 'var(--em-primary)',
+        contentHtml: `
+          <div class="confirm-dialog-content">
+            <p style="margin:0 0 10px">A second name Assist will answer to. One per entity here; add again for more.</p>
+            <input id="em-voice-alias-input" type="text" class="em-voice-input" style="width:100%"
+              value="${this._escapeHtml(suggestion)}" placeholder="kitchen ceiling light">
+          </div>`,
+        actionsHtml: `<button class="btn btn-secondary confirm-no">Cancel</button>
+                      <button class="btn btn-primary confirm-yes">Add</button>`,
+      });
+      const input = overlay.querySelector('#em-voice-alias-input');
+      const accept = () => {
+        const value = input.value.trim();
+        closeDialog();
+        resolve(value || null);
+      };
+      overlay.querySelector('.confirm-yes').addEventListener('click', accept);
+      overlay.querySelector('.confirm-no').addEventListener('click', () => { closeDialog(); resolve(null); });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') accept(); });
+      input.focus();
+      input.select();
+    });
+  }
+
+  /**
+   * Write an entity's aliases through HA's own registry API — there is no
+   * custom command for this, because HA already exposes one.
+   */
+  async _setVoiceAliases(entityId, aliases, previous, { silent = false, undo = true } = {}) {
+    try {
+      await this._hass.callWS({
+        type: 'config/entity_registry/update',
+        entity_id: entityId,
+        aliases,
+      });
+    } catch (e) {
+      this._showToast(`Could not update aliases: ${e.message || e}`, 'error');
+      return false;
+    }
+    if (undo) {
+      this._pushUndoAction({
+        type: 'voice_alias_change',
+        entityId,
+        oldAliases: [...(previous || [])],
+        newAliases: [...aliases],
+      });
+    }
+    if (!silent) this._showToast(`Aliases updated: ${entityId}`, 'success');
+    return true;
+  }
+
+  // ---- Status and health ---------------------------------------------------
+
+  async _renderVoiceStatus(body) {
+    const [status, pipelines] = await Promise.all([
+      this._hass.callWS({ type: 'entity_manager/get_voice_status' }),
+      this._hass.callWS({ type: 'assist_pipeline/pipeline/list' }).catch(() => null),
+    ]);
+
+    const sentenceCards = (status.sentences || []).map(s => {
+      const phrases = Object.entries(s.intents || {});
+      const stateLine = !s.installed
+        ? `<div class="em-voice-line bad">${this._icon(EM_ICONS.warning, '14px')} Not installed — voice commands cannot match.</div>`
+        : s.user_edited
+          ? `<div class="em-voice-line warn">${this._icon(EM_ICONS.warning, '14px')} Edited by you. Entity Manager leaves it alone; reinstalling overwrites it.</div>`
+          : s.up_to_date
+            ? `<div class="em-voice-line ok">${this._icon(EM_ICONS.success, '14px')} Installed and current.</div>`
+            : `<div class="em-voice-line warn">${this._icon(EM_ICONS.warning, '14px')} Out of date — restart Home Assistant or reinstall.</div>`;
+      return `
+        <div class="em-voice-card">
+          <h3>Sentences (${this._escapeHtml(s.language)})</h3>
+          ${stateLine}
+          <div class="em-voice-detail"><div><span class="em-voice-key">File</span><code>${this._escapeHtml(s.path)}</code></div></div>
+          ${phrases.map(([name, list]) => `
+            <div class="em-voice-phrases">
+              <div class="em-voice-key">${this._escapeHtml(name)}</div>
+              ${list.map(p => `<code class="em-voice-phrase">${this._escapeHtml(p)}</code>`).join('')}
+            </div>`).join('')}
+          <div class="em-voice-bulkbar">
+            <button class="btn btn-secondary" data-voice-reinstall="0">Reinstall and reload</button>
+            ${s.user_edited ? `<button class="btn btn-secondary" data-voice-reinstall="1">Overwrite my edits</button>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+
+    const intentLines = (status.intents || []).map(i => `
+      <div class="em-voice-line ${i.registered ? 'ok' : 'bad'}">
+        ${this._icon(i.registered ? EM_ICONS.success : EM_ICONS.warning, '14px')}
+        <code>${this._escapeHtml(i.intent)}</code> ${i.registered ? 'registered' : 'not registered'}
+      </div>`).join('');
+
+    body.innerHTML = `
+      ${sentenceCards}
+      <div class="em-voice-card">
+        <h3>Intents</h3>
+        ${intentLines}
+        <div class="em-voice-line ${status.conversation_reload ? 'ok' : 'warn'}">
+          ${this._icon(status.conversation_reload ? EM_ICONS.success : EM_ICONS.warning, '14px')}
+          conversation.reload ${status.conversation_reload ? 'available' : 'unavailable'}
+        </div>
+      </div>
+      <div class="em-voice-card">
+        <h3>Pipelines</h3>
+        ${this._voicePipelinesHtml(pipelines)}
+      </div>`;
+
+    body.querySelectorAll('[data-voice-reinstall]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const force = btn.dataset.voiceReinstall === '1';
+        if (force && !(await this._confirmAsync(
+          'Overwrite your sentence file',
+          'Your edited copy is replaced by the shipped one. This cannot be undone.',
+        ))) return;
+        btn.disabled = true;
+        try {
+          const res = await this._hass.callWS({ type: 'entity_manager/reinstall_voice_sentences', force });
+          this._showToast(
+            res.changed?.length ? `Sentences reinstalled (${res.changed.join(', ')})` : 'Sentences already current; agent reloaded',
+            'success',
+          );
+          await this._renderVoiceTab('status');
+        } catch (e) {
+          this._showToast(`Reinstall failed: ${e.message || e}`, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  _voicePipelinesHtml(pipelines) {
+    if (!pipelines || !Array.isArray(pipelines.pipelines)) {
+      return `<div class="em-voice-hint">Assist pipelines are not available on this install.</div>`;
+    }
+    return pipelines.pipelines.map(p => {
+      const preferred = p.id === pipelines.preferred_pipeline;
+      const warnings = [];
+      // Speech-to-phrase transcribes only sentences it was given in advance, so
+      // the wildcard slot these intents depend on can never be filled by it.
+      if ((p.stt_engine || '').includes('speech_to_phrase')) {
+        warnings.push('Speech-to-phrase cannot transcribe a free-text entity name, so these commands cannot work on this pipeline.');
+      }
+      if (!p.stt_engine) {
+        warnings.push('No speech-to-text engine, so this pipeline is text-only.');
+      }
+      if (p.language && !String(p.language).toLowerCase().startsWith('en')) {
+        warnings.push(`Runs in "${p.language}", and the sentence file is English only.`);
+      }
+      return `
+        <div class="em-voice-pipeline">
+          <div class="em-voice-line ${warnings.length ? 'warn' : 'ok'}">
+            ${this._icon(warnings.length ? EM_ICONS.warning : EM_ICONS.success, '14px')}
+            <strong>${this._escapeHtml(p.name || p.id)}</strong>${preferred ? ' <span class="em-voice-alias-sug">preferred</span>' : ''}
+          </div>
+          <div class="em-voice-detail">
+            <div><span class="em-voice-key">Conversation</span>${this._escapeHtml(p.conversation_engine || '—')}</div>
+            <div><span class="em-voice-key">Speech to text</span>${this._escapeHtml(p.stt_engine || '—')}</div>
+            <div><span class="em-voice-key">Language</span>${this._escapeHtml(p.language || '—')}</div>
+          </div>
+          ${warnings.map(w => `<div class="em-voice-hint">${this._escapeHtml(w)}</div>`).join('')}
+        </div>`;
+    }).join('');
+  }
+
+  // ---- Exposure ------------------------------------------------------------
+
+  async _renderVoiceExposure(body) {
+    const [rows, exposed] = await Promise.all([
+      this._voiceEntityRows(),
+      this._hass.callWS({ type: 'homeassistant/expose_entity/list' }).catch(() => ({ exposed_entities: {} })),
+    ]);
+    const map = exposed?.exposed_entities || {};
+    const state = { filter: 'exposed', search: '', selected: new Set() };
+    const isExposed = (id, assistant) => !!map[id]?.[assistant];
+
+    body.innerHTML = `
+      <div class="em-voice-card">
+        <h3>Exposure to Assist</h3>
+        <p class="em-voice-hint">Only exposed entities reach Assist and Google. Google never consults the
+          conversation agent at all, so it cannot run these commands — expose a script for that.</p>
+        <div class="em-voice-row">
+          <input id="em-voice-exp-search" type="text" class="em-voice-input" placeholder="Search entities…" autocomplete="off">
+          <div class="em-voice-filters">
+            ${[['exposed', 'Exposed to Assist'], ['not', 'Not exposed'], ['all', 'All']]
+              .map(([id, label]) => `<button class="em-voice-filter${id === state.filter ? ' active' : ''}" data-exp-filter="${id}">${label}</button>`).join('')}
+          </div>
+        </div>
+        <div class="em-voice-bulkbar">
+          <button class="btn btn-secondary" id="em-voice-exp-selall">Select all shown</button>
+          <button class="btn btn-primary" id="em-voice-exp-on" disabled>Expose to Assist</button>
+          <button class="btn btn-secondary" id="em-voice-exp-off" disabled>Stop exposing</button>
+          <span id="em-voice-exp-count" class="em-voice-hint"></span>
+        </div>
+        <div id="em-voice-exp-list" class="em-voice-list"></div>
+      </div>`;
+
+    const list = body.querySelector('#em-voice-exp-list');
+    const countEl = body.querySelector('#em-voice-exp-count');
+    const onBtn = body.querySelector('#em-voice-exp-on');
+    const offBtn = body.querySelector('#em-voice-exp-off');
+
+    const shown = () => {
+      const search = state.search.toLowerCase();
+      return rows.filter(r => {
+        if (search && !r.entity_id.toLowerCase().includes(search) && !r.name.toLowerCase().includes(search)) return false;
+        if (state.filter === 'exposed') return isExposed(r.entity_id, 'conversation');
+        if (state.filter === 'not') return !isExposed(r.entity_id, 'conversation');
+        return true;
+      });
+    };
+
+    const renderList = () => {
+      const visible = shown();
+      const capped = visible.slice(0, 300);
+      countEl.textContent = `${state.selected.size} selected · showing ${capped.length} of ${visible.length}`;
+      onBtn.disabled = offBtn.disabled = state.selected.size === 0;
+      list.innerHTML = capped.length ? capped.map(r => `
+        <div class="em-voice-list-row">
+          <label class="em-voice-check">
+            <input type="checkbox" data-exp-pick="${this._escapeHtml(r.entity_id)}" ${state.selected.has(r.entity_id) ? 'checked' : ''}>
+          </label>
+          <div class="em-voice-list-main">
+            <div class="em-voice-list-name">${this._escapeHtml(r.name)}</div>
+            <code class="em-voice-list-id">${this._escapeHtml(r.entity_id)}</code>
+          </div>
+          <div class="em-voice-list-aliases">
+            ${isExposed(r.entity_id, 'conversation') ? '<span class="em-voice-alias-chip">Assist</span>' : ''}
+            ${isExposed(r.entity_id, 'cloud.google_assistant') ? '<span class="em-voice-alias-chip">Google</span>' : ''}
+          </div>
+        </div>`).join('') : `<div class="em-voice-hint" style="padding:12px">Nothing matches this filter.</div>`;
+    };
+
+    body.querySelector('#em-voice-exp-search').addEventListener('input', e => {
+      state.search = e.target.value.trim();
+      renderList();
+    });
+    body.querySelectorAll('.em-voice-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.filter = btn.dataset.expFilter;
+        body.querySelectorAll('.em-voice-filter').forEach(b => b.classList.toggle('active', b === btn));
+        renderList();
+      });
+    });
+    body.querySelector('#em-voice-exp-selall').addEventListener('click', () => {
+      shown().forEach(r => state.selected.add(r.entity_id));
+      renderList();
+    });
+    list.addEventListener('change', e => {
+      const pick = e.target.dataset?.expPick;
+      if (!pick) return;
+      if (e.target.checked) state.selected.add(pick); else state.selected.delete(pick);
+      renderList();
+    });
+
+    const apply = async (shouldExpose) => {
+      const ids = [...state.selected];
+      if (!ids.length) return;
+      // Record what each entity was, not a blanket flip: some of the selection
+      // may already be in the target state.
+      const before = ids.map(id => ({ entityId: id, exposed: isExposed(id, 'conversation') }));
+      try {
+        await this._hass.callWS({
+          type: 'homeassistant/expose_entity',
+          assistants: ['conversation'],
+          entity_ids: ids,
+          should_expose: shouldExpose,
+        });
+      } catch (e) {
+        this._showToast(`Could not change exposure: ${e.message || e}`, 'error');
+        return;
+      }
+      ids.forEach(id => {
+        map[id] = { ...(map[id] || {}), conversation: shouldExpose };
+      });
+      this._pushUndoAction({ type: 'voice_expose_change', before, exposed: shouldExpose });
+      state.selected.clear();
+      renderList();
+      this._showToast(`${shouldExpose ? 'Exposed' : 'Stopped exposing'} ${ids.length} ${ids.length === 1 ? 'entity' : 'entities'}`, 'success');
+    };
+
+    onBtn.addEventListener('click', () => apply(true));
+    offBtn.addEventListener('click', () => apply(false));
+
+    renderList();
   }
 }
 

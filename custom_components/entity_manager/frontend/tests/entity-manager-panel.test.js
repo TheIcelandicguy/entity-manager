@@ -1542,3 +1542,188 @@ describe('_computeDuplicateNames() after a fix', () => {
     expect(doubled).toEqual([]);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Voice: _voiceFolded / _suggestVoiceAlias / _voiceResultHtml
+// ---------------------------------------------------------------------------
+
+describe('_voiceFolded(text)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('mirrors _folded_form in voice_assistant.py', () => {
+    expect(el._voiceFolded('Eldhús Ljós')).toBe('eldhus ljos');
+    expect(el._voiceFolded('Þvottahús')).toBe('thvottahus');
+    expect(el._voiceFolded('Bílskúr Hurð')).toBe('bilskur hurd');
+    expect(el._voiceFolded('Tafla B Gr.13 Uppþvottavél')).toBe('tafla b gr 13 uppthvottavel');
+  });
+
+  it('collapses separators and case', () => {
+    expect(el._voiceFolded('  Living___Room  ')).toBe('living room');
+  });
+});
+
+describe('_suggestVoiceAlias(name)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('turns an Icelandic name into something an English recogniser can hear', () => {
+    expect(el._suggestVoiceAlias('Skrifstofa Loftljós')).toBe('office ceiling light');
+    expect(el._suggestVoiceAlias('Eldhús Ljós')).toBe('kitchen light');
+    expect(el._suggestVoiceAlias('Baðherbergi Loftljós')).toBe('bathroom ceiling light');
+  });
+
+  it('keeps words it does not know, so the alias stays specific', () => {
+    expect(el._suggestVoiceAlias('Bílskúr Zigbee')).toBe('garage zigbee');
+  });
+
+  it('suggests nothing for a name that is already English', () => {
+    expect(el._suggestVoiceAlias('Living Room Lamp')).toBe('');
+    expect(el._suggestVoiceAlias('')).toBe('');
+  });
+
+  it('does not repeat a word the translation duplicates', () => {
+    // "Eldhús ljós yfir vaski" → kitchen light over sink, not "light light"
+    expect(el._suggestVoiceAlias('Eldhús Ljós yfir vaski')).toBe('kitchen light over sink');
+  });
+});
+
+describe('_voiceResultHtml(result)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  it('warns when the wording would never reach Entity Manager', () => {
+    const html = el._voiceResultHtml({
+      intent: null, spoken: 'lamp', entity_id: 'switch.lamp', method: 'exact',
+      matches: ['switch.lamp'], near_misses: [], error: null,
+      entity: { name: 'Lamp', aliases: [], disabled: false, state: 'on' },
+    });
+    expect(html).toContain('No Entity Manager phrasing matches');
+    expect(html).toContain('switch.lamp');
+  });
+
+  it('shows the near misses and what they scored when nothing matched', () => {
+    const html = el._voiceResultHtml({
+      intent: 'entity_manager_enable_entity', spoken: 'eldhus golfljos',
+      entity_id: null, method: 'none', matches: [], error: 'I could not find an entity called eldhus golfljos',
+      near_misses: [{ entity_id: 'light.eldhus_loftljos', score: 0.33 }], entity: null,
+    });
+    expect(html).toContain('light.eldhus_loftljos');
+    expect(html).toContain('33% of your words');
+    expect(html).toContain('could not find');
+  });
+
+  it('escapes what came back from the backend', () => {
+    const html = el._voiceResultHtml({
+      intent: null, spoken: '<img src=x onerror=alert(1)>', entity_id: null,
+      method: 'none', matches: [], near_misses: [], error: '<script>bad()</script>', entity: null,
+    });
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+
+describe('_voicePipelinesHtml(pipelines)', () => {
+  let el;
+  beforeEach(() => { el = makePanel(); });
+
+  const LIST = {
+    preferred_pipeline: 'p2',
+    pipelines: [
+      { id: 'p1', name: 'Ollama Conversation AllenPorter', stt_engine: 'stt.speech_to_phrase', language: 'en', conversation_engine: 'ollama' },
+      { id: 'p2', name: 'Home Assistant Cloud', stt_engine: 'stt.home_assistant_cloud', language: 'en', conversation_engine: 'conversation.home_assistant' },
+      { id: 'p3', name: 'Google íslenska', stt_engine: null, language: 'is', conversation_engine: 'conversation.home_assistant' },
+    ],
+  };
+
+  it('warns that speech-to-phrase cannot fill the wildcard slot', () => {
+    const html = el._voicePipelinesHtml(LIST);
+    expect(html).toContain('cannot transcribe a free-text entity name');
+  });
+
+  it('warns about a pipeline running in another language', () => {
+    expect(el._voicePipelinesHtml(LIST)).toContain('and the sentence file is English only');
+  });
+
+  it('marks the preferred pipeline and leaves a working one unwarned', () => {
+    const html = el._voicePipelinesHtml(LIST);
+    expect(html).toContain('preferred');
+    const cloud = html.split('Home Assistant Cloud')[1].split('em-voice-pipeline')[0];
+    expect(cloud).not.toContain('cannot transcribe');
+  });
+
+  it('says so when Assist pipelines are unavailable', () => {
+    expect(el._voicePipelinesHtml(null)).toContain('not available on this install');
+  });
+});
+
+describe('the Voice view', () => {
+  function makeVoicePanel(callWS) {
+    const el = makePanel();
+    el._hass = { ...mockHass, callWS };
+    const host = document.createElement('div');
+    host.innerHTML = '<div id="content"></div>';
+    el.content = host;
+    return el;
+  }
+
+  it('renders the tab shell and the phrase tester', async () => {
+    const el = makeVoicePanel(vi.fn().mockResolvedValue({}));
+    await el._renderVoiceView();
+
+    const view = el.content.querySelector('.em-inline-view[data-view="voice"]');
+    expect(view).not.toBeNull();
+    expect([...el.content.querySelectorAll('.em-voice-tab')].map(b => b.dataset.voiceTab))
+      .toEqual(['test', 'aliases', 'status', 'exposure']);
+    expect(el.content.querySelector('#em-voice-phrase')).not.toBeNull();
+  });
+
+  it('asks the backend and shows the resolved entity', async () => {
+    const callWS = vi.fn().mockResolvedValue({
+      phrase: 'enable entity lamp', intent: 'entity_manager_enable_entity', spoken: 'lamp',
+      entity_id: 'switch.lamp', method: 'exact', matches: ['switch.lamp'],
+      near_misses: [], error: null,
+      entity: { entity_id: 'switch.lamp', name: 'Lamp', aliases: ['desk lamp'], disabled: false, state: 'on' },
+    });
+    const el = makeVoicePanel(callWS);
+    await el._renderVoiceView();
+
+    el.content.querySelector('#em-voice-phrase').value = 'enable entity lamp';
+    el.content.querySelector('#em-voice-test-btn').click();
+    await vi.waitFor(() => {
+      expect(el.content.querySelector('#em-voice-result').innerHTML).toContain('switch.lamp');
+    });
+
+    expect(callWS).toHaveBeenCalledWith({
+      type: 'entity_manager/resolve_voice_target',
+      phrase: 'enable entity lamp',
+    });
+    const html = el.content.querySelector('#em-voice-result').innerHTML;
+    expect(html).toContain('desk lamp');
+    expect(html).toContain('Routes to');
+  });
+
+  it('suggests aliases only for entities that have none', async () => {
+    const callWS = vi.fn().mockImplementation(({ type }) => {
+      if (type === 'config/entity_registry/list') {
+        return Promise.resolve([
+          { entity_id: 'light.skrifstofa_loftljos', name: 'Skrifstofa Loftljós', aliases: [] },
+          { entity_id: 'light.eldhus_ljos', name: 'Eldhús Ljós', aliases: ['kitchen light'] },
+          { entity_id: 'light.desk', name: 'Desk Lamp', aliases: [] },
+        ]);
+      }
+      return Promise.resolve({});
+    });
+    const el = makeVoicePanel(callWS);
+    await el._renderVoiceView();
+    await el._renderVoiceTab('aliases');
+
+    const rows = [...el.content.querySelectorAll('.em-voice-list-row')];
+    // "Desk Lamp" is already English and "Eldhús Ljós" already has an alias
+    expect(rows).toHaveLength(1);
+    expect(rows[0].dataset.entity).toBe('light.skrifstofa_loftljos');
+    expect(rows[0].innerHTML).toContain('office ceiling light');
+  });
+});

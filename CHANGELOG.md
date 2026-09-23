@@ -1,5 +1,24 @@
 # Changelog
 
+## Version 3.5.0 - A Voice section in the panel
+
+Voice enable and disable started working in 3.4.0. Making them usable is a
+different job, and it needs things Home Assistant's own settings do one entity
+at a time, or not at all: there was no way to ask what a phrase would match,
+and nothing warned you that the pipeline you had chosen could never run these
+commands. That is now a section of its own.
+
+### Voice
+
+- **Test a phrase.** Type what you would say and see what it resolves to, without enabling or disabling anything
+- **Routing and matching are reported separately**, because they fail separately. The word "entity" is what hands a sentence to Entity Manager; a name can resolve perfectly in a sentence Home Assistant would never send here
+- **A miss says what came closest** and what share of your words each name matched, against the 60% a match needs. Usually the answer is an alias
+- **Aliases in bulk.** A second name Assist answers to, added to many entities at once, with an English suggestion built from the Icelandic name — "Skrifstofa Loftljós" becomes "office ceiling light", because an English recogniser hears the original as "screen Store"
+- **Status of the sentence file**: where it is, whether it matches the shipped one, whether you have edited it, and which phrases it defines — with a button to reinstall it and reload the conversation agent
+- **Pipelines, with warnings.** Speech-to-phrase can only transcribe sentences it was given in advance, so it can never fill in an entity name; a pipeline running in another language cannot match an English sentence file. Both are now stated where you choose
+- **Exposure to Assist**, shown and bulk-toggled per entity
+- Alias and exposure changes go on the undo stack like every other write
+
 ## Version 3.4.0 - Filter Pills, Duplicate Names and Voice
 
 Four pieces of work, all aimed at a house with three thousand entities in it.

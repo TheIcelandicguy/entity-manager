@@ -15,9 +15,20 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import intent
 from homeassistant.helpers import label_registry as lr
 
 from .const import MAX_BULK_ENTITIES, VALID_ENTITY_ID
+from .voice_assistant import (
+    INTENT_DISABLE_ENTITY,
+    INTENT_ENABLE_ENTITY,
+    resolve_voice_target,
+)
+from .voice_sentences import (
+    async_install_sentences,
+    async_reload_conversation,
+    async_sentence_status,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1780,6 +1791,171 @@ async def handle_get_last_activity(
 
 
 @callback
+def _match_sentence(
+    phrase: str, sentences: list[dict[str, Any]]
+) -> tuple[str | None, str]:
+    """Split a typed phrase into the intent it routes to and the entity part.
+
+    HA hands a sentence to these intents only when the wording matches the
+    installed sentence file — "entity" is what does the routing — so the tester
+    reports that separately from whether the name resolves. The longest
+    matching opening wins, so "enable the entity X" does not lose its "the".
+    """
+    said = phrase.strip()
+    best: tuple[str, str] | None = None
+    for language in sentences:
+        for intent_name, phrasings in (language.get("intents") or {}).items():
+            for phrasing in phrasings:
+                opening, sep, _slot = phrasing.partition("{")
+                opening = opening.strip()
+                if not sep or not opening:
+                    continue
+                if not re.match(rf"{re.escape(opening)}\s+\S", said, re.IGNORECASE):
+                    continue
+                if best is None or len(opening) > len(best[1]):
+                    best = (intent_name, opening)
+    if best is None:
+        return None, said
+    return best[0], said[len(best[1]) :].strip()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/resolve_voice_target",
+        vol.Required("phrase"): cv.string,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_resolve_voice_target(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Answer what the voice intents would make of a phrase. Writes nothing.
+
+    The panel's phrase tester runs the same resolution the intents do, so what
+    it shows is what would happen — without enabling or disabling anything.
+    """
+    try:
+        sentences = await async_sentence_status(hass)
+        intent_name, spoken = _match_sentence(msg["phrase"], sentences)
+
+        result = resolve_voice_target(hass, spoken)
+
+        entity: dict[str, Any] | None = None
+        if result.entity_id:
+            entry = er.async_get(hass).async_get(result.entity_id)
+            state = hass.states.get(result.entity_id)
+            if entry:
+                entity = {
+                    "entity_id": entry.entity_id,
+                    "name": entry.name if isinstance(entry.name, str) else None,
+                    "original_name": entry.original_name,
+                    "aliases": sorted(entry.aliases or []),
+                    "disabled": entry.disabled_by is not None,
+                    "state": state.state if state else None,
+                }
+
+        connection.send_result(
+            msg["id"],
+            {
+                "phrase": msg["phrase"],
+                # None means HA would not route this wording to Entity Manager
+                # at all, however well the name itself resolves.
+                "intent": intent_name,
+                "spoken": spoken,
+                "entity_id": result.entity_id,
+                "method": result.method,
+                "matches": result.matches,
+                "near_misses": [
+                    {"entity_id": entity_id, "score": score}
+                    for entity_id, score in result.near_misses
+                ],
+                "error": result.error,
+                "entity": entity,
+            },
+        )
+    except Exception as err:
+        _LOGGER.error("Error resolving voice phrase: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "resolve_failed", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_voice_status",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_voice_status(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Report whether the voice side is actually wired up.
+
+    The sentence files are the part with no native API: HA reads them from
+    <config>/custom_sentences/<lang>/ and offers no way to ask about them.
+    """
+    try:
+        sentences = await async_sentence_status(hass)
+        registered = hass.data.get(intent.DATA_KEY) or {}
+        connection.send_result(
+            msg["id"],
+            {
+                "sentences": sentences,
+                "config_dir": hass.config.config_dir,
+                "intents": [
+                    {"intent": intent_type, "registered": intent_type in registered}
+                    for intent_type in (INTENT_ENABLE_ENTITY, INTENT_DISABLE_ENTITY)
+                ],
+                "conversation_reload": hass.services.has_service(
+                    "conversation", "reload"
+                ),
+            },
+        )
+    except Exception as err:
+        _LOGGER.error("Error getting voice status: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "get_failed", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/reinstall_voice_sentences",
+        vol.Optional("force", default=False): cv.boolean,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_reinstall_voice_sentences(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Copy the shipped sentences into place again and reload the agent.
+
+    ``force`` overwrites a copy the user has edited; without it an edited file
+    is left alone, exactly as on startup.
+    """
+    try:
+        changed = await async_install_sentences(hass, msg["force"])
+        # The button is an explicit request, so reload even when nothing
+        # changed: the usual reason for pressing it is that HA is not matching.
+        reloaded = bool(changed) or await async_reload_conversation(hass)
+        connection.send_result(
+            msg["id"],
+            {
+                "changed": changed,
+                "reloaded": reloaded,
+                "sentences": await async_sentence_status(hass),
+            },
+        )
+    except Exception as err:
+        _LOGGER.error("Error reinstalling voice sentences: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "reinstall_failed", str(err))
+
+
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
     websocket_api.async_register_command(hass, handle_get_disabled_entities)
@@ -1803,4 +1979,7 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_get_areas_and_floors)
     websocket_api.async_register_command(hass, handle_register_template)
     websocket_api.async_register_command(hass, handle_get_last_activity)
+    websocket_api.async_register_command(hass, handle_resolve_voice_target)
+    websocket_api.async_register_command(hass, handle_get_voice_status)
+    websocket_api.async_register_command(hass, handle_reinstall_voice_sentences)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")

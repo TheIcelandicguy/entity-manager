@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-3.4.0-blue)
+![Version](https://img.shields.io/badge/version-3.5.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 ![Stars](https://img.shields.io/github/stars/TheIcelandicguy/entity-manager?color=yellow)
@@ -31,6 +31,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
+  - [Voice View](#voice-view)
   - [Health & Cleanup View](#health--cleanup-view)
   - [Suggestions View](#suggestions-view)
   - [Statistics Dashboard](#statistics-dashboard)
@@ -314,6 +315,26 @@ startup, the only place Home Assistant reads them from; a copy you have edited
 is never overwritten. Commands are admin-only, and a request with no user
 behind it — a voice satellite, for instance — is refused.
 
+### Voice View
+A section of its own for setting voice up and seeing why it is not working.
+
+- **Test a phrase.** Type what you would say and see what it resolves to.
+  Nothing is enabled or disabled — it reports only. Routing and matching are
+  answered separately, because they fail separately: a name can resolve
+  perfectly in a sentence Home Assistant would never send here. A miss lists
+  the closest names and the share of your words each one matched.
+- **Aliases in bulk**, with a suggestion built from the Icelandic name —
+  "Skrifstofa Loftljós" is offered as "office ceiling light", because an
+  English recogniser hears the original as "screen Store". Aliases are written
+  to the entity registry, so Assist uses them everywhere, not just here.
+- **Status**: where the sentence file is, whether it matches the shipped one,
+  whether you have edited it, which phrases it defines, and a button to
+  reinstall it and reload the conversation agent.
+- **Pipelines, with warnings.** Speech-to-phrase only transcribes sentences it
+  was given in advance, so it can never fill in an entity name; a pipeline
+  running in another language cannot match an English sentence file.
+- **Exposure to Assist**, shown and bulk-toggled.
+
 ### Statistics Dashboard
 The stat wall at the top is split in two rows:
 
@@ -478,6 +499,9 @@ All commands require admin privileges.
 | `entity_manager/unassign_entity_device` | `entity_id` | Remove device assignment from entity |
 | `entity_manager/import_entity_states` | `entities` (max 500) | Apply enable/disable states from an exported config |
 | `entity_manager/register_template` | `entity_id` | Inject a unique_id into a YAML template entity and reload |
+| `entity_manager/resolve_voice_target` | `phrase` | What the voice intents would resolve a phrase to, with the candidates and near misses. Read-only |
+| `entity_manager/get_voice_status` | — | Sentence files on disk, the phrases they define, and whether the intents are registered |
+| `entity_manager/reinstall_voice_sentences` | `force` (optional) | Reinstall the sentence file and reload the conversation agent |
 
 YAML-writing commands (`update_yaml_references`, `register_template`) never touch `secrets.yaml` and write a `.em-bak` backup of the original file before modifying it.
 ### Home Assistant Services

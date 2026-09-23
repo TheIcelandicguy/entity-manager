@@ -8,8 +8,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.entity_manager.voice_assistant import async_setup_intents
 from custom_components.entity_manager.websocket_api import (
     _bulk_toggle,
+    _match_sentence,
     _replace_in_obj,
     _Rewriter,
     disable_entity,
@@ -24,9 +26,12 @@ from custom_components.entity_manager.websocket_api import (
     handle_get_disabled_entities,
     handle_get_entity_details,
     handle_get_template_sensors,
+    handle_get_voice_status,
     handle_import_entity_states,
+    handle_reinstall_voice_sentences,
     handle_remove_entity,
     handle_rename_entity,
+    handle_resolve_voice_target,
     handle_update_entity_display_name,
     handle_update_yaml_references,
 )
@@ -1231,3 +1236,160 @@ async def test_ws_update_references_energy_untouched_and_unreported(
     manager.async_update.assert_not_called()
     # The file is rewritten through the manager, so it must not be reported as manual
     assert not [m for m in result["manual_references"] if m["file"].endswith("energy")]
+
+
+# ---------------------------------------------------------------------------
+# Voice: resolve_voice_target / get_voice_status / reinstall_voice_sentences
+# ---------------------------------------------------------------------------
+
+
+def test_match_sentence_splits_off_the_wording_that_routes() -> None:
+    """ "entity" is what sends a sentence to us; the rest is the name."""
+    sentences = [
+        {
+            "intents": {
+                "entity_manager_enable_entity": [
+                    "enable entity {em_entity}",
+                    "enable the entity {em_entity}",
+                ],
+                "entity_manager_disable_entity": ["disable entity {em_entity}"],
+            }
+        }
+    ]
+
+    assert _match_sentence("enable entity kitchen light", sentences) == (
+        "entity_manager_enable_entity",
+        "kitchen light",
+    )
+    # The longest opening wins, so "the" is not left on the front of the name.
+    assert _match_sentence("Enable the entity kitchen light", sentences) == (
+        "entity_manager_enable_entity",
+        "kitchen light",
+    )
+    assert _match_sentence("disable entity kitchen light", sentences) == (
+        "entity_manager_disable_entity",
+        "kitchen light",
+    )
+    # No recognised wording: HA would never hand this to Entity Manager.
+    assert _match_sentence("turn on the kitchen light", sentences) == (
+        None,
+        "turn on the kitchen light",
+    )
+
+
+async def test_ws_resolve_voice_target_answers_without_writing(
+    hass: HomeAssistant,
+) -> None:
+    """The phrase tester reports what would happen and changes nothing."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp", disabled=True)
+    entity_reg.async_update_entity("switch.lamp", name="Lamp")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 40,
+        "type": "entity_manager/resolve_voice_target",
+        "phrase": "enable entity lamp",
+    }
+
+    handle_resolve_voice_target(hass, conn, msg)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["intent"] == "entity_manager_enable_entity"
+    assert result["spoken"] == "lamp"
+    assert result["entity_id"] == "switch.lamp"
+    assert result["error"] is None
+    assert result["entity"]["disabled"] is True
+
+    entry = entity_reg.async_get("switch.lamp")
+    assert entry is not None
+    assert entry.disabled_by is er.RegistryEntryDisabler.USER
+
+
+async def test_ws_resolve_voice_target_flags_unroutable_wording(
+    hass: HomeAssistant,
+) -> None:
+    """A name that resolves is no use if HA never routes the sentence here."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp")
+    entity_reg.async_update_entity("switch.lamp", name="Lamp")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 41,
+        "type": "entity_manager/resolve_voice_target",
+        "phrase": "turn on lamp",
+    }
+
+    handle_resolve_voice_target(hass, conn, msg)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["intent"] is None
+    assert result["entity_id"] == "switch.lamp"
+
+
+async def test_ws_resolve_voice_target_explains_a_miss(hass: HomeAssistant) -> None:
+    """A refusal carries the reason and what came closest."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.eldhus_loftljos")
+    entity_reg.async_update_entity("light.eldhus_loftljos", name="Eldhús Loftljós")
+
+    conn = _mock_conn()
+    msg = {
+        "id": 42,
+        "type": "entity_manager/resolve_voice_target",
+        "phrase": "enable entity eldhus gólfljós",
+    }
+
+    handle_resolve_voice_target(hass, conn, msg)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["entity_id"] is None
+    assert "could not find" in result["error"]
+    assert result["near_misses"][0]["entity_id"] == "light.eldhus_loftljos"
+
+
+async def test_ws_get_voice_status_reports_the_intents_and_file(
+    hass: HomeAssistant,
+) -> None:
+    """The health card answers "is voice actually wired up here?"."""
+    await async_setup_intents(hass)
+
+    conn = _mock_conn()
+    msg = {"id": 43, "type": "entity_manager/get_voice_status"}
+
+    handle_get_voice_status(hass, conn, msg)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert [i["registered"] for i in result["intents"]] == [True, True]
+    (sentences,) = result["sentences"]
+    assert sentences["language"] == "en"
+    # Nothing has been installed into the test config dir.
+    assert sentences["installed"] is False
+    assert "entity_manager_enable_entity" in sentences["intents"]
+
+
+async def test_ws_reinstall_voice_sentences_writes_and_reloads(
+    hass: HomeAssistant,
+) -> None:
+    """The reinstall button puts the file back where HA reads it."""
+    conn = _mock_conn()
+    msg = {
+        "id": 44,
+        "type": "entity_manager/reinstall_voice_sentences",
+        "force": False,
+    }
+
+    handle_reinstall_voice_sentences(hass, conn, msg)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["changed"] == ["en"]
+    (sentences,) = result["sentences"]
+    assert sentences["installed"] is True
+    assert sentences["up_to_date"] is True
+    assert Path(sentences["path"]).exists()

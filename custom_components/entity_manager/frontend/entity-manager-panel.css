@@ -7755,3 +7755,235 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .brp-dev-rename:hover {
   background: color-mix(in srgb, var(--em-primary) 16%, transparent);
 }
+
+/* ===== VOICE VIEW ===== */
+
+.em-voice-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.em-voice-tab {
+  background: transparent;
+  color: var(--em-text-primary);
+  border: 1px solid var(--em-border);
+  border-radius: 14px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.em-voice-tab.active {
+  background: var(--em-primary);
+  border-color: var(--em-primary);
+  color: #fff;
+}
+.em-voice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.em-voice-loading,
+.em-voice-hint {
+  color: var(--em-text-secondary);
+  font-size: 12px;
+}
+.em-voice-error {
+  color: var(--em-danger);
+  font-size: 13px;
+  padding: 12px;
+}
+.em-voice-card {
+  background: var(--em-bg-secondary);
+  border: 1px solid var(--em-border-light);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.em-voice-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--em-text-primary);
+}
+.em-voice-card > .em-voice-hint {
+  margin-bottom: 10px;
+}
+.em-voice-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.em-voice-input {
+  flex: 1;
+  min-width: 180px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 2px solid var(--em-primary);
+  background: var(--em-bg-primary);
+  color: var(--em-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+/* Colour carries the verdict, but the icon and wording carry it too — a
+   red line must never be the only signal that something is wrong. */
+.em-voice-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 4px 0;
+  color: var(--em-text-primary);
+}
+.em-voice-line.ok   { color: var(--em-success); }
+.em-voice-line.warn { color: var(--em-warning); }
+.em-voice-line.bad  { color: var(--em-danger); }
+.em-voice-line code,
+.em-voice-detail code {
+  font-size: 12px;
+  color: var(--em-text-primary);
+}
+.em-voice-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0;
+  font-size: 12px;
+  color: var(--em-text-primary);
+}
+.em-voice-key {
+  display: inline-block;
+  min-width: 108px;
+  color: var(--em-text-secondary);
+}
+.em-voice-near {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 2px solid var(--em-border);
+}
+.em-voice-near-row {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 2px 0;
+  color: var(--em-text-secondary);
+}
+.em-voice-alias-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--em-primary) 14%, transparent);
+  color: var(--em-primary);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  margin-right: 4px;
+}
+.em-voice-alias-x {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+}
+.em-voice-alias-sug {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  font-style: italic;
+}
+.em-voice-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.em-voice-filter {
+  background: transparent;
+  color: var(--em-text-primary);
+  border: 1px solid var(--em-border);
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.em-voice-filter.active {
+  background: var(--em-primary);
+  border-color: var(--em-primary);
+  color: #fff;
+}
+.em-voice-bulkbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.em-voice-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--em-border-light);
+  border-radius: 8px;
+}
+.em-voice-list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--em-border-light);
+}
+.em-voice-list-row:last-child {
+  border-bottom: none;
+}
+.em-voice-check input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.em-voice-list-main {
+  flex: 1;
+  min-width: 0;
+}
+.em-voice-list-name {
+  font-size: 13px;
+  color: var(--em-text-primary);
+}
+.em-voice-list-id {
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  word-break: break-all;
+}
+.em-voice-list-aliases {
+  margin-top: 3px;
+}
+.em-voice-phrases {
+  margin: 6px 0;
+}
+.em-voice-phrase {
+  display: block;
+  font-size: 11px;
+  color: var(--em-text-secondary);
+  padding: 1px 0 1px 10px;
+}
+.em-voice-pipeline {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--em-border-light);
+}
+.em-voice-pipeline:last-child {
+  border-bottom: none;
+}
+
+/* Phones, and the tablet case where the EM sidebar leaves the view narrow. */
+@media (max-width: 560px) {
+  .em-voice-tabs { width: 100%; }
+  .em-voice-tab { flex: 1; }
+  .em-voice-key { min-width: 84px; }
+  .em-voice-list-row { flex-wrap: wrap; }
+  .em-voice-bulkbar .btn { flex: 1; }
+}
+@media (pointer: coarse) {
+  .em-voice-tab,
+  .em-voice-filter { padding: 8px 14px; }
+  .em-voice-check input { width: 20px; height: 20px; }
+  .em-voice-alias-x { padding: 4px 6px; }
+}
