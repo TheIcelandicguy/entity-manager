@@ -154,7 +154,7 @@ entity-manager/
 ├── tests/                     # Python pytest: test_const.py, test_websocket_api.py, conftest.py
 ├── .github/workflows/ci.yml   # CI pipeline
 ├── sync-to-ha.ps1             # Deploy repo → Z:\ HA config (robocopy)
-└── docs: README.md, CLAUDE.md, STRUCTURE.md, DEVREF.md, QUICKSTART.md, INSTALL.md, CHANGELOG.md, PROJECT_SUMMARY.md
+└── docs: README.md, CLAUDE.md, OVERVIEW.md, CHANGELOG.md
 ```
 
 ### Backend Modules

@@ -11,9 +11,10 @@ large installs. No Python requirements; `integration_type: service`,
 minimum HA 2024.1.0.
 
 `OVERVIEW.md` in this repo is current and was verified against source — use it
-when you need more depth than this file. The other root docs (`STRUCTURE.md`,
-`PROJECT_SUMMARY.md`, `QUICKSTART.md`, `DEVREF.md`, `cursorrules.md`) are not
-verified; check source before trusting them.
+when you need more depth than this file. The unverified root docs that used to
+sit beside it (STRUCTURE.md, PROJECT_SUMMARY.md, QUICKSTART.md, DEVREF.md,
+INSTALL.md, cursorrules.md) were deleted on 2026-09-22; README.md covers
+installation, and git history has the rest.
 
 Before ending a session, run `python check_docs.py` and update this file.
 The script checks that every path, constant, line count, test count and service
@@ -99,9 +100,12 @@ allowed. Everything else is WebSocket-only.
   swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
   (`async_load` / `async_save`), **config entry data/options**
   (`async_update_entry` — UI helpers keep their source entity there),
-  **persons** (`device_trackers`) and **Assist pipelines**
-  (`async_update_pipeline`) through HA's APIs — never by editing `.storage` on
-  disk, which HA would overwrite from memory, so no HA stop is needed. Each gets
+  **persons** (`device_trackers`), **Assist pipelines**
+  (`async_update_pipeline`) and the **Energy dashboard preferences**
+  (`async_get_manager` → `manager.async_update`, only the three keys
+  `EnergyManager.async_update` merges) through HA's APIs — never by editing
+  `.storage` on disk, which HA would overwrite from memory, so no HA stop is
+  needed. Each gets
   a JSON backup under `.storage/entity_manager_backups/`. After a YAML write it
   reloads `automation`, `script`, `scene`, `template`. Integration Stores in
   `.storage` and files under `custom_components` are only **reported** in
@@ -210,7 +214,7 @@ underlying script for muscle memory and old permission lists. It copies
 `custom_components\entity_manager` →
 `Z:\custom_components\entity_manager` with `robocopy /E /R:2 /W:2` (`/E`,
 never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.claude`, `.venv`,
-`tests` and the files `*.pyc`, `*.pyo`, `settings.local.json`, `test_*.py`.
+`tests` and the files `*.pyc`, `*.pyo`, `test_*.py` plus local settings files.
 Before copying it refuses to run unless `Z:\configuration.yaml` exists and
 warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
 edit on the HA side about to be overwritten); afterwards it lists files on

@@ -10386,7 +10386,6 @@ class EntityManagerPanel extends HTMLElement {
         );
       });
     });
-
     // Devices view ⋯ menu — Change area… / Labels… (the header pills filter instead)
     this.content.querySelectorAll('.device-menu-assign').forEach(btn => {
       btn.addEventListener('click', (e) => {

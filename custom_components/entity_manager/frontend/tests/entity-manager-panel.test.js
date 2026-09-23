@@ -1014,7 +1014,6 @@ describe('active filter summary and banner', () => {
     expect(el._activeFiltersBannerHtml()).toContain('1 pill filter active on 1 header');
   });
 });
-
 // ---------------------------------------------------------------------------
 // Duplicate-name audit
 // ---------------------------------------------------------------------------
