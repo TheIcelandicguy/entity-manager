@@ -18988,6 +18988,9 @@ class EntityManagerPanel extends HTMLElement {
       ${sentenceCards}
       <div class="em-voice-card">
         <h3>Intents</h3>
+        <p class="em-voice-hint">Enable and disable change the entity registry, not light power.
+          Use Assist signed in as an administrator. A voice satellite without a user identity
+          cannot run these commands.</p>
         ${intentLines}
         <div class="em-voice-line ${status.conversation_reload ? 'ok' : 'warn'}">
           ${this._icon(status.conversation_reload ? EM_ICONS.success : EM_ICONS.warning, '14px')}
@@ -19064,7 +19067,7 @@ class EntityManagerPanel extends HTMLElement {
       this._hass.callWS({ type: 'homeassistant/expose_entity/list' }).catch(() => ({ exposed_entities: {} })),
     ]);
     const map = exposed?.exposed_entities || {};
-    const state = { filter: 'exposed', search: '', selected: new Set() };
+    const state = { filter: 'exposed', search: '', selected: new Set(), busy: false };
     const isExposed = (id, assistant) => !!map[id]?.[assistant];
 
     body.innerHTML = `
@@ -19080,7 +19083,7 @@ class EntityManagerPanel extends HTMLElement {
           </div>
         </div>
         <div class="em-voice-bulkbar">
-          <button class="btn btn-secondary" id="em-voice-exp-selall">Select all shown</button>
+          <button class="btn btn-secondary" id="em-voice-exp-selall">Select all matching</button>
           <button class="btn btn-primary" id="em-voice-exp-on" disabled>Expose to Assist</button>
           <button class="btn btn-secondary" id="em-voice-exp-off" disabled>Stop exposing</button>
           <span id="em-voice-exp-count" class="em-voice-hint"></span>
@@ -19107,7 +19110,7 @@ class EntityManagerPanel extends HTMLElement {
       const visible = shown();
       const capped = visible.slice(0, 300);
       countEl.textContent = `${state.selected.size} selected · showing ${capped.length} of ${visible.length}`;
-      onBtn.disabled = offBtn.disabled = state.selected.size === 0;
+      onBtn.disabled = offBtn.disabled = state.busy || state.selected.size === 0;
       list.innerHTML = capped.length ? capped.map(r => `
         <div class="em-voice-list-row">
           <label class="em-voice-check">
@@ -19147,29 +19150,41 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     const apply = async (shouldExpose) => {
+      if (state.busy) return;
       const ids = [...state.selected];
       if (!ids.length) return;
-      // Record what each entity was, not a blanket flip: some of the selection
-      // may already be in the target state.
-      const before = ids.map(id => ({ entityId: id, exposed: isExposed(id, 'conversation') }));
+      // Bound each user operation, including its undo record.
+      if (ids.length > 500) {
+        this._showToast('Select at most 500 entities at a time. Narrow the filter or deselect entities.', 'warning');
+        return;
+      }
+      state.busy = true;
+      renderList();
       try {
+        const ok = await this._confirmAsync(
+          shouldExpose ? 'Expose to Assist' : 'Stop exposing to Assist',
+          `${shouldExpose ? 'Expose' : 'Stop exposing'} ${ids.length} ${ids.length === 1 ? 'entity' : 'entities'} ${shouldExpose ? 'to' : 'through'} Assist? Google exposure stays unchanged. You can undo this change.`,
+        );
+        if (!ok) return;
+        const before = ids.map(id => ({ entityId: id, exposed: isExposed(id, 'conversation') }));
         await this._hass.callWS({
           type: 'homeassistant/expose_entity',
           assistants: ['conversation'],
           entity_ids: ids,
           should_expose: shouldExpose,
         });
+        ids.forEach(id => {
+          map[id] = { ...(map[id] || {}), conversation: shouldExpose };
+          state.selected.delete(id);
+        });
+        this._pushUndoAction({ type: 'voice_expose_change', before, exposed: shouldExpose });
+        this._showToast(`${shouldExpose ? 'Exposed' : 'Stopped exposing'} ${ids.length} ${ids.length === 1 ? 'entity' : 'entities'}`, 'success');
       } catch (e) {
         this._showToast(`Could not change exposure: ${e.message || e}`, 'error');
-        return;
+      } finally {
+        state.busy = false;
+        renderList();
       }
-      ids.forEach(id => {
-        map[id] = { ...(map[id] || {}), conversation: shouldExpose };
-      });
-      this._pushUndoAction({ type: 'voice_expose_change', before, exposed: shouldExpose });
-      state.selected.clear();
-      renderList();
-      this._showToast(`${shouldExpose ? 'Exposed' : 'Stopped exposing'} ${ids.length} ${ids.length === 1 ? 'entity' : 'entities'}`, 'success');
     };
 
     onBtn.addEventListener('click', () => apply(true));

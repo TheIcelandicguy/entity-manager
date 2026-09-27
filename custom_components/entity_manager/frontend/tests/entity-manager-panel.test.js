@@ -1741,3 +1741,84 @@ describe('the Voice sidebar action', () => {
     expect(el._openView).toHaveBeenCalledWith('voice');
   });
 });
+
+
+describe('Voice exposure safeguards', () => {
+  async function setup(count = 2) {
+    const el = makePanel();
+    const rows = Array.from({ length: count }, (_, i) => ({ entity_id: `light.test_${i}`, name: `Light ${i}`, aliases: [] }));
+    el._voiceEntityRows = vi.fn().mockResolvedValue(rows);
+    el._confirmAsync = vi.fn().mockResolvedValue(true);
+    el._pushUndoAction = vi.fn();
+    el._showToast = vi.fn();
+    el._hass.callWS = vi.fn().mockImplementation(({ type }) => Promise.resolve(type.endsWith('/list')
+      ? { exposed_entities: Object.fromEntries(rows.map(r => [r.entity_id, { conversation: true, 'cloud.google_assistant': true }])) }
+      : {}));
+    const body = document.createElement('div');
+    await el._renderVoiceExposure(body);
+    body.querySelector('#em-voice-exp-selall').click();
+    const writes = () => el._hass.callWS.mock.calls.filter(([m]) => m.type === 'homeassistant/expose_entity');
+    return { el, body, writes };
+  }
+
+  it('cancelling confirmation writes nothing and keeps the selection', async () => {
+    const { el, body, writes } = await setup();
+    el._confirmAsync.mockResolvedValue(false);
+    body.querySelector('#em-voice-exp-off').click();
+    await vi.waitFor(() => expect(body.querySelector('#em-voice-exp-off').disabled).toBe(false));
+    expect(el._confirmAsync).toHaveBeenCalledWith('Stop exposing to Assist', expect.stringContaining('2 entities'));
+    expect(writes()).toHaveLength(0);
+    expect(el._pushUndoAction).not.toHaveBeenCalled();
+    expect(body.querySelector('#em-voice-exp-count').textContent).toContain('2 selected');
+  });
+
+  it('refuses more than 500 selected entities before confirmation or writing', async () => {
+    const { el, body, writes } = await setup(501);
+    body.querySelector('#em-voice-exp-off').click();
+    expect(el._showToast).toHaveBeenCalledWith(expect.stringContaining('at most 500'), 'warning');
+    expect(el._confirmAsync).not.toHaveBeenCalled();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('accepts 500 entities, changes only Assist and records exact previous states', async () => {
+    const { el, body, writes } = await setup(500);
+    body.querySelector('#em-voice-exp-off').click();
+    await vi.waitFor(() => expect(el._pushUndoAction).toHaveBeenCalledOnce());
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][0]).toMatchObject({ assistants: ['conversation'], should_expose: false });
+    expect(writes()[0][0].entity_ids).toHaveLength(500);
+    expect(el._pushUndoAction.mock.calls[0][0].before).toHaveLength(500);
+    expect(el._pushUndoAction.mock.calls[0][0].before.every(e => e.exposed)).toBe(true);
+  });
+
+  it('keeps selection and creates no undo step when the write fails', async () => {
+    const { el, body } = await setup();
+    el._hass.callWS.mockRejectedValue(new Error('Connection lost'));
+    body.querySelector('#em-voice-exp-off').click();
+    await vi.waitFor(() => expect(el._showToast).toHaveBeenCalledWith(expect.stringContaining('Connection lost'), 'error'));
+    expect(el._pushUndoAction).not.toHaveBeenCalled();
+    expect(body.querySelector('#em-voice-exp-count').textContent).toContain('2 selected');
+    expect(body.querySelector('#em-voice-exp-off').disabled).toBe(false);
+  });
+
+  it('blocks a second action while confirmation is pending', async () => {
+    const { el, body, writes } = await setup();
+    let finish;
+    el._confirmAsync.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    body.querySelector('#em-voice-exp-off').click();
+    body.querySelector('#em-voice-exp-on').dispatchEvent(new Event('click'));
+    expect(el._confirmAsync).toHaveBeenCalledOnce();
+    finish(true);
+    await vi.waitFor(() => expect(writes()).toHaveLength(1));
+  });
+
+  it('explains the administrator and satellite requirements in Status', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({ sentences: [], intents: [] });
+    const body = document.createElement('div');
+    await el._renderVoiceStatus(body);
+    expect(body.textContent).toContain('signed in as an administrator');
+    expect(body.textContent).toContain('satellite without a user identity');
+    expect(body.textContent).toContain('not light power');
+  });
+});

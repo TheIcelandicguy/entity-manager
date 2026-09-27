@@ -35,7 +35,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,182 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.js` | 19,197 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 7,989 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
@@ -240,8 +240,10 @@ resolution and a built-in Assist state query immediately, without a restart or
 conversation reload. It did not exercise spoken audio or switch a device.
 The legacy browser-local display alias feature remains separate.
 Exposure displays Assist and Google status; its bulk buttons update Assist only.
-Suggested alias batches ask for confirmation with a count. Exposure batches
-have no confirmation or 500-item cap; this remains a review consideration.
+Suggested alias batches ask for confirmation with a count. Exposure changes
+confirm the selected count, reject selections above 500, and block duplicate
+submissions while pending. Failed writes keep the selection and do not create
+an undo entry. Status explains the admin-user and satellite limitations.
 
 ## Tests and lint
 

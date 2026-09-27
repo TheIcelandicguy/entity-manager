@@ -10,6 +10,9 @@ commands. That is now a section of its own.
 
 ### Voice
 
+- Exposure writes now confirm the selected count, reject more than 500 entities and prevent duplicate submissions. Failed writes preserve the selection without recording undo
+- Status explains the admin-user requirement, satellite limitation and distinction from switching light power
+
 - **Open Voice from sidebar Actions or the stats-nav tile.** Both open the same four-tab view
 - **Registry enable/disable is separate from device control.** EM commands do not switch lights on or off. Registry voice aliases also work with native Assist commands when the entity is enabled and exposed; browser-local display nicknames remain separate
 - **Test a phrase.** Type what you would say and see what it resolves to, without enabling or disabling anything

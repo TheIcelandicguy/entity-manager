@@ -118,6 +118,16 @@ do not verify that a chosen conversation agent will forward custom intents.
 
 ---
 
+
+### Voice exposure safeguards
+
+Exposure changes ask for confirmation with the selected entity count and allow
+at most 500 entities per operation. Narrow the filter or deselect entities for
+larger selections. A pending action blocks duplicate submissions; failed writes
+keep the selection and create no undo entry. Only Assist exposure changes.
+The Status tab explains that EM registry commands require an admin user and
+cannot run from a satellite without user identity.
+
 ## 3. Installation & Configuration
 
 ### Requirements

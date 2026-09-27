@@ -356,6 +356,16 @@ do not verify that a chosen conversation agent will forward custom intents.
   running in another language cannot match an English sentence file.
 - **Exposure** shows Assist and Google Assistant status; bulk buttons change Assist exposure only.
 
+
+### Voice exposure safeguards
+
+Exposure changes ask for confirmation with the selected entity count and allow
+at most 500 entities per operation. Narrow the filter or deselect entities for
+larger selections. A pending action blocks duplicate submissions; failed writes
+keep the selection and create no undo entry. Only Assist exposure changes.
+The Status tab explains that EM registry commands require an admin user and
+cannot run from a satellite without user identity.
+
 ### Statistics Dashboard
 The stat wall at the top is split in two rows:
 
