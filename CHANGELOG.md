@@ -10,13 +10,15 @@ commands. That is now a section of its own.
 
 ### Voice
 
+- **Open Voice from sidebar Actions or the stats-nav tile.** Both open the same four-tab view
+- **Registry enable/disable is separate from device control.** EM commands do not switch lights on or off. Registry voice aliases also work with native Assist commands when the entity is enabled and exposed; browser-local display nicknames remain separate
 - **Test a phrase.** Type what you would say and see what it resolves to, without enabling or disabling anything
 - **Routing and matching are reported separately**, because they fail separately. The word "entity" is what hands a sentence to Entity Manager; a name can resolve perfectly in a sentence Home Assistant would never send here
 - **A miss says what came closest** and what share of your words each name matched, against the 60% a match needs. Usually the answer is an alias
 - **Aliases in bulk.** A second name Assist answers to, added to many entities at once, with an English suggestion built from the Icelandic name — "Skrifstofa Loftljós" becomes "office ceiling light", because an English recogniser hears the original as "screen Store"
 - **Status of the sentence file**: where it is, whether it matches the shipped one, whether you have edited it, and which phrases it defines — with a button to reinstall it and reload the conversation agent
-- **Pipelines, with warnings.** Speech-to-phrase can only transcribe sentences it was given in advance, so it can never fill in an entity name; a pipeline running in another language cannot match an English sentence file. Both are now stated where you choose
-- **Exposure to Assist**, shown and bulk-toggled per entity
+- **Pipelines, with warnings.** Speech-to-phrase can only transcribe sentences it was given in advance, so it cannot fill EM's free-text wildcard slot; a pipeline running in another language cannot match an English sentence file. The Status tab reports these limits and also flags pipelines with no speech-to-text engine; it does not configure or prove the conversation agent
+- **Exposure** shows Assist and Google Assistant status; bulk buttons change Assist exposure only
 - Alias and exposure changes go on the undo stack like every other write
 
 ## Version 3.4.0 - Filter Pills, Duplicate Names and Voice

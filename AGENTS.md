@@ -1,4 +1,4 @@
-# CLAUDE.md — Entity Manager
+# AGENTS.md — Entity Manager
 
 Home Assistant custom integration, domain `entity_manager`, **v3.5.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
@@ -17,8 +17,8 @@ INSTALL.md, cursorrules.md) were deleted on 2026-09-22; README.md covers
 installation, and git history has the rest.
 
 Before ending a session, run `python check_docs.py` and update this file.
-The script checks that every path, constant, line count, test count and service
-this file quotes still matches the repo, and exits 1 when one does not.
+The script checks CLAUDE.md for stale paths, constants, line counts, test counts
+and services. Keep this guide aligned with it and validate both when editing.
 
 ## Layout
 
@@ -294,7 +294,7 @@ the repo; a local gitignored helper with that name points at the same
 underlying script for muscle memory and old permission lists. It copies
 `custom_components\entity_manager` →
 `Z:\custom_components\entity_manager` with `robocopy /E /R:2 /W:2` (`/E`,
-never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.claude`, `.venv`,
+never `/MIR`), excluding the dirs `__pycache__`, `.git`, `.Codex`, `.venv`,
 `tests` and the files `*.pyc`, `*.pyo`, `test_*.py` plus local settings files.
 Before copying it refuses to run unless `Z:\configuration.yaml` exists and
 warns about anything on `Z:` that is newer than its `E:` counterpart (a hand
@@ -321,10 +321,10 @@ gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
 - The HACS release zip (`.github/workflows/release-asset.yml`) is built from
   the component directory and excludes `__pycache__`, `*.pyc`, `*.pyo`,
   every `tests/` folder (including `frontend/tests/`), `test_*.py` and
-  `.claude/`. Anything else in `custom_components/entity_manager/` ships to
+  `.Codex/`. Anything else in `custom_components/entity_manager/` ships to
   every user, so keep local tooling out of it.
-- **There is no `Z:\CLAUDE.md` any more.** Until 2026-09-10 a Jan–Feb 2026 copy
-  of this repo's docs sat loose in the Home Assistant config root (CLAUDE.md,
+- **There is no `Z:\AGENTS.md` any more.** Until 2026-09-10 a Jan–Feb 2026 copy
+  of this repo's docs sat loose in the Home Assistant config root (AGENTS.md,
   README.md, INSTALL.md, STRUCTURE.md, PROJECT_SUMMARY.md, QUICKSTART.md,
   CHANGELOG.md, CHANGES.md, info.md, cursorrules.md, CODE_OF_CONDUCT.md,
   eslint.config.js, sentences\). They were archived in
