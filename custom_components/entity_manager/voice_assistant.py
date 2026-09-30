@@ -108,7 +108,7 @@ def resolve_voice_target(hass: HomeAssistant, spoken: str) -> VoiceResolution:
         return result
     targets = {target, _folded_form(said)}
 
-    target_words = {w for t in targets for w in t.split()}
+    target_word_sets = [set(t.split()) for t in targets]
 
     exact: list[str] = []
     partial: list[str] = []
@@ -139,21 +139,23 @@ def resolve_voice_target(hass: HomeAssistant, spoken: str) -> VoiceResolution:
             # the union of its names, or counting extra words across all of
             # them, lets a short unrelated name ("Zigbee connectivity") supply
             # the extra-word count for a long one that did the matching.
+            # Each spelling of what was said is scored on its own. Pooling the
+            # accented and folded words counted "ljós" and "ljos" as two words,
+            # which capped every score below what the phrase really matched.
             best_form = max(
                 (
                     (
-                        len(target_words & set(form.split())),
-                        -len(set(form.split()) - target_words),
+                        len(words & form_words) / len(words),
+                        -len(form_words - words),
                     )
-                    for form in forms
-                    if form
+                    for words in target_word_sets
+                    for form_words in (set(form.split()) for form in forms if form)
+                    if words & form_words
                 ),
-                default=(0, 0),
+                default=(0.0, 0),
             )
             if best_form[0]:
-                scored.append(
-                    (best_form[0] / len(target_words), best_form[1], entry.entity_id)
-                )
+                scored.append((best_form[0], best_form[1], entry.entity_id))
 
     matches = exact or partial
     method = "exact" if exact else "substring" if partial else "none"
