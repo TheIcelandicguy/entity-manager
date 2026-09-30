@@ -1,7 +1,7 @@
 # Entity Manager — Project Overview
 
 > A comprehensive overview of the **Entity Manager** Home Assistant custom integration
-> (domain `entity_manager`, version **3.2.0**). Covers both user-facing behaviour and
+> (domain `entity_manager`, version **3.5.0**). Covers both user-facing behaviour and
 > developer/architecture detail. Generated from the repository source.
 
 ## Table of Contents
@@ -27,7 +27,7 @@ disable, rename, analyze, and bulk-manage every entity across all your integrati
 tools. Instead of digging through per-device settings pages, you get a tree view
 (Integration → Device → Entity), smart grouping, fuzzy search, bulk actions, an
 undo/redo history, a theming engine, and a voice-assistant hook. It is admin-only
-(every operation modifies the HA entity/device registry) and installs as a sidebar
+(registry writes and administrative reads require an admin) and installs as a sidebar
 panel titled **Entity Manager** (`mdi:tune`).
 
 It fits in as an **admin/maintenance tool**: a superset of HA's built-in entity
@@ -41,10 +41,10 @@ entities) who need to clean up, standardize, and audit their setup efficiently.
 ### Entity Management
 - Tree view organized by **Integration → Device → Entity**, alphabetically sorted.
 - Enable/disable individual entities in one click; **bulk enable/disable up to 500** at once.
-- Every integration and device row carries a **three-box header** (no expand needed):
+- Every integration and device row carries a **four-box header** (no expand needed):
   **Categories** (Controls/Sensors/Configuration/Diagnostic/Connectivity counts),
-  **Hardware** (device-type counts: Hardware/Cloud/Virtual/Mobile/System/Unknown), and
-  **Areas & Labels** (area/floor chips + deduped label rollup).
+  **Hardware** (device-type counts: Hardware/Cloud/Virtual/Mobile/System/Unknown), plus
+  separate **Areas** and **Labels** filter pills.
 - Row actions collapsed into a compact **⋯ menu** (View Enabled/Disabled, Enable/Disable All, accent color).
 - **Opt-in accent colors** per integration; **assignable & custom device types**.
 
@@ -93,16 +93,46 @@ entities) who need to clean up, standardize, and audit their setup efficiently.
 - **Favorites**, **entity aliases** (non-destructive display names), **column customization**.
 - **Export/Import** entity configurations and custom themes as JSON.
 - **Theme system** — Refined design language with 5 built-in modes (Default/follow-HA, Light, Dark, High Contrast, OLED Black) + a custom theme editor (background images, per-theme light/dark).
-- **Voice Assistant** — enable/disable entity by voice (admin-only).
+- **Voice view** — sidebar **Actions → Voice** and the stats-nav tile open Test a phrase,
+  Aliases, Status and Exposure. Registry enable/disable intents remain admin-only.
+
+EM voice commands change the entity registry's enabled/disabled setting. They do
+not turn a light on or off. In Assist, use "disable entity desk lamp" or
+"enable entity desk lamp" with an admin user context. A voice satellite without
+that context is refused. The shipped sentences are English.
+
+Voice aliases use HA's entity-registry aliases, shared with its built-in Assist
+agent. For normal commands such as "turn on desk lamp", the entity must also be
+enabled and exposed to Assist. EM's registry commands can resolve disabled and
+unexposed entities. Google exposure does not make EM's custom intents available
+through Google Assistant.
+
+The phrase tester checks EM wording and entity resolution only; it does not run
+HA's built-in intents, speech recognition, or a complete Assist pipeline. Its
+routing check recognises the literal openings in the shipped sentences; it is
+not a full parser for arbitrary custom sentence syntax. Pipeline warnings flag
+speech-to-phrase, missing speech-to-text and non-English language settings; they
+do not verify that a chosen conversation agent will forward custom intents.
+
 - **Responsive** — three breakpoints (≤768/≤600/≤480px) tested on real Android phones.
 
 ---
+
+
+### Voice exposure safeguards
+
+Exposure changes ask for confirmation with the selected entity count and allow
+at most 500 entities per operation. Narrow the filter or deselect entities for
+larger selections. A pending action blocks duplicate submissions; failed writes
+keep the selection and create no undo entry. Only Assist exposure changes.
+The Status tab explains that EM registry commands require an admin user and
+cannot run from a satellite without user identity.
 
 ## 3. Installation & Configuration
 
 ### Requirements
 - **Home Assistant 2024.1.0 or later** (`hacs.json` / `manifest.json`).
-- **Admin user account** — every operation modifies the entity/device registry; the panel is registered with `require_admin=True`.
+- **Admin user account** — registry writes and administrative reads require an admin; the panel is registered with `require_admin=True`.
 - Modern ES6+ browser. Integration has **no Python `requirements`** (empty list in `manifest.json`).
 - `manifest.json`: `integration_type: service`, `iot_class: calculated`, `config_flow: true`, `dependencies: ["frontend"]`.
 
@@ -156,7 +186,7 @@ panel appears in the sidebar.
 ```
 Frontend (Vanilla-JS Web Component: entity-manager-panel.js)
         |  Home Assistant WebSocket (this.hass.callWS)
-Backend (Python WebSocket API: websocket_api.py — 21 commands, all admin-gated)
+Backend (Python WebSocket API: websocket_api.py — 24 commands, all admin-gated)
         |
 Home Assistant Core: Entity / Device / Area / Label registries, config entries, recorder DB
 ```
@@ -168,23 +198,26 @@ entity-manager/
 │   ├── __init__.py            # Entry point: panel + resource/WS/service/intent registration
 │   ├── config_flow.py         # Single-step UI config flow (no options)
 │   ├── const.py               # DOMAIN, MAX_BULK_ENTITIES (500), VALID_ENTITY_ID regex
-│   ├── manifest.json          # Integration metadata (v3.2.0, service, calculated)
+│   ├── manifest.json          # Integration metadata (v3.5.0, service, calculated)
 │   ├── services.yaml          # enable_entity / disable_entity service schemas
 │   ├── strings.json / en.json / translations/en.json  # UI + config-flow strings
-│   ├── voice_assistant.py     # Enable/Disable voice intent handlers (admin-gated)
-│   ├── websocket_api.py       # 21 WebSocket command handlers (~1,410 lines)
+│   ├── voice_assistant.py     # Enable/Disable intents and shared entity resolver
+│   ├── voice_sentences.py     # Sentence installation, status and reload
+│   ├── websocket_api.py       # 24 WebSocket command handlers
 │   ├── frontend/
-│   │   ├── entity-manager-panel.js   # Full UI web component (~16,100 lines)
-│   │   ├── entity-manager-panel.css  # Stylesheet (~7,050 lines, all --em-* vars)
+│   │   ├── entity-manager-panel.js   # Full UI web component (single component)
+│   │   ├── entity-manager-panel.css  # Stylesheet (all --em-* vars)
 │   │   └── tests/                     # Vitest frontend tests + setup
 │   ├── sentences/en/entity_manager.yaml  # Voice sentences, installed into <config>/custom_sentences/
 │   └── brand/                  # Icons/logos
 ├── tests/                     # Python pytest: test_const.py, test_websocket_api.py,
 │                              #   test_voice_assistant.py, conftest.py
 ├── .github/workflows/ci.yml   # CI pipeline
-├── sync-to-ha.ps1             # Deploy repo → Z:\ HA config (robocopy)
-└── docs: README.md, CLAUDE.md, OVERVIEW.md, CHANGELOG.md
+├── deploy.ps1                 # Deploy component via the shared deploy wrapper
+└── docs: README.md, AGENTS.md, CLAUDE.md, OVERVIEW.md, CHANGELOG.md
 ```
+
+Exposure displays Assist and Google status; bulk writes target Assist only.
 
 ### Backend Modules
 
@@ -193,16 +226,17 @@ entity-manager/
 | `const.py` | `DOMAIN = "entity_manager"`, `MAX_BULK_ENTITIES = 500`, and `VALID_ENTITY_ID` (`^[a-z][a-z0-9_]*\.[a-z0-9_]+$`) used to validate IDs before registry writes. |
 | `__init__.py` | `async_setup_entry` registers the frontend static path (`/api/entity_manager/frontend`), the WebSocket API (`async_setup_ws_api`), voice intents (`async_setup_intents`), the two HA services, and the sidebar panel via `frontend.async_register_built_in_panel(..., require_admin=True)`. Services share an admin gate that mirrors the WS `require_admin`; system-initiated calls (no `user_id`) are allowed. `async_unload_entry` removes the panel + services. |
 | `config_flow.py` | `EntityManagerConfigFlow` — single-step, unique-ID-guarded, no options. |
-| `websocket_api.py` | All 21 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |
-| `voice_assistant.py` | `EnableEntityIntentHandler` / `DisableEntityIntentHandler` — validate admin + `VALID_ENTITY_ID`, then call `entity_registry.async_update_entity(...)`. |
+| `websocket_api.py` | All 24 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |
+| `voice_assistant.py` | Admin-gated registry intents and `resolve_voice_target()` returning a structured match/refusal; `_resolve_entity_id` shares it with the intents. |
+| `voice_sentences.py` | Install and inspect the sentence files; preserve edited copies unless `force` is requested, and reload the conversation agent. |
 
 ### Frontend Panel
-A single `EntityManagerPanel` custom element (`extends HTMLElement`) in one ~16,100-line
+A single `EntityManagerPanel` custom element (`extends HTMLElement`) in one
 file. `connectedCallback()` bootstraps state from `localStorage` and calls `loadData()`;
 `set hass()` receives every HA state update. Core loop is `loadData()` → `updateView()`
 (apply filters/search/grouping) → render. It uses an **inline-view system** (`_activeView`)
-for full-screen views and a `createDialog()` helper for modals. All persistent user state
-(favorites, themes, undo/redo, aliases, filters, columns, grouping, ignored suggestions,
+for full-screen views and a `createDialog()` helper for modals. Browser preferences
+(favorites, themes, undo/redo, display nicknames, filters, columns, grouping, ignored suggestions,
 device-type overrides, notifications, etc.) lives under `em-*` `localStorage` keys. All
 colours come from `--em-*` CSS variables (never HA theme vars directly) so the theme engine
 can override light/dark correctly.
@@ -211,7 +245,8 @@ can override light/dark correctly.
 The frontend talks to the backend purely over HA's WebSocket bus using
 `this.hass.callWS({ type: 'entity_manager/...' })`. It also calls **native HA WS APIs**
 directly for registry data (`config/area_registry/list`, `config/device_registry/list`,
-`config/entity_registry/list`, `config/label_registry/list`, `history/history_during_period`)
+`config/entity_registry/list`, `config/label_registry/list`, `history/history_during_period`,
+`config/entity_registry/update`, `homeassistant/expose_entity[/list]`, `assist_pipeline/pipeline/list`)
 and for service calls (`update.install`, `button.press`). Custom EM commands are reserved
 for operations HA doesn't expose cleanly (grouped entity tree, YAML rewriting, recorder
 queries, HACS scanning, config-entry health).
@@ -220,7 +255,7 @@ queries, HACS scanning, config-entry health).
 
 ## 6. WebSocket API & Services Reference
 
-All 21 WebSocket commands are decorated with `@websocket_api.require_admin` +
+All 24 WebSocket commands are decorated with `@websocket_api.require_admin` +
 `@websocket_api.async_response`. Names below are the real `type` strings registered in
 `async_setup_ws_api()`.
 
@@ -236,6 +271,8 @@ All 21 WebSocket commands are decorated with `@websocket_api.require_admin` +
 | `entity_manager/get_areas_and_floors` | — | Area + floor hierarchy. |
 | `entity_manager/get_last_activity` | `entity_ids` (optional) | Recorder-DB query: last non-unavailable/unknown timestamp (ms) per entity. |
 | `entity_manager/list_hacs_items` | — | Installed HACS integrations/frontend + parsed community store from `.storage`. |
+| `entity_manager/resolve_voice_target` | `phrase` | Read-only EM routing and entity resolution, candidates and near misses. |
+| `entity_manager/get_voice_status` | — | Sentence file status and intent registration. |
 
 ### Entity-operation commands
 | Command | Params | Description |
@@ -250,14 +287,15 @@ All 21 WebSocket commands are decorated with `@websocket_api.require_admin` +
 | `entity_manager/assign_entity_device` | `entity_id`, `device_id` | Assign entity to a device. |
 | `entity_manager/unassign_entity_device` | `entity_id` | Clear an entity's device assignment. |
 | `entity_manager/import_entity_states` | `entities` (1–500, each `entity_id`+`is_disabled`) | Apply enable/disable states from an exported config. |
-| `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Rewrite references after one rename or a `renames` list (≤500) across YAML config files, storage-mode dashboards, config entry data/options, persons and Assist pipelines; reports remaining hits in integration Stores and `custom_components` as `manual_references` (preview when `dry_run`). |
+| `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Rewrite references after one rename or a `renames` list (≤500) across YAML config files, storage-mode dashboards, config entry data/options, persons, Assist pipelines and Energy dashboard preferences; reports remaining hits in integration Stores and `custom_components` as `manual_references` (preview when `dry_run`). |
 | `entity_manager/register_template` | `entity_id` | Inject a generated `unique_id` into a YAML template entity and reload templates. |
+| `entity_manager/reinstall_voice_sentences` | `force` (optional) | Reinstall sentences and reload the conversation agent; force replaces an edited copy. |
 
 > **YAML safety:** the YAML-writing commands (`update_yaml_references`, `register_template`)
 > skip `secrets.yaml` and directories like `custom_components`, `.storage`, `www`, `backups`,
 > `.git`, and write a `.em-bak` backup of each file before modifying it.
 > `update_yaml_references` additionally rewrites storage dashboards, config entries, persons and
-> Assist pipelines through HA's APIs (JSON backups in `.storage/entity_manager_backups/`), reloads automations, scripts,
+> Assist pipelines and Energy dashboard preferences through HA's APIs (JSON backups in `.storage/entity_manager_backups/`), reloads automations, scripts,
 > scenes and templates after a YAML write, and only *reports* hits in integration Stores and
 > `custom_components`.
 
@@ -295,15 +333,19 @@ itself — are allowed). All other operations are WebSocket-only.
 
 ### Repos & Deploy
 - Development happens in the repo on **`E:\entity-manager`**.
-- **`sync-to-ha.ps1`** mirrors `custom_components\entity_manager` → **`Z:\custom_components\entity_manager`**
-  (the live HA config on a shared drive) using `robocopy /MIR`, excluding `__pycache__`, `.claude`,
-  `tests`, `.git`, `*.pyc/*.pyo`, and `settings.local.json`. It sanity-checks the Z: mount, warns
-  about a stray nested `entity_manager\entity_manager` folder, and reminds you that **Python changes
-  need an HA restart** while frontend-only changes just need a browser cache clear.
+- Run **`deploy.ps1`**, the wrapper over the shared deploy tool. It copies only
+  `custom_components/entity_manager` to the HA config using `robocopy /E /R:2 /W:2`;
+  never use `/MIR`. Exit codes 0–7 are success. `-DryRun` previews the copy.
+- Python changes require an HA restart. Frontend changes require a hard refresh;
+  a restart also updates the panel's content-hash URL for cached clients.
+- The copy never deletes stale modules; inspect the deploy report. The old
+  `sync-to-ha.ps1` alias is a local helper, not a tracked deployment script.
 
 ### Tests
 - **Python (pytest)** — `pytest.ini` sets `asyncio_mode = auto`; tests in `tests/`
-  (`test_const.py`, `test_websocket_api.py`, `conftest.py`).
+  (`test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`).
+  On DAVIDPC, HA imports and its event loop prevent running this suite under Windows;
+  use the Linux Python 3.12 CI job. A compatible Linux development environment also works.
 - **Frontend (Vitest)** — `vitest.config.js` uses the `jsdom` environment, a
   `frontend/tests/vitest.setup.js` setup file, and `frontend/tests/**/*.test.js`.
   Run via `npm test` (`vitest run`) / `npm run test:watch`.
@@ -323,7 +365,7 @@ Runs on PRs and pushes to `main`:
 
 ### Dev workflow
 1. Edit under `custom_components/entity_manager/`.
-2. Run `sync-to-ha.ps1` to deploy to `Z:\`.
+2. Run `deploy.ps1` to deploy to `Z:\`.
 3. Restart HA for Python changes; hard-refresh the browser for frontend changes.
    New WS commands: add the handler + decorators and register it in `async_setup_ws_api()`.
 
@@ -332,7 +374,7 @@ Runs on PRs and pushes to `main`:
 ## 9. Known Limitations & Roadmap
 
 - **Admin-only**: non-admin users are blocked at every command and the panel itself.
-- **Browser-local state**: preferences, favorites, aliases, themes, and undo/redo live in
+- **Browser-local state**: preferences, favorites, display nicknames, themes, and undo/redo live in
   `localStorage` — they are per-browser and not synced across devices/users.
 - **YAML rewriting is heuristic**: `update_yaml_references` / `register_template` do text/regex
   matching over config files (skipping secrets and system dirs, with `.em-bak` backups) rather

@@ -1,6 +1,6 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
-![Version](https://img.shields.io/badge/version-3.4.0-blue)
+![Version](https://img.shields.io/badge/version-3.5.0-blue)
 ![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 ![Stars](https://img.shields.io/github/stars/TheIcelandicguy/entity-manager?color=yellow)
@@ -31,6 +31,7 @@ A powerful, feature-rich Home Assistant integration for managing entities across
   - [Theme System](#theme-system)
   - [Context Menu](#context-menu)
   - [Voice Assistant](#voice-assistant)
+  - [Voice View](#voice-view)
   - [Health & Cleanup View](#health--cleanup-view)
   - [Suggestions View](#suggestions-view)
   - [Statistics Dashboard](#statistics-dashboard)
@@ -120,7 +121,8 @@ Switch modes from the **Groups** sidebar section. Your preference is saved betwe
 - Create custom display names for entities without renaming them
 - Non-destructive -- the actual entity ID is unchanged
 - Set aliases through the right-click context menu
-- Persisted in browser local storage
+- Persisted in browser local storage; these display nicknames are not voice aliases.
+- Use **Actions → Voice → Aliases** for names shared with Home Assistant Assist.
 ### Labels Integration
 - View and filter by **Home Assistant's built-in label system**
 - Create new labels directly from Entity Manager
@@ -289,7 +291,8 @@ Right-click any entity (or multi-selection) for a full context menu:
 - Delete Selected (with confirmation)
 
 ### Voice Assistant
-Enable and disable entities by voice or by typing in Assist:
+Enable and disable registry entries by voice or by typing in Assist. This does
+not switch a light or appliance on or off:
 - *"Enable entity {name}"*
 - *"Disable entity {name}"*
 - *"Activate entity {name}"*
@@ -313,6 +316,55 @@ The sentences are installed into `<config>/custom_sentences/<language>/` on
 startup, the only place Home Assistant reads them from; a copy you have edited
 is never overwritten. Commands are admin-only, and a request with no user
 behind it — a voice satellite, for instance — is refused.
+
+### Voice View
+Open **Actions → Voice** in the sidebar, or the **Voice** tile above the entity
+list. The view has four tabs: Test a phrase, Aliases, Status, and Exposure.
+
+EM voice commands change the entity registry's enabled/disabled setting. They do
+not turn a light on or off. In Assist, use "disable entity desk lamp" or
+"enable entity desk lamp" with an admin user context. A voice satellite without
+that context is refused. The shipped sentences are English.
+
+Voice aliases use HA's entity-registry aliases, shared with its built-in Assist
+agent. For normal commands such as "turn on desk lamp", the entity must also be
+enabled and exposed to Assist. EM's registry commands can resolve disabled and
+unexposed entities. Google exposure does not make EM's custom intents available
+through Google Assistant.
+
+The phrase tester checks EM wording and entity resolution only; it does not run
+HA's built-in intents, speech recognition, or a complete Assist pipeline. Its
+routing check recognises the literal openings in the shipped sentences; it is
+not a full parser for arbitrary custom sentence syntax. Pipeline warnings flag
+speech-to-phrase, missing speech-to-text and non-English language settings; they
+do not verify that a chosen conversation agent will forward custom intents.
+
+- **Test a phrase.** Type what you would say and see what it resolves to.
+  Nothing is enabled or disabled — it reports only. Routing and matching are
+  answered separately, because they fail separately: a name can resolve
+  perfectly in a sentence Home Assistant would never send here. A miss lists
+  the closest names and the share of your words each one matched.
+- **Aliases in bulk**, with a suggestion built from the Icelandic name —
+  "Skrifstofa Loftljós" is offered as "office ceiling light", because an
+  English recogniser hears the original as "screen Store". Aliases are written
+  to the entity registry, so Assist uses them everywhere, not just here.
+- **Status**: where the sentence file is, whether it matches the shipped one,
+  whether you have edited it, which phrases it defines, and a button to
+  reinstall it and reload the conversation agent.
+- **Pipelines, with warnings.** Speech-to-phrase only transcribes sentences it
+  was given in advance, so it cannot fill EM's free-text wildcard slot; a pipeline
+  running in another language cannot match an English sentence file.
+- **Exposure** shows Assist and Google Assistant status; bulk buttons change Assist exposure only.
+
+
+### Voice exposure safeguards
+
+Exposure changes ask for confirmation with the selected entity count and allow
+at most 500 entities per operation. Narrow the filter or deselect entities for
+larger selections. A pending action blocks duplicate submissions; failed writes
+keep the selection and create no undo entry. Only Assist exposure changes.
+The Status tab explains that EM registry commands require an admin user and
+cannot run from a satellite without user identity.
 
 ### Statistics Dashboard
 The stat wall at the top is split in two rows:
@@ -447,8 +499,9 @@ Home Assistant Entity & Device Registries
 | Component | Description |
 |---|---|
 | `__init__.py` | Integration setup, service registration, sidebar panel |
-| `websocket_api.py` | 21 WebSocket command handlers |
-| `voice_assistant.py` | Voice intent handlers |
+| `websocket_api.py` | 24 admin-gated WebSocket command handlers |
+| `voice_assistant.py` | Registry enable/disable intents and shared entity resolver |
+| `voice_sentences.py` | Sentence installation, status and conversation reload |
 | `config_flow.py` | UI-based configuration flow |
 | `entity-manager-panel.js` | Full frontend as a single web component |
 | `entity-manager-panel.css` | Extracted stylesheet |
@@ -478,6 +531,9 @@ All commands require admin privileges.
 | `entity_manager/unassign_entity_device` | `entity_id` | Remove device assignment from entity |
 | `entity_manager/import_entity_states` | `entities` (max 500) | Apply enable/disable states from an exported config |
 | `entity_manager/register_template` | `entity_id` | Inject a unique_id into a YAML template entity and reload |
+| `entity_manager/resolve_voice_target` | `phrase` | What the voice intents would resolve a phrase to, with the candidates and near misses. Read-only |
+| `entity_manager/get_voice_status` | — | Sentence files on disk, the phrases they define, and whether the intents are registered |
+| `entity_manager/reinstall_voice_sentences` | `force` (optional) | Reinstall the sentence file and reload the conversation agent |
 
 YAML-writing commands (`update_yaml_references`, `register_template`) never touch `secrets.yaml` and write a `.em-bak` backup of the original file before modifying it.
 ### Home Assistant Services

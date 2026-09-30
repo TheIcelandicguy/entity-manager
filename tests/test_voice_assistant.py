@@ -7,7 +7,11 @@ from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 
-from custom_components.entity_manager import SENTENCE_MARKER, _install_sentences
+from custom_components.entity_manager.voice_sentences import (
+    SENTENCE_MARKER,
+    _install_sentences,
+    sentence_status,
+)
 from custom_components.entity_manager.voice_assistant import (
     INTENT_DISABLE_ENTITY,
     INTENT_ENABLE_ENTITY,
@@ -16,6 +20,7 @@ from custom_components.entity_manager.voice_assistant import (
     _resolve_entity_id,
     _spoken_form,
     async_setup_intents,
+    resolve_voice_target,
 )
 
 
@@ -449,3 +454,172 @@ async def test_a_short_unrelated_name_does_not_win_the_tiebreak(
     )
     assert entry.entity_id.startswith("sensor.")
     assert _resolve_entity_id(hass, "hue lamp 3") == "light.skrifstofa_hue_color_lamp_3"
+
+
+# ---------------------------------------------------------------------------
+# resolve_voice_target — the structured form the panel's phrase tester uses
+# ---------------------------------------------------------------------------
+
+
+async def test_resolution_reports_how_it_matched(hass: HomeAssistant) -> None:
+    """The tester shows the route to the answer, not just the answer."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp", "Lamp")
+
+    by_id = resolve_voice_target(hass, "switch.lamp")
+    assert (by_id.entity_id, by_id.method, by_id.error) == (
+        "switch.lamp",
+        "entity_id",
+        None,
+    )
+
+    by_name = resolve_voice_target(hass, "lamp")
+    assert (by_name.entity_id, by_name.method) == ("switch.lamp", "exact")
+
+
+async def test_resolution_lists_the_near_misses(hass: HomeAssistant) -> None:
+    """When nothing matched, say what came closest and how close it got."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.eldhus_loftljos", "Eldhús Loftljós")
+
+    result = resolve_voice_target(hass, "eldhus gólfljós")
+
+    assert result.entity_id is None
+    assert result.error is not None
+    assert result.near_misses
+    entity_id, score = result.near_misses[0]
+    assert entity_id == "light.eldhus_loftljos"
+    assert 0 < score < 1
+
+
+async def test_resolution_keeps_every_ambiguous_match(hass: HomeAssistant) -> None:
+    """An ambiguous phrase carries the candidates, so the panel can list them."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.lamp_one", "Lamp")
+    _register(entity_reg, "switch.lamp_two", "Lamp")
+
+    result = resolve_voice_target(hass, "lamp")
+
+    assert result.entity_id is None
+    assert result.matches == ["switch.lamp_one", "switch.lamp_two"]
+    assert "2 entities match" in (result.error or "")
+
+
+async def test_resolution_never_writes(hass: HomeAssistant) -> None:
+    """The tester runs on whatever is typed, so it must not touch the registry."""
+    entity_reg = er.async_get(hass)
+    entry = _register(entity_reg, "switch.lamp", "Lamp")
+    entity_reg.async_update_entity(
+        entry.entity_id, disabled_by=er.RegistryEntryDisabler.USER
+    )
+
+    assert resolve_voice_target(hass, "lamp").entity_id == "switch.lamp"
+
+    entry = entity_reg.async_get("switch.lamp")
+    assert entry is not None
+    assert entry.disabled_by is er.RegistryEntryDisabler.USER
+
+
+# ---------------------------------------------------------------------------
+# sentence_status / _parse_intents
+# ---------------------------------------------------------------------------
+
+
+def test_status_reports_a_file_that_was_never_installed(tmp_path: Path) -> None:
+    source_dir = _source(tmp_path, SHIPPED)
+
+    (status,) = sentence_status(source_dir, tmp_path / "config")
+
+    assert status["language"] == "en"
+    assert status["installed"] is False
+    assert status["up_to_date"] is False
+    assert status["user_edited"] is False
+
+
+def test_status_reports_an_edited_copy_as_the_users(tmp_path: Path) -> None:
+    """The panel offers to overwrite only a file the user owns."""
+    source_dir = _source(tmp_path, SHIPPED)
+    config_dir = tmp_path / "config"
+    target = config_dir / "custom_sentences" / "en" / "entity_manager.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text("language: en\n# my own wording\n", encoding="utf-8")
+
+    (status,) = sentence_status(source_dir, config_dir)
+
+    assert (status["installed"], status["up_to_date"], status["user_edited"]) == (
+        True,
+        False,
+        True,
+    )
+
+
+def test_status_reads_phrases_from_the_installed_copy(tmp_path: Path) -> None:
+    """What HA matches on is the copy, not what we ship."""
+    source_dir = _source(tmp_path, SHIPPED)
+    config_dir = tmp_path / "config"
+    target = config_dir / "custom_sentences" / "en" / "entity_manager.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text(
+        f"{SENTENCE_MARKER}\n"
+        "language: en\n"
+        "intents:\n"
+        "  entity_manager_enable_entity:\n"
+        "    data:\n"
+        "      - sentences:\n"
+        '          - "wake up entity {em_entity}"\n',
+        encoding="utf-8",
+    )
+
+    (status,) = sentence_status(source_dir, config_dir)
+
+    assert status["intents"] == {
+        "entity_manager_enable_entity": ["wake up entity {em_entity}"]
+    }
+
+
+def test_status_survives_a_broken_sentence_file(tmp_path: Path) -> None:
+    """A file HA cannot read has no phrases — which is the truth of it."""
+    source_dir = _source(tmp_path, SHIPPED)
+    config_dir = tmp_path / "config"
+    target = config_dir / "custom_sentences" / "en" / "entity_manager.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text(f"{SENTENCE_MARKER}\nintents: [unclosed\n", encoding="utf-8")
+
+    (status,) = sentence_status(source_dir, config_dir)
+
+    assert status["intents"] == {}
+
+
+def test_the_shipped_file_defines_both_intents() -> None:
+    """The file that actually ships is the one voice depends on."""
+    shipped = (
+        Path(__file__).parent.parent
+        / "custom_components"
+        / "entity_manager"
+        / "sentences"
+    )
+
+    (status,) = sentence_status(shipped, Path(__file__).parent / "nonexistent")
+
+    assert set(status["intents"]) == {
+        "entity_manager_enable_entity",
+        "entity_manager_disable_entity",
+    }
+    assert all(
+        "{em_entity}" in phrase
+        for phrases in status["intents"].values()
+        for phrase in phrases
+    )
+
+
+def test_force_overwrites_an_edited_copy(tmp_path: Path) -> None:
+    """The reinstall button is an explicit "put it back" request."""
+    source_dir = _source(tmp_path, SHIPPED)
+    config_dir = tmp_path / "config"
+    target = config_dir / "custom_sentences" / "en" / "entity_manager.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text("language: en\n# my own wording\n", encoding="utf-8")
+
+    assert _install_sentences(source_dir, config_dir) == []
+    assert _install_sentences(source_dir, config_dir, force=True) == ["en"]
+    assert target.read_text(encoding="utf-8") == SHIPPED
