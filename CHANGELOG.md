@@ -15,7 +15,7 @@ commands. That is now a section of its own.
 
 - **Open Voice from sidebar Actions or the stats-nav tile.** Both open the same four-tab view
 - **Registry enable/disable is separate from device control.** EM commands do not switch lights on or off. Registry voice aliases also work with native Assist commands when the entity is enabled and exposed; browser-local display nicknames remain separate
-- **Test a phrase.** Type what you would say and see what it resolves to, without enabling or disabling anything
+- **Test a phrase.** Type what you would say and see what it resolves to, without enabling or disabling anything. Typing Icelandic accents no longer lowers a name's match: each spelling of your phrase is scored on its own, so a one-word hit on "ljós hol" reads 50%, not 33%
 - **Routing and matching are reported separately**, because they fail separately. The word "entity" is what hands a sentence to Entity Manager; a name can resolve perfectly in a sentence Home Assistant would never send here
 - **A miss says what came closest** and what share of your words each name matched, against the 60% a match needs. Usually the answer is an alias
 - **Aliases in bulk.** A second name Assist answers to, added to many entities at once, with an English suggestion built from the Icelandic name — "Skrifstofa Loftljós" becomes "office ceiling light", because an English recogniser hears the original as "screen Store"

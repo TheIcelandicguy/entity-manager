@@ -244,6 +244,29 @@ async def test_resolve_transliterates_thorn_and_eth(hass: HomeAssistant) -> None
     assert _resolve_entity_id(hass, "badherbergi raki") == "binary_sensor.bad"
 
 
+async def test_word_match_is_not_diluted_by_accent_folding(
+    hass: HomeAssistant,
+) -> None:
+    """Typing the accents must not count each accented word twice.
+
+    "eldhús ljós" matches both words of "Ljós Eldhús Loft" in either spelling;
+    pooling the accented and folded words made that 2 of 4, under the 60% bar.
+    """
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.eldhus_loft", "Ljós Eldhús Loft")
+    assert _resolve_entity_id(hass, "eldhús ljós") == "light.eldhus_loft"
+    assert _resolve_entity_id(hass, "eldhus ljos") == "light.eldhus_loft"
+
+
+async def test_near_miss_share_counts_each_word_once(hass: HomeAssistant) -> None:
+    """A one-word hit on a two-word phrase reads 50%, accents or not."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "switch.hol_skjar", "Hol Skjár")
+    result = resolve_voice_target(hass, "ljós hol")
+    assert result.entity_id is None
+    assert result.near_misses == [("switch.hol_skjar", 0.5)]
+
+
 async def test_resolve_matches_an_alias(hass: HomeAssistant) -> None:
     """Aliases are HA's own answer to a name a voice assistant cannot hear."""
     entity_reg = er.async_get(hass)
