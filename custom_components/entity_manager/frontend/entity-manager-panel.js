@@ -2389,7 +2389,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
     contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
-    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
+    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'broken-references', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
     this._attachDialogSearch(contentEl);
   }
 
@@ -2402,8 +2402,9 @@ class EntityManagerPanel extends HTMLElement {
       'unavailable':   'Unavailable Entities',
       'cleanup':       'Cleanup',
       'duplicate-names': 'Duplicate Names',
+      'broken-references': 'Broken References',
     };
-    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate' };
+    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate', 'broken-references': 'mdi:link-off' };
 
     // Build all section shells upfront as collapsible groups with a loading placeholder
     let html = '';
@@ -2423,7 +2424,7 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names' || t === 'broken-references') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners (and the bulk-action bar) remain live; skip the
           // temp+move pattern, which silently dropped the bulk bar and tint wrapper for
@@ -2435,6 +2436,8 @@ class EntityManagerPanel extends HTMLElement {
             await this._showCleanupDialog({ inline: true, container: groupBody });
           } else if (t === 'duplicate-names') {
             await this._showDuplicateNamesSection(groupBody);
+          } else if (t === 'broken-references') {
+            await this._showBrokenReferencesSection(groupBody);
           } else if (t === 'automation' || t === 'script' || t === 'helper') {
             // skipOuterGroup avoids a duplicate section header, since this section
             // shell already provides one (built above via _collGroup).
@@ -15216,6 +15219,60 @@ class EntityManagerPanel extends HTMLElement {
         });
       });
     });
+  }
+
+  /** The Broken References section of Cleanup & Health: a read-only scan for
+   * entity IDs referenced in config that exist in neither the entity
+   * registry nor the state machine. Report only — no writes happen here. */
+  async _showBrokenReferencesSection(container) {
+    let result;
+    try {
+      result = await this._hass.callWS({ type: 'entity_manager/get_broken_references' });
+    } catch (err) {
+      container.innerHTML = `<p style="text-align:center;padding:24px;color:var(--em-danger)">Scan failed: ${this._escapeHtml(err?.message || String(err))}</p>`;
+      return;
+    }
+    const sources = result?.sources || [];
+    if (!sources.length) {
+      container.innerHTML = '<p style="text-align:center;padding:24px;opacity:0.6">No broken references found — every scanned entity ID still exists.</p>';
+      return;
+    }
+    const sourceLabels = {
+      yaml: 'YAML config',
+      dashboard: 'Dashboards',
+      config_entry: 'Config entries',
+      person: 'Persons',
+      assist_pipeline: 'Assist pipelines',
+      energy: 'Energy preferences',
+    };
+    const bySource = new Map();
+    sources.forEach(s => {
+      if (!bySource.has(s.source)) bySource.set(s.source, []);
+      bySource.get(s.source).push(s);
+    });
+
+    const html = this._sectionHint(
+      'Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and the '
+      + 'Energy dashboard preferences that exist in neither the entity registry nor the state machine. Report '
+      + 'only — nothing here is changed automatically. Fix a dashboard or config file by hand, or re-run this '
+      + 'scan after a rename to confirm the reference update reached everywhere it needed to.',
+      'help-broken-refs',
+    ) + [...bySource.entries()].map(([src, items]) => this._collGroup(
+      `${sourceLabels[src] || src} (${items.reduce((n, i) => n + i.entity_ids.length, 0)})`,
+      items.map(item => this._collGroup(
+        `${this._escapeHtml(item.label)} (${item.entity_ids.length})`,
+        item.entity_ids.map(id => this._renderMiniEntityCard({
+          entity_id: id,
+          name: id,
+          infoLine: `Domain: ${this._escapeHtml(id.split('.')[0])}`,
+          extraClass: 'em-brokenref-row',
+          compact: true,
+        })).join(''),
+      )).join(''),
+    )).join('');
+
+    container.innerHTML = html;
+    this._reAttachCollapsibles(container);
   }
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {

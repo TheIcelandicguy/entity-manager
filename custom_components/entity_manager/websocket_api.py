@@ -1343,6 +1343,186 @@ def _scan_manual_references(
     return found
 
 
+def _tokens_in_obj(obj: Any, found: set[str]) -> None:
+    """Collect every entity-ID-shaped token in a JSON-like value, into ``found``."""
+    if isinstance(obj, str):
+        found.update(_Rewriter._TOKEN.findall(obj))  # noqa: SLF001
+    elif isinstance(obj, list):
+        for item in obj:
+            _tokens_in_obj(item, found)
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            _tokens_in_obj(key, found)
+            _tokens_in_obj(value, found)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_broken_references",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_broken_references(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Report entity IDs referenced in config that exist nowhere any more.
+
+    Read-only sibling of ``update_yaml_references``: scans the same sources
+    (YAML config, storage dashboards, config entry data/options, persons,
+    Assist pipelines, Energy preferences) for entity-ID-shaped tokens using
+    the same ``_Rewriter`` tokenizer, but reports instead of rewriting. A
+    token only counts as broken when its domain is one this installation
+    actually has entities in — otherwise an unrelated ``word.word`` string
+    the same loose token shape also matches (a template filter, a Python
+    attribute access) would be reported as a dangling entity.
+    """
+    try:
+        registry = er.async_get(hass)
+        existing_ids = set(registry.entities.keys()) | set(
+            hass.states.async_entity_ids()
+        )
+        known_domains = {eid.split(".", 1)[0] for eid in existing_ids}
+
+        def _broken(tokens: set[str]) -> list[str]:
+            return sorted(
+                token
+                for token in tokens
+                if token not in existing_ids and token.split(".", 1)[0] in known_domains
+            )
+
+        config_path = Path(hass.config.config_dir)
+
+        def _scan_yaml() -> list[dict[str, Any]]:
+            out: list[dict[str, Any]] = []
+            for filepath in sorted(config_path.rglob("*.yaml")):
+                rel = filepath.relative_to(config_path)
+                if any(p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]):
+                    continue
+                if filepath.name == "secrets.yaml":
+                    continue
+                try:
+                    text = filepath.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                broken = _broken(set(_Rewriter._TOKEN.findall(text)))  # noqa: SLF001
+                if broken:
+                    out.append(
+                        {"source": "yaml", "label": str(rel), "entity_ids": broken}
+                    )
+            return out
+
+        sources: list[dict[str, Any]] = await hass.async_add_executor_job(_scan_yaml)
+
+        lovelace = hass.data.get("lovelace")
+        dashboards = (
+            (
+                lovelace.get("dashboards", {})
+                if isinstance(lovelace, dict)
+                else getattr(lovelace, "dashboards", {})
+            )
+            if lovelace is not None
+            else {}
+        )
+        for url_path, dashboard in list(dashboards.items()):
+            if getattr(dashboard, "mode", None) != "storage":
+                continue
+            try:
+                config = await dashboard.async_load(False)
+            except Exception:  # noqa: BLE001 — empty/auto-generated dashboard
+                continue
+            found: set[str] = set()
+            _tokens_in_obj(config, found)
+            broken = _broken(found)
+            if broken:
+                sources.append(
+                    {
+                        "source": "dashboard",
+                        "label": f"dashboard: {url_path or 'lovelace'}",
+                        "entity_ids": broken,
+                    }
+                )
+
+        for entry in hass.config_entries.async_entries():
+            found = set()
+            _tokens_in_obj(dict(entry.data), found)
+            _tokens_in_obj(dict(entry.options), found)
+            broken = _broken(found)
+            if broken:
+                sources.append(
+                    {
+                        "source": "config_entry",
+                        "label": f"config entry: {entry.domain} ({entry.title})",
+                        "entity_ids": broken,
+                    }
+                )
+
+        person_data = hass.data.get("person")
+        if isinstance(person_data, tuple) and len(person_data) >= 2:
+            for item in list(person_data[1].async_items()):
+                found = set()
+                _tokens_in_obj(list(item.get("device_trackers", [])), found)
+                broken = _broken(found)
+                if broken:
+                    sources.append(
+                        {
+                            "source": "person",
+                            "label": f"person: {item.get('name', item.get('id'))}",
+                            "entity_ids": broken,
+                        }
+                    )
+
+        pipeline_data = hass.data.get("assist_pipeline")
+        store = getattr(pipeline_data, "pipeline_store", None)
+        if store is not None:
+            for pipeline in list(store.async_items()):
+                found = set()
+                for field in _PIPELINE_ENTITY_FIELDS:
+                    value = getattr(pipeline, field, None)
+                    if isinstance(value, str):
+                        found.update(_Rewriter._TOKEN.findall(value))  # noqa: SLF001
+                broken = _broken(found)
+                if broken:
+                    sources.append(
+                        {
+                            "source": "assist_pipeline",
+                            "label": f"assist pipeline: {getattr(pipeline, 'name', pipeline.id)}",
+                            "entity_ids": broken,
+                        }
+                    )
+
+        try:
+            from homeassistant.components.energy.data import (  # noqa: PLC0415
+                async_get_manager,
+            )
+
+            manager = await async_get_manager(hass)
+            prefs = manager.data
+        except ImportError:  # energy not available in this HA build
+            prefs = None
+        if prefs:
+            found = set()
+            _tokens_in_obj(dict(prefs), found)
+            broken = _broken(found)
+            if broken:
+                sources.append(
+                    {
+                        "source": "energy",
+                        "label": "energy preferences",
+                        "entity_ids": broken,
+                    }
+                )
+
+        sources.sort(key=lambda s: (s["source"], s["label"]))
+        total = sum(len(s["entity_ids"]) for s in sources)
+        connection.send_result(msg["id"], {"sources": sources, "total": total})
+    except Exception as err:
+        _LOGGER.error("Error scanning broken references: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "get_failed", str(err))
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/get_entity_details",
@@ -1974,6 +2154,7 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_assign_entity_device)
     websocket_api.async_register_command(hass, handle_unassign_entity_device)
     websocket_api.async_register_command(hass, handle_update_yaml_references)
+    websocket_api.async_register_command(hass, handle_get_broken_references)
     websocket_api.async_register_command(hass, handle_get_entity_details)
     websocket_api.async_register_command(hass, handle_get_config_entry_health)
     websocket_api.async_register_command(hass, handle_get_areas_and_floors)

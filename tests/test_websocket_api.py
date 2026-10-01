@@ -22,6 +22,7 @@ from custom_components.entity_manager.websocket_api import (
     handle_enable_entity,
     handle_export_states,
     handle_get_automations,
+    handle_get_broken_references,
     handle_get_config_entry_health,
     handle_get_disabled_entities,
     handle_get_entity_details,
@@ -1236,6 +1237,273 @@ async def test_ws_update_references_energy_untouched_and_unreported(
     manager.async_update.assert_not_called()
     # The file is rewritten through the manager, so it must not be reported as manual
     assert not [m for m in result["manual_references"] if m["file"].endswith("energy")]
+
+
+# ---------------------------------------------------------------------------
+# handle_get_broken_references
+# ---------------------------------------------------------------------------
+
+
+async def test_ws_broken_references_finds_dangling_yaml_id(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A known-domain entity ID with no registry entry or state is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")  # makes "light" a known domain
+    (tmp_path / "automations.yaml").write_text(
+        "- entity_id: light.ghost\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 50, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total"] == 1
+    assert result["sources"] == [
+        {"source": "yaml", "label": "automations.yaml", "entity_ids": ["light.ghost"]}
+    ]
+
+
+async def test_ws_broken_references_ignores_existing_id(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """An entity ID that is still registered is not reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    (tmp_path / "automations.yaml").write_text(
+        "- entity_id: light.real\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 51, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == []
+    assert result["total"] == 0
+
+
+async def test_ws_broken_references_skips_unknown_domain(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A dotted token whose domain has no entity anywhere is not a false positive."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    (tmp_path / "templates.yaml").write_text(
+        "value: '{{ min.max }}'\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 52, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == []
+
+
+async def test_ws_broken_references_skips_secrets_and_snapshots(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """secrets.yaml and a snapshots directory are never scanned."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    (tmp_path / "secrets.yaml").write_text(
+        "api_key: light.ghost\n", encoding="utf-8"
+    )
+    snap_dir = tmp_path / "amira" / "snapshots"
+    snap_dir.mkdir(parents=True)
+    (snap_dir / "automations.yaml").write_text(
+        "entity_id: light.ghost\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 53, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == []
+
+
+async def test_ws_broken_references_finds_dashboard_id(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A storage-mode dashboard card pointing at a vanished entity is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+
+    dashboard = MagicMock()
+    dashboard.mode = "storage"
+    dashboard.async_load = AsyncMock(
+        return_value={"views": [{"cards": [{"entity": "light.ghost"}]}]}
+    )
+    hass.data["lovelace"] = {"dashboards": {"": dashboard}}
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 54, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "dashboard",
+            "label": "dashboard: lovelace",
+            "entity_ids": ["light.ghost"],
+        }
+    ]
+
+
+async def test_ws_broken_references_finds_config_entry_id(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A config entry option pointing at a vanished entity is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.real")
+    entry = MockConfigEntry(
+        domain="test_consumer",
+        title="Consumer",
+        options={"watched": "sensor.ghost"},
+    )
+    entry.add_to_hass(hass)
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 55, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "config_entry",
+            "label": "config entry: test_consumer (Consumer)",
+            "entity_ids": ["sensor.ghost"],
+        }
+    ]
+
+
+async def test_ws_broken_references_finds_person_tracker(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A person's device_tracker pointing at a vanished entity is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "device_tracker.real")
+
+    collection = MagicMock()
+    collection.async_items = MagicMock(
+        return_value=[
+            {
+                "id": "p1",
+                "name": "Ghost",
+                "device_trackers": ["device_tracker.ghost"],
+            }
+        ]
+    )
+    hass.data["person"] = ("unused", collection)
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 56, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "person",
+            "label": "person: Ghost",
+            "entity_ids": ["device_tracker.ghost"],
+        }
+    ]
+
+
+async def test_ws_broken_references_finds_pipeline_engine(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """An Assist pipeline engine field pointing at a vanished entity is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "conversation.real")
+
+    pipeline = MagicMock()
+    pipeline.id = "pid"
+    pipeline.name = "Home"
+    pipeline.conversation_engine = "conversation.ghost"
+    pipeline.stt_engine = None
+    pipeline.tts_engine = None
+    pipeline.wake_word_entity = None
+    store = MagicMock()
+    store.async_items = MagicMock(return_value=[pipeline])
+    hass.data["assist_pipeline"] = MagicMock(pipeline_store=store)
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 57, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "assist_pipeline",
+            "label": "assist pipeline: Home",
+            "entity_ids": ["conversation.ghost"],
+        }
+    ]
+
+
+async def test_ws_broken_references_finds_energy_pref(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """An Energy dashboard statistic ID pointing at a vanished entity is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.real")
+
+    manager = MagicMock()
+    manager.data = {
+        "energy_sources": [
+            {
+                "type": "grid",
+                "flow_from": [{"stat_energy_from": "sensor.ghost"}],
+                "flow_to": [],
+            }
+        ],
+        "device_consumption": [],
+    }
+
+    conn = _mock_conn()
+    with _patch_energy(manager):
+        handle_get_broken_references(
+            hass, conn, {"id": 58, "type": "entity_manager/get_broken_references"}
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "energy",
+            "label": "energy preferences",
+            "entity_ids": ["sensor.ghost"],
+        }
+    ]
 
 
 # ---------------------------------------------------------------------------

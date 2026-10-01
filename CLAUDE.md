@@ -30,12 +30,12 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 1,985 lines. All 24 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,166 lines. All 25 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,197 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.js` | 19,254 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 7,989 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
@@ -51,8 +51,8 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
 
 - The panel talks to the backend **only** over HA's WebSocket bus. There is no
   HTTP view and no REST endpoint.
-- All 24 commands are named `entity_manager/<name>` and carry **both**
-  `@websocket_api.require_admin` and `@websocket_api.async_response` (24/24 in
+- All 25 commands are named `entity_manager/<name>` and carry **both**
+  `@websocket_api.require_admin` and `@websocket_api.async_response` (25/25 in
   source). The panel itself is `require_admin=True`. Every command reads or
   writes registry data, so a handler missing either decorator is a security hole.
 - `async_setup_ws_api()` is the single registration point. A handler that isn't
@@ -68,14 +68,16 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
   queries, HACS scanning, config-entry health. Do not add a command that
   duplicates a native API.
 
-### The 24 commands
+### The 25 commands
 
 Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 `get_automations`, `get_template_sensors`, `get_entity_details`,
 `get_config_entry_health`, `get_areas_and_floors`, `get_last_activity`
 (optional `entity_ids`; recorder query), `list_hacs_items`,
 `resolve_voice_target` (`phrase`; what the voice intents would make of it,
-writing nothing), `get_voice_status` (sentence files, registered intents).
+writing nothing), `get_voice_status` (sentence files, registered intents),
+`get_broken_references` (entity IDs referenced in config that exist in
+neither the entity registry nor the state machine; writes nothing).
 
 Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 (`entity_ids`, 1–500), `rename_entity` (`old_entity_id`, `new_entity_id`),
@@ -118,6 +120,17 @@ allowed. Everything else is WebSocket-only.
   `.storage` and files under `custom_components` are only **reported** in
   `manual_references` (`_STORAGE_REPORT_SKIP` filters registries, caches and
   credentials).
+- `get_broken_references` is the read-only sibling of `update_yaml_references`:
+  the **Broken References** card in Cleanup & Health. It scans the same six
+  sources (YAML, storage dashboards, config entries, persons, Assist
+  pipelines, Energy preferences) for entity-ID-shaped tokens via
+  `_Rewriter._TOKEN`, but reports instead of rewriting — never touches disk or
+  calls any HA write API. A token only counts as broken when its domain
+  belongs to at least one entity that still exists somewhere (registry or
+  state machine); otherwise a `word.word` string the same loose token shape
+  also matches (a Jinja filter, a Python attribute access) would be a false
+  positive. That also means a domain with zero surviving entities anywhere in
+  the house is invisible to this scan — a known gap, not a bug.
 - `rename_entity` only touches the entity registry. The panel rewrites
   references itself via `_updateReferences()` after every rename path: the bulk
   rename queue (dry-run preview → renames → one update for the successes), the
