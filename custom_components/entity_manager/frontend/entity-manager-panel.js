@@ -15258,13 +15258,15 @@ class EntityManagerPanel extends HTMLElement {
       + 'scan after a rename to confirm the reference update reached everywhere it needed to.',
       'help-broken-refs',
     ) + [...bySource.entries()].map(([src, items]) => this._collGroup(
-      `${sourceLabels[src] || src} (${items.reduce((n, i) => n + i.entity_ids.length, 0)})`,
+      `${sourceLabels[src] || src} (${items.reduce((n, i) => n + i.entities.length, 0)})`,
       items.map(item => this._collGroup(
-        `${this._escapeHtml(item.label)} (${item.entity_ids.length})`,
-        item.entity_ids.map(id => this._renderMiniEntityCard({
-          entity_id: id,
-          name: id,
-          infoLine: `Domain: ${this._escapeHtml(id.split('.')[0])}`,
+        `${this._escapeHtml(item.label)} (${item.entities.length})`,
+        item.entities.map(e => this._renderMiniEntityCard({
+          entity_id: e.entity_id,
+          name: e.entity_id,
+          infoLine: e.reason
+            ? this._escapeHtml(e.reason)
+            : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`,
           extraClass: 'em-brokenref-row',
           compact: true,
         })).join(''),

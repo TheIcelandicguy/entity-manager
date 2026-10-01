@@ -30,7 +30,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 2,166 lines. All 25 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,203 lines. All 25 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
@@ -77,7 +77,8 @@ Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 `resolve_voice_target` (`phrase`; what the voice intents would make of it,
 writing nothing), `get_voice_status` (sentence files, registered intents),
 `get_broken_references` (entity IDs referenced in config that exist in
-neither the entity registry nor the state machine; writes nothing).
+neither the entity registry nor the state machine, each with a `reason` when
+the registry still remembers why it's gone; writes nothing).
 
 Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 (`entity_ids`, 1–500), `rename_entity` (`old_entity_id`, `new_entity_id`),
@@ -130,7 +131,15 @@ allowed. Everything else is WebSocket-only.
   state machine); otherwise a `word.word` string the same loose token shape
   also matches (a Jinja filter, a Python attribute access) would be a false
   positive. That also means a domain with zero surviving entities anywhere in
-  the house is invisible to this scan — a known gap, not a bug.
+  the house is invisible to this scan — a known gap, not a bug. Each broken ID
+  carries a `reason` when the registry's `deleted_entities` still remembers
+  it: a record with no config entry (or whose config entry is gone) means the
+  owning integration was removed; one whose config entry is still configured
+  means the entity itself was removed — manually, or the device stopped
+  providing it — while the integration stayed. HA purges a removed-integration
+  record after 30 days (`ORPHANED_ENTITY_KEEP_SECONDS`); a still-configured
+  one is kept indefinitely. `reason` is `null` once purged, or for anything
+  gone before this registry mechanism saw it.
 - `rename_entity` only touches the entity registry. The panel rewrites
   references itself via `_updateReferences()` after every rename path: the bulk
   rename queue (dry-run preview → renames → one update for the successes), the

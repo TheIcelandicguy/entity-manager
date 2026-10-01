@@ -1378,6 +1378,18 @@ async def handle_get_broken_references(
     actually has entities in — otherwise an unrelated ``word.word`` string
     the same loose token shape also matches (a template filter, a Python
     attribute access) would be reported as a dangling entity.
+
+    Each broken ID is paired with a ``reason`` when the registry still
+    remembers why: it keeps a ``deleted_entities`` record (platform,
+    removal date, and the config entry it belonged to) for every entity it
+    removes. A record with no config entry any more (or whose config entry
+    is gone) means the owning integration was removed; one whose config
+    entry is still configured means the entity was removed on its own —
+    manually, or the device stopped providing it — while the integration
+    stayed. HA purges a *removed-integration* record after 30 days
+    (``ORPHANED_ENTITY_KEEP_SECONDS``); a record tied to a still-configured
+    entry is kept indefinitely. Once purged, or for an entity gone before
+    this registry mechanism ever saw it, ``reason`` is ``None``.
     """
     try:
         registry = er.async_get(hass)
@@ -1385,13 +1397,38 @@ async def handle_get_broken_references(
             hass.states.async_entity_ids()
         )
         known_domains = {eid.split(".", 1)[0] for eid in existing_ids}
+        deleted_by_entity_id = {
+            entry.entity_id: entry for entry in registry.deleted_entities.values()
+        }
 
-        def _broken(tokens: set[str]) -> list[str]:
-            return sorted(
+        def _reason_for(entity_id: str) -> str | None:
+            deleted = deleted_by_entity_id.get(entity_id)
+            if deleted is None:
+                return None
+            when = (
+                f" on {deleted.modified_at.date().isoformat()}"
+                if deleted.modified_at
+                else ""
+            )
+            still_configured = bool(
+                deleted.config_entry_id
+                and hass.config_entries.async_get_entry(deleted.config_entry_id)
+            )
+            if still_configured:
+                return (
+                    f"removed from the registry{when} — its integration "
+                    f"({deleted.platform}) is still configured, so this was "
+                    "either a manual removal or the device stopped providing it"
+                )
+            return f"its integration ({deleted.platform}) was removed{when}"
+
+        def _broken(tokens: set[str]) -> list[dict[str, Any]]:
+            ids = sorted(
                 token
                 for token in tokens
                 if token not in existing_ids and token.split(".", 1)[0] in known_domains
             )
+            return [{"entity_id": eid, "reason": _reason_for(eid)} for eid in ids]
 
         config_path = Path(hass.config.config_dir)
 
@@ -1410,7 +1447,7 @@ async def handle_get_broken_references(
                 broken = _broken(set(_Rewriter._TOKEN.findall(text)))  # noqa: SLF001
                 if broken:
                     out.append(
-                        {"source": "yaml", "label": str(rel), "entity_ids": broken}
+                        {"source": "yaml", "label": str(rel), "entities": broken}
                     )
             return out
 
@@ -1441,7 +1478,7 @@ async def handle_get_broken_references(
                     {
                         "source": "dashboard",
                         "label": f"dashboard: {url_path or 'lovelace'}",
-                        "entity_ids": broken,
+                        "entities": broken,
                     }
                 )
 
@@ -1455,7 +1492,7 @@ async def handle_get_broken_references(
                     {
                         "source": "config_entry",
                         "label": f"config entry: {entry.domain} ({entry.title})",
-                        "entity_ids": broken,
+                        "entities": broken,
                     }
                 )
 
@@ -1470,7 +1507,7 @@ async def handle_get_broken_references(
                         {
                             "source": "person",
                             "label": f"person: {item.get('name', item.get('id'))}",
-                            "entity_ids": broken,
+                            "entities": broken,
                         }
                     )
 
@@ -1489,7 +1526,7 @@ async def handle_get_broken_references(
                         {
                             "source": "assist_pipeline",
                             "label": f"assist pipeline: {getattr(pipeline, 'name', pipeline.id)}",
-                            "entity_ids": broken,
+                            "entities": broken,
                         }
                     )
 
@@ -1511,12 +1548,12 @@ async def handle_get_broken_references(
                     {
                         "source": "energy",
                         "label": "energy preferences",
-                        "entity_ids": broken,
+                        "entities": broken,
                     }
                 )
 
         sources.sort(key=lambda s: (s["source"], s["label"]))
-        total = sum(len(s["entity_ids"]) for s in sources)
+        total = sum(len(s["entities"]) for s in sources)
         connection.send_result(msg["id"], {"sources": sources, "total": total})
     except Exception as err:
         _LOGGER.error("Error scanning broken references: %s", err, exc_info=True)

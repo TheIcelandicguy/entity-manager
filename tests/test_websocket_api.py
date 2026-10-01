@@ -1,5 +1,6 @@
 """Unit tests for websocket_api.py core functions."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1264,7 +1265,11 @@ async def test_ws_broken_references_finds_dangling_yaml_id(
     result = conn.send_result.call_args[0][1]
     assert result["total"] == 1
     assert result["sources"] == [
-        {"source": "yaml", "label": "automations.yaml", "entity_ids": ["light.ghost"]}
+        {
+            "source": "yaml",
+            "label": "automations.yaml",
+            "entities": [{"entity_id": "light.ghost", "reason": None}],
+        }
     ]
 
 
@@ -1318,9 +1323,7 @@ async def test_ws_broken_references_skips_secrets_and_snapshots(
     hass.config.config_dir = str(tmp_path)
     entity_reg = er.async_get(hass)
     _register(entity_reg, "light.real")
-    (tmp_path / "secrets.yaml").write_text(
-        "api_key: light.ghost\n", encoding="utf-8"
-    )
+    (tmp_path / "secrets.yaml").write_text("api_key: light.ghost\n", encoding="utf-8")
     snap_dir = tmp_path / "amira" / "snapshots"
     snap_dir.mkdir(parents=True)
     (snap_dir / "automations.yaml").write_text(
@@ -1363,7 +1366,7 @@ async def test_ws_broken_references_finds_dashboard_id(
         {
             "source": "dashboard",
             "label": "dashboard: lovelace",
-            "entity_ids": ["light.ghost"],
+            "entities": [{"entity_id": "light.ghost", "reason": None}],
         }
     ]
 
@@ -1393,7 +1396,7 @@ async def test_ws_broken_references_finds_config_entry_id(
         {
             "source": "config_entry",
             "label": "config entry: test_consumer (Consumer)",
-            "entity_ids": ["sensor.ghost"],
+            "entities": [{"entity_id": "sensor.ghost", "reason": None}],
         }
     ]
 
@@ -1429,7 +1432,7 @@ async def test_ws_broken_references_finds_person_tracker(
         {
             "source": "person",
             "label": "person: Ghost",
-            "entity_ids": ["device_tracker.ghost"],
+            "entities": [{"entity_id": "device_tracker.ghost", "reason": None}],
         }
     ]
 
@@ -1464,7 +1467,7 @@ async def test_ws_broken_references_finds_pipeline_engine(
         {
             "source": "assist_pipeline",
             "label": "assist pipeline: Home",
-            "entity_ids": ["conversation.ghost"],
+            "entities": [{"entity_id": "conversation.ghost", "reason": None}],
         }
     ]
 
@@ -1501,9 +1504,109 @@ async def test_ws_broken_references_finds_energy_pref(
         {
             "source": "energy",
             "label": "energy preferences",
-            "entity_ids": ["sensor.ghost"],
+            "entities": [{"entity_id": "sensor.ghost", "reason": None}],
         }
     ]
+
+
+def _insert_deleted_entity(
+    entity_reg: er.EntityRegistry,
+    entity_id: str,
+    *,
+    platform: str,
+    config_entry_id: str | None,
+) -> None:
+    """Seed a ``deleted_entities`` record without running a full removal flow.
+
+    Mirrors what ``EntityRegistry.async_remove`` writes, so
+    ``handle_get_broken_references`` can be tested against it directly
+    rather than reproducing a whole integration's setup/teardown.
+    """
+    from homeassistant.helpers.entity_registry import DeletedRegistryEntry
+
+    domain, obj = entity_id.split(".", 1)
+    unique_id = f"uid_{obj}"
+    when = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    entity_reg.deleted_entities[(domain, platform, unique_id)] = DeletedRegistryEntry(
+        entity_id=entity_id,
+        unique_id=unique_id,
+        platform=platform,
+        aliases=set(),
+        area_id=None,
+        categories={},
+        config_entry_id=config_entry_id,
+        config_subentry_id=None,
+        created_at=when,
+        device_class=None,
+        disabled_by=None,
+        hidden_by=None,
+        icon=None,
+        id=f"regid_{obj}",
+        labels=set(),
+        modified_at=when,
+        name=None,
+        options={},
+        orphaned_timestamp=None if config_entry_id else when.timestamp(),
+    )
+
+
+async def test_ws_broken_references_reason_integration_removed(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A dangling ID whose owning integration is gone explains why, with the date."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    _insert_deleted_entity(
+        entity_reg, "light.ghost", platform="netgear", config_entry_id=None
+    )
+    (tmp_path / "automations.yaml").write_text(
+        "- entity_id: light.ghost\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 59, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    entities = result["sources"][0]["entities"]
+    assert entities == [
+        {
+            "entity_id": "light.ghost",
+            "reason": "its integration (netgear) was removed on 2026-09-01",
+        }
+    ]
+
+
+async def test_ws_broken_references_reason_still_configured(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A dangling ID removed while its integration is still configured says so."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    entry = MockConfigEntry(domain="shelly", title="Still Here")
+    entry.add_to_hass(hass)
+    _insert_deleted_entity(
+        entity_reg, "light.ghost", platform="shelly", config_entry_id=entry.entry_id
+    )
+    (tmp_path / "automations.yaml").write_text(
+        "- entity_id: light.ghost\n", encoding="utf-8"
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 60, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    reason = result["sources"][0]["entities"][0]["reason"]
+    assert "still configured" in reason
+    assert "shelly" in reason
+    assert "2026-09-01" in reason
 
 
 # ---------------------------------------------------------------------------
