@@ -726,9 +726,9 @@ class EntityManagerPanel extends HTMLElement {
   /** Mini entity card used in stat dialogs — matches the visual style of main view entity cards.
    *  Cards whose id is a real entity_id are click-to-open Entity Details (see the
    *  document-level delegate in connectedCallback); ghost-device cards etc. stay inert. */
-  _renderMiniEntityCard({ entity_id, name, state, stateColor, timeAgo, infoLine, actionsHtml, contentHtml, checkboxHtml = '', extraClass = '', navigatePath = null, compact = false, superLabel = null, extraChip = null }) {
+  _renderMiniEntityCard({ entity_id, name, state, stateColor, timeAgo, infoLine, actionsHtml, contentHtml, checkboxHtml = '', extraClass = '', navigatePath = null, compact = false, superLabel = null, extraChip = null, notClickable = false }) {
     const eid = this._escapeAttr(entity_id);
-    const isEntity = typeof entity_id === 'string' && entity_id.includes('.');
+    const isEntity = typeof entity_id === 'string' && entity_id.includes('.') && !notClickable;
     const linkAttr = navigatePath
       ? `data-open-path="${this._escapeAttr(navigatePath)}"`
       : `data-open-entity="${eid}"`;
@@ -15268,7 +15268,7 @@ class EntityManagerPanel extends HTMLElement {
             ? this._escapeHtml(e.reason)
             : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`,
           extraClass: 'em-brokenref-row',
-          compact: true,
+          notClickable: true,
         })).join(''),
       )).join(''),
     )).join('');
