@@ -35,8 +35,8 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,369 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
-| `.../frontend/entity-manager-panel.css` | 7,989 lines, all `--em-*` variables. |
+| `.../frontend/entity-manager-panel.js` | 19,416 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.css` | 8,001 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
@@ -168,7 +168,13 @@ allowed. Everything else is WebSocket-only.
   The **Update…** button is not a separate command — it just calls
   `update_yaml_references` with the broken ID as `old_entity_id`, same as a
   rename, which is why it repoints every occurrence of that ID at once
-  rather than only the one row clicked.
+  rather than only the one row clicked. Rows are `notClickable` (the normal
+  Entity Details dialog needs `get_entity_details`, which fails for an ID
+  that doesn't exist) but still open their own
+  `_showBrokenReferenceDetailsDialog` on click, showing every place that
+  same ID turns up broken across the whole scan, each with its `reason` —
+  since the scan is already in memory client-side, this is a client-side
+  cross-reference, not another WS round-trip.
 - `rename_entity` only touches the entity registry. The panel rewrites
   references itself via `_updateReferences()` after every rename path: the bulk
   rename queue (dry-run preview → renames → one update for the successes), the

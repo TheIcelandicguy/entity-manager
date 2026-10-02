@@ -6554,6 +6554,18 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
   background: color-mix(in srgb, var(--em-primary) 4%, transparent);
 }
 
+/* Broken References rows are notClickable (the entity doesn't exist, so the
+   normal Entity Details dialog can't load it) but open their own details
+   dialog on click — same affordance, a warning accent instead of primary. */
+.em-mini-card.em-brokenref-row {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.em-mini-card.em-brokenref-row:hover {
+  border-color: var(--em-warning);
+  background: color-mix(in srgb, var(--em-warning) 4%, transparent);
+}
+
 /* Same affordance for suggestion-style rows (naming, labels, area, mismatch) */
 .em-row-clickable {
   cursor: pointer;

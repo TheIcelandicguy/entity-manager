@@ -15388,6 +15388,53 @@ class EntityManagerPanel extends HTMLElement {
         });
       });
     });
+
+    container.querySelectorAll('.em-brokenref-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button, a, .em-mini-card-actions, .em-mini-card-link')) return;
+        this._showBrokenReferenceDetailsDialog(row.dataset.entityId, sources, sourceLabels);
+      });
+    });
+  }
+
+  /** Details for one broken reference, opened by clicking its row. The entity itself
+   *  doesn't exist (no registry entry, no state), so this shows what the scan actually
+   *  knows instead: every place that ID is still referenced, each with its reason —
+   *  the same cross-reference _showBrokenReferencesSection groups by source, flattened
+   *  to "everywhere this one ID turns up broken". */
+  _showBrokenReferenceDetailsDialog(entityId, sources, sourceLabels) {
+    const matches = [];
+    sources.forEach(group => {
+      group.entities.forEach(e => {
+        if (e.entity_id === entityId) {
+          matches.push({ source: group.source, label: group.label, reason: e.reason });
+        }
+      });
+    });
+
+    const rowsHtml = matches.map(m => `
+      <div style="padding:10px 14px;border-top:1px solid var(--em-border)">
+        <div style="font-weight:600;font-size:13px">${this._escapeHtml(sourceLabels[m.source] || m.source)}</div>
+        <div style="font-size:12px;opacity:0.7;margin-top:1px">${this._escapeHtml(m.label)}</div>
+        <div style="font-size:12px;opacity:0.85;margin-top:4px">${
+          m.reason ? this._escapeHtml(m.reason) : 'No removal record left (older than 30 days, or never registered under this ID).'
+        }</div>
+      </div>`).join('');
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: entityId,
+      color: 'var(--em-warning)',
+      contentHtml: `
+        <div>
+          <p style="margin:0 0 4px;padding:0 4px;font-size:12px;opacity:0.65">
+            Domain <strong>${this._escapeHtml(entityId.split('.')[0])}</strong> — this entity exists in neither the
+            entity registry nor the state machine. Referenced in ${matches.length} place${matches.length === 1 ? '' : 's'}:
+          </p>
+          <div style="border:1px solid var(--em-border);border-radius:8px;overflow:hidden;margin-top:6px">${rowsHtml}</div>
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="em-brd-close">Close</button>`,
+    });
+    overlay.querySelector('#em-brd-close').addEventListener('click', closeDialog);
   }
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {
