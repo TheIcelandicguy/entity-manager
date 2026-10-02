@@ -818,6 +818,24 @@ def test_rewriter_swaps_do_not_chain() -> None:
     assert text == "on: light.b\noff: light.a\nstates.light.a\n"
 
 
+def test_rewriter_token_ignores_glob_wildcard_prefix() -> None:
+    """A fixed prefix before a `*`/`?` glob wildcard is not a literal entity ID.
+
+    Found live: a dashboard's auto-entities filter used
+    entity_id: "binary_sensor.shelly*cloud" to match every Shelly cloud
+    sensor. The token regex used to read "binary_sensor.shelly" out of that
+    as if it were one complete, literal reference — a real entity ID can
+    never be followed by a wildcard character, so this can only reject a
+    false match, never hide a real one.
+    """
+    assert _Rewriter._TOKEN.findall("binary_sensor.shelly*cloud") == []  # noqa: SLF001
+    assert _Rewriter._TOKEN.findall("sensor.*_power") == []  # noqa: SLF001
+    assert _Rewriter._TOKEN.findall("entity_id: *_ping") == []  # noqa: SLF001
+    assert _Rewriter._TOKEN.findall(  # noqa: SLF001
+        "entity_id: binary_sensor.real_entity"
+    ) == ["binary_sensor.real_entity"]
+
+
 async def test_ws_update_references_bulk_renames(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:
@@ -1372,6 +1390,46 @@ async def test_ws_broken_references_finds_dashboard_id(
             "entities": [{"entity_id": "light.ghost", "reason": None}],
         }
     ]
+
+
+async def test_ws_broken_references_ignores_glob_wildcard_filter(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """An auto-entities glob filter (entity_id: "domain.prefix*suffix") is not
+    mistaken for a literal, complete entity ID — found live on the house."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "binary_sensor.real")
+
+    dashboard = MagicMock()
+    dashboard.mode = "storage"
+    dashboard.async_load = AsyncMock(
+        return_value={
+            "views": [
+                {
+                    "cards": [
+                        {
+                            "type": "custom:auto-entities",
+                            "filter": {
+                                "include": [{"entity_id": "binary_sensor.shelly*cloud"}]
+                            },
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    hass.data["lovelace"] = {"dashboards": {"": dashboard}}
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 54, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == []
+    assert result["total"] == 0
 
 
 async def test_ws_broken_references_finds_config_entry_id(

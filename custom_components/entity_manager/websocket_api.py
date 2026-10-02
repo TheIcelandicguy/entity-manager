@@ -1045,14 +1045,21 @@ class _Rewriter:
     """Replace entity ID tokens from an old→new table in one linear regex pass.
 
     A token is a whole entity ID: not preceded by a letter, digit, underscore
-    or dot, and not followed by a letter, digit or underscore — so
-    ``binary_sensor.x`` never matches ``sensor.x``. Matching every token and
-    looking it up keeps a 2,000-rename batch as fast as one rename, and swaps
-    (a→b together with b→a) cannot chain.
+    or dot, and not followed by a letter, digit, underscore, ``*`` or ``?`` —
+    so ``binary_sensor.x`` never matches ``sensor.x``, and ``binary_sensor.
+    shelly*cloud`` (an auto-entities/entity-filter glob pattern HA's own cards
+    use, fnmatch-style — found live in a dashboard whose ``entity_id:
+    "binary_sensor.shelly*cloud"`` filter was misread as a literal, complete
+    reference to a dead ``binary_sensor.shelly``) never matches ``binary_
+    sensor.shelly`` either: a real entity ID can never be followed by a
+    wildcard character, so excluding them can only reject false matches, not
+    hide real ones. Matching every token and looking it up keeps a
+    2,000-rename batch as fast as one rename, and swaps (a→b together with
+    b→a) cannot chain.
     """
 
     _TOKEN = re.compile(
-        r"(?<![a-zA-Z0-9_\.])[a-z][a-z0-9_]*\.[a-z0-9_]+(?![a-zA-Z0-9_])"
+        r"(?<![a-zA-Z0-9_\.])[a-z][a-z0-9_]*\.[a-z0-9_]+(?![a-zA-Z0-9_*?])"
     )
 
     def __init__(self, mapping: dict[str, str]) -> None:

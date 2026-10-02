@@ -30,7 +30,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 2,587 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,594 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
@@ -110,7 +110,15 @@ allowed. Everything else is WebSocket-only.
 - `update_yaml_references` takes one `old_entity_id`/`new_entity_id` pair or a
   `renames` list (≤500). `_Rewriter` matches every entity-ID token in one regex
   pass and looks it up in the old→new table, so big batches stay linear and
-  swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
+  swaps cannot chain. `_TOKEN`'s trailing boundary also excludes `*` and `?` —
+  found live on the house: an `entity_id: "binary_sensor.shelly*cloud"`
+  auto-entities glob filter was misread as a literal, complete reference to a
+  dead `binary_sensor.shelly`, which both the scanner (falsely flagged as
+  broken) and the rewriter (would corrupt the glob, if an entity literally
+  named `binary_sensor.shelly` were ever renamed) shared the same tokenizer
+  for. A real entity ID can never be followed by a wildcard character, so the
+  exclusion only rejects false matches, never hides a real one. Besides YAML
+  it rewrites **storage-mode dashboards**
   (`async_load` / `async_save`), **config entry data/options**
   (`async_update_entry` — UI helpers keep their source entity there),
   **persons** (`device_trackers`), **Assist pipelines**
