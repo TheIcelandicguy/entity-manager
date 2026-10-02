@@ -1432,6 +1432,86 @@ async def test_ws_broken_references_ignores_glob_wildcard_filter(
     assert result["total"] == 0
 
 
+async def test_ws_broken_references_ignores_yaml_service_call(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A service: target (domain.service_name) is not mistaken for an entity ID —
+    found live on the house (service: light.turn_on in automations.yaml)."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    (tmp_path / "automations.yaml").write_text(
+        "- action:\n    service: light.turn_on\n    entity_id: light.ghost\n",
+        encoding="utf-8",
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 61, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    # light.turn_on (the service target) is excluded; light.ghost (a real
+    # dangling entity_id reference on the very same card) is still reported.
+    assert result["sources"] == [
+        {
+            "source": "yaml",
+            "label": "automations.yaml",
+            "target": "automations.yaml",
+            "entities": [{"entity_id": "light.ghost", "reason": None}],
+        }
+    ]
+
+
+async def test_ws_broken_references_ignores_dashboard_service_call(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A dashboard card's service:/perform_action: action target is not
+    mistaken for an entity ID, but its real entity field still is reported."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+
+    dashboard = MagicMock()
+    dashboard.mode = "storage"
+    dashboard.async_load = AsyncMock(
+        return_value={
+            "views": [
+                {
+                    "cards": [
+                        {
+                            "entity": "light.ghost",
+                            "tap_action": {
+                                "action": "perform-action",
+                                "perform_action": "light.turn_on",
+                                "service": "light.toggle",
+                            },
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+    hass.data["lovelace"] = {"dashboards": {"": dashboard}}
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 62, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "dashboard",
+            "label": "dashboard: lovelace",
+            "target": "",
+            "entities": [{"entity_id": "light.ghost", "reason": None}],
+        }
+    ]
+
+
 async def test_ws_broken_references_finds_config_entry_id(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:

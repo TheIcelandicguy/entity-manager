@@ -1433,8 +1433,32 @@ def _scan_manual_references(
     return found
 
 
+_SERVICE_VALUE_KEYS = ("service", "perform_action")
+
+# Matches a "service:"/"perform_action:" YAML key immediately before the cursor
+# (optionally quoted, optional surrounding whitespace), so a 40-char lookback
+# window can tell a service identifier's value from an entity reference by
+# the key that introduces it. The leading alternation requires the key name
+# to start right after a real delimiter (not mid-word), so an unrelated key
+# that merely ends in "...service" can't match.
+_SERVICE_KEY_RE = re.compile(
+    r"""(?:^|[\s,{\n])["']?(?:service|perform_action)["']?\s*:\s*["']?$"""
+)
+
+
 def _tokens_in_obj(obj: Any, found: set[str]) -> None:
-    """Collect every entity-ID-shaped token in a JSON-like value, into ``found``."""
+    """Collect every entity-ID-shaped token in a JSON-like value, into ``found``.
+
+    Skips the value under a ``service`` or ``perform_action`` key: HA's
+    call-a-service schema stores a service identifier there
+    (``domain.service_name``, e.g. ``light.turn_on``), which has the exact
+    same ``domain.object_id`` shape as an entity ID but is never one —
+    counting it as a dangling entity reference is a false positive this
+    function alone can introduce (``_replace_in_obj``, used by the actual
+    rename/rewrite, is unaffected: it only ever substitutes a token that is
+    an exact key in that rename's own mapping, and nobody renames an entity
+    to or from a literal service name).
+    """
     if isinstance(obj, str):
         found.update(_Rewriter._TOKEN.findall(obj))  # noqa: SLF001
     elif isinstance(obj, list):
@@ -1443,6 +1467,8 @@ def _tokens_in_obj(obj: Any, found: set[str]) -> None:
     elif isinstance(obj, dict):
         for key, value in obj.items():
             _tokens_in_obj(key, found)
+            if key in _SERVICE_VALUE_KEYS:
+                continue
             _tokens_in_obj(value, found)
 
 
@@ -1512,6 +1538,23 @@ async def handle_get_broken_references(
                 )
             return f"its integration ({deleted.platform}) was removed{when}"
 
+        def _yaml_tokens(text: str) -> set[str]:
+            """Entity-ID-shaped tokens in YAML text, minus service-call targets.
+
+            A ``service:`` (or the newer ``perform_action:``) key's value is a
+            service identifier (``domain.service_name``) — the same shape as an
+            entity ID, but never one. Checked by text position here, since YAML
+            has no structure to key off the way ``_tokens_in_obj`` does for
+            storage-mode dashboards/config entries.
+            """
+            tokens: set[str] = set()
+            for match in _Rewriter._TOKEN.finditer(text):  # noqa: SLF001
+                prefix = text[max(0, match.start() - 40) : match.start()]
+                if _SERVICE_KEY_RE.search(prefix):
+                    continue
+                tokens.add(match.group(0))
+            return tokens
+
         def _broken(tokens: set[str]) -> list[dict[str, Any]]:
             ids = sorted(
                 token
@@ -1534,7 +1577,7 @@ async def handle_get_broken_references(
                     text = filepath.read_text(encoding="utf-8")
                 except OSError:
                     continue
-                broken = _broken(set(_Rewriter._TOKEN.findall(text)))  # noqa: SLF001
+                broken = _broken(_yaml_tokens(text))
                 if broken:
                     out.append(
                         {
