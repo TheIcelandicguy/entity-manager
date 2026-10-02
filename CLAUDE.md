@@ -30,12 +30,12 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 2,203 lines. All 25 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,587 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,254 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.js` | 19,369 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 7,989 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
@@ -51,8 +51,8 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
 
 - The panel talks to the backend **only** over HA's WebSocket bus. There is no
   HTTP view and no REST endpoint.
-- All 25 commands are named `entity_manager/<name>` and carry **both**
-  `@websocket_api.require_admin` and `@websocket_api.async_response` (25/25 in
+- All 26 commands are named `entity_manager/<name>` and carry **both**
+  `@websocket_api.require_admin` and `@websocket_api.async_response` (26/26 in
   source). The panel itself is `require_admin=True`. Every command reads or
   writes registry data, so a handler missing either decorator is a security hole.
 - `async_setup_ws_api()` is the single registration point. A handler that isn't
@@ -68,7 +68,7 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
   queries, HACS scanning, config-entry health. Do not add a command that
   duplicates a native API.
 
-### The 25 commands
+### The 26 commands
 
 Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 `get_automations`, `get_template_sensors`, `get_entity_details`,
@@ -78,7 +78,8 @@ Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 writing nothing), `get_voice_status` (sentence files, registered intents),
 `get_broken_references` (entity IDs referenced in config that exist in
 neither the entity registry nor the state machine, each with a `reason` when
-the registry still remembers why it's gone; writes nothing).
+the registry still remembers why it's gone, and a `target` identifying which
+item to pass to `remove_broken_reference`; writes nothing).
 
 Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 (`entity_ids`, 1–500), `rename_entity` (`old_entity_id`, `new_entity_id`),
@@ -86,7 +87,9 @@ Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 `remove_entity`, `assign_entity_device`, `unassign_entity_device`,
 `import_entity_states` (`entities`, 1–500), `update_yaml_references`
 (`old_entity_id`, `new_entity_id`, `dry_run`), `register_template`,
-`reinstall_voice_sentences` (optional `force`; overwrites an edited copy).
+`reinstall_voice_sentences` (optional `force`; overwrites an edited copy),
+`remove_broken_reference` (`source`, `target`, `entity_id`; see Unusual bits —
+refuses with a `message` wherever deletion isn't structurally unambiguous).
 
 Only two HA services exist: `entity_manager.enable_entity` and
 `entity_manager.disable_entity`. They share an admin gate in `__init__.py` that
@@ -121,25 +124,51 @@ allowed. Everything else is WebSocket-only.
   `.storage` and files under `custom_components` are only **reported** in
   `manual_references` (`_STORAGE_REPORT_SKIP` filters registries, caches and
   credentials).
-- `get_broken_references` is the read-only sibling of `update_yaml_references`:
-  the **Broken References** card in Cleanup & Health. It scans the same six
-  sources (YAML, storage dashboards, config entries, persons, Assist
-  pipelines, Energy preferences) for entity-ID-shaped tokens via
-  `_Rewriter._TOKEN`, but reports instead of rewriting — never touches disk or
-  calls any HA write API. A token only counts as broken when its domain
-  belongs to at least one entity that still exists somewhere (registry or
-  state machine); otherwise a `word.word` string the same loose token shape
-  also matches (a Jinja filter, a Python attribute access) would be a false
-  positive. That also means a domain with zero surviving entities anywhere in
-  the house is invisible to this scan — a known gap, not a bug. Each broken ID
-  carries a `reason` when the registry's `deleted_entities` still remembers
-  it: a record with no config entry (or whose config entry is gone) means the
-  owning integration was removed; one whose config entry is still configured
-  means the entity itself was removed — manually, or the device stopped
-  providing it — while the integration stayed. HA purges a removed-integration
-  record after 30 days (`ORPHANED_ENTITY_KEEP_SECONDS`); a still-configured
-  one is kept indefinitely. `reason` is `null` once purged, or for anything
-  gone before this registry mechanism saw it.
+- `get_broken_references` is the scanning half of the **Broken References**
+  card in Cleanup & Health; the card also offers Remove and Update actions
+  (below), but the scan itself writes nothing. It scans the same six sources
+  (YAML, storage dashboards, config entries, persons, Assist pipelines,
+  Energy preferences) for entity-ID-shaped tokens via `_Rewriter._TOKEN`, but
+  reports instead of rewriting — never touches disk or calls any HA write
+  API. A token only counts as broken when its domain belongs to at least one
+  entity that still exists somewhere (registry or state machine); otherwise a
+  `word.word` string the same loose token shape also matches (a Jinja filter,
+  a Python attribute access) would be a false positive. That also means a
+  domain with zero surviving entities anywhere in the house is invisible to
+  this scan — a known gap, not a bug. Each broken ID carries a `reason` when
+  the registry's `deleted_entities` still remembers it: a record with no
+  config entry (or whose config entry is gone) means the owning integration
+  was removed; one whose config entry is still configured means the entity
+  itself was removed — manually, or the device stopped providing it — while
+  the integration stayed. HA purges a removed-integration record after 30
+  days (`ORPHANED_ENTITY_KEEP_SECONDS`); a still-configured one is kept
+  indefinitely. `reason` is `null` once purged, or for anything gone before
+  this registry mechanism saw it. Each source group also carries a `target`
+  (the file path, dashboard `url_path`, config entry ID, person ID or
+  pipeline ID — `energy` has none, it's a singleton) identifying exactly
+  which item a `remove_broken_reference` call should act on.
+- The card's **Remove** button calls `remove_broken_reference` (`source`,
+  `target`, `entity_id`). It only deletes where that's structurally
+  unambiguous: a matching list item, or — via `_prune_entity`, a
+  `_replace_in_obj`-shaped recursive walker that deletes instead of
+  substituting — a whole single-entity dict dropped from a list in one unit
+  (a dashboard card, an Energy flow entry) when checking the dict's own
+  *direct* field values only, so a card whose `entities` sub-list merely
+  *contains* the ID is pruned, not dropped wholesale. YAML gets its own
+  text-based `_remove_yaml_list_entry` instead of `_prune_entity`, since
+  blind substitution on arbitrary YAML risks corrupting it: it only deletes
+  a standalone `- id` block-list line or one element of an inline
+  `[a, id, b]` flow-list. Anywhere the ID sits in a bare scalar field — a
+  config entry's only required field, a value inside a template string —
+  nothing is touched and the result comes back `removed: false` with a
+  `message` explaining why, rather than guessing at a destructive edit that
+  could break the owning integration worse than the dangling reference
+  already does. Every real removal writes a backup first via the same
+  `.storage/entity_manager_backups/` mechanism `update_yaml_references` uses.
+  The **Update…** button is not a separate command — it just calls
+  `update_yaml_references` with the broken ID as `old_entity_id`, same as a
+  rename, which is why it repoints every occurrence of that ID at once
+  rather than only the one row clicked.
 - `rename_entity` only touches the entity registry. The panel rewrites
   references itself via `_updateReferences()` after every rename path: the bulk
   rename queue (dry-run preview → renames → one update for the successes), the

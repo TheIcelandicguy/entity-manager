@@ -13269,6 +13269,65 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-device-picker-cancel').addEventListener('click', closeDialog);
   }
 
+  /** Search/pick a single live entity. Used by Broken References' Update action to
+   *  repoint a dangling ID at something real — unlike _showDevicePickerDialog, picking
+   *  a row is the commit itself: no second confirm step, just onSelect(entityId). */
+  _showEntityPickerDialog(currentEntityId, onSelect) {
+    const allIds = Object.keys(this._hass?.states || {}).sort();
+
+    const renderList = (list) => {
+      if (list.length === 0) return `<div style="padding:16px;text-align:center;opacity:0.6">No entities found.</div>`;
+      return list.map(id => {
+        const name = this._escapeHtml(this._hass.states[id]?.attributes?.friendly_name || id);
+        return `<div class="entity-list-item em-entity-picker-option" data-entity-id="${this._escapeAttr(id)}"
+            style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--em-border)">
+          <div style="font-weight:600;font-size:13px">${name}</div>
+          <div style="font-size:11px;opacity:0.5;margin-top:1px">${this._escapeHtml(id)}</div>
+        </div>`;
+      }).join('');
+    };
+
+    let filtered = allIds;
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Repoint to a different entity',
+      color: 'var(--em-primary)',
+      searchPlaceholder: 'Search entities…',
+      contentHtml: `
+        <div>
+          <p style="margin:0 0 8px;padding:0 4px;font-size:12px;opacity:0.65">Replaces every reference to <strong>${this._escapeHtml(currentEntityId)}</strong> with the entity you pick.</p>
+          <div id="em-entity-picker-list" style="padding:4px 0 8px;max-height:50vh;overflow:auto">
+            ${renderList(filtered)}
+          </div>
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="em-entity-picker-cancel">Cancel</button>`,
+    });
+
+    const listEl = overlay.querySelector('#em-entity-picker-list');
+    const searchEl = overlay.querySelector('#em-stat-search');
+
+    searchEl.focus();
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.toLowerCase().trim();
+      filtered = q
+        ? allIds.filter(id => {
+            const name = (this._hass.states[id]?.attributes?.friendly_name || '').toLowerCase();
+            return id.toLowerCase().includes(q) || name.includes(q);
+          })
+        : allIds;
+      listEl.innerHTML = renderList(filtered);
+    });
+
+    listEl.addEventListener('click', (e) => {
+      const opt = e.target.closest('.em-entity-picker-option');
+      if (!opt) return;
+      closeDialog();
+      onSelect(opt.dataset.entityId);
+    });
+
+    overlay.querySelector('#em-entity-picker-cancel').addEventListener('click', closeDialog);
+  }
+
   async _showSuggestionsDialog(section = null) {
     const svgBack = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
     const svgRefresh = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
@@ -15221,9 +15280,12 @@ class EntityManagerPanel extends HTMLElement {
     });
   }
 
-  /** The Broken References section of Cleanup & Health: a read-only scan for
-   * entity IDs referenced in config that exist in neither the entity
-   * registry nor the state machine. Report only — no writes happen here. */
+  /** The Broken References section of Cleanup & Health: a scan for entity IDs
+   * referenced in config that exist in neither the entity registry nor the
+   * state machine, with a Remove and an Update action per row. The scan
+   * itself reports only; Remove and Update are the only writes, and each is
+   * its own explicit, confirmed action — see handle_remove_broken_reference
+   * and update_yaml_references in websocket_api.py. */
   async _showBrokenReferencesSection(container) {
     let result;
     try {
@@ -15251,11 +15313,20 @@ class EntityManagerPanel extends HTMLElement {
       bySource.get(s.source).push(s);
     });
 
+    const actionsHtml = (source, target, entityId) => `
+      <button class="em-dialog-btn em-dialog-btn-danger em-brokenref-remove"
+        data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
+        data-entity-id="${this._escapeAttr(entityId)}">Remove</button>
+      <button class="em-dialog-btn em-dialog-btn-outline-primary em-brokenref-update"
+        data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
+        data-entity-id="${this._escapeAttr(entityId)}">Update…</button>`;
+
     const html = this._sectionHint(
       'Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and the '
-      + 'Energy dashboard preferences that exist in neither the entity registry nor the state machine. Report '
-      + 'only — nothing here is changed automatically. Fix a dashboard or config file by hand, or re-run this '
-      + 'scan after a rename to confirm the reference update reached everywhere it needed to.',
+      + 'Energy dashboard preferences that exist in neither the entity registry nor the state machine. '
+      + '<strong>Remove</strong> deletes the reference where that’s structurally unambiguous (a list entry, a '
+      + 'single-entity card) and refuses — explaining why — anywhere it isn’t. <strong>Update…</strong> repoints '
+      + 'every reference to the ID everywhere at once, same as a rename.',
       'help-broken-refs',
     ) + [...bySource.entries()].map(([src, items]) => this._collGroup(
       `${sourceLabels[src] || src} (${items.reduce((n, i) => n + i.entities.length, 0)})`,
@@ -15269,12 +15340,54 @@ class EntityManagerPanel extends HTMLElement {
             : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`,
           extraClass: 'em-brokenref-row',
           notClickable: true,
+          actionsHtml: actionsHtml(item.source, item.target, e.entity_id),
         })).join(''),
       )).join(''),
     )).join('');
 
     container.innerHTML = html;
     this._reAttachCollapsibles(container);
+
+    container.querySelectorAll('.em-brokenref-remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { source, target, entityId } = { source: btn.dataset.source, target: btn.dataset.target, entityId: btn.dataset.entityId };
+        if (!(await this._confirmAsync('Remove reference', `Remove ${entityId} from this reference? A backup is saved first.`))) return;
+        btn.disabled = true;
+        try {
+          const res = await this._hass.callWS({
+            type: 'entity_manager/remove_broken_reference', source, target, entity_id: entityId,
+          });
+          if (res.removed) {
+            this._showToast(res.message || 'Reference removed', 'success');
+            await this._showBrokenReferencesSection(container);
+          } else {
+            this._showToast(res.message || "Couldn't remove that reference", 'warning');
+            btn.disabled = false;
+          }
+        } catch (err) {
+          this._showToast(`Remove failed: ${err?.message || err}`, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+
+    container.querySelectorAll('.em-brokenref-update').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entityId = btn.dataset.entityId;
+        this._showEntityPickerDialog(entityId, async (newEntityId) => {
+          try {
+            const res = await this._hass.callWS({
+              type: 'entity_manager/update_yaml_references',
+              old_entity_id: entityId, new_entity_id: newEntityId, dry_run: false,
+            });
+            this._showToast(`Updated ${res.total_replacements || 0} reference(s) to ${newEntityId}`, 'success');
+            await this._showBrokenReferencesSection(container);
+          } catch (err) {
+            this._showToast(`Update failed: ${err?.message || err}`, 'error');
+          }
+        });
+      });
+    });
   }
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {
