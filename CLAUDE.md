@@ -35,7 +35,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,416 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.js` | 19,521 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 8,001 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
@@ -174,7 +174,22 @@ allowed. Everything else is WebSocket-only.
   `_showBrokenReferenceDetailsDialog` on click, showing every place that
   same ID turns up broken across the whole scan, each with its `reason` —
   since the scan is already in memory client-side, this is a client-side
-  cross-reference, not another WS round-trip.
+  cross-reference, not another WS round-trip. Every row (inline or in that
+  dialog) also gets an **Open…** button when `_brokenRefOpenPath()` knows an
+  in-app page for its source — a dashboard's own `url_path` (a top-level
+  route, *not* nested under `/lovelace/`), `/config/integrations/integration/
+  <domain>#config_entry=<id>` (domain parsed from the source's own `label`,
+  since it never contains whitespace), `/config/person/edit/<id>`,
+  `/config/energy`, or the Assist pipelines list (pipelines have no stable
+  per-id route). YAML gets no Open button — HA has no built-in file viewer.
+  Navigation is a direct `history.pushState` + `location-changed` dispatch
+  (`_navigateTo()`), not the delegated `data-open-path` handling some dialogs
+  wire, since this needs to work from both the inline Cleanup & Health view
+  and a plain dialog. `_showEntityPickerDialog` (Update…'s picker) pre-fills
+  its search with `_suggestReplacementEntity()`'s best guess — same domain,
+  word-overlap against object_id and friendly_name — when one clears the
+  60% bar Voice's own near-miss matching uses; the matching row is also
+  highlighted, and the search can be cleared to browse everything.
 - `rename_entity` only touches the entity registry. The panel rewrites
   references itself via `_updateReferences()` after every rename path: the bulk
   rename queue (dry-run preview → renames → one update for the successes), the

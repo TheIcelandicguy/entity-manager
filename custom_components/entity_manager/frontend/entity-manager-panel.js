@@ -13272,16 +13272,46 @@ class EntityManagerPanel extends HTMLElement {
   /** Search/pick a single live entity. Used by Broken References' Update action to
    *  repoint a dangling ID at something real — unlike _showDevicePickerDialog, picking
    *  a row is the commit itself: no second confirm step, just onSelect(entityId). */
+  /** Best-guess replacement for a dead entity ID, by word overlap against its
+   *  own object_id and friendly_name — same domain only, same 60% bar Voice's
+   *  near-miss matching uses (_MIN_WORD_MATCH in voice_assistant.py), so a
+   *  thin coincidence doesn't get suggested as if it were confident. Returns
+   *  null when nothing clears the bar, same as "no suggestion" in that flow. */
+  _suggestReplacementEntity(brokenEntityId) {
+    const [domain, objectId] = String(brokenEntityId).split('.');
+    const brokenWords = this._nameWords(objectId);
+    if (!brokenWords.length) return null;
+    const states = this._hass?.states || {};
+    let best = null;
+    let bestScore = 0;
+    for (const id of Object.keys(states)) {
+      if (!id.startsWith(`${domain}.`)) continue;
+      const obj = id.slice(domain.length + 1);
+      const candidateWords = new Set([
+        ...this._nameWords(obj),
+        ...this._nameWords(states[id]?.attributes?.friendly_name || ''),
+      ]);
+      const matched = brokenWords.filter(w => candidateWords.has(w)).length;
+      const score = matched / brokenWords.length;
+      if (score > bestScore) { bestScore = score; best = id; }
+    }
+    return bestScore >= 0.6 ? best : null;
+  }
+
   _showEntityPickerDialog(currentEntityId, onSelect) {
     const allIds = Object.keys(this._hass?.states || {}).sort();
+    const suggested = this._suggestReplacementEntity(currentEntityId);
 
     const renderList = (list) => {
       if (list.length === 0) return `<div style="padding:16px;text-align:center;opacity:0.6">No entities found.</div>`;
       return list.map(id => {
         const name = this._escapeHtml(this._hass.states[id]?.attributes?.friendly_name || id);
+        const isSuggested = id === suggested;
         return `<div class="entity-list-item em-entity-picker-option" data-entity-id="${this._escapeAttr(id)}"
-            style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--em-border)">
-          <div style="font-weight:600;font-size:13px">${name}</div>
+            style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--em-border);${
+              isSuggested ? 'border-left:3px solid var(--em-primary);background:color-mix(in srgb, var(--em-primary) 6%, transparent)' : ''
+            }">
+          <div style="font-weight:600;font-size:13px">${name}${isSuggested ? ` <span style="font-weight:400;font-size:10px;color:var(--em-primary);text-transform:uppercase;letter-spacing:0.4px">Suggested</span>` : ''}</div>
           <div style="font-size:11px;opacity:0.5;margin-top:1px">${this._escapeHtml(id)}</div>
         </div>`;
       }).join('');
@@ -13295,7 +13325,9 @@ class EntityManagerPanel extends HTMLElement {
       searchPlaceholder: 'Search entities…',
       contentHtml: `
         <div>
-          <p style="margin:0 0 8px;padding:0 4px;font-size:12px;opacity:0.65">Replaces every reference to <strong>${this._escapeHtml(currentEntityId)}</strong> with the entity you pick.</p>
+          <p style="margin:0 0 8px;padding:0 4px;font-size:12px;opacity:0.65">Replaces every reference to <strong>${this._escapeHtml(currentEntityId)}</strong> with the entity you pick.${
+            suggested ? ' The search below is pre-filled with a likely match by name — check it before using it, or clear the box to browse everything.' : ''
+          }</p>
           <div id="em-entity-picker-list" style="padding:4px 0 8px;max-height:50vh;overflow:auto">
             ${renderList(filtered)}
           </div>
@@ -13306,8 +13338,7 @@ class EntityManagerPanel extends HTMLElement {
     const listEl = overlay.querySelector('#em-entity-picker-list');
     const searchEl = overlay.querySelector('#em-stat-search');
 
-    searchEl.focus();
-    searchEl.addEventListener('input', () => {
+    const applyFilter = () => {
       const q = searchEl.value.toLowerCase().trim();
       filtered = q
         ? allIds.filter(id => {
@@ -13316,7 +13347,8 @@ class EntityManagerPanel extends HTMLElement {
           })
         : allIds;
       listEl.innerHTML = renderList(filtered);
-    });
+    };
+    searchEl.addEventListener('input', applyFilter);
 
     listEl.addEventListener('click', (e) => {
       const opt = e.target.closest('.em-entity-picker-option');
@@ -13326,6 +13358,18 @@ class EntityManagerPanel extends HTMLElement {
     });
 
     overlay.querySelector('#em-entity-picker-cancel').addEventListener('click', closeDialog);
+
+    // Pre-fill the search with the suggestion's own name so the list is
+    // already narrowed to it and its close neighbours, rather than opening
+    // on the full house. Select the text (not just focus) so typing
+    // replaces it outright if the guess is wrong.
+    if (suggested) {
+      searchEl.value = this._hass.states[suggested]?.attributes?.friendly_name || suggested;
+      applyFilter();
+      searchEl.select();
+    } else {
+      searchEl.focus();
+    }
   }
 
   async _showSuggestionsDialog(section = null) {
@@ -15286,6 +15330,39 @@ class EntityManagerPanel extends HTMLElement {
    * itself reports only; Remove and Update are the only writes, and each is
    * its own explicit, confirmed action — see handle_remove_broken_reference
    * and update_yaml_references in websocket_api.py. */
+  /** Where a broken reference's `target` lives in the HA UI, as an in-app path —
+   *  or null when there isn't one (YAML has no built-in file viewer). Config
+   *  entries need a domain for their route, parsed out of the source's own
+   *  `label` ("config entry: <domain> (<title>)") rather than a new backend
+   *  field, since the domain never contains whitespace. */
+  _brokenRefOpenPath(source, target, label) {
+    switch (source) {
+      case 'dashboard':
+        return target ? `/${target}` : '/lovelace';
+      case 'config_entry': {
+        const m = /^config entry: (\S+) /.exec(label || '');
+        return m && target ? `/config/integrations/integration/${m[1]}#config_entry=${target}` : null;
+      }
+      case 'person':
+        return target ? `/config/person/edit/${target}` : null;
+      case 'energy':
+        return '/config/energy';
+      case 'assist_pipeline':
+        return '/config/voice-assistants/assistants';
+      default:
+        return null; // yaml — no in-app page to link to
+    }
+  }
+
+  /** Navigate the panel itself to an in-app path, same pushState+location-changed
+   *  pattern used elsewhere in this file — written out directly here rather than
+   *  relying on a dialog's own delegated data-open-path handling, since this is
+   *  called from both an inline view and a plain (non-confirm) dialog. */
+  _navigateTo(path) {
+    history.pushState(null, '', path);
+    window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+  }
+
   async _showBrokenReferencesSection(container) {
     let result;
     try {
@@ -15313,20 +15390,28 @@ class EntityManagerPanel extends HTMLElement {
       bySource.get(s.source).push(s);
     });
 
-    const actionsHtml = (source, target, entityId) => `
+    const actionsHtml = (source, target, label, entityId) => {
+      const openPath = this._brokenRefOpenPath(source, target, label);
+      const openBtn = openPath
+        ? `<button class="em-dialog-btn em-dialog-btn-secondary em-brokenref-open" data-open-path="${this._escapeAttr(openPath)}">Open…</button>`
+        : '';
+      return `
+      ${openBtn}
       <button class="em-dialog-btn em-dialog-btn-danger em-brokenref-remove"
         data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
         data-entity-id="${this._escapeAttr(entityId)}">Remove</button>
       <button class="em-dialog-btn em-dialog-btn-outline-primary em-brokenref-update"
         data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
         data-entity-id="${this._escapeAttr(entityId)}">Update…</button>`;
+    };
 
     const html = this._sectionHint(
       'Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and the '
       + 'Energy dashboard preferences that exist in neither the entity registry nor the state machine. '
-      + '<strong>Remove</strong> deletes the reference where that’s structurally unambiguous (a list entry, a '
-      + 'single-entity card) and refuses — explaining why — anywhere it isn’t. <strong>Update…</strong> repoints '
-      + 'every reference to the ID everywhere at once, same as a rename.',
+      + '<strong>Open…</strong> takes you straight to where it sits (not shown for YAML — Home Assistant has no '
+      + 'built-in file viewer). <strong>Remove</strong> deletes the reference where that’s structurally unambiguous '
+      + '(a list entry, a single-entity card) and refuses — explaining why — anywhere it isn’t. '
+      + '<strong>Update…</strong> repoints every reference to the ID everywhere at once, same as a rename.',
       'help-broken-refs',
     ) + [...bySource.entries()].map(([src, items]) => this._collGroup(
       `${sourceLabels[src] || src} (${items.reduce((n, i) => n + i.entities.length, 0)})`,
@@ -15340,13 +15425,17 @@ class EntityManagerPanel extends HTMLElement {
             : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`,
           extraClass: 'em-brokenref-row',
           notClickable: true,
-          actionsHtml: actionsHtml(item.source, item.target, e.entity_id),
+          actionsHtml: actionsHtml(item.source, item.target, item.label, e.entity_id),
         })).join(''),
       )).join(''),
     )).join('');
 
     container.innerHTML = html;
     this._reAttachCollapsibles(container);
+
+    container.querySelectorAll('.em-brokenref-open').forEach(btn => {
+      btn.addEventListener('click', () => this._navigateTo(btn.dataset.openPath));
+    });
 
     container.querySelectorAll('.em-brokenref-remove').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -15407,19 +15496,26 @@ class EntityManagerPanel extends HTMLElement {
     sources.forEach(group => {
       group.entities.forEach(e => {
         if (e.entity_id === entityId) {
-          matches.push({ source: group.source, label: group.label, reason: e.reason });
+          matches.push({ source: group.source, label: group.label, target: group.target, reason: e.reason });
         }
       });
     });
 
-    const rowsHtml = matches.map(m => `
-      <div style="padding:10px 14px;border-top:1px solid var(--em-border)">
-        <div style="font-weight:600;font-size:13px">${this._escapeHtml(sourceLabels[m.source] || m.source)}</div>
+    const rowsHtml = matches.map((m, i) => {
+      const openPath = this._brokenRefOpenPath(m.source, m.target, m.label);
+      return `
+      <div class="em-brd-row" data-open-path="${this._escapeAttr(openPath || '')}" data-idx="${i}"
+        style="padding:10px 14px;border-top:1px solid var(--em-border);${openPath ? 'cursor:pointer' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:600;font-size:13px">${this._escapeHtml(sourceLabels[m.source] || m.source)}</div>
+          ${openPath ? `<span style="font-size:11px;color:var(--em-primary);white-space:nowrap">Open…</span>` : ''}
+        </div>
         <div style="font-size:12px;opacity:0.7;margin-top:1px">${this._escapeHtml(m.label)}</div>
         <div style="font-size:12px;opacity:0.85;margin-top:4px">${
           m.reason ? this._escapeHtml(m.reason) : 'No removal record left (older than 30 days, or never registered under this ID).'
         }</div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
 
     const { overlay, closeDialog } = this.createDialog({
       title: entityId,
@@ -15428,11 +15524,20 @@ class EntityManagerPanel extends HTMLElement {
         <div>
           <p style="margin:0 0 4px;padding:0 4px;font-size:12px;opacity:0.65">
             Domain <strong>${this._escapeHtml(entityId.split('.')[0])}</strong> — this entity exists in neither the
-            entity registry nor the state machine. Referenced in ${matches.length} place${matches.length === 1 ? '' : 's'}:
+            entity registry nor the state machine. Referenced in ${matches.length} place${matches.length === 1 ? '' : 's'}
+            — click a row with <strong>Open…</strong> to go straight there:
           </p>
           <div style="border:1px solid var(--em-border);border-radius:8px;overflow:hidden;margin-top:6px">${rowsHtml}</div>
         </div>`,
       actionsHtml: `<button class="btn btn-secondary" id="em-brd-close">Close</button>`,
+    });
+    overlay.querySelectorAll('.em-brd-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const path = row.dataset.openPath;
+        if (!path) return;
+        closeDialog();
+        this._navigateTo(path);
+      });
     });
     overlay.querySelector('#em-brd-close').addEventListener('click', closeDialog);
   }
