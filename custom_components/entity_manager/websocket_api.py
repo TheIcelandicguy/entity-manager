@@ -1433,23 +1433,36 @@ def _scan_manual_references(
     return found
 
 
-_SERVICE_VALUE_KEYS = ("service", "perform_action")
+_SERVICE_VALUE_KEYS = ("service", "perform_action", "action")
 
-# Matches a "service:"/"perform_action:" YAML key immediately before the cursor
-# (optionally quoted, optional surrounding whitespace), so a 40-char lookback
-# window can tell a service identifier's value from an entity reference by
-# the key that introduces it. The leading alternation requires the key name
-# to start right after a real delimiter (not mid-word), so an unrelated key
-# that merely ends in "...service" can't match.
+# Matches a "service:"/"perform_action:"/"action:" YAML key immediately before
+# the cursor (optionally quoted, optional surrounding whitespace), so a 40-char
+# lookback window can tell a service identifier's value from an entity
+# reference by the key that introduces it. The leading alternation requires
+# the key name to start right after a real delimiter (not mid-word), so an
+# unrelated key that merely ends in "...service" can't match.
+#
+# "action" is here because HA 2024.10 renamed each automation/script step's
+# service-call key from "service" to "action" — found live: automations.yaml
+# and scripts.yaml both use the new `action: light.turn_on` shape, so every
+# step's service call was still being flagged as a dead entity after the
+# service/perform_action fix. Excluding it is still safe for the OLDER
+# Lovelace tap_action dialect this key name is also overloaded for
+# (`tap_action: {action: "toggle", service: "light.turn_on"}`): there, the
+# "action" field only ever holds a short dispatch-type string ("toggle",
+# "call-service", "navigate", …), never a dotted domain.service value — so it
+# was never going to match this token shape regardless, and the real target
+# lives under the sibling "service"/"perform_action" key, already excluded.
 _SERVICE_KEY_RE = re.compile(
-    r"""(?:^|[\s,{\n])["']?(?:service|perform_action)["']?\s*:\s*["']?$"""
+    r"""(?:^|[\s,{\n])["']?(?:service|perform_action|action)["']?\s*:\s*["']?$"""
 )
 
 
 def _tokens_in_obj(obj: Any, found: set[str]) -> None:
     """Collect every entity-ID-shaped token in a JSON-like value, into ``found``.
 
-    Skips the value under a ``service`` or ``perform_action`` key: HA's
+    Skips the value under a ``service``, ``perform_action`` or ``action`` key
+    (see ``_SERVICE_KEY_RE`` for why ``action`` is included too): HA's
     call-a-service schema stores a service identifier there
     (``domain.service_name``, e.g. ``light.turn_on``), which has the exact
     same ``domain.object_id`` shape as an entity ID but is never one —

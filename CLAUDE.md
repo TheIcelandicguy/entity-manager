@@ -30,7 +30,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 2,637 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,650 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
@@ -155,17 +155,26 @@ allowed. Everything else is WebSocket-only.
   (the file path, dashboard `url_path`, config entry ID, person ID or
   pipeline ID — `energy` has none, it's a singleton) identifying exactly
   which item a `remove_broken_reference` call should act on. The scanner also
-  excludes a `service:`/`perform_action:` action target (`light.turn_on`,
-  `notify.mobile_app_<device>`, …) — same `domain.name` shape as an entity
-  ID, never one. Structural sources (dashboards, config entries) skip it by
-  the dict key in `_tokens_in_obj`; YAML has no structure to key off, so
-  `_yaml_tokens()` checks by text position instead — a 40-char lookback from
-  each token requiring the key to start right after a real delimiter, so an
-  unrelated key that merely ends in "...service" can't match. This is
-  scanner-only: `_replace_in_obj` (the actual rewrite) only ever substitutes
-  a token that is an exact key in that rename's own mapping, and nobody
-  renames an entity to or from a literal service name, so it needed no
-  change.
+  excludes a `service:`/`perform_action:`/`action:` call target
+  (`light.turn_on`, `notify.mobile_app_<device>`, …) — same `domain.name`
+  shape as an entity ID, never one. `action:` is in that list because HA
+  2024.10 renamed each automation/script step's service-call key from
+  `service:` to `action:` — Davíð's own automations and scripts config both
+  use the new form, so the `service:`/`perform_action:`-only version of this
+  fix left every step's call target still flagged. Safe for the *older*
+  Lovelace `tap_action:` dialect `action` is also overloaded for (`{action:
+  "toggle", service: "light.turn_on"}`): there `action` only ever holds a
+  short dispatch-type string, never a dotted value, so it was never going to
+  match this token shape anyway — the real target lives under the sibling
+  `service`/`perform_action` key, already excluded. Structural sources
+  (dashboards, config entries) skip it by the dict key in `_tokens_in_obj`;
+  YAML has no structure to key off, so `_yaml_tokens()` checks by text
+  position instead — a 40-char lookback from each token requiring the key to
+  start right after a real delimiter, so an unrelated key that merely ends in
+  "...service" can't match. This is scanner-only: `_replace_in_obj` (the
+  actual rewrite) only ever substitutes a token that is an exact key in that
+  rename's own mapping, and nobody renames an entity to or from a literal
+  service name, so it needed no change.
 - The card's **Remove** button calls `remove_broken_reference` (`source`,
   `target`, `entity_id`). It only deletes where that's structurally
   unambiguous: a matching list item, or — via `_prune_entity`, a

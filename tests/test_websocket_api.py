@@ -1432,16 +1432,15 @@ async def test_ws_broken_references_ignores_glob_wildcard_filter(
     assert result["total"] == 0
 
 
-async def test_ws_broken_references_ignores_yaml_service_call(
+async def test_ws_broken_references_ignores_yaml_legacy_service_call(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:
-    """A service: target (domain.service_name) is not mistaken for an entity ID —
-    found live on the house (service: light.turn_on in automations.yaml)."""
+    """A service: target (domain.service_name) is not mistaken for an entity ID."""
     hass.config.config_dir = str(tmp_path)
     entity_reg = er.async_get(hass)
     _register(entity_reg, "light.real")
     (tmp_path / "automations.yaml").write_text(
-        "- action:\n    service: light.turn_on\n    entity_id: light.ghost\n",
+        "- service: light.turn_on\n  entity_id: light.ghost\n",
         encoding="utf-8",
     )
 
@@ -1453,7 +1452,39 @@ async def test_ws_broken_references_ignores_yaml_service_call(
 
     result = conn.send_result.call_args[0][1]
     # light.turn_on (the service target) is excluded; light.ghost (a real
-    # dangling entity_id reference on the very same card) is still reported.
+    # dangling entity_id reference on the very same step) is still reported.
+    assert result["sources"] == [
+        {
+            "source": "yaml",
+            "label": "automations.yaml",
+            "target": "automations.yaml",
+            "entities": [{"entity_id": "light.ghost", "reason": None}],
+        }
+    ]
+
+
+async def test_ws_broken_references_ignores_yaml_modern_action_call(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """HA 2024.10 renamed the per-step service-call key from service: to
+    action: — found live: automations.yaml and scripts.yaml both use
+    `action: light.turn_on`, which must not be read as an entity ID either."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    (tmp_path / "automations.yaml").write_text(
+        "actions:\n  - action: light.turn_on\n    target:\n"
+        "      entity_id: light.ghost\n",
+        encoding="utf-8",
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 63, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
     assert result["sources"] == [
         {
             "source": "yaml",
