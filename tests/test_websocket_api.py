@@ -1495,6 +1495,38 @@ async def test_ws_broken_references_ignores_yaml_modern_action_call(
     ]
 
 
+async def test_ws_broken_references_ignores_yaml_trigger_platform(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """`trigger: button.pressed` names a trigger platform, the same
+    domain.name shape as an entity ID — found live on the house, where it was
+    flagged as a dead button entity — but the real target below it still counts."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "button.real")
+    (tmp_path / "automations.yaml").write_text(
+        "triggers:\n  - trigger: button.pressed\n    target:\n"
+        "      entity_id: button.ghost\n",
+        encoding="utf-8",
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 64, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["sources"] == [
+        {
+            "source": "yaml",
+            "label": "automations.yaml",
+            "target": "automations.yaml",
+            "entities": [{"entity_id": "button.ghost", "reason": None}],
+        }
+    ]
+
+
 async def test_ws_broken_references_ignores_dashboard_service_call(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:

@@ -1433,7 +1433,7 @@ def _scan_manual_references(
     return found
 
 
-_SERVICE_VALUE_KEYS = ("service", "perform_action", "action")
+_SERVICE_VALUE_KEYS = ("service", "perform_action", "action", "trigger")
 
 # Matches a "service:"/"perform_action:"/"action:" YAML key immediately before
 # the cursor (optionally quoted, optional surrounding whitespace), so a 40-char
@@ -1453,8 +1453,12 @@ _SERVICE_VALUE_KEYS = ("service", "perform_action", "action")
 # "call-service", "navigate", …), never a dotted domain.service value — so it
 # was never going to match this token shape regardless, and the real target
 # lives under the sibling "service"/"perform_action" key, already excluded.
+#
+# "trigger" is here for the same reason: HA's newer trigger syntax names the
+# platform under it (`trigger: button.pressed`), again a domain.name that is
+# not an entity — found live as a "dead" button.pressed in automations.yaml.
 _SERVICE_KEY_RE = re.compile(
-    r"""(?:^|[\s,{\n])["']?(?:service|perform_action|action)["']?\s*:\s*["']?$"""
+    r"""(?:^|[\s,{\n])["']?(?:service|perform_action|action|trigger)["']?\s*:\s*["']?$"""
 )
 
 

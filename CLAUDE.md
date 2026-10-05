@@ -155,7 +155,7 @@ allowed. Everything else is WebSocket-only.
   (the file path, dashboard `url_path`, config entry ID, person ID or
   pipeline ID — `energy` has none, it's a singleton) identifying exactly
   which item a `remove_broken_reference` call should act on. The scanner also
-  excludes a `service:`/`perform_action:`/`action:` call target
+  excludes a `service:`/`perform_action:`/`action:`/`trigger:` call target
   (`light.turn_on`, `notify.mobile_app_<device>`, …) — same `domain.name`
   shape as an entity ID, never one. `action:` is in that list because HA
   2024.10 renamed each automation/script step's service-call key from
@@ -210,6 +210,12 @@ allowed. Everything else is WebSocket-only.
   since it never contains whitespace), `/config/person/edit/<id>`,
   `/config/energy`, or the Assist pipelines list (pipelines have no stable
   per-id route). YAML gets no Open button — HA has no built-in file viewer.
+  For a dashboard source, `_navigateTo(path, entityId)` then calls `_flashBrokenReference()`,
+  which polls up to 12 s for Lovelace's `hui-warning` / `hui-warning-element` placeholders
+  (HA doesn't print the ID in them, so it matches on what the element exposes and otherwise
+  flashes every placeholder on the view), pulses them and scrolls the first into view, or
+  toasts that the entity may be on another tab. `trigger:` is excluded like `action:` —
+  `trigger: button.pressed` is a trigger platform, not an entity.
   Navigation is a direct `history.pushState` + `location-changed` dispatch
   (`_navigateTo()`), not the delegated `data-open-path` handling some dialogs
   wire, since this needs to work from both the inline Cleanup & Health view

@@ -15358,9 +15358,68 @@ class EntityManagerPanel extends HTMLElement {
    *  pattern used elsewhere in this file — written out directly here rather than
    *  relying on a dialog's own delegated data-open-path handling, since this is
    *  called from both an inline view and a plain (non-confirm) dialog. */
-  _navigateTo(path) {
+  _navigateTo(path, flashEntityId = null) {
     history.pushState(null, '', path);
     window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+    if (flashEntityId) this._flashBrokenReference(flashEntityId);
+  }
+
+  /** Every element under `root`, descending into open shadow roots. Lovelace nests
+   *  its cards several shadow roots deep, so a plain querySelectorAll never sees them. */
+  _deepElements(root, out = []) {
+    root.querySelectorAll('*').forEach(el => {
+      out.push(el);
+      if (el.shadowRoot) this._deepElements(el.shadowRoot, out);
+    });
+    return out;
+  }
+
+  /** The placeholders Lovelace draws where an entity is missing. HA doesn't print the
+   *  entity ID in them, so the ID is matched on whatever the element exposes (its
+   *  config, attributes or text) and, failing that, every placeholder on the view
+   *  counts — a dashboard with several dead entities flashes all of them. */
+  _findBrokenReferenceElements(entityId) {
+    const warnings = this._deepElements(document.body)
+      .filter(el => el.localName === 'hui-warning' || el.localName === 'hui-warning-element');
+    const exact = warnings.filter(el => {
+      const cfg = el._config || el.config || {};
+      if (el.entityId === entityId || cfg.entity === entityId) return true;
+      const attrs = [...el.attributes].map(a => a.value).join(' ');
+      return `${attrs} ${el.textContent || ''} ${el.shadowRoot?.textContent || ''}`.includes(entityId);
+    });
+    return exact.length ? exact : warnings;
+  }
+
+  /** After Open… lands on a dashboard, briefly flash where the missing entity sits and
+   *  scroll it into view. The view renders after the route change, so poll for it. A
+   *  dashboard can have the entity on a view other than the one that opens — say so
+   *  rather than failing silently. */
+  _flashBrokenReference(entityId) {
+    const deadline = Date.now() + 12000;
+    const tick = () => {
+      const hits = this._findBrokenReferenceElements(entityId);
+      if (hits.length) {
+        const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        hits.forEach(el => {
+          el.animate(
+            [
+              { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
+              { boxShadow: '0 0 0 3px #ffab00, 0 0 16px 4px #ffab00', backgroundColor: 'rgba(255,171,0,0.28)' },
+              { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
+            ],
+            { duration: still ? 2500 : 700, iterations: still ? 1 : 4, easing: 'ease-in-out' },
+          );
+        });
+        hits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+      if (Date.now() < deadline) {
+        setTimeout(tick, 400);
+      } else {
+        this._showToast(`Couldn't find ${entityId} on this view — it may be on another tab of the dashboard.`, 'warning', 8000);
+      }
+    };
+    setTimeout(tick, 600);
   }
 
   async _showBrokenReferencesSection(container) {
@@ -15393,7 +15452,8 @@ class EntityManagerPanel extends HTMLElement {
     const actionsHtml = (source, target, label, entityId) => {
       const openPath = this._brokenRefOpenPath(source, target, label);
       const openBtn = openPath
-        ? `<button class="em-dialog-btn em-dialog-btn-secondary em-brokenref-open" data-open-path="${this._escapeAttr(openPath)}">Open…</button>`
+        ? `<button class="em-dialog-btn em-dialog-btn-secondary em-brokenref-open" data-open-path="${this._escapeAttr(openPath)}"
+          data-source="${this._escapeAttr(source)}" data-entity-id="${this._escapeAttr(entityId)}">Open…</button>`
         : '';
       return `
       ${openBtn}
@@ -15434,7 +15494,9 @@ class EntityManagerPanel extends HTMLElement {
     this._reAttachCollapsibles(container);
 
     container.querySelectorAll('.em-brokenref-open').forEach(btn => {
-      btn.addEventListener('click', () => this._navigateTo(btn.dataset.openPath));
+      btn.addEventListener('click', () => this._navigateTo(
+        btn.dataset.openPath, btn.dataset.source === 'dashboard' ? btn.dataset.entityId : null,
+      ));
     });
 
     container.querySelectorAll('.em-brokenref-remove').forEach(btn => {
@@ -15504,7 +15566,7 @@ class EntityManagerPanel extends HTMLElement {
     const rowsHtml = matches.map((m, i) => {
       const openPath = this._brokenRefOpenPath(m.source, m.target, m.label);
       return `
-      <div class="em-brd-row" data-open-path="${this._escapeAttr(openPath || '')}" data-idx="${i}"
+      <div class="em-brd-row" data-open-path="${this._escapeAttr(openPath || '')}" data-idx="${i}" data-source="${this._escapeAttr(m.source)}"
         style="padding:10px 14px;border-top:1px solid var(--em-border);${openPath ? 'cursor:pointer' : ''}">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
           <div style="font-weight:600;font-size:13px">${this._escapeHtml(sourceLabels[m.source] || m.source)}</div>
@@ -15536,7 +15598,7 @@ class EntityManagerPanel extends HTMLElement {
         const path = row.dataset.openPath;
         if (!path) return;
         closeDialog();
-        this._navigateTo(path);
+        this._navigateTo(path, row.dataset.source === 'dashboard' ? entityId : null);
       });
     });
     overlay.querySelector('#em-brd-close').addEventListener('click', closeDialog);
