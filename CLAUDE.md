@@ -211,7 +211,7 @@ allowed. Everything else is WebSocket-only.
   `/config/energy`, or the Assist pipelines list (pipelines have no stable
   per-id route). YAML gets no Open button — HA has no built-in file viewer.
   For a dashboard source, `_navigateTo(path, entityId)` then calls `_flashBrokenReference()`,
-  which waits 15 s for slow cards (cameras, calendars) to settle, then backs off and polls up to 40 s more, inside `ha-panel-lovelace` only, for Lovelace's
+  which waits 10 s for slow cards (cameras, calendars) to settle, then backs off and polls up to 40 s more, inside `ha-panel-lovelace` only, for Lovelace's
   `hui-warning` / `hui-warning-element` placeholders. HA doesn't print the ID in them, so
   `_warningIsFor()` walks up through shadow-root hosts to the row or card whose
   `_config.entity` names it (a singular `entity` only — an entities card's list would claim

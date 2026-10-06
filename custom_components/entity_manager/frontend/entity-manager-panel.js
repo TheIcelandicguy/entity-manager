@@ -15430,12 +15430,12 @@ class EntityManagerPanel extends HTMLElement {
    *  scroll it into view. Lovelace loads lazily and a big dashboard can take many seconds
    *  to draw — camera feeds and calendars on the house's overview keep shifting the layout
    *  after the cards appear, and a scroll done early lands in the wrong place — so wait
-   *  15 s first, then poll, gently with backing off and only inside the Lovelace panel,
+   *  10 s first, then poll, gently with backing off and only inside the Lovelace panel,
    *  for up to 40 s more. If placeholders show up but none can be tied to this entity, flash them
    *  all without scrolling and say so; if none ever show up, say that (the entity may be
    *  on another view) rather than failing silently. */
   _flashBrokenReference(entityId) {
-    const settleMs = 15000;
+    const settleMs = 10000;
     const deadline = Date.now() + settleMs + 40000;
     let attempt = 0;
     let unmatchedSince = 0;
