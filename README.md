@@ -400,13 +400,14 @@ Each card has a **↗ button** that takes you directly to the right place in HA:
 Bulk checkboxes, Rename, and Label assignment work inside dialogs the same as in the main view.
 
 ### Health & Cleanup View
-The **Health & Cleanup** inline view surfaces housekeeping tasks across six sections:
+The **Health & Cleanup** inline view surfaces housekeeping tasks across seven sections:
 - **Duplicate names** — Home Assistant puts the device name in front of the entity name, and several integrations already put it there themselves, so the name reads twice: *"Tafla B Gr.13 Uppþvottavél Tafla B Gr.13 Uppþvottavél power"*. Grouped by device, each row showing what it would become, fixable singly or in bulk with undo. Fixing sets a **display name** carrying the whole intended name, because Home Assistant adds the device name only when no display name is set. Entities whose own name *is* the device name are listed apart, since nothing is left after removing it — each offers a name built from its entity ID. Two further groups are reported without being touched: devices whose entities carry **another device's name**, and **integration entries still named after an old device** (Home Assistant titles an entry when the integration is first added and never revisits it), where the device name can be applied as the title in bulk
 - **Unavailable entities** — entities currently in `unavailable` state; per-row actions: **Ignore**, **Disable**, **Add to Group**, **Remove**; Disable and Remove show a confirmation dialog
 - **Orphaned entities** — registry entries whose *owner is gone*, split into three groups: **Missing Device** (`device_id` points at a deleted device), **Missing Config Entry** (the integration entry was removed — classic leftovers), and **Not Loaded** (enabled but nothing provides a state anymore). Entities that are simply device-less by design — automations, scripts, helpers, persons, groups — are **not** treated as orphans. Per-row actions: **Ignore**, **Assign to device** (Missing Device only), **Add to Group**, **Remove**, plus a **Remove All** with confirmation
 - **Stale entities** — value unchanged in 30+ days, using recorder-backed timestamps that survive HA restarts; static-by-design domains (automations, scenes, zones, buttons…) and config-category settings are excluded; Keep (hide for 30 d), Disable, or Remove per entity
 - **Ghost devices** — devices registered in HA with zero entities, excluding hubs/bridges that other devices connect through; click to open the device page in HA
 - **Never triggered** — automations and scripts that have never been triggered (restored remnants excluded — those are orphans)
+- **Broken references** — entity IDs that YAML, storage dashboards, config entries, persons, Assist pipelines or the Energy dashboard still point at, but that exist in neither the registry nor the state machine. Each row says why it went when Home Assistant still remembers (the whole integration was removed, or only that entity). **Open…** takes you to where it sits — and on a dashboard, scrolls to the missing entity and pulses it once the page has settled (not offered for YAML: Home Assistant has no file viewer). **Remove** deletes the reference where that is unambiguous (a list entry, a card or Energy flow that only held that entity) and explains why it won't guess anywhere else; **Update…** repoints every occurrence at a replacement, suggesting the likeliest one. A backup is written before any change. Click a row to see every place that ID is referenced.
 
 **Ignore / Restore**: clicking **Ignore** persistently dismisses a row. A **View ignored (N)** bar in each section reveals everything dismissed there, with one-click **Restore** per item and **Restore all**. The ignored state is shared with the Suggestions view.
 
@@ -669,6 +670,10 @@ One dialog reachable from any clickable chip on an entity or device card — are
 | Overview | Orphaned Entities | Unavailable Entities |
 |:---:|:---:|:---:|
 | ![Health and Cleanup](screenshots/v3/v3%2012%20Health%20and%20Cleanup%20View.png) | ![Orphaned](screenshots/v3/v3%2013%20Cleanup%20-%20Orphaned%20Entities.png) | ![Unavailable](screenshots/v3/v3%2015%20Unavailable%20Entities%20Dialog.png) |
+
+| Broken References | Where one is referenced |
+|:---:|:---:|
+| ![Broken References](screenshots/v3/v3%2046%20Broken%20References.webp) | ![Broken reference details](screenshots/v3/v3%2047%20Broken%20Reference%20Details.png) |
 
 ### Suggestions
 
