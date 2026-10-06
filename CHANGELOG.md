@@ -1,5 +1,18 @@
 # Changelog
 
+## Version 3.6.2 - Help Guide catches up
+
+The in-panel Help Guide had not been touched since 3.1.0, so it described none
+of the last five releases, and several of its "?" buttons went nowhere.
+
+### Help Guide
+
+- **New sections** for Header Filter Pills, Duplicate Names, Broken References and Voice
+- **Rename and Bulk Operations** now cover reference rewriting, the reference preview, CSV import and export, and renaming a device
+- **Aliases corrected.** Set Alias is a browser-local display nickname, not a registry alias; voice aliases are managed under Voice
+- **Undo** lists display names and voice aliases and exposure, and notes that Remove cannot be undone
+- **The "?" buttons work.** The ones on Duplicate Names and Broken References pointed at sections that did not exist and scrolled nowhere. Config Errors and the Voice header now have one too
+
 ## Version 3.6.1 - Suggestions stay put
 
 Two fixes from a user with 60 devices waiting for an area. Assigning them one by
