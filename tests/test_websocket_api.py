@@ -1,5 +1,7 @@
 """Unit tests for websocket_api.py core functions."""
 
+import dataclasses
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1289,6 +1291,7 @@ async def test_ws_broken_references_finds_dangling_yaml_id(
         {
             "source": "yaml",
             "label": "automations.yaml",
+            "target": "automations.yaml",
             "entities": [{"entity_id": "light.ghost", "reason": None}],
         }
     ]
@@ -1387,6 +1390,7 @@ async def test_ws_broken_references_finds_dashboard_id(
         {
             "source": "dashboard",
             "label": "dashboard: lovelace",
+            "target": "",
             "entities": [{"entity_id": "light.ghost", "reason": None}],
         }
     ]
@@ -1600,6 +1604,7 @@ async def test_ws_broken_references_finds_config_entry_id(
         {
             "source": "config_entry",
             "label": "config entry: test_consumer (Consumer)",
+            "target": entry.entry_id,
             "entities": [{"entity_id": "sensor.ghost", "reason": None}],
         }
     ]
@@ -1636,6 +1641,7 @@ async def test_ws_broken_references_finds_person_tracker(
         {
             "source": "person",
             "label": "person: Ghost",
+            "target": "p1",
             "entities": [{"entity_id": "device_tracker.ghost", "reason": None}],
         }
     ]
@@ -1671,6 +1677,7 @@ async def test_ws_broken_references_finds_pipeline_engine(
         {
             "source": "assist_pipeline",
             "label": "assist pipeline: Home",
+            "target": "pid",
             "entities": [{"entity_id": "conversation.ghost", "reason": None}],
         }
     ]
@@ -1731,7 +1738,7 @@ def _insert_deleted_entity(
     domain, obj = entity_id.split(".", 1)
     unique_id = f"uid_{obj}"
     when = datetime(2026, 9, 1, tzinfo=timezone.utc)
-    entity_reg.deleted_entities[(domain, platform, unique_id)] = DeletedRegistryEntry(
+    kwargs = dict(
         entity_id=entity_id,
         unique_id=unique_id,
         platform=platform,
@@ -1751,6 +1758,12 @@ def _insert_deleted_entity(
         name=None,
         options={},
         orphaned_timestamp=None if config_entry_id else when.timestamp(),
+    )
+    # The record's fields differ between HA releases (``aliases`` is newer than
+    # the oldest one CI runs), so pass only the ones this version knows.
+    known = {f.name for f in dataclasses.fields(DeletedRegistryEntry)}
+    entity_reg.deleted_entities[(domain, platform, unique_id)] = DeletedRegistryEntry(
+        **{k: v for k, v in kwargs.items() if k in known}
     )
 
 
@@ -1990,7 +2003,7 @@ async def test_ws_remove_broken_reference_dashboard_refuses_unlisted(
     hass.config.config_dir = str(tmp_path)
     dashboard = MagicMock()
     dashboard.mode = "storage"
-    dashboard.async_load = AsyncMock(return_value={"views": [{"title": "light.ghost"}]})
+    dashboard.async_load = AsyncMock(return_value={"title": "light.ghost", "views": []})
     dashboard.async_save = AsyncMock()
     hass.data["lovelace"] = {"dashboards": {"": dashboard}}
 
@@ -2125,10 +2138,15 @@ async def test_ws_remove_broken_reference_assist_pipeline_success(
     store.async_items = MagicMock(return_value=[pipeline])
     hass.data["assist_pipeline"] = MagicMock(pipeline_store=store)
 
-    with patch(
-        "homeassistant.components.assist_pipeline.async_update_pipeline",
-        AsyncMock(),
-    ) as mock_update:
+    mock_update = AsyncMock()
+    with patch.dict(
+        sys.modules,
+        {
+            "homeassistant.components.assist_pipeline": MagicMock(
+                async_update_pipeline=mock_update
+            )
+        },
+    ):
         conn = _mock_conn()
         handle_remove_broken_reference(
             hass,
@@ -2185,7 +2203,8 @@ async def test_ws_remove_broken_reference_energy_success(
     assert result["removed"] is True
     update = manager.async_update.call_args[0][0]
     assert update["energy_sources"] == [
-        {"type": "solar", "stat_energy_from": "sensor.keep"}
+        {"type": "grid", "flow_from": [], "flow_to": []},
+        {"type": "solar", "stat_energy_from": "sensor.keep"},
     ]
 
 
