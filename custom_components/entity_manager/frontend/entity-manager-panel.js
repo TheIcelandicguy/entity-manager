@@ -7929,6 +7929,16 @@ class EntityManagerPanel extends HTMLElement {
       menuBtn.addEventListener('click', () => {
         this._fireEvent('hass-toggle-menu');
       });
+      // HA's own sidebar header already has this toggle whenever the sidebar is docked
+      // (wide screens). Keep ours only where it is the sole way in: narrow screens, or
+      // the "always hidden" sidebar setting.
+      const wide = window.matchMedia('(min-width: 871px)');
+      const syncMenuBtn = () => {
+        const alwaysHidden = this._hass?.dockedSidebar === 'always_hidden';
+        menuBtn.style.display = wide.matches && !alwaysHidden ? 'none' : '';
+      };
+      syncMenuBtn();
+      wide.addEventListener('change', syncMenuBtn);
     }
     
     // Handle mobile sidebar toggle button
