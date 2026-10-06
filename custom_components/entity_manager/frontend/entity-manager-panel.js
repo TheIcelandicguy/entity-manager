@@ -15428,12 +15428,15 @@ class EntityManagerPanel extends HTMLElement {
 
   /** After Open… lands on a dashboard, briefly flash where the missing entity sits and
    *  scroll it into view. Lovelace loads lazily and a big dashboard can take many seconds
-   *  to draw, so poll — gently, with backing off, and only inside the Lovelace panel — for
-   *  up to 40 s. If placeholders show up but none can be tied to this entity, flash them
+   *  to draw — camera feeds and calendars on the house's overview keep shifting the layout
+   *  after the cards appear, and a scroll done early lands in the wrong place — so wait
+   *  15 s first, then poll, gently with backing off and only inside the Lovelace panel,
+   *  for up to 40 s more. If placeholders show up but none can be tied to this entity, flash them
    *  all without scrolling and say so; if none ever show up, say that (the entity may be
    *  on another view) rather than failing silently. */
   _flashBrokenReference(entityId) {
-    const deadline = Date.now() + 40000;
+    const settleMs = 15000;
+    const deadline = Date.now() + settleMs + 40000;
     let attempt = 0;
     let unmatchedSince = 0;
     const tick = () => {
@@ -15464,7 +15467,7 @@ class EntityManagerPanel extends HTMLElement {
         this._showToast(`Couldn't find ${entityId} on this view — it may be on another tab of the dashboard.`, 'warning', 8000);
       }
     };
-    setTimeout(tick, 2000);
+    setTimeout(tick, settleMs);
   }
 
   async _showBrokenReferencesSection(container) {
