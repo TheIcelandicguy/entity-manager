@@ -297,6 +297,11 @@ allowed. Everything else is WebSocket-only.
   bulk-toggles `homeassistant/expose_entity`. Note the panel's older
   `em-entity-aliases` localStorage feature is a *display* nickname and has
   nothing to do with these; voice code is named `_voice*` to keep them apart.
+- The **Suggestions** view rebuilds from fresh data after every assign/apply, so
+  `_refreshSuggestionsKeepingState()` snapshots which groups are open (keyed by
+  header path, with `(N)` counts stripped), the scroll position and the search
+  text, and restores them on the new render. Use it, not `_refreshView()`, for
+  any action inside that view.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.
