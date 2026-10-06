@@ -1,6 +1,6 @@
 """Unit tests for websocket_api.py core functions."""
 
-import dataclasses
+import inspect
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1761,7 +1761,7 @@ def _insert_deleted_entity(
     )
     # The record's fields differ between HA releases (``aliases`` is newer than
     # the oldest one CI runs), so pass only the ones this version knows.
-    known = {f.name for f in dataclasses.fields(DeletedRegistryEntry)}
+    known = set(inspect.signature(DeletedRegistryEntry).parameters)
     entity_reg.deleted_entities[(domain, platform, unique_id)] = DeletedRegistryEntry(
         **{k: v for k, v in kwargs.items() if k in known}
     )
