@@ -211,7 +211,7 @@ allowed. Everything else is WebSocket-only.
   `/config/energy`, or the Assist pipelines list (pipelines have no stable
   per-id route). YAML gets no Open button — HA has no built-in file viewer.
   For a dashboard source, `_navigateTo(path, entityId)` then calls `_flashBrokenReference()`,
-  which polls up to 12 s for Lovelace's `hui-warning` / `hui-warning-element` placeholders
+  which polls up to 40 s for Lovelace's `hui-warning` / `hui-warning-element` placeholders
   (HA doesn't print the ID in them, so it matches on what the element exposes and otherwise
   flashes every placeholder on the view), pulses them and scrolls the first into view, or
   toasts that the entity may be on another tab. `trigger:` is excluded like `action:` —

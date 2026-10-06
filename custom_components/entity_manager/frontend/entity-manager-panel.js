@@ -15364,23 +15364,28 @@ class EntityManagerPanel extends HTMLElement {
     if (flashEntityId) this._flashBrokenReference(flashEntityId);
   }
 
-  /** Every element under `root`, descending into open shadow roots. Lovelace nests
-   *  its cards several shadow roots deep, so a plain querySelectorAll never sees them. */
-  _deepElements(root, out = []) {
-    root.querySelectorAll('*').forEach(el => {
-      out.push(el);
-      if (el.shadowRoot) this._deepElements(el.shadowRoot, out);
-    });
-    return out;
+  /** Lovelace's placeholders for missing entities (`hui-warning`, `hui-warning-element`),
+   *  found by walking the page including open shadow roots — Lovelace nests its cards
+   *  several shadow roots deep, so a plain querySelectorAll never sees them. Iterative
+   *  and allocation-light on purpose: it runs on a large, still-rendering dashboard. */
+  _findWarningElements() {
+    const found = [];
+    const stack = [document.body];
+    while (stack.length) {
+      const walker = document.createTreeWalker(stack.pop(), NodeFilter.SHOW_ELEMENT);
+      for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+        if (el.localName === 'hui-warning' || el.localName === 'hui-warning-element') found.push(el);
+        if (el.shadowRoot) stack.push(el.shadowRoot);
+      }
+    }
+    return found;
   }
 
-  /** The placeholders Lovelace draws where an entity is missing. HA doesn't print the
-   *  entity ID in them, so the ID is matched on whatever the element exposes (its
-   *  config, attributes or text) and, failing that, every placeholder on the view
-   *  counts — a dashboard with several dead entities flashes all of them. */
+  /** HA doesn't print the entity ID in the placeholder, so match on whatever the element
+   *  exposes (config, attributes, text) and, failing that, treat every placeholder on the
+   *  view as a candidate — a dashboard with several dead entities flashes all of them. */
   _findBrokenReferenceElements(entityId) {
-    const warnings = this._deepElements(document.body)
-      .filter(el => el.localName === 'hui-warning' || el.localName === 'hui-warning-element');
+    const warnings = this._findWarningElements();
     const exact = warnings.filter(el => {
       const cfg = el._config || el.config || {};
       if (el.entityId === entityId || cfg.entity === entityId) return true;
@@ -15391,17 +15396,23 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   /** After Open… lands on a dashboard, briefly flash where the missing entity sits and
-   *  scroll it into view. The view renders after the route change, so poll for it. A
-   *  dashboard can have the entity on a view other than the one that opens — say so
-   *  rather than failing silently. */
+   *  scroll it into view. Lovelace loads lazily and a big dashboard can take many seconds
+   *  to draw, so poll gently for up to 40 s, and say so if it never shows up (it may be
+   *  on another view) rather than failing silently. */
   _flashBrokenReference(entityId) {
-    const deadline = Date.now() + 12000;
+    const deadline = Date.now() + 40000;
     const tick = () => {
+      if (document.hidden) { setTimeout(tick, 1000); return; }
       const hits = this._findBrokenReferenceElements(entityId);
       if (hits.length) {
         const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         hits.forEach(el => {
-          el.animate(
+          // A custom element is display:inline by default, and an inline box with only
+          // block content inside its shadow root has no height of its own to paint a
+          // glow on — make it a block for the length of the flash.
+          const prevDisplay = el.style.display;
+          if (getComputedStyle(el).display === 'inline') el.style.display = 'block';
+          const anim = el.animate(
             [
               { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
               { boxShadow: '0 0 0 3px #ffab00, 0 0 16px 4px #ffab00', backgroundColor: 'rgba(255,171,0,0.28)' },
@@ -15409,17 +15420,18 @@ class EntityManagerPanel extends HTMLElement {
             ],
             { duration: still ? 2500 : 700, iterations: still ? 1 : 4, easing: 'ease-in-out' },
           );
+          anim.onfinish = anim.oncancel = () => { el.style.display = prevDisplay; };
         });
         hits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
       if (Date.now() < deadline) {
-        setTimeout(tick, 400);
+        setTimeout(tick, 1000);
       } else {
         this._showToast(`Couldn't find ${entityId} on this view — it may be on another tab of the dashboard.`, 'warning', 8000);
       }
     };
-    setTimeout(tick, 600);
+    setTimeout(tick, 1500);
   }
 
   async _showBrokenReferencesSection(container) {
