@@ -2291,6 +2291,65 @@ class EntityManagerPanel extends HTMLElement {
     this._renderActiveView();
   }
 
+  // Suggestions rebuilds from fresh data after every assign, which would otherwise
+  // collapse every group the user had opened. Snapshot the open/closed state, scroll
+  // position and search text first, then put them back on the new render.
+  static get _SUG_TOGGLES() { return '.em-collapsible, .em-naming-device-toggle, .em-label-dev-toggle'; }
+
+  _suggestionsToggleKey(toggle) {
+    const label = (el) => (el.textContent || '').replace(/\(\d+[^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+    const keys = [label(toggle)];
+    for (let el = toggle.parentElement; el; el = el.parentElement) {
+      const prev = el.previousElementSibling;
+      if (prev && prev.matches(EntityManagerPanel._SUG_TOGGLES)) keys.push(label(prev));
+    }
+    return keys.reverse().join(' > ');
+  }
+
+  async _refreshSuggestionsKeepingState() {
+    const viewSel = '.em-inline-view[data-view="suggestions"]';
+    const contentEl = this.content.querySelector('#content');
+    const view = contentEl?.querySelector(viewSel);
+    if (!view) { this._refreshView(); return; }
+
+    const open = new Map();
+    view.querySelectorAll(EntityManagerPanel._SUG_TOGGLES).forEach(t => {
+      const body = t.nextElementSibling;
+      if (body) open.set(this._suggestionsToggleKey(t), body.style.display !== 'none');
+    });
+    const search = view.querySelector('.em-inline-search')?.value || '';
+    const scrolls = [];
+    for (let el = view.querySelector('.em-inline-view-body'); el; el = el.parentElement) {
+      if (el.scrollTop > 0) scrolls.push([el, el.scrollTop]);
+    }
+
+    contentEl.innerHTML = '';
+    await this._showSuggestionsDialog();
+
+    const fresh = contentEl.querySelector(viewSel);
+    if (!fresh) return;
+    fresh.querySelectorAll(EntityManagerPanel._SUG_TOGGLES).forEach(t => {
+      const body = t.nextElementSibling;
+      const want = open.get(this._suggestionsToggleKey(t));
+      if (!body || want === undefined) return;
+      body.style.display = want ? '' : 'none';
+      const arrow = t.querySelector('.em-collapse-arrow, .em-collapsible-icon, .em-naming-arrow, .em-label-dev-arrow');
+      if (arrow) arrow.style.transform = want ? '' : 'rotate(-90deg)';
+    });
+    const input = fresh.querySelector('.em-inline-search');
+    if (input && search) {
+      input.value = search;
+      input.dispatchEvent(new Event('input'));
+    }
+    const freshBody = fresh.querySelector('.em-inline-view-body');
+    requestAnimationFrame(() => {
+      scrolls.forEach(([el, top]) => {
+        const target = el.isConnected ? el : freshBody;
+        if (target) target.scrollTop = top;
+      });
+    });
+  }
+
   // Expand a named section in the suggestions inline view body and scroll it into view.
   // Works whether called immediately after render or while the view is already open.
   _expandSuggestionsSection(dialogBody, section) {
@@ -13406,7 +13465,7 @@ class EntityManagerPanel extends HTMLElement {
     const overlay = contentEl;
     const closeDialog = () => this._closeView();
     overlay.querySelector('.em-inline-back-btn').addEventListener('click', closeDialog);
-    overlay.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
+    overlay.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshSuggestionsKeepingState());
 
     const [entityRegistry, deviceRegistry, labelRegistry, areaRegistry] = await Promise.all([
       this._hass.callWS({ type: 'config/entity_registry/list' }).catch(() => []),
@@ -14207,13 +14266,13 @@ class EntityManagerPanel extends HTMLElement {
         } else if (action === 'assign-area') {
           const entityObj = this._resolveEntitiesById([entityId])[0] || { entity_id: entityId, device_id: deviceId };
           await this._showAssignDialog([entityObj], { focus: 'area' });
-          this._refreshView();
+          await this._refreshSuggestionsKeepingState();
         } else if (action === 'apply-suggested-area') {
           const areaId = btn.dataset.areaId;
           const areaName = this.areaLookup?.get(areaId)?.areaName || areaId;
           if (deviceId) {
             await this._showAreaConfirmDialog(deviceId, areaId, areaName);
-            this._refreshView();
+            await this._refreshSuggestionsKeepingState();
           }
         } else if (action === 'sync-to-device-area') {
           btn.disabled = true; btn.textContent = '…';
@@ -14225,7 +14284,7 @@ class EntityManagerPanel extends HTMLElement {
         } else if (action === 'assign-area-mismatch') {
           const [entityObj] = this._resolveEntitiesById([entityId]);
           await this._showAssignDialog([entityObj], { focus: 'area' });
-          this._refreshView();
+          await this._refreshSuggestionsKeepingState();
         }
       });
     });
@@ -14299,7 +14358,7 @@ class EntityManagerPanel extends HTMLElement {
           return this._resolveEntitiesById([eid])[0] || { entity_id: eid, device_id: cb.dataset.deviceId };
         });
         await this._showAssignDialog(entityObjects, { focus: 'area' });
-        this._refreshView();
+        await this._refreshSuggestionsKeepingState();
       });
     }
 
