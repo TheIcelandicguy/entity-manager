@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '3.5.0';
+const EM_VERSION = '3.6.0';
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -726,9 +726,9 @@ class EntityManagerPanel extends HTMLElement {
   /** Mini entity card used in stat dialogs — matches the visual style of main view entity cards.
    *  Cards whose id is a real entity_id are click-to-open Entity Details (see the
    *  document-level delegate in connectedCallback); ghost-device cards etc. stay inert. */
-  _renderMiniEntityCard({ entity_id, name, state, stateColor, timeAgo, infoLine, actionsHtml, contentHtml, checkboxHtml = '', extraClass = '', navigatePath = null, compact = false, superLabel = null, extraChip = null }) {
+  _renderMiniEntityCard({ entity_id, name, state, stateColor, timeAgo, infoLine, actionsHtml, contentHtml, checkboxHtml = '', extraClass = '', navigatePath = null, compact = false, superLabel = null, extraChip = null, notClickable = false }) {
     const eid = this._escapeAttr(entity_id);
-    const isEntity = typeof entity_id === 'string' && entity_id.includes('.');
+    const isEntity = typeof entity_id === 'string' && entity_id.includes('.') && !notClickable;
     const linkAttr = navigatePath
       ? `data-open-path="${this._escapeAttr(navigatePath)}"`
       : `data-open-entity="${eid}"`;
@@ -2389,7 +2389,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
     contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
-    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
+    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'broken-references', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
     this._attachDialogSearch(contentEl);
   }
 
@@ -2402,8 +2402,9 @@ class EntityManagerPanel extends HTMLElement {
       'unavailable':   'Unavailable Entities',
       'cleanup':       'Cleanup',
       'duplicate-names': 'Duplicate Names',
+      'broken-references': 'Broken References',
     };
-    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate' };
+    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate', 'broken-references': 'mdi:link-off' };
 
     // Build all section shells upfront as collapsible groups with a loading placeholder
     let html = '';
@@ -2423,7 +2424,7 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names' || t === 'broken-references') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners (and the bulk-action bar) remain live; skip the
           // temp+move pattern, which silently dropped the bulk bar and tint wrapper for
@@ -2435,6 +2436,8 @@ class EntityManagerPanel extends HTMLElement {
             await this._showCleanupDialog({ inline: true, container: groupBody });
           } else if (t === 'duplicate-names') {
             await this._showDuplicateNamesSection(groupBody);
+          } else if (t === 'broken-references') {
+            await this._showBrokenReferencesSection(groupBody);
           } else if (t === 'automation' || t === 'script' || t === 'helper') {
             // skipOuterGroup avoids a duplicate section header, since this section
             // shell already provides one (built above via _collGroup).
@@ -13266,6 +13269,109 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-device-picker-cancel').addEventListener('click', closeDialog);
   }
 
+  /** Search/pick a single live entity. Used by Broken References' Update action to
+   *  repoint a dangling ID at something real — unlike _showDevicePickerDialog, picking
+   *  a row is the commit itself: no second confirm step, just onSelect(entityId). */
+  /** Best-guess replacement for a dead entity ID, by word overlap against its
+   *  own object_id and friendly_name — same domain only, same 60% bar Voice's
+   *  near-miss matching uses (_MIN_WORD_MATCH in voice_assistant.py), so a
+   *  thin coincidence doesn't get suggested as if it were confident. Returns
+   *  null when nothing clears the bar, same as "no suggestion" in that flow. */
+  _suggestReplacementEntity(brokenEntityId) {
+    const [domain, objectId] = String(brokenEntityId).split('.');
+    const brokenWords = this._nameWords(objectId);
+    if (!brokenWords.length) return null;
+    const states = this._hass?.states || {};
+    let best = null;
+    let bestScore = 0;
+    for (const id of Object.keys(states)) {
+      if (!id.startsWith(`${domain}.`)) continue;
+      const obj = id.slice(domain.length + 1);
+      const candidateWords = new Set([
+        ...this._nameWords(obj),
+        ...this._nameWords(states[id]?.attributes?.friendly_name || ''),
+      ]);
+      const matched = brokenWords.filter(w => candidateWords.has(w)).length;
+      const score = matched / brokenWords.length;
+      if (score > bestScore) { bestScore = score; best = id; }
+    }
+    return bestScore >= 0.6 ? best : null;
+  }
+
+  _showEntityPickerDialog(currentEntityId, onSelect) {
+    const allIds = Object.keys(this._hass?.states || {}).sort();
+    const suggested = this._suggestReplacementEntity(currentEntityId);
+
+    const renderList = (list) => {
+      if (list.length === 0) return `<div style="padding:16px;text-align:center;opacity:0.6">No entities found.</div>`;
+      return list.map(id => {
+        const name = this._escapeHtml(this._hass.states[id]?.attributes?.friendly_name || id);
+        const isSuggested = id === suggested;
+        return `<div class="entity-list-item em-entity-picker-option" data-entity-id="${this._escapeAttr(id)}"
+            style="padding:9px 14px;cursor:pointer;border-bottom:1px solid var(--em-border);${
+              isSuggested ? 'border-left:3px solid var(--em-primary);background:color-mix(in srgb, var(--em-primary) 6%, transparent)' : ''
+            }">
+          <div style="font-weight:600;font-size:13px">${name}${isSuggested ? ` <span style="font-weight:400;font-size:10px;color:var(--em-primary);text-transform:uppercase;letter-spacing:0.4px">Suggested</span>` : ''}</div>
+          <div style="font-size:11px;opacity:0.5;margin-top:1px">${this._escapeHtml(id)}</div>
+        </div>`;
+      }).join('');
+    };
+
+    let filtered = allIds;
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: 'Repoint to a different entity',
+      color: 'var(--em-primary)',
+      searchPlaceholder: 'Search entities…',
+      contentHtml: `
+        <div>
+          <p style="margin:0 0 8px;padding:0 4px;font-size:12px;opacity:0.65">Replaces every reference to <strong>${this._escapeHtml(currentEntityId)}</strong> with the entity you pick.${
+            suggested ? ' The search below is pre-filled with a likely match by name — check it before using it, or clear the box to browse everything.' : ''
+          }</p>
+          <div id="em-entity-picker-list" style="padding:4px 0 8px;max-height:50vh;overflow:auto">
+            ${renderList(filtered)}
+          </div>
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="em-entity-picker-cancel">Cancel</button>`,
+    });
+
+    const listEl = overlay.querySelector('#em-entity-picker-list');
+    const searchEl = overlay.querySelector('#em-stat-search');
+
+    const applyFilter = () => {
+      const q = searchEl.value.toLowerCase().trim();
+      filtered = q
+        ? allIds.filter(id => {
+            const name = (this._hass.states[id]?.attributes?.friendly_name || '').toLowerCase();
+            return id.toLowerCase().includes(q) || name.includes(q);
+          })
+        : allIds;
+      listEl.innerHTML = renderList(filtered);
+    };
+    searchEl.addEventListener('input', applyFilter);
+
+    listEl.addEventListener('click', (e) => {
+      const opt = e.target.closest('.em-entity-picker-option');
+      if (!opt) return;
+      closeDialog();
+      onSelect(opt.dataset.entityId);
+    });
+
+    overlay.querySelector('#em-entity-picker-cancel').addEventListener('click', closeDialog);
+
+    // Pre-fill the search with the suggestion's own name so the list is
+    // already narrowed to it and its close neighbours, rather than opening
+    // on the full house. Select the text (not just focus) so typing
+    // replaces it outright if the guess is wrong.
+    if (suggested) {
+      searchEl.value = this._hass.states[suggested]?.attributes?.friendly_name || suggested;
+      applyFilter();
+      searchEl.select();
+    } else {
+      searchEl.focus();
+    }
+  }
+
   async _showSuggestionsDialog(section = null) {
     const svgBack = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
     const svgRefresh = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
@@ -15216,6 +15322,334 @@ class EntityManagerPanel extends HTMLElement {
         });
       });
     });
+  }
+
+  /** The Broken References section of Cleanup & Health: a scan for entity IDs
+   * referenced in config that exist in neither the entity registry nor the
+   * state machine, with a Remove and an Update action per row. The scan
+   * itself reports only; Remove and Update are the only writes, and each is
+   * its own explicit, confirmed action — see handle_remove_broken_reference
+   * and update_yaml_references in websocket_api.py. */
+  /** Where a broken reference's `target` lives in the HA UI, as an in-app path —
+   *  or null when there isn't one (YAML has no built-in file viewer). Config
+   *  entries need a domain for their route, parsed out of the source's own
+   *  `label` ("config entry: <domain> (<title>)") rather than a new backend
+   *  field, since the domain never contains whitespace. */
+  _brokenRefOpenPath(source, target, label) {
+    switch (source) {
+      case 'dashboard':
+        return target ? `/${target}` : '/lovelace';
+      case 'config_entry': {
+        const m = /^config entry: (\S+) /.exec(label || '');
+        return m && target ? `/config/integrations/integration/${m[1]}#config_entry=${target}` : null;
+      }
+      case 'person':
+        return target ? `/config/person/edit/${target}` : null;
+      case 'energy':
+        return '/config/energy';
+      case 'assist_pipeline':
+        return '/config/voice-assistants/assistants';
+      default:
+        return null; // yaml — no in-app page to link to
+    }
+  }
+
+  /** Navigate the panel itself to an in-app path, same pushState+location-changed
+   *  pattern used elsewhere in this file — written out directly here rather than
+   *  relying on a dialog's own delegated data-open-path handling, since this is
+   *  called from both an inline view and a plain (non-confirm) dialog. */
+  _navigateTo(path, flashEntityId = null) {
+    history.pushState(null, '', path);
+    window.dispatchEvent(new CustomEvent('location-changed', { bubbles: true, composed: true }));
+    if (flashEntityId) this._flashBrokenReference(flashEntityId);
+  }
+
+  /** The Lovelace panel element, found breadth-first through the shadow roots so the
+   *  search stops at the small app shell instead of walking a whole dashboard. */
+  _findLovelacePanel() {
+    const queue = [document];
+    while (queue.length) {
+      const root = queue.shift();
+      const panel = root.querySelector('ha-panel-lovelace');
+      if (panel) return panel;
+      root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) queue.push(el.shadowRoot); });
+    }
+    return null;
+  }
+
+  /** Lovelace's placeholders for missing entities (`hui-warning`, `hui-warning-element`)
+   *  inside `scope`, found by walking its shadow roots — Lovelace nests its cards several
+   *  deep, so a plain querySelectorAll never sees them. Iterative and allocation-light on
+   *  purpose: it runs on a large, still-rendering dashboard. */
+  _findWarningElements(scope) {
+    const found = [];
+    const stack = [scope.shadowRoot || scope];
+    while (stack.length) {
+      const walker = document.createTreeWalker(stack.pop(), NodeFilter.SHOW_ELEMENT);
+      for (let el = walker.nextNode(); el; el = walker.nextNode()) {
+        if (el.localName === 'hui-warning' || el.localName === 'hui-warning-element') found.push(el);
+        if (el.shadowRoot) stack.push(el.shadowRoot);
+      }
+    }
+    return found;
+  }
+
+  /** HA's placeholder doesn't print the entity ID, but the row or card that owns it holds
+   *  its config (`_config.entity`). Walk up from the placeholder, through shadow-root
+   *  hosts, to the first owner that names this entity. Only a singular `entity` counts —
+   *  an entities card's `entities` list would claim every placeholder inside it. */
+  _warningIsFor(el, entityId) {
+    let node = el;
+    for (let hops = 0; node && hops < 12; hops++) {
+      const cfg = node._config || node.config;
+      if (cfg && typeof cfg === 'object' && !Array.isArray(cfg) && cfg.entity === entityId) return true;
+      node = node.parentElement || node.getRootNode()?.host;
+    }
+    return false;
+  }
+
+  /** Pulse an element amber and let it settle. A custom element is display:inline by
+   *  default, and an inline box with only block content in its shadow root has no height
+   *  of its own to paint a glow on — make it a block for the length of the flash. */
+  _pulseElement(el) {
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const prevDisplay = el.style.display;
+    if (getComputedStyle(el).display === 'inline') el.style.display = 'block';
+    const anim = el.animate(
+      [
+        { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
+        { boxShadow: '0 0 0 3px #ffab00, 0 0 16px 4px #ffab00', backgroundColor: 'rgba(255,171,0,0.28)' },
+        { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
+      ],
+      { duration: still ? 2500 : 700, iterations: still ? 1 : 4, easing: 'ease-in-out' },
+    );
+    anim.onfinish = anim.oncancel = () => { el.style.display = prevDisplay; };
+  }
+
+  /** After Open… lands on a dashboard, briefly flash where the missing entity sits and
+   *  scroll it into view. Lovelace loads lazily and a big dashboard can take many seconds
+   *  to draw — camera feeds and calendars on the house's overview keep shifting the layout
+   *  after the cards appear, and a scroll done early lands in the wrong place — so wait
+   *  10 s first, then poll, gently with backing off and only inside the Lovelace panel,
+   *  for up to 40 s more. If placeholders show up but none can be tied to this entity, flash them
+   *  all without scrolling and say so; if none ever show up, say that (the entity may be
+   *  on another view) rather than failing silently. */
+  _flashBrokenReference(entityId) {
+    const settleMs = 10000;
+    const deadline = Date.now() + settleMs + 40000;
+    let attempt = 0;
+    let unmatchedSince = 0;
+    const tick = () => {
+      attempt += 1;
+      if (document.hidden) { setTimeout(tick, 1500); return; }
+      const panel = this._findLovelacePanel();
+      const warnings = panel ? this._findWarningElements(panel) : [];
+      const mine = warnings.filter(el => this._warningIsFor(el, entityId));
+      if (mine.length) {
+        mine.forEach(el => this._pulseElement(el));
+        mine[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+      if (warnings.length) {
+        unmatchedSince = unmatchedSince || Date.now();
+        if (Date.now() - unmatchedSince > 8000) {
+          warnings.forEach(el => this._pulseElement(el));
+          this._showToast(
+            `${entityId} is on this dashboard but Home Assistant doesn't say which placeholder is its own — all ${warnings.length} missing-entity placeholders flashed.`,
+            'warning', 10000,
+          );
+          return;
+        }
+      }
+      if (Date.now() < deadline) {
+        setTimeout(tick, Math.min(1000 + attempt * 500, 4000));
+      } else {
+        this._showToast(`Couldn't find ${entityId} on this view — it may be on another tab of the dashboard.`, 'warning', 8000);
+      }
+    };
+    setTimeout(tick, settleMs);
+  }
+
+  async _showBrokenReferencesSection(container) {
+    let result;
+    try {
+      result = await this._hass.callWS({ type: 'entity_manager/get_broken_references' });
+    } catch (err) {
+      container.innerHTML = `<p style="text-align:center;padding:24px;color:var(--em-danger)">Scan failed: ${this._escapeHtml(err?.message || String(err))}</p>`;
+      return;
+    }
+    const sources = result?.sources || [];
+    if (!sources.length) {
+      container.innerHTML = '<p style="text-align:center;padding:24px;opacity:0.6">No broken references found — every scanned entity ID still exists.</p>';
+      return;
+    }
+    const sourceLabels = {
+      yaml: 'YAML config',
+      dashboard: 'Dashboards',
+      config_entry: 'Config entries',
+      person: 'Persons',
+      assist_pipeline: 'Assist pipelines',
+      energy: 'Energy preferences',
+    };
+    const bySource = new Map();
+    sources.forEach(s => {
+      if (!bySource.has(s.source)) bySource.set(s.source, []);
+      bySource.get(s.source).push(s);
+    });
+
+    const actionsHtml = (source, target, label, entityId) => {
+      const openPath = this._brokenRefOpenPath(source, target, label);
+      const openBtn = openPath
+        ? `<button class="em-dialog-btn em-dialog-btn-secondary em-brokenref-open" data-open-path="${this._escapeAttr(openPath)}"
+          data-source="${this._escapeAttr(source)}" data-entity-id="${this._escapeAttr(entityId)}">Open…</button>`
+        : '';
+      return `
+      ${openBtn}
+      <button class="em-dialog-btn em-dialog-btn-danger em-brokenref-remove"
+        data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
+        data-entity-id="${this._escapeAttr(entityId)}">Remove</button>
+      <button class="em-dialog-btn em-dialog-btn-outline-primary em-brokenref-update"
+        data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
+        data-entity-id="${this._escapeAttr(entityId)}">Update…</button>`;
+    };
+
+    const html = this._sectionHint(
+      'Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and the '
+      + 'Energy dashboard preferences that exist in neither the entity registry nor the state machine. '
+      + '<strong>Open…</strong> takes you straight to where it sits (not shown for YAML — Home Assistant has no '
+      + 'built-in file viewer). <strong>Remove</strong> deletes the reference where that’s structurally unambiguous '
+      + '(a list entry, a single-entity card) and refuses — explaining why — anywhere it isn’t. '
+      + '<strong>Update…</strong> repoints every reference to the ID everywhere at once, same as a rename.',
+      'help-broken-refs',
+    ) + [...bySource.entries()].map(([src, items]) => this._collGroup(
+      `${sourceLabels[src] || src} (${items.reduce((n, i) => n + i.entities.length, 0)})`,
+      items.map(item => this._collGroup(
+        `${this._escapeHtml(item.label)} (${item.entities.length})`,
+        item.entities.map(e => this._renderMiniEntityCard({
+          entity_id: e.entity_id,
+          name: e.entity_id,
+          infoLine: e.reason
+            ? this._escapeHtml(e.reason)
+            : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`,
+          extraClass: 'em-brokenref-row',
+          notClickable: true,
+          actionsHtml: actionsHtml(item.source, item.target, item.label, e.entity_id),
+        })).join(''),
+      )).join(''),
+    )).join('');
+
+    container.innerHTML = html;
+    this._reAttachCollapsibles(container);
+
+    container.querySelectorAll('.em-brokenref-open').forEach(btn => {
+      btn.addEventListener('click', () => this._navigateTo(
+        btn.dataset.openPath, btn.dataset.source === 'dashboard' ? btn.dataset.entityId : null,
+      ));
+    });
+
+    container.querySelectorAll('.em-brokenref-remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { source, target, entityId } = { source: btn.dataset.source, target: btn.dataset.target, entityId: btn.dataset.entityId };
+        if (!(await this._confirmAsync('Remove reference', `Remove ${entityId} from this reference? A backup is saved first.`))) return;
+        btn.disabled = true;
+        try {
+          const res = await this._hass.callWS({
+            type: 'entity_manager/remove_broken_reference', source, target, entity_id: entityId,
+          });
+          if (res.removed) {
+            this._showToast(res.message || 'Reference removed', 'success');
+            await this._showBrokenReferencesSection(container);
+          } else {
+            this._showToast(res.message || "Couldn't remove that reference", 'warning');
+            btn.disabled = false;
+          }
+        } catch (err) {
+          this._showToast(`Remove failed: ${err?.message || err}`, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+
+    container.querySelectorAll('.em-brokenref-update').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entityId = btn.dataset.entityId;
+        this._showEntityPickerDialog(entityId, async (newEntityId) => {
+          try {
+            const res = await this._hass.callWS({
+              type: 'entity_manager/update_yaml_references',
+              old_entity_id: entityId, new_entity_id: newEntityId, dry_run: false,
+            });
+            this._showToast(`Updated ${res.total_replacements || 0} reference(s) to ${newEntityId}`, 'success');
+            await this._showBrokenReferencesSection(container);
+          } catch (err) {
+            this._showToast(`Update failed: ${err?.message || err}`, 'error');
+          }
+        });
+      });
+    });
+
+    container.querySelectorAll('.em-brokenref-row').forEach(row => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button, a, .em-mini-card-actions, .em-mini-card-link')) return;
+        this._showBrokenReferenceDetailsDialog(row.dataset.entityId, sources, sourceLabels);
+      });
+    });
+  }
+
+  /** Details for one broken reference, opened by clicking its row. The entity itself
+   *  doesn't exist (no registry entry, no state), so this shows what the scan actually
+   *  knows instead: every place that ID is still referenced, each with its reason —
+   *  the same cross-reference _showBrokenReferencesSection groups by source, flattened
+   *  to "everywhere this one ID turns up broken". */
+  _showBrokenReferenceDetailsDialog(entityId, sources, sourceLabels) {
+    const matches = [];
+    sources.forEach(group => {
+      group.entities.forEach(e => {
+        if (e.entity_id === entityId) {
+          matches.push({ source: group.source, label: group.label, target: group.target, reason: e.reason });
+        }
+      });
+    });
+
+    const rowsHtml = matches.map((m, i) => {
+      const openPath = this._brokenRefOpenPath(m.source, m.target, m.label);
+      return `
+      <div class="em-brd-row" data-open-path="${this._escapeAttr(openPath || '')}" data-idx="${i}" data-source="${this._escapeAttr(m.source)}"
+        style="padding:10px 14px;border-top:1px solid var(--em-border);${openPath ? 'cursor:pointer' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div style="font-weight:600;font-size:13px">${this._escapeHtml(sourceLabels[m.source] || m.source)}</div>
+          ${openPath ? `<span style="font-size:11px;color:var(--em-primary);white-space:nowrap">Open…</span>` : ''}
+        </div>
+        <div style="font-size:12px;opacity:0.7;margin-top:1px">${this._escapeHtml(m.label)}</div>
+        <div style="font-size:12px;opacity:0.85;margin-top:4px">${
+          m.reason ? this._escapeHtml(m.reason) : 'No removal record left (older than 30 days, or never registered under this ID).'
+        }</div>
+      </div>`;
+    }).join('');
+
+    const { overlay, closeDialog } = this.createDialog({
+      title: entityId,
+      color: 'var(--em-warning)',
+      contentHtml: `
+        <div>
+          <p style="margin:0 0 4px;padding:0 4px;font-size:12px;opacity:0.65">
+            Domain <strong>${this._escapeHtml(entityId.split('.')[0])}</strong> — this entity exists in neither the
+            entity registry nor the state machine. Referenced in ${matches.length} place${matches.length === 1 ? '' : 's'}
+            — click a row with <strong>Open…</strong> to go straight there:
+          </p>
+          <div style="border:1px solid var(--em-border);border-radius:8px;overflow:hidden;margin-top:6px">${rowsHtml}</div>
+        </div>`,
+      actionsHtml: `<button class="btn btn-secondary" id="em-brd-close">Close</button>`,
+    });
+    overlay.querySelectorAll('.em-brd-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const path = row.dataset.openPath;
+        if (!path) return;
+        closeDialog();
+        this._navigateTo(path, row.dataset.source === 'dashboard' ? entityId : null);
+      });
+    });
+    overlay.querySelector('#em-brd-close').addEventListener('click', closeDialog);
   }
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {

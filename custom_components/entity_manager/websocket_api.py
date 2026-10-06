@@ -1045,14 +1045,21 @@ class _Rewriter:
     """Replace entity ID tokens from an old→new table in one linear regex pass.
 
     A token is a whole entity ID: not preceded by a letter, digit, underscore
-    or dot, and not followed by a letter, digit or underscore — so
-    ``binary_sensor.x`` never matches ``sensor.x``. Matching every token and
-    looking it up keeps a 2,000-rename batch as fast as one rename, and swaps
-    (a→b together with b→a) cannot chain.
+    or dot, and not followed by a letter, digit, underscore, ``*`` or ``?`` —
+    so ``binary_sensor.x`` never matches ``sensor.x``, and ``binary_sensor.
+    shelly*cloud`` (an auto-entities/entity-filter glob pattern HA's own cards
+    use, fnmatch-style — found live in a dashboard whose ``entity_id:
+    "binary_sensor.shelly*cloud"`` filter was misread as a literal, complete
+    reference to a dead ``binary_sensor.shelly``) never matches ``binary_
+    sensor.shelly`` either: a real entity ID can never be followed by a
+    wildcard character, so excluding them can only reject false matches, not
+    hide real ones. Matching every token and looking it up keeps a
+    2,000-rename batch as fast as one rename, and swaps (a→b together with
+    b→a) cannot chain.
     """
 
     _TOKEN = re.compile(
-        r"(?<![a-zA-Z0-9_\.])[a-z][a-z0-9_]*\.[a-z0-9_]+(?![a-zA-Z0-9_])"
+        r"(?<![a-zA-Z0-9_\.])[a-z][a-z0-9_]*\.[a-z0-9_]+(?![a-zA-Z0-9_*?])"
     )
 
     def __init__(self, mapping: dict[str, str]) -> None:
@@ -1100,6 +1107,89 @@ def _replace_in_obj(obj: Any, rewriter: _Rewriter) -> tuple[Any, int]:
             total += nk + nv
         return out, total
     return obj, 0
+
+
+def _dict_has_direct_match(obj: dict[Any, Any], entity_id: str) -> bool:
+    """True when one of ``obj``'s own (non-nested) string values is ``entity_id``."""
+    return any(value == entity_id for value in obj.values() if isinstance(value, str))
+
+
+def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
+    """Return a copy of a JSON-like value with ``entity_id`` removed, plus the count.
+
+    Unlike ``_replace_in_obj`` this deletes rather than substitutes, so it only
+    acts where deleting is unambiguous: a list item that is the ID itself, or a
+    list item that is a dict whose own direct field holds the ID (a
+    single-entity dashboard card, an Energy flow entry) — the whole dict is
+    dropped as one unit. A dict is checked *before* recursing into it, so a
+    card whose ``entities`` sub-list merely contains the ID is pruned, not
+    dropped wholesale. A bare scalar field holding the ID directly (not inside
+    a list) is left untouched — removing a config entry's only required field
+    would risk breaking that integration worse than the dangling reference
+    already does, so the caller treats ``count == 0`` as "not safely
+    removable" rather than guessing.
+    """
+    if isinstance(obj, list):
+        total = 0
+        items = []
+        for item in obj:
+            if isinstance(item, str) and item == entity_id:
+                total += 1
+                continue
+            if isinstance(item, dict) and _dict_has_direct_match(item, entity_id):
+                total += 1
+                continue
+            new_item, n = _prune_entity(item, entity_id)
+            items.append(new_item)
+            total += n
+        return items, total
+    if isinstance(obj, dict):
+        total = 0
+        out: dict[Any, Any] = {}
+        for key, value in obj.items():
+            new_value, n = _prune_entity(value, entity_id)
+            out[key] = new_value
+            total += n
+        return out, total
+    return obj, 0
+
+
+def _remove_yaml_list_entry(text: str, entity_id: str) -> tuple[str, int]:
+    """Delete ``entity_id`` from YAML text, only where it is unambiguously one
+    list entry: alone on its own ``- id`` block-list line, or one element of
+    an inline ``[a, id, b]`` flow-list. Anything else — a bare scalar field,
+    a reference inside a Jinja template string — is left untouched, the same
+    "don't guess at a destructive edit" rule ``_prune_entity`` follows for
+    JSON-like structures. Returns ``(new_text, removed_count)``.
+    """
+    escaped = re.escape(entity_id)
+    boundary = r"(?<![a-zA-Z0-9_\.])" + escaped + r"(?![a-zA-Z0-9_])"
+    removed = 0
+
+    line_re = re.compile(
+        r"^[ \t]*-[ \t]+[\"']?" + boundary + r"[\"']?[ \t]*\r?\n", re.MULTILINE
+    )
+    text, n = line_re.subn("", text)
+    removed += n
+
+    flow_re = re.compile(
+        r"(?P<before>\[|,)\s*[\"']?" + boundary + r"[\"']?\s*(?P<after>,|\])"
+    )
+
+    def _flow_sub(match: re.Match[str]) -> str:
+        nonlocal removed
+        removed += 1
+        before, after = match.group("before"), match.group("after")
+        if before == "[" and after == "]":
+            return "[]"
+        if before == "[":
+            return "["
+        if after == "]":
+            return "]"
+        return ","
+
+    text = flow_re.sub(_flow_sub, text)
+    return text, removed
 
 
 async def _replace_in_dashboards(
@@ -1341,6 +1431,583 @@ def _scan_manual_references(
                 _check(path, "custom_component")
 
     return found
+
+
+_SERVICE_VALUE_KEYS = ("service", "perform_action", "action", "trigger")
+
+# Matches a "service:"/"perform_action:"/"action:" YAML key immediately before
+# the cursor (optionally quoted, optional surrounding whitespace), so a 40-char
+# lookback window can tell a service identifier's value from an entity
+# reference by the key that introduces it. The leading alternation requires
+# the key name to start right after a real delimiter (not mid-word), so an
+# unrelated key that merely ends in "...service" can't match.
+#
+# "action" is here because HA 2024.10 renamed each automation/script step's
+# service-call key from "service" to "action" — found live: automations.yaml
+# and scripts.yaml both use the new `action: light.turn_on` shape, so every
+# step's service call was still being flagged as a dead entity after the
+# service/perform_action fix. Excluding it is still safe for the OLDER
+# Lovelace tap_action dialect this key name is also overloaded for
+# (`tap_action: {action: "toggle", service: "light.turn_on"}`): there, the
+# "action" field only ever holds a short dispatch-type string ("toggle",
+# "call-service", "navigate", …), never a dotted domain.service value — so it
+# was never going to match this token shape regardless, and the real target
+# lives under the sibling "service"/"perform_action" key, already excluded.
+#
+# "trigger" is here for the same reason: HA's newer trigger syntax names the
+# platform under it (`trigger: button.pressed`), again a domain.name that is
+# not an entity — found live as a "dead" button.pressed in automations.yaml.
+_SERVICE_KEY_RE = re.compile(
+    r"""(?:^|[\s,{\n])["']?(?:service|perform_action|action|trigger)["']?\s*:\s*["']?$"""
+)
+
+
+def _tokens_in_obj(obj: Any, found: set[str]) -> None:
+    """Collect every entity-ID-shaped token in a JSON-like value, into ``found``.
+
+    Skips the value under a ``service``, ``perform_action`` or ``action`` key
+    (see ``_SERVICE_KEY_RE`` for why ``action`` is included too): HA's
+    call-a-service schema stores a service identifier there
+    (``domain.service_name``, e.g. ``light.turn_on``), which has the exact
+    same ``domain.object_id`` shape as an entity ID but is never one —
+    counting it as a dangling entity reference is a false positive this
+    function alone can introduce (``_replace_in_obj``, used by the actual
+    rename/rewrite, is unaffected: it only ever substitutes a token that is
+    an exact key in that rename's own mapping, and nobody renames an entity
+    to or from a literal service name).
+    """
+    if isinstance(obj, str):
+        found.update(_Rewriter._TOKEN.findall(obj))  # noqa: SLF001
+    elif isinstance(obj, list):
+        for item in obj:
+            _tokens_in_obj(item, found)
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            _tokens_in_obj(key, found)
+            if key in _SERVICE_VALUE_KEYS:
+                continue
+            _tokens_in_obj(value, found)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_broken_references",
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_broken_references(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Report entity IDs referenced in config that exist nowhere any more.
+
+    Read-only sibling of ``update_yaml_references``: scans the same sources
+    (YAML config, storage dashboards, config entry data/options, persons,
+    Assist pipelines, Energy preferences) for entity-ID-shaped tokens using
+    the same ``_Rewriter`` tokenizer, but reports instead of rewriting. A
+    token only counts as broken when its domain is one this installation
+    actually has entities in — otherwise an unrelated ``word.word`` string
+    the same loose token shape also matches (a template filter, a Python
+    attribute access) would be reported as a dangling entity.
+
+    Each broken ID is paired with a ``reason`` when the registry still
+    remembers why: it keeps a ``deleted_entities`` record (platform,
+    removal date, and the config entry it belonged to) for every entity it
+    removes. A record with no config entry any more (or whose config entry
+    is gone) means the owning integration was removed; one whose config
+    entry is still configured means the entity was removed on its own —
+    manually, or the device stopped providing it — while the integration
+    stayed. HA purges a *removed-integration* record after 30 days
+    (``ORPHANED_ENTITY_KEEP_SECONDS``); a record tied to a still-configured
+    entry is kept indefinitely. Once purged, or for an entity gone before
+    this registry mechanism ever saw it, ``reason`` is ``None``.
+    """
+    try:
+        registry = er.async_get(hass)
+        existing_ids = set(registry.entities.keys()) | set(
+            hass.states.async_entity_ids()
+        )
+        known_domains = {eid.split(".", 1)[0] for eid in existing_ids}
+        deleted_by_entity_id = {
+            entry.entity_id: entry for entry in registry.deleted_entities.values()
+        }
+
+        def _reason_for(entity_id: str) -> str | None:
+            deleted = deleted_by_entity_id.get(entity_id)
+            if deleted is None:
+                return None
+            when = (
+                f" on {deleted.modified_at.date().isoformat()}"
+                if deleted.modified_at
+                else ""
+            )
+            still_configured = bool(
+                deleted.config_entry_id
+                and hass.config_entries.async_get_entry(deleted.config_entry_id)
+            )
+            if still_configured:
+                return (
+                    f"removed from the registry{when} — its integration "
+                    f"({deleted.platform}) is still configured, so this was "
+                    "either a manual removal or the device stopped providing it"
+                )
+            return f"its integration ({deleted.platform}) was removed{when}"
+
+        def _yaml_tokens(text: str) -> set[str]:
+            """Entity-ID-shaped tokens in YAML text, minus service-call targets.
+
+            A ``service:`` (or the newer ``perform_action:``) key's value is a
+            service identifier (``domain.service_name``) — the same shape as an
+            entity ID, but never one. Checked by text position here, since YAML
+            has no structure to key off the way ``_tokens_in_obj`` does for
+            storage-mode dashboards/config entries.
+            """
+            tokens: set[str] = set()
+            for match in _Rewriter._TOKEN.finditer(text):  # noqa: SLF001
+                prefix = text[max(0, match.start() - 40) : match.start()]
+                if _SERVICE_KEY_RE.search(prefix):
+                    continue
+                tokens.add(match.group(0))
+            return tokens
+
+        def _broken(tokens: set[str]) -> list[dict[str, Any]]:
+            ids = sorted(
+                token
+                for token in tokens
+                if token not in existing_ids and token.split(".", 1)[0] in known_domains
+            )
+            return [{"entity_id": eid, "reason": _reason_for(eid)} for eid in ids]
+
+        config_path = Path(hass.config.config_dir)
+
+        def _scan_yaml() -> list[dict[str, Any]]:
+            out: list[dict[str, Any]] = []
+            for filepath in sorted(config_path.rglob("*.yaml")):
+                rel = filepath.relative_to(config_path)
+                if any(p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]):
+                    continue
+                if filepath.name == "secrets.yaml":
+                    continue
+                try:
+                    text = filepath.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                broken = _broken(_yaml_tokens(text))
+                if broken:
+                    out.append(
+                        {
+                            "source": "yaml",
+                            "label": str(rel),
+                            "target": str(rel),
+                            "entities": broken,
+                        }
+                    )
+            return out
+
+        sources: list[dict[str, Any]] = await hass.async_add_executor_job(_scan_yaml)
+
+        lovelace = hass.data.get("lovelace")
+        dashboards = (
+            (
+                lovelace.get("dashboards", {})
+                if isinstance(lovelace, dict)
+                else getattr(lovelace, "dashboards", {})
+            )
+            if lovelace is not None
+            else {}
+        )
+        for url_path, dashboard in list(dashboards.items()):
+            if getattr(dashboard, "mode", None) != "storage":
+                continue
+            try:
+                config = await dashboard.async_load(False)
+            except Exception:  # noqa: BLE001 — empty/auto-generated dashboard
+                continue
+            found: set[str] = set()
+            _tokens_in_obj(config, found)
+            broken = _broken(found)
+            if broken:
+                sources.append(
+                    {
+                        "source": "dashboard",
+                        "label": f"dashboard: {url_path or 'lovelace'}",
+                        "target": url_path or "",
+                        "entities": broken,
+                    }
+                )
+
+        for entry in hass.config_entries.async_entries():
+            found = set()
+            _tokens_in_obj(dict(entry.data), found)
+            _tokens_in_obj(dict(entry.options), found)
+            broken = _broken(found)
+            if broken:
+                sources.append(
+                    {
+                        "source": "config_entry",
+                        "label": f"config entry: {entry.domain} ({entry.title})",
+                        "target": entry.entry_id,
+                        "entities": broken,
+                    }
+                )
+
+        person_data = hass.data.get("person")
+        if isinstance(person_data, tuple) and len(person_data) >= 2:
+            for item in list(person_data[1].async_items()):
+                found = set()
+                _tokens_in_obj(list(item.get("device_trackers", [])), found)
+                broken = _broken(found)
+                if broken:
+                    sources.append(
+                        {
+                            "source": "person",
+                            "label": f"person: {item.get('name', item.get('id'))}",
+                            "target": item.get("id"),
+                            "entities": broken,
+                        }
+                    )
+
+        pipeline_data = hass.data.get("assist_pipeline")
+        store = getattr(pipeline_data, "pipeline_store", None)
+        if store is not None:
+            for pipeline in list(store.async_items()):
+                found = set()
+                for field in _PIPELINE_ENTITY_FIELDS:
+                    value = getattr(pipeline, field, None)
+                    if isinstance(value, str):
+                        found.update(_Rewriter._TOKEN.findall(value))  # noqa: SLF001
+                broken = _broken(found)
+                if broken:
+                    sources.append(
+                        {
+                            "source": "assist_pipeline",
+                            "label": f"assist pipeline: {getattr(pipeline, 'name', pipeline.id)}",
+                            "target": pipeline.id,
+                            "entities": broken,
+                        }
+                    )
+
+        try:
+            from homeassistant.components.energy.data import (  # noqa: PLC0415
+                async_get_manager,
+            )
+
+            manager = await async_get_manager(hass)
+            prefs = manager.data
+        except ImportError:  # energy not available in this HA build
+            prefs = None
+        if prefs:
+            found = set()
+            _tokens_in_obj(dict(prefs), found)
+            broken = _broken(found)
+            if broken:
+                sources.append(
+                    {
+                        "source": "energy",
+                        "label": "energy preferences",
+                        "entities": broken,
+                    }
+                )
+
+        sources.sort(key=lambda s: (s["source"], s["label"]))
+        total = sum(len(s["entities"]) for s in sources)
+        connection.send_result(msg["id"], {"sources": sources, "total": total})
+    except Exception as err:
+        _LOGGER.error("Error scanning broken references: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "get_failed", str(err))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/remove_broken_reference",
+        vol.Required("source"): vol.In(
+            ["yaml", "dashboard", "config_entry", "person", "assist_pipeline", "energy"]
+        ),
+        vol.Optional("target", default=""): str,
+        vol.Required("entity_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_remove_broken_reference(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Remove one broken reference reported by ``get_broken_references``.
+
+    Only removes where deletion is structurally unambiguous — a matching
+    list item, or a whole single-entity dict/line dropped as one unit (see
+    ``_prune_entity`` and ``_remove_yaml_list_entry``). A bare scalar field
+    holding the ID directly (a config entry's only required field, an
+    Assist pipeline engine not currently set to it, …) is never guessed at:
+    the result comes back ``removed: False`` with a ``message`` explaining
+    why, same as a dry-run-less "nothing to do" rather than an error.
+    Every actual removal writes a backup first, exactly like
+    ``update_yaml_references``.
+    """
+    source = msg["source"]
+    target: str = msg["target"]
+    entity_id: str = msg["entity_id"]
+    config_path = Path(hass.config.config_dir)
+    backup_dir = config_path / ".storage" / "entity_manager_backups"
+
+    def _write_backup(name: str, payload: Any) -> None:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+        (backup_dir / f"{stamp}.{safe}.json").write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+
+    def _not_safe(reason: str) -> None:
+        connection.send_result(
+            msg["id"], {"success": True, "removed": False, "message": reason}
+        )
+
+    try:
+        if source == "yaml":
+            if not target:
+                connection.send_error(
+                    msg["id"], "invalid_format", "target (file path) is required"
+                )
+                return
+            filepath = config_path / target
+            try:
+                rel = filepath.relative_to(config_path)
+            except ValueError:
+                connection.send_error(
+                    msg["id"],
+                    "invalid_format",
+                    "target must be inside the config directory",
+                )
+                return
+            if filepath.name == "secrets.yaml" or any(
+                p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]
+            ):
+                connection.send_error(
+                    msg["id"], "not_found", "That file is not scanned"
+                )
+                return
+
+            def _remove_from_yaml() -> tuple[bool, str]:
+                try:
+                    text = filepath.read_text(encoding="utf-8")
+                except OSError as exc:
+                    return False, str(exc)
+                new_text, count = _remove_yaml_list_entry(text, entity_id)
+                if not count:
+                    return False, (
+                        f"{entity_id} isn't a standalone list entry in {rel} — "
+                        "edit the file by hand, or use Update to repoint it."
+                    )
+                filepath.with_name(filepath.name + ".em-bak").write_text(
+                    text, encoding="utf-8"
+                )
+                filepath.write_text(new_text, encoding="utf-8")
+                return True, f"Removed {entity_id} from {rel}"
+
+            removed, message = await hass.async_add_executor_job(_remove_from_yaml)
+            if not removed:
+                _not_safe(message)
+                return
+            connection.send_result(
+                msg["id"], {"success": True, "removed": True, "message": message}
+            )
+            return
+
+        if source == "dashboard":
+            lovelace = hass.data.get("lovelace")
+            dashboards = (
+                (
+                    lovelace.get("dashboards", {})
+                    if isinstance(lovelace, dict)
+                    else getattr(lovelace, "dashboards", {})
+                )
+                if lovelace is not None
+                else {}
+            )
+            dashboard = dashboards.get(target)
+            if dashboard is None or getattr(dashboard, "mode", None) != "storage":
+                connection.send_error(msg["id"], "not_found", "Dashboard not found")
+                return
+            try:
+                config = await dashboard.async_load(False)
+            except Exception as exc:  # noqa: BLE001
+                connection.send_error(msg["id"], "get_failed", str(exc))
+                return
+            new_config, count = _prune_entity(config, entity_id)
+            if not count:
+                _not_safe(
+                    f"{entity_id} isn't inside a list or single-entity card on this "
+                    "dashboard — edit it by hand, or use Update to repoint it."
+                )
+                return
+            await hass.async_add_executor_job(
+                _write_backup, f"lovelace.{target or 'lovelace'}", config
+            )
+            await dashboard.async_save(new_config)
+            connection.send_result(
+                msg["id"],
+                {
+                    "success": True,
+                    "removed": True,
+                    "message": f"Removed {count} reference(s)",
+                },
+            )
+            return
+
+        if source == "config_entry":
+            entry = hass.config_entries.async_get_entry(target)
+            if entry is None:
+                connection.send_error(msg["id"], "not_found", "Config entry not found")
+                return
+            new_data, n_data = _prune_entity(dict(entry.data), entity_id)
+            new_options, n_options = _prune_entity(dict(entry.options), entity_id)
+            if not (n_data or n_options):
+                _not_safe(
+                    f"{entity_id} is a required field on this config entry, not a "
+                    "list entry — removing it could break the integration. Edit it "
+                    "by hand, or use Update to repoint it."
+                )
+                return
+            await hass.async_add_executor_job(
+                _write_backup,
+                f"config_entry.{entry.domain}.{entry.entry_id}",
+                {"data": dict(entry.data), "options": dict(entry.options)},
+            )
+            changes: dict[str, Any] = {}
+            if n_data:
+                changes["data"] = new_data
+            if n_options:
+                changes["options"] = new_options
+            hass.config_entries.async_update_entry(entry, **changes)
+            connection.send_result(
+                msg["id"],
+                {
+                    "success": True,
+                    "removed": True,
+                    "message": f"Removed {n_data + n_options} reference(s)",
+                },
+            )
+            return
+
+        if source == "person":
+            person_data = hass.data.get("person")
+            if not isinstance(person_data, tuple) or len(person_data) < 2:
+                connection.send_error(msg["id"], "not_found", "Person not found")
+                return
+            collection = person_data[1]
+            item = next(
+                (i for i in collection.async_items() if i.get("id") == target), None
+            )
+            if item is None:
+                connection.send_error(msg["id"], "not_found", "Person not found")
+                return
+            new_item, count = _prune_entity(item, entity_id)
+            if not count:
+                _not_safe(
+                    f"{entity_id} is not on {item.get('name', target)}'s device "
+                    "trackers any more."
+                )
+                return
+            await hass.async_add_executor_job(_write_backup, f"person.{target}", item)
+            await collection.async_update_item(
+                target, {"device_trackers": new_item.get("device_trackers", [])}
+            )
+            connection.send_result(
+                msg["id"],
+                {
+                    "success": True,
+                    "removed": True,
+                    "message": f"Removed {count} reference(s)",
+                },
+            )
+            return
+
+        if source == "assist_pipeline":
+            pipeline_data = hass.data.get("assist_pipeline")
+            store = getattr(pipeline_data, "pipeline_store", None)
+            pipeline = None
+            if store is not None:
+                pipeline = next(
+                    (p for p in store.async_items() if p.id == target), None
+                )
+            if pipeline is None:
+                connection.send_error(msg["id"], "not_found", "Pipeline not found")
+                return
+            changes = {
+                field: None
+                for field in _PIPELINE_ENTITY_FIELDS
+                if getattr(pipeline, field, None) == entity_id
+            }
+            if not changes:
+                _not_safe(f"{entity_id} is not set on this pipeline any more.")
+                return
+            from homeassistant.components.assist_pipeline import (  # noqa: PLC0415
+                async_update_pipeline,
+            )
+
+            await hass.async_add_executor_job(
+                _write_backup, f"assist_pipeline.{target}", pipeline.to_json()
+            )
+            await async_update_pipeline(hass, pipeline, **changes)
+            connection.send_result(
+                msg["id"],
+                {
+                    "success": True,
+                    "removed": True,
+                    "message": f"Cleared {len(changes)} field(s)",
+                },
+            )
+            return
+
+        if source == "energy":
+            try:
+                from homeassistant.components.energy.data import (  # noqa: PLC0415
+                    async_get_manager,
+                )
+            except ImportError:
+                connection.send_error(
+                    msg["id"], "not_found", "Energy dashboard not available"
+                )
+                return
+            manager = await async_get_manager(hass)
+            prefs = manager.data
+            if not prefs:
+                _not_safe("No Energy preferences are set.")
+                return
+            new_prefs, count = _prune_entity(dict(prefs), entity_id)
+            if not count:
+                _not_safe(
+                    f"{entity_id} isn't in a removable Energy preferences entry — "
+                    "edit it by hand, or use Update to repoint it."
+                )
+                return
+            await hass.async_add_executor_job(_write_backup, "energy", dict(prefs))
+            update = {
+                key: value
+                for key, value in new_prefs.items()
+                if key in _ENERGY_PREF_KEYS
+            }
+            await manager.async_update(cast(Any, update))
+            connection.send_result(
+                msg["id"],
+                {
+                    "success": True,
+                    "removed": True,
+                    "message": f"Removed {count} reference(s)",
+                },
+            )
+            return
+
+        connection.send_error(msg["id"], "invalid_format", f"Unknown source {source}")
+    except Exception as err:
+        _LOGGER.error("Error removing broken reference: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "remove_failed", str(err))
 
 
 @websocket_api.websocket_command(
@@ -1974,6 +2641,8 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_assign_entity_device)
     websocket_api.async_register_command(hass, handle_unassign_entity_device)
     websocket_api.async_register_command(hass, handle_update_yaml_references)
+    websocket_api.async_register_command(hass, handle_get_broken_references)
+    websocket_api.async_register_command(hass, handle_remove_broken_reference)
     websocket_api.async_register_command(hass, handle_get_entity_details)
     websocket_api.async_register_command(hass, handle_get_config_entry_health)
     websocket_api.async_register_command(hass, handle_get_areas_and_floors)

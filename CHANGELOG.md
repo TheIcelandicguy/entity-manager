@@ -1,5 +1,27 @@
 # Changelog
 
+## Version 3.6.0 - Broken References
+
+Rename a device, remove an integration, delete a helper: the automations,
+dashboards and helpers that pointed at it keep pointing at it, and nothing says
+so until one of them quietly stops working. Cleanup & Health now has a card for
+that.
+
+### Broken References
+
+- **Finds dead entity IDs.** It scans YAML, storage dashboards, config entries, persons, Assist pipelines and the Energy dashboard for entity IDs that exist in neither the registry nor the state machine. Nothing is written by the scan.
+- **Says why it went.** When Home Assistant still remembers the removal, the row says whether the whole integration was removed or only that entity, and when.
+- **Open takes you to where it sits.** A dashboard, an integration entry, a person, the Energy page or the Assist pipelines list. On a dashboard it then scrolls to the missing entity's placeholder and pulses it, once the page has had 10 seconds to settle.
+- **Remove deletes the reference** where that is unambiguous: a list entry, or a card or Energy flow that only held that entity. Anywhere else it explains why it will not guess. A backup is written first.
+- **Update repoints every reference** to the dead ID at a replacement, the same as a rename, and suggests the likeliest one.
+- **Click a row** to see every place that ID turns up broken.
+
+### Fewer false alarms
+
+- Glob filters such as `binary_sensor.shelly*cloud` are no longer read as an entity.
+- Service-call targets (`light.turn_on`, `notify.mobile_app_*`), in both the old `service:` and the current `action:` form, are no longer reported.
+- Trigger platforms such as `trigger: button.pressed` are no longer reported.
+
 ## Version 3.5.0 - A Voice section in the panel
 
 Voice enable and disable started working in 3.4.0. Making them usable is a

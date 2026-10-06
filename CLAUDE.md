@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.5.0**.
+Home Assistant custom integration, domain `entity_manager`, **v3.6.0**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,
@@ -30,13 +30,13 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 1,985 lines. All 24 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,650 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,197 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
-| `.../frontend/entity-manager-panel.css` | 7,989 lines, all `--em-*` variables. |
+| `.../frontend/entity-manager-panel.js` | 19,521 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.css` | 8,001 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
@@ -51,8 +51,8 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
 
 - The panel talks to the backend **only** over HA's WebSocket bus. There is no
   HTTP view and no REST endpoint.
-- All 24 commands are named `entity_manager/<name>` and carry **both**
-  `@websocket_api.require_admin` and `@websocket_api.async_response` (24/24 in
+- All 26 commands are named `entity_manager/<name>` and carry **both**
+  `@websocket_api.require_admin` and `@websocket_api.async_response` (26/26 in
   source). The panel itself is `require_admin=True`. Every command reads or
   writes registry data, so a handler missing either decorator is a security hole.
 - `async_setup_ws_api()` is the single registration point. A handler that isn't
@@ -68,14 +68,18 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
   queries, HACS scanning, config-entry health. Do not add a command that
   duplicates a native API.
 
-### The 24 commands
+### The 26 commands
 
 Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 `get_automations`, `get_template_sensors`, `get_entity_details`,
 `get_config_entry_health`, `get_areas_and_floors`, `get_last_activity`
 (optional `entity_ids`; recorder query), `list_hacs_items`,
 `resolve_voice_target` (`phrase`; what the voice intents would make of it,
-writing nothing), `get_voice_status` (sentence files, registered intents).
+writing nothing), `get_voice_status` (sentence files, registered intents),
+`get_broken_references` (entity IDs referenced in config that exist in
+neither the entity registry nor the state machine, each with a `reason` when
+the registry still remembers why it's gone, and a `target` identifying which
+item to pass to `remove_broken_reference`; writes nothing).
 
 Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 (`entity_ids`, 1–500), `rename_entity` (`old_entity_id`, `new_entity_id`),
@@ -83,7 +87,9 @@ Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 `remove_entity`, `assign_entity_device`, `unassign_entity_device`,
 `import_entity_states` (`entities`, 1–500), `update_yaml_references`
 (`old_entity_id`, `new_entity_id`, `dry_run`), `register_template`,
-`reinstall_voice_sentences` (optional `force`; overwrites an edited copy).
+`reinstall_voice_sentences` (optional `force`; overwrites an edited copy),
+`remove_broken_reference` (`source`, `target`, `entity_id`; see Unusual bits —
+refuses with a `message` wherever deletion isn't structurally unambiguous).
 
 Only two HA services exist: `entity_manager.enable_entity` and
 `entity_manager.disable_entity`. They share an admin gate in `__init__.py` that
@@ -104,7 +110,15 @@ allowed. Everything else is WebSocket-only.
 - `update_yaml_references` takes one `old_entity_id`/`new_entity_id` pair or a
   `renames` list (≤500). `_Rewriter` matches every entity-ID token in one regex
   pass and looks it up in the old→new table, so big batches stay linear and
-  swaps cannot chain. Besides YAML it rewrites **storage-mode dashboards**
+  swaps cannot chain. `_TOKEN`'s trailing boundary also excludes `*` and `?` —
+  found live on the house: an `entity_id: "binary_sensor.shelly*cloud"`
+  auto-entities glob filter was misread as a literal, complete reference to a
+  dead `binary_sensor.shelly`, which both the scanner (falsely flagged as
+  broken) and the rewriter (would corrupt the glob, if an entity literally
+  named `binary_sensor.shelly` were ever renamed) shared the same tokenizer
+  for. A real entity ID can never be followed by a wildcard character, so the
+  exclusion only rejects false matches, never hides a real one. Besides YAML
+  it rewrites **storage-mode dashboards**
   (`async_load` / `async_save`), **config entry data/options**
   (`async_update_entry` — UI helpers keep their source entity there),
   **persons** (`device_trackers`), **Assist pipelines**
@@ -118,6 +132,102 @@ allowed. Everything else is WebSocket-only.
   `.storage` and files under `custom_components` are only **reported** in
   `manual_references` (`_STORAGE_REPORT_SKIP` filters registries, caches and
   credentials).
+- `get_broken_references` is the scanning half of the **Broken References**
+  card in Cleanup & Health; the card also offers Remove and Update actions
+  (below), but the scan itself writes nothing. It scans the same six sources
+  (YAML, storage dashboards, config entries, persons, Assist pipelines,
+  Energy preferences) for entity-ID-shaped tokens via `_Rewriter._TOKEN`, but
+  reports instead of rewriting — never touches disk or calls any HA write
+  API. A token only counts as broken when its domain belongs to at least one
+  entity that still exists somewhere (registry or state machine); otherwise a
+  `word.word` string the same loose token shape also matches (a Jinja filter,
+  a Python attribute access) would be a false positive. That also means a
+  domain with zero surviving entities anywhere in the house is invisible to
+  this scan — a known gap, not a bug. Each broken ID carries a `reason` when
+  the registry's `deleted_entities` still remembers it: a record with no
+  config entry (or whose config entry is gone) means the owning integration
+  was removed; one whose config entry is still configured means the entity
+  itself was removed — manually, or the device stopped providing it — while
+  the integration stayed. HA purges a removed-integration record after 30
+  days (`ORPHANED_ENTITY_KEEP_SECONDS`); a still-configured one is kept
+  indefinitely. `reason` is `null` once purged, or for anything gone before
+  this registry mechanism saw it. Each source group also carries a `target`
+  (the file path, dashboard `url_path`, config entry ID, person ID or
+  pipeline ID — `energy` has none, it's a singleton) identifying exactly
+  which item a `remove_broken_reference` call should act on. The scanner also
+  excludes a `service:`/`perform_action:`/`action:`/`trigger:` call target
+  (`light.turn_on`, `notify.mobile_app_<device>`, …) — same `domain.name`
+  shape as an entity ID, never one. `action:` is in that list because HA
+  2024.10 renamed each automation/script step's service-call key from
+  `service:` to `action:` — Davíð's own automations and scripts config both
+  use the new form, so the `service:`/`perform_action:`-only version of this
+  fix left every step's call target still flagged. Safe for the *older*
+  Lovelace `tap_action:` dialect `action` is also overloaded for (`{action:
+  "toggle", service: "light.turn_on"}`): there `action` only ever holds a
+  short dispatch-type string, never a dotted value, so it was never going to
+  match this token shape anyway — the real target lives under the sibling
+  `service`/`perform_action` key, already excluded. Structural sources
+  (dashboards, config entries) skip it by the dict key in `_tokens_in_obj`;
+  YAML has no structure to key off, so `_yaml_tokens()` checks by text
+  position instead — a 40-char lookback from each token requiring the key to
+  start right after a real delimiter, so an unrelated key that merely ends in
+  "...service" can't match. This is scanner-only: `_replace_in_obj` (the
+  actual rewrite) only ever substitutes a token that is an exact key in that
+  rename's own mapping, and nobody renames an entity to or from a literal
+  service name, so it needed no change.
+- The card's **Remove** button calls `remove_broken_reference` (`source`,
+  `target`, `entity_id`). It only deletes where that's structurally
+  unambiguous: a matching list item, or — via `_prune_entity`, a
+  `_replace_in_obj`-shaped recursive walker that deletes instead of
+  substituting — a whole single-entity dict dropped from a list in one unit
+  (a dashboard card, an Energy flow entry) when checking the dict's own
+  *direct* field values only, so a card whose `entities` sub-list merely
+  *contains* the ID is pruned, not dropped wholesale. YAML gets its own
+  text-based `_remove_yaml_list_entry` instead of `_prune_entity`, since
+  blind substitution on arbitrary YAML risks corrupting it: it only deletes
+  a standalone `- id` block-list line or one element of an inline
+  `[a, id, b]` flow-list. Anywhere the ID sits in a bare scalar field — a
+  config entry's only required field, a value inside a template string —
+  nothing is touched and the result comes back `removed: false` with a
+  `message` explaining why, rather than guessing at a destructive edit that
+  could break the owning integration worse than the dangling reference
+  already does. Every real removal writes a backup first via the same
+  `.storage/entity_manager_backups/` mechanism `update_yaml_references` uses.
+  The **Update…** button is not a separate command — it just calls
+  `update_yaml_references` with the broken ID as `old_entity_id`, same as a
+  rename, which is why it repoints every occurrence of that ID at once
+  rather than only the one row clicked. Rows are `notClickable` (the normal
+  Entity Details dialog needs `get_entity_details`, which fails for an ID
+  that doesn't exist) but still open their own
+  `_showBrokenReferenceDetailsDialog` on click, showing every place that
+  same ID turns up broken across the whole scan, each with its `reason` —
+  since the scan is already in memory client-side, this is a client-side
+  cross-reference, not another WS round-trip. Every row (inline or in that
+  dialog) also gets an **Open…** button when `_brokenRefOpenPath()` knows an
+  in-app page for its source — a dashboard's own `url_path` (a top-level
+  route, *not* nested under `/lovelace/`), `/config/integrations/integration/
+  <domain>#config_entry=<id>` (domain parsed from the source's own `label`,
+  since it never contains whitespace), `/config/person/edit/<id>`,
+  `/config/energy`, or the Assist pipelines list (pipelines have no stable
+  per-id route). YAML gets no Open button — HA has no built-in file viewer.
+  For a dashboard source, `_navigateTo(path, entityId)` then calls `_flashBrokenReference()`,
+  which waits 10 s for slow cards (cameras, calendars) to settle, then backs off and polls up to 40 s more, inside `ha-panel-lovelace` only, for Lovelace's
+  `hui-warning` / `hui-warning-element` placeholders. HA doesn't print the ID in them, so
+  `_warningIsFor()` walks up through shadow-root hosts to the row or card whose
+  `_config.entity` names it (a singular `entity` only — an entities card's list would claim
+  every placeholder inside it). It pulses and scrolls to those; if placeholders exist but
+  none can be tied to the ID for 8 s it flashes them all without scrolling and says so, and
+  if none appear it toasts that the entity may be on another tab. `trigger:` is excluded
+  like `action:` —
+  `trigger: button.pressed` is a trigger platform, not an entity.
+  Navigation is a direct `history.pushState` + `location-changed` dispatch
+  (`_navigateTo()`), not the delegated `data-open-path` handling some dialogs
+  wire, since this needs to work from both the inline Cleanup & Health view
+  and a plain dialog. `_showEntityPickerDialog` (Update…'s picker) pre-fills
+  its search with `_suggestReplacementEntity()`'s best guess — same domain,
+  word-overlap against object_id and friendly_name — when one clears the
+  60% bar Voice's own near-miss matching uses; the matching row is also
+  highlighted, and the search can be cleared to browse everything.
 - `rename_entity` only touches the entity registry. The panel rewrites
   references itself via `_updateReferences()` after every rename path: the bulk
   rename queue (dry-run preview → renames → one update for the successes), the
