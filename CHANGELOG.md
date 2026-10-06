@@ -1,5 +1,19 @@
 # Changelog
 
+## Version 3.6.1 - Suggestions stay put
+
+Two fixes from a user with 60 devices waiting for an area. Assigning them one by
+one meant opening Area Suggestions, expanding the integration, expanding the
+device, assigning, and landing back on a collapsed list every time.
+
+### Suggestions
+
+- **Groups stay open after an assign.** Assigning or applying an area used to rebuild the whole view with everything collapsed. The open integrations and devices, the scroll position and the search text now survive it, and so does the Refresh button.
+
+### Panel header
+
+- **One menu button, not two.** On wide screens Home Assistant's own sidebar header already has the toggle, so the panel's copy did the same thing. It now shows only on narrow screens and when the sidebar is set to always hidden, where it is the only way in.
+
 ## Version 3.6.0 - Broken References
 
 Rename a device, remove an integration, delete a helper: the automations,
