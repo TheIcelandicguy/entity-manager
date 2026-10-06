@@ -20,6 +20,16 @@ Before ending a session, run `python check_docs.py` and update this file.
 The script checks that every path, constant, line count, test count and service
 this file quotes still matches the repo, and exits 1 when one does not.
 
+**Adding or changing a user-facing feature means updating the in-panel Help
+Guide in the same PR.** It is `_showHelpGuide()` in `entity-manager-panel.js`: a
+`sections` array (the table of contents) plus one `<div class="help-section"
+id="help-<id>">` per entry, and the two must agree. Hint "?" buttons deep-link
+with `this._sectionHint(text, 'help-<id>')` (or a `.em-hint-help` button with
+`data-help-section`); the id must match a section, otherwise the click opens the
+guide and silently scrolls nowhere. Between 3.1.0 and 3.6.1 the guide was never
+touched and fell five releases behind, and one of its claims (Set Alias is
+shared across browsers) was simply wrong.
+
 ## Layout
 
 All paths below are relative to the repo root. Note that `tests/` lives at the

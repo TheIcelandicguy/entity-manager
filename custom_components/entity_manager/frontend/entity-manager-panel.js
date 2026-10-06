@@ -4186,6 +4186,7 @@ class EntityManagerPanel extends HTMLElement {
   _showHelpGuide(targetId = null) {
     const sections = [
       { id: 'search',      icon: EM_ICONS.search,      title: 'Search & Filter' },
+      { id: 'pills',       icon: EM_ICONS.labels,      title: 'Header Filter Pills' },
       { id: 'enable',      icon: EM_ICONS.enable,      title: 'Enable / Disable Entities' },
       { id: 'rename',      icon: EM_ICONS.rename,      title: 'Rename Entities' },
       { id: 'bulk',        icon: EM_ICONS.deselect,    title: 'Bulk Operations' },
@@ -4199,6 +4200,9 @@ class EntityManagerPanel extends HTMLElement {
       { id: 'statcards',   icon: EM_ICONS.dashboard,   title: 'Stat Card Dialogs' },
       { id: 'unavailable', icon: EM_ICONS.warning,      title: 'Unavailable Entities' },
       { id: 'cleanup',     icon: EM_ICONS.cleanup,     title: 'Cleanup' },
+      { id: 'dupnames', icon: 'mdi:content-duplicate', title: 'Duplicate Names' },
+      { id: 'broken-refs',  icon: 'mdi:link-off',        title: 'Broken References' },
+      { id: 'voice',       icon: EM_ICONS.voice,       title: 'Voice' },
       { id: 'updates',     icon: EM_ICONS.update,      title: 'Updates' },
       { id: 'undo',        icon: EM_ICONS.undo,        title: 'Undo / Redo' },
       { id: 'export',      icon: EM_ICONS.export,      title: 'Export / Import' },
@@ -4250,6 +4254,18 @@ class EntityManagerPanel extends HTMLElement {
               </ul>
             </div>
 
+            <div class="help-section" id="help-pills">
+              <h3>${this._icon(EM_ICONS.labels, '16px')} Header Filter Pills</h3>
+              <ul>
+                <li>The <strong>Categories / Hardware / Areas / Labels</strong> counts in an integration or device header are buttons — click one to narrow that header to the entities it names, click again to clear</li>
+                <li>Pills of the <strong>same kind widen</strong> the filter (Stofa <em>or</em> Eldhús); pills of <strong>different kinds narrow</strong> it (Diagnostic <em>and</em> Stofa)</li>
+                <li>Areas and Labels show six pills and a <strong>+N</strong> to reveal the rest</li>
+                <li>With pills active, the <strong>⋯ menu</strong> can Select, Enable or Disable exactly the entities shown</li>
+                <li>Filters are remembered per browser. A banner above the list says how many are active, with one button to clear them all</li>
+                <li>A device's <strong>Hardware</strong> pill assigns the type instead of filtering, since a device only has one</li>
+              </ul>
+            </div>
+
             <div class="help-section" id="help-enable">
               <h3>${this._icon(EM_ICONS.enable, '16px')} Enable / Disable Entities</h3>
               <ul>
@@ -4267,6 +4283,7 @@ class EntityManagerPanel extends HTMLElement {
                 <li>Lowercase letters, numbers, and underscores only</li>
                 <li>References in automations and scripts update automatically</li>
                 <li>Right-click → Rename for the same dialog</li>
+                <li>Every rename path (single, bulk, undo/redo) also rewrites references in YAML, storage dashboards, helpers, persons, Assist pipelines and the Energy dashboard, writing a backup first</li>
               </ul>
             </div>
 
@@ -4275,7 +4292,9 @@ class EntityManagerPanel extends HTMLElement {
               <ul>
                 <li>Check entity checkboxes to select multiple entities</li>
                 <li>A floating action bar appears with Enable / Disable / Rename options</li>
-                <li><strong>Bulk Rename:</strong> apply prefix, suffix, regex replacements to all selected</li>
+                <li><strong>Bulk Rename:</strong> apply prefix, suffix, regex replacements to all selected. A preview shows which references will be updated before anything is written</li>
+                <li><strong>Import CSV / Export CSV:</strong> plan a rename in a spreadsheet (<code>old_entity_id,new_entity_id,display_name</code>) and load it into the queue. Rows targeting an ID already in use are rejected. Excel's plain "CSV" is read correctly, but Excel workbooks (.xlsx) are refused — use Save As → CSV</li>
+                <li><strong>Device button:</strong> rename a device and its entities follow — the entity changes go into the same queue, so they keep the reference update and undo</li>
                 <li>Use the integration-level checkbox to select an entire integration at once</li>
                 <li>Sidebar → Actions → Deselect All to clear selection</li>
               </ul>
@@ -4293,9 +4312,9 @@ class EntityManagerPanel extends HTMLElement {
             <div class="help-section" id="help-aliases">
               <h3>${this._icon(EM_ICONS.alias, '16px')} Aliases</h3>
               <ul>
-                <li>Right-click an entity → <strong>Set Alias</strong> to give it an alternative display name</li>
-                <li>Aliases are searchable and shown above the entity ID in the card</li>
-                <li>Stored in HA entity registry — shared across browsers</li>
+                <li>Right-click an entity → <strong>Set Alias</strong> to give it a <strong>display nickname</strong>, searchable and shown above the entity ID in the card</li>
+                <li>Nicknames are stored in this browser only — they do not affect Home Assistant or voice</li>
+                <li>Voice aliases are a different thing: they live in the HA entity registry and are managed in <strong>Voice → Aliases</strong></li>
               </ul>
             </div>
 
@@ -4405,8 +4424,45 @@ class EntityManagerPanel extends HTMLElement {
                 <li><strong>View ignored (N)</strong> bar appears in the Orphaned section once any are ignored</li>
                 <li><strong>Not Loaded</strong> nuance: entities of temporarily-absent providers (an offline network client, a sleeping sensor after restart) may appear — removing those is recoverable, since an integration re-creates any entity it still provides. <strong>Remove All</strong> always skips entities you've ignored</li>
                 <li><strong>Stale entities</strong> — no state change in 30+ days — Keep (hide for 30 d), Disable (with confirm), or Remove (with confirm)</li>
+                <li><strong>Duplicate Names</strong>, <strong>Broken References</strong> and <strong>Config Errors</strong> sit in the same view — see their own sections</li>
                 <li><strong>Ghost devices</strong> — devices registered in HA but with zero entities — Open in HA to manage</li>
                 <li><strong>Never Triggered</strong> — automations and scripts that have never run — click ↗ to open the editor</li>
+              </ul>
+            </div>
+
+            <div class="help-section" id="help-dupnames">
+              <h3>${this._icon('mdi:content-duplicate', '16px')} Duplicate Names</h3>
+              <ul>
+                <li>Finds entities whose displayed name repeats their device name, e.g. "Tafla B Uppþvottavél Tafla B Uppþvottavél power" — Home Assistant puts the device name in front, and some integrations already include it</li>
+                <li>Grouped by device, showing what each name would become. Fix one at a time or in bulk, with undo</li>
+                <li>The fix <strong>sets</strong> the whole intended name as a display name; Home Assistant uses a display name exactly as written, so setting only the leftover piece would drop the device name</li>
+                <li>Entities whose own name <em>is</em> the device name, and devices carrying another device's name, are listed for you to name by hand</li>
+                <li>A third section lists <strong>integration entries</strong> still titled after an old device name; the device name is offered as the title when the entry owns a single device</li>
+              </ul>
+            </div>
+
+            <div class="help-section" id="help-broken-refs">
+              <h3>${this._icon('mdi:link-off', '16px')} Broken References</h3>
+              <ul>
+                <li>Scans YAML, storage dashboards, config entries, persons, Assist pipelines and the Energy dashboard for entity IDs that exist neither in the registry nor as a state. The scan itself writes nothing</li>
+                <li>When HA still remembers the removal, the row says whether the whole integration or just that entity went away</li>
+                <li><strong>Open…</strong> jumps to where the reference sits (a dashboard, integration entry, person, Energy page or Assist pipelines list). On a dashboard it then scrolls to and pulses the missing entity's placeholder after the page settles. YAML has no Open button</li>
+                <li><strong>Remove</strong> deletes the reference only where that is unambiguous — a list entry, or a card or Energy flow that held only that entity. Elsewhere it explains why it won't guess. A backup is written first</li>
+                <li><strong>Update…</strong> repoints <em>every</em> reference to that ID at a replacement you pick (the likeliest match is suggested), like a rename</li>
+                <li>Click a row to see every place that ID is broken</li>
+                <li>Not reported: service-call targets, trigger platforms and glob filters like <code>sensor.shelly*cloud</code>. A domain with no surviving entities at all can't be detected</li>
+              </ul>
+            </div>
+
+            <div class="help-section" id="help-voice">
+              <h3>${this._icon(EM_ICONS.voice, '16px')} Voice</h3>
+              <ul>
+                <li>Sidebar → Actions → <strong>Voice</strong>. Entity Manager's voice commands change an entity's enabled/disabled state in the registry (say "disable entity desk lamp") — they do not switch a light on or off. They need an admin user, so a voice satellite can't use them</li>
+                <li><strong>Test a phrase:</strong> type what you would say and see what it matches, without changing anything. Routing (does the wording reach Entity Manager — "entity" is the word that does) and matching (which entity) are reported separately. A miss lists the closest names and the share of your words each matched, against the 60% needed</li>
+                <li><strong>Aliases:</strong> add a second name Assist answers to, in bulk, with an English suggestion built from the Icelandic name. Stored in the HA registry, so shared across browsers and with Assist's own commands</li>
+                <li><strong>Status:</strong> the sentence file (where it is, whether you edited it, a button to reinstall it) and every pipeline, with warnings when one can't work — e.g. speech-to-phrase can't fill the free-text slot, and an English sentence file won't match another language</li>
+                <li><strong>Exposure:</strong> shows Assist and Google status; the bulk buttons change Assist exposure only, up to 500 at a time</li>
+                <li>Alias and exposure changes can be undone</li>
               </ul>
             </div>
 
@@ -4425,7 +4481,8 @@ class EntityManagerPanel extends HTMLElement {
               <h3>${this._icon(EM_ICONS.undo, '16px')} Undo / Redo</h3>
               <ul>
                 <li>Sidebar → Actions → Undo / Redo buttons</li>
-                <li>Up to 50 undo steps — works for enable, disable, and rename</li>
+                <li>Up to 50 undo steps — works for enable, disable, rename, display names and voice aliases/exposure</li>
+                <li>Removing an entity cannot be undone</li>
               </ul>
             </div>
 
@@ -14526,7 +14583,7 @@ class EntityManagerPanel extends HTMLElement {
         );
       }
       body.innerHTML = `<div class="em-sug-section em-sug-health" style="padding:0">${
-        this._sectionHint('Config entries that failed to set up or are still retrying — usually credentials, network, or a device that\'s off. <b>Reload</b> retries the integration now; fixing the underlying issue is done in HA\'s own integration page. Entities of these entries are excluded from Cleanup\'s orphan detection until the entry recovers.')
+        this._sectionHint('Config entries that failed to set up or are still retrying — usually credentials, network, or a device that\'s off. <b>Reload</b> retries the integration now; fixing the underlying issue is done in HA\'s own integration page. Entities of these entries are excluded from Cleanup\'s orphan detection until the entry recovers.', 'help-cleanup')
       }${html}</div>`;
       this._attachDialogSearch(overlay);
 
@@ -15303,7 +15360,7 @@ class EntityManagerPanel extends HTMLElement {
       <div class="em-sug-section em-sug-health" style="margin:0 8px 8px">
         ${this._collGroup(`${this._icon(EM_ICONS.warning, '16px')} Needs a name (${needName.length})`,
           this._sectionHint('The entity\'s own name is exactly the device name, so there is nothing left after '
-            + 'removing it. Give these a name yourself — a guess would be worse than the doubling.', 'help-dupnames-manual')
+            + 'removing it. Give these a name yourself — a guess would be worse than the doubling.', 'help-dupnames')
           + needName.map(r => row(r, false)).join(''))}
       </div>` : '';
 
@@ -15312,7 +15369,7 @@ class EntityManagerPanel extends HTMLElement {
         ${this._collGroup(`${this._icon('mdi:swap-horizontal', '16px')} Named after another device (${mismatched.length})`,
           this._sectionHint('These devices have entities carrying a different device\'s name — usually a device renamed '
             + 'while its entities kept the old name, or one physical device split across two registry entries. '
-            + 'Reported only: which name is right is your call.', 'help-dupnames-foreign')
+            + 'Reported only: which name is right is your call.', 'help-dupnames')
           + mismatched.map(m => `
             <div class="em-dupname-foreign" style="padding:8px 14px;border-top:1px solid var(--em-border)">
               <div style="font-weight:600">${this._escapeHtml(m.deviceName)}</div>
@@ -15328,7 +15385,7 @@ class EntityManagerPanel extends HTMLElement {
         ${this._collGroup(`${this._icon(EM_ICONS.integration, '16px')} Integration entry named differently (${entryDrift.length})`,
           this._sectionHint('Home Assistant titles an integration entry when it is first added and never revisits it, '
             + 'so the integrations page can still show the name a device had on the day it was set up. '
-            + 'Only the title changes here — no entity, device or ID is touched.', 'help-entry-drift')
+            + 'Only the title changes here — no entity, device or ID is touched.', 'help-dupnames')
           + (fixableDrift.length ? `<div style="padding:6px 12px;display:flex;gap:8px;justify-content:flex-end;align-items:center">
                <label style="margin-right:auto;font-size:12px;display:flex;gap:6px;align-items:center">
                  <input type="checkbox" id="em-entry-all" checked style="accent-color:var(--em-primary)"> Select all
@@ -19088,7 +19145,7 @@ class EntityManagerPanel extends HTMLElement {
       <div class="em-inline-view" data-view="voice">
         <div class="em-inline-view-header" style="flex-wrap:wrap;gap:8px">
           <button class="em-inline-back-btn">${svgBack} Back</button>
-          <span class="em-inline-view-title">${this._icon(EM_ICONS.voice, '16px')} Voice</span>
+          <span class="em-inline-view-title">${this._icon(EM_ICONS.voice, '16px')} Voice <button type="button" class="em-hint-help" data-help-section="help-voice" title="More in the Help guide">?</button></span>
           <div class="em-voice-tabs">
             ${tabs.map(([id, label]) => `
               <button class="em-voice-tab${id === current ? ' active' : ''}" data-voice-tab="${id}">${label}</button>
