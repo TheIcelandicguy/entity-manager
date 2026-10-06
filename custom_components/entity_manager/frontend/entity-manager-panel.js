@@ -15364,13 +15364,26 @@ class EntityManagerPanel extends HTMLElement {
     if (flashEntityId) this._flashBrokenReference(flashEntityId);
   }
 
-  /** Lovelace's placeholders for missing entities (`hui-warning`, `hui-warning-element`),
-   *  found by walking the page including open shadow roots — Lovelace nests its cards
-   *  several shadow roots deep, so a plain querySelectorAll never sees them. Iterative
-   *  and allocation-light on purpose: it runs on a large, still-rendering dashboard. */
-  _findWarningElements() {
+  /** The Lovelace panel element, found breadth-first through the shadow roots so the
+   *  search stops at the small app shell instead of walking a whole dashboard. */
+  _findLovelacePanel() {
+    const queue = [document];
+    while (queue.length) {
+      const root = queue.shift();
+      const panel = root.querySelector('ha-panel-lovelace');
+      if (panel) return panel;
+      root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) queue.push(el.shadowRoot); });
+    }
+    return null;
+  }
+
+  /** Lovelace's placeholders for missing entities (`hui-warning`, `hui-warning-element`)
+   *  inside `scope`, found by walking its shadow roots — Lovelace nests its cards several
+   *  deep, so a plain querySelectorAll never sees them. Iterative and allocation-light on
+   *  purpose: it runs on a large, still-rendering dashboard. */
+  _findWarningElements(scope) {
     const found = [];
-    const stack = [document.body];
+    const stack = [scope.shadowRoot || scope];
     while (stack.length) {
       const walker = document.createTreeWalker(stack.pop(), NodeFilter.SHOW_ELEMENT);
       for (let el = walker.nextNode(); el; el = walker.nextNode()) {
@@ -15381,57 +15394,77 @@ class EntityManagerPanel extends HTMLElement {
     return found;
   }
 
-  /** HA doesn't print the entity ID in the placeholder, so match on whatever the element
-   *  exposes (config, attributes, text) and, failing that, treat every placeholder on the
-   *  view as a candidate — a dashboard with several dead entities flashes all of them. */
-  _findBrokenReferenceElements(entityId) {
-    const warnings = this._findWarningElements();
-    const exact = warnings.filter(el => {
-      const cfg = el._config || el.config || {};
-      if (el.entityId === entityId || cfg.entity === entityId) return true;
-      const attrs = [...el.attributes].map(a => a.value).join(' ');
-      return `${attrs} ${el.textContent || ''} ${el.shadowRoot?.textContent || ''}`.includes(entityId);
-    });
-    return exact.length ? exact : warnings;
+  /** HA's placeholder doesn't print the entity ID, but the row or card that owns it holds
+   *  its config (`_config.entity`). Walk up from the placeholder, through shadow-root
+   *  hosts, to the first owner that names this entity. Only a singular `entity` counts —
+   *  an entities card's `entities` list would claim every placeholder inside it. */
+  _warningIsFor(el, entityId) {
+    let node = el;
+    for (let hops = 0; node && hops < 12; hops++) {
+      const cfg = node._config || node.config;
+      if (cfg && typeof cfg === 'object' && !Array.isArray(cfg) && cfg.entity === entityId) return true;
+      node = node.parentElement || node.getRootNode()?.host;
+    }
+    return false;
+  }
+
+  /** Pulse an element amber and let it settle. A custom element is display:inline by
+   *  default, and an inline box with only block content in its shadow root has no height
+   *  of its own to paint a glow on — make it a block for the length of the flash. */
+  _pulseElement(el) {
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const prevDisplay = el.style.display;
+    if (getComputedStyle(el).display === 'inline') el.style.display = 'block';
+    const anim = el.animate(
+      [
+        { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
+        { boxShadow: '0 0 0 3px #ffab00, 0 0 16px 4px #ffab00', backgroundColor: 'rgba(255,171,0,0.28)' },
+        { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
+      ],
+      { duration: still ? 2500 : 700, iterations: still ? 1 : 4, easing: 'ease-in-out' },
+    );
+    anim.onfinish = anim.oncancel = () => { el.style.display = prevDisplay; };
   }
 
   /** After Open… lands on a dashboard, briefly flash where the missing entity sits and
    *  scroll it into view. Lovelace loads lazily and a big dashboard can take many seconds
-   *  to draw, so poll gently for up to 40 s, and say so if it never shows up (it may be
+   *  to draw, so poll — gently, with backing off, and only inside the Lovelace panel — for
+   *  up to 40 s. If placeholders show up but none can be tied to this entity, flash them
+   *  all without scrolling and say so; if none ever show up, say that (the entity may be
    *  on another view) rather than failing silently. */
   _flashBrokenReference(entityId) {
     const deadline = Date.now() + 40000;
+    let attempt = 0;
+    let unmatchedSince = 0;
     const tick = () => {
-      if (document.hidden) { setTimeout(tick, 1000); return; }
-      const hits = this._findBrokenReferenceElements(entityId);
-      if (hits.length) {
-        const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-        hits.forEach(el => {
-          // A custom element is display:inline by default, and an inline box with only
-          // block content inside its shadow root has no height of its own to paint a
-          // glow on — make it a block for the length of the flash.
-          const prevDisplay = el.style.display;
-          if (getComputedStyle(el).display === 'inline') el.style.display = 'block';
-          const anim = el.animate(
-            [
-              { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
-              { boxShadow: '0 0 0 3px #ffab00, 0 0 16px 4px #ffab00', backgroundColor: 'rgba(255,171,0,0.28)' },
-              { boxShadow: '0 0 0 0 rgba(255,171,0,0)', backgroundColor: 'rgba(255,171,0,0)' },
-            ],
-            { duration: still ? 2500 : 700, iterations: still ? 1 : 4, easing: 'ease-in-out' },
-          );
-          anim.onfinish = anim.oncancel = () => { el.style.display = prevDisplay; };
-        });
-        hits[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      attempt += 1;
+      if (document.hidden) { setTimeout(tick, 1500); return; }
+      const panel = this._findLovelacePanel();
+      const warnings = panel ? this._findWarningElements(panel) : [];
+      const mine = warnings.filter(el => this._warningIsFor(el, entityId));
+      if (mine.length) {
+        mine.forEach(el => this._pulseElement(el));
+        mine[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
+      if (warnings.length) {
+        unmatchedSince = unmatchedSince || Date.now();
+        if (Date.now() - unmatchedSince > 8000) {
+          warnings.forEach(el => this._pulseElement(el));
+          this._showToast(
+            `${entityId} is on this dashboard but Home Assistant doesn't say which placeholder is its own — all ${warnings.length} missing-entity placeholders flashed.`,
+            'warning', 10000,
+          );
+          return;
+        }
+      }
       if (Date.now() < deadline) {
-        setTimeout(tick, 1000);
+        setTimeout(tick, Math.min(1000 + attempt * 500, 4000));
       } else {
         this._showToast(`Couldn't find ${entityId} on this view — it may be on another tab of the dashboard.`, 'warning', 8000);
       }
     };
-    setTimeout(tick, 1500);
+    setTimeout(tick, 2000);
   }
 
   async _showBrokenReferencesSection(container) {

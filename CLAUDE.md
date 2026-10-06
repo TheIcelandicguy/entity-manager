@@ -211,10 +211,14 @@ allowed. Everything else is WebSocket-only.
   `/config/energy`, or the Assist pipelines list (pipelines have no stable
   per-id route). YAML gets no Open button — HA has no built-in file viewer.
   For a dashboard source, `_navigateTo(path, entityId)` then calls `_flashBrokenReference()`,
-  which polls up to 40 s for Lovelace's `hui-warning` / `hui-warning-element` placeholders
-  (HA doesn't print the ID in them, so it matches on what the element exposes and otherwise
-  flashes every placeholder on the view), pulses them and scrolls the first into view, or
-  toasts that the entity may be on another tab. `trigger:` is excluded like `action:` —
+  which backs off and polls up to 40 s, inside `ha-panel-lovelace` only, for Lovelace's
+  `hui-warning` / `hui-warning-element` placeholders. HA doesn't print the ID in them, so
+  `_warningIsFor()` walks up through shadow-root hosts to the row or card whose
+  `_config.entity` names it (a singular `entity` only — an entities card's list would claim
+  every placeholder inside it). It pulses and scrolls to those; if placeholders exist but
+  none can be tied to the ID for 8 s it flashes them all without scrolling and says so, and
+  if none appear it toasts that the entity may be on another tab. `trigger:` is excluded
+  like `action:` —
   `trigger: button.pressed` is a trigger platform, not an entity.
   Navigation is a direct `history.pushState` + `location-changed` dispatch
   (`_navigateTo()`), not the delegated `data-open-path` handling some dialogs
