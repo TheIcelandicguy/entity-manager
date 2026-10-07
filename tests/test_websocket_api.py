@@ -1,5 +1,6 @@
 """Unit tests for websocket_api.py core functions."""
 
+import asyncio
 import inspect
 import sys
 from datetime import datetime, timezone
@@ -16,9 +17,12 @@ from custom_components.entity_manager.websocket_api import (
     _bulk_toggle,
     _match_sentence,
     _prune_entity,
+    _read_yaml_text,
     _remove_yaml_list_entry,
     _replace_in_obj,
     _Rewriter,
+    _serialised,
+    _write_yaml_text,
     disable_entity,
     enable_entity,
     handle_bulk_disable,
@@ -1900,6 +1904,71 @@ def test_remove_yaml_list_entry_leaves_bare_scalar_untouched() -> None:
     new_text, count = _remove_yaml_list_entry(text, "light.ghost")
     assert count == 0
     assert new_text == text
+
+
+# ---------------------------------------------------------------------------
+# _write_yaml_text / _read_yaml_text / _serialised
+# ---------------------------------------------------------------------------
+
+
+def test_write_yaml_text_keeps_the_first_backup(tmp_path: Path) -> None:
+    """A second edit must not overwrite the backup of the original."""
+    target = tmp_path / "automations.yaml"
+    target.write_text("one\n", encoding="utf-8")
+
+    _write_yaml_text(target, "one\n", "two\n", tmp_path)
+    _write_yaml_text(target, "two\n", "three\n", tmp_path)
+
+    assert target.read_text(encoding="utf-8") == "three\n"
+    first = tmp_path / "automations.yaml.em-bak"
+    assert first.read_text(encoding="utf-8") == "one\n"
+    later = list(tmp_path.glob("automations.yaml.em-bak-*"))
+    assert len(later) == 1
+    assert later[0].read_text(encoding="utf-8") == "two\n"
+    assert not list(tmp_path.glob("*.em-tmp"))
+
+
+def test_yaml_text_round_trip_keeps_crlf_and_bom(tmp_path: Path) -> None:
+    target = tmp_path / "configuration.yaml"
+    target.write_bytes("﻿a: 1\r\nb: 2\r\n".encode("utf-8"))
+
+    text = _read_yaml_text(target)
+    assert "\r\n" in text
+    _write_yaml_text(target, text, text.replace("a: 1", "a: 9"), tmp_path)
+
+    assert target.read_bytes() == "﻿a: 9\r\nb: 2\r\n".encode("utf-8")
+
+
+def test_write_yaml_text_refuses_a_symlink_out_of_the_config(tmp_path: Path) -> None:
+    config = tmp_path / "config"
+    config.mkdir()
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("keep\n", encoding="utf-8")
+    link = config / "linked.yaml"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available")
+
+    with pytest.raises(OSError):
+        _write_yaml_text(link, "keep\n", "changed\n", config)
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
+async def test_serialised_handlers_do_not_overlap(hass: HomeAssistant) -> None:
+    """Two config rewrites must run one after the other, not interleave."""
+    log: list[str] = []
+
+    @_serialised
+    async def handler(hass_: HomeAssistant, connection: object, msg: dict) -> None:
+        log.append(f"start {msg['n']}")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        log.append(f"end {msg['n']}")
+
+    await asyncio.gather(handler(hass, None, {"n": 1}), handler(hass, None, {"n": 2}))
+
+    assert log == ["start 1", "end 1", "start 2", "end 2"]
 
 
 # ---------------------------------------------------------------------------

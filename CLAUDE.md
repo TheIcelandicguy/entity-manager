@@ -114,7 +114,12 @@ allowed. Everything else is WebSocket-only.
 - `update_yaml_references` and `register_template` do regex text replacement over
   YAML config files, not semantic YAML parsing. They skip `secrets.yaml` and the
   dirs `custom_components`, `.storage`, `deps`, `tts`, `__pycache__`, `backups`, `snapshots`,
-  `www`, `.git`, and write a `<file>.em-bak` beside every file they modify. Keep
+  `www`, `.git`, and write a `<file>.em-bak` beside every file they modify (a later
+  edit gets `<file>.em-bak-<UTC stamp>`, so the first backup survives; the new text is
+  written to a temp file and swapped in, CRLF and BOM are kept, and a symlink out of
+  the config dir is refused — all in `_write_yaml_text`). The three handlers that
+  rewrite config (`update_yaml_references`, `remove_broken_reference`,
+  `register_template`) run one at a time under `_serialised`. Keep
   all three guards in any change to that path. Only `update_yaml_references`
   takes `dry_run`; `register_template` has no preview mode.
 - `update_yaml_references` takes one `old_entity_id`/`new_entity_id` pair or a

@@ -1,9 +1,14 @@
 """WebSocket API for Entity Manager."""
 
+import asyncio
+import functools
 import json
 import logging
+import os
 import re
+import shutil
 import uuid as uuid_module
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -31,6 +36,66 @@ from .voice_sentences import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_EDIT_LOCK_KEY = "entity_manager_edit_lock"
+
+
+def _serialised(
+    func: Callable[
+        [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
+    ],
+) -> Callable[
+    [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
+]:
+    """Run config-rewriting handlers one at a time.
+
+    They read a file or store, change it and write it back, with awaits in
+    between. Two overlapping calls would each write from the same starting text
+    and the second would silently undo the first, and overwrite its backup.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict[str, Any],
+    ) -> None:
+        lock = hass.data.setdefault(_EDIT_LOCK_KEY, asyncio.Lock())
+        async with lock:
+            await func(hass, connection, msg)
+
+    return wrapper
+
+
+def _read_yaml_text(path: Path) -> str:
+    """Read a YAML file as bytes so CRLF line endings and a BOM survive a rewrite."""
+    return path.read_bytes().decode("utf-8")
+
+
+def _write_yaml_text(path: Path, original: str, new: str, config_path: Path) -> None:
+    """Back up ``original`` beside ``path`` and replace the file with ``new``.
+
+    The first backup is ``<file>.em-bak``; if one exists already it is the
+    state before an earlier edit, so later backups get a timestamped name
+    instead of overwriting it. The new text goes to a temporary file that
+    replaces the original in one step, so a failed write cannot truncate a
+    config file. A path that resolves outside the config directory (a symlink)
+    is refused.
+    """
+    if not path.resolve().is_relative_to(config_path.resolve()):
+        raise OSError(f"{path.name} resolves outside the config directory")
+    backup = path.with_name(path.name + ".em-bak")
+    if backup.exists():
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        backup = path.with_name(f"{path.name}.em-bak-{stamp}")
+    backup.write_bytes(original.encode("utf-8"))
+    tmp = path.with_name(f".{path.name}.em-tmp")
+    try:
+        tmp.write_bytes(new.encode("utf-8"))
+        shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 async def _resolve_trigger_context(
@@ -872,6 +937,7 @@ async def handle_get_template_sensors(
 )
 @websocket_api.require_admin
 @websocket_api.async_response
+@_serialised
 async def handle_update_yaml_references(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -918,15 +984,11 @@ async def handle_update_yaml_references(
             if filepath.name == "secrets.yaml":
                 continue
             try:
-                content = filepath.read_text(encoding="utf-8")
+                content = _read_yaml_text(filepath)
                 new_content, count = rewriter.sub(content)
                 if count:
                     if not dry_run:
-                        # Keep a one-shot backup of the pre-edit content next to the file
-                        filepath.with_name(filepath.name + ".em-bak").write_text(
-                            content, encoding="utf-8"
-                        )
-                        filepath.write_text(new_content, encoding="utf-8")
+                        _write_yaml_text(filepath, content, new_content, config_path)
                     results.append(
                         {"file": str(rel), "replacements": count, "kind": "yaml"}
                     )
@@ -1731,6 +1793,7 @@ async def handle_get_broken_references(
 )
 @websocket_api.require_admin
 @websocket_api.async_response
+@_serialised
 async def handle_remove_broken_reference(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -1795,8 +1858,8 @@ async def handle_remove_broken_reference(
 
             def _remove_from_yaml() -> tuple[bool, str]:
                 try:
-                    text = filepath.read_text(encoding="utf-8")
-                except OSError as exc:
+                    text = _read_yaml_text(filepath)
+                except (OSError, UnicodeDecodeError) as exc:
                     return False, str(exc)
                 new_text, count = _remove_yaml_list_entry(text, entity_id)
                 if not count:
@@ -1804,10 +1867,10 @@ async def handle_remove_broken_reference(
                         f"{entity_id} isn't a standalone list entry in {rel} — "
                         "edit the file by hand, or use Update to repoint it."
                     )
-                filepath.with_name(filepath.name + ".em-bak").write_text(
-                    text, encoding="utf-8"
-                )
-                filepath.write_text(new_text, encoding="utf-8")
+                try:
+                    _write_yaml_text(filepath, text, new_text, config_path)
+                except OSError as exc:
+                    return False, str(exc)
                 return True, f"Removed {entity_id} from {rel}"
 
             removed, message = await hass.async_add_executor_job(_remove_from_yaml)
@@ -2247,6 +2310,7 @@ async def handle_get_areas_and_floors(
 )
 @websocket_api.require_admin
 @websocket_api.async_response
+@_serialised
 async def handle_register_template(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -2283,29 +2347,28 @@ async def handle_register_template(
             if filepath.name == "secrets.yaml":
                 continue
             try:
-                content = filepath.read_text(encoding="utf-8")
+                content = _read_yaml_text(filepath)
 
-                # Strategy 1 — new-style template block: find `name: <entity_name>`
+                # Strategy 1 — new-style template block: find `name: <entity_name>`,
+                # either as a plain key or as the first key of a `- name:` list item.
+                # Horizontal whitespace only: \s would match across blank lines and
+                # attach the unique_id to the wrong block.
                 if entity_name:
                     name_pat = re.compile(
-                        r'^(\s*)(name\s*:\s*["\']?)'
+                        r'^(?P<indent>[ \t]*)(?P<dash>-[ \t]+)?name[ \t]*:[ \t]*["\']?'
                         + re.escape(entity_name)
-                        + r'(["\']?\s*)$',
+                        + r'["\']?[ \t]*$',
                         re.MULTILINE,
                     )
                     m = name_pat.search(content)
                     if m:
-                        indent = m.group(1)
+                        indent = m.group("indent") + " " * len(m.group("dash") or "")
                         new_content = (
                             content[: m.end()]
                             + f"\n{indent}unique_id: {new_uuid}"
                             + content[m.end() :]
                         )
-                        # Keep a one-shot backup of the pre-edit content
-                        filepath.with_name(filepath.name + ".em-bak").write_text(
-                            content, encoding="utf-8"
-                        )
-                        filepath.write_text(new_content, encoding="utf-8")
+                        _write_yaml_text(filepath, content, new_content, config_path)
                         return {
                             "success": True,
                             "file": str(rel),
@@ -2314,7 +2377,7 @@ async def handle_register_template(
 
                 # Strategy 2 — old-style platform template: `<object_id>:` as a YAML key
                 old_pat = re.compile(
-                    r"^(\s+)(" + re.escape(object_id) + r")\s*:\s*$",
+                    r"^([ \t]+)(" + re.escape(object_id) + r")[ \t]*:[ \t]*$",
                     re.MULTILINE,
                 )
                 m = old_pat.search(content)
@@ -2325,11 +2388,7 @@ async def handle_register_template(
                         + f"\n{indent}  unique_id: {new_uuid}"
                         + content[m.end() :]
                     )
-                    # Keep a one-shot backup of the pre-edit content
-                    filepath.with_name(filepath.name + ".em-bak").write_text(
-                        content, encoding="utf-8"
-                    )
-                    filepath.write_text(new_content, encoding="utf-8")
+                    _write_yaml_text(filepath, content, new_content, config_path)
                     return {
                         "success": True,
                         "file": str(rel),
