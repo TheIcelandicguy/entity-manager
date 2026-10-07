@@ -26,9 +26,18 @@ jobs:
   attach:
     runs-on: ubuntu-latest
     steps:
+      # The tag name is user-controlled text, so it reaches the shell through
+      # an environment variable, never by expression substitution.
       - name: Resolve the tag
         id: tag
-        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a version tag"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       # Check out the TAG, not the default branch: the asset must be what that
       # version shipped, and main usually moves on straight after a release.
@@ -62,11 +71,13 @@ jobs:
       # A release whose manifest disagrees with its tag installs as the wrong
       # version and is confusing to debug long after the fact.
       - name: The manifest version matches the tag
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          want="${{ steps.tag.outputs.tag }}"; want="${want#v}"
+          want="${TAG#v}"
           got=$(python -c "import json;print(json.load(open('custom_components/${{ steps.names.outputs.domain }}/manifest.json'))['version'])")
           if [ "$want" != "$got" ]; then
-            echo "::error::tag ${{ steps.tag.outputs.tag }} but manifest.json says $got."
+            echo "::error::tag $TAG but manifest.json says $got."
             exit 1
           fi
 
@@ -87,8 +98,9 @@ jobs:
       - name: Upload
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          gh release upload "${{ steps.tag.outputs.tag }}" \
+          gh release upload "$TAG" \
             "${{ steps.names.outputs.asset }}" --clobber
-          gh release view "${{ steps.tag.outputs.tag }}" \
+          gh release view "$TAG" \
             --json assets --jq '.assets[] | "attached: \(.name) (\(.size) bytes)"'

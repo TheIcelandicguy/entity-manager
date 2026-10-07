@@ -10,6 +10,8 @@ It reads CLAUDE.md and checks the claims that go stale fastest:
   tests       the test count the doc quotes is the number pytest / vitest would collect
   services    services.yaml and the doc name the same services
   lines       "N lines" claims are within 10% of the real length (warning only)
+  consistency command counts, the minimum HA version, the OVERVIEW version and the
+              two string files agree with the source and with each other
 
 Exit status 1 when anything fails, so it can gate a commit or a CI job.
 The script is deliberately conservative: it only checks what the doc actually
@@ -312,6 +314,67 @@ def check_lines(doc: str) -> None:
             warn(f"lines: `{path}` doc says {claimed:,} lines, file has {actual:,}")
 
 
+# ---- cross-file consistency (entity-manager specific) -----------------------
+
+WS_COMMAND = re.compile(r'vol\.Required\("type"\):\s*"entity_manager/([a-z_]+)"')
+COUNT_CLAIM = re.compile(
+    r"\b(?:All\s+)?(\d+)\s+(?:admin-gated\s+)?(?:WS\s+|WebSocket\s+)?"
+    r"(?:commands?|handlers?|command handlers?)\b"
+)
+MIN_HA_DOC = re.compile(r"(?:minimum HA|Home Assistant(?:\*\*)? )(\d{4}\.\d+\.\d+)", re.I)
+
+
+def check_consistency() -> None:
+    """The other docs and config files must agree with the source.
+
+    CLAUDE.md is checked line by line above. These checks cover what the other
+    files say about the same facts: how many WebSocket commands there are, which
+    Home Assistant version is the minimum, and that the two string files match.
+    """
+    api = ROOT / "custom_components" / "entity_manager" / "websocket_api.py"
+    if api.exists():
+        commands = sorted(set(WS_COMMAND.findall(read(api))))
+        for name in ("CLAUDE.md", "OVERVIEW.md", "README.md"):
+            path = ROOT / name
+            if not path.exists():
+                continue
+            text = read(path)
+            for claimed in COUNT_CLAIM.findall(text):
+                if int(claimed) != len(commands):
+                    fail(f"commands: {name} says {claimed} commands; websocket_api.py has {len(commands)}")
+        overview = ROOT / "OVERVIEW.md"
+        if overview.exists():
+            text = read(overview)
+            for cmd in commands:
+                if f"entity_manager/{cmd}`" not in text:
+                    fail(f"commands: OVERVIEW.md does not list `entity_manager/{cmd}`")
+        rv = repo_version()
+        if rv is not None and overview.exists():
+            quoted = re.search(r"version \*\*(\d+\.\d+\.\d+)\*\*", read(overview))
+            if quoted and quoted.group(1) != rv[0]:
+                fail(f"version: OVERVIEW.md quotes {quoted.group(1)}; {rv[1].name} says {rv[0]}")
+
+    hacs = ROOT / "hacs.json"
+    if hacs.exists():
+        declared = json.loads(read(hacs)).get("homeassistant")
+        if declared:
+            for name in ("CLAUDE.md", "OVERVIEW.md", "README.md"):
+                path = ROOT / name
+                if not path.exists():
+                    continue
+                for found in MIN_HA_DOC.findall(read(path)):
+                    if found != declared:
+                        fail(f"min-ha: {name} says {found}; hacs.json says {declared}")
+            badge = re.search(r"Home%20Assistant-(\d{4}\.\d+)\+", read(ROOT / "README.md"))
+            if badge and not declared.startswith(badge.group(1) + "."):
+                fail(f"min-ha: README badge says {badge.group(1)}+; hacs.json says {declared}")
+
+    comp = ROOT / "custom_components" / "entity_manager"
+    strings, en = comp / "strings.json", comp / "translations" / "en.json"
+    if strings.exists() and en.exists() and json.loads(read(strings)) != json.loads(read(en)):
+        fail("strings: strings.json and translations/en.json differ")
+
+
 # ---- main --------------------------------------------------------------------
 
 def main() -> int:
@@ -326,6 +389,7 @@ def main() -> int:
     check_tests(doc)
     check_services(doc)
     check_lines(doc)
+    check_consistency()
     for w in warnings:
         print(f"WARN  {w}")
     for f in failures:
