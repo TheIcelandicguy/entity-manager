@@ -393,16 +393,16 @@ async def test_intent_does_not_act_on_a_word_match(
     """A partial word match is read back; the registry is left alone."""
     await async_setup_intents(hass)
     entity_reg = er.async_get(hass)
-    _register(entity_reg, "light.hue_lamp_3", "Hue color lamp 3")
+    _register(entity_reg, "light.skrifstofa_hue_color_lamp_3", "Hue color lamp 3")
 
     response = await _speak(
         hass, INTENT_DISABLE_ENTITY, "hue lamp 3", hass_admin_user.id
     )
 
     speech = response.speech["plain"]["speech"]
-    assert "light.hue_lamp_3" in speech
+    assert "light.skrifstofa_hue_color_lamp_3" in speech
     assert "Say the entity ID" in speech
-    assert entity_reg.async_get("light.hue_lamp_3").disabled_by is None
+    assert entity_reg.async_get("light.skrifstofa_hue_color_lamp_3").disabled_by is None
 
 
 async def test_resolve_survives_a_non_string_name(hass: HomeAssistant) -> None:
