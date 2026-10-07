@@ -1,5 +1,20 @@
 # Changelog
 
+## Version 3.7.0 - Ignore in bulk
+
+The Suggestions view could already ignore a single row. For a house with dozens
+of devices that belong to no room (integrations, template helpers), that meant
+pressing Ignore once per device.
+
+### Suggestions
+
+- **Select all and Ignore Selected** in the bulk bar of Area Assignment, Naming Improvements and Label Suggestions. Tick the rows you want gone, or select everything, and ignore them in one go
+- **Restore works as before.** Bulk ignores use the same keys as the per-row button, so View ignored lists them and Restore brings them back
+- **Search-aware.** Select all, the selection counts and the Ignore, Rename and Assign Area bulk actions only cover rows the search box has not hidden
+- **Counts stay right.** After ignoring, the section counts, the "Found N suggestions" line and the Suggestions tile count are recalculated, and an emptied section disappears
+- **Label cards** have their own checkbox for choosing suggestions to ignore, separate from the entity checkboxes that decide what Apply assigns
+- **Help Guide** describes the new buttons
+
 ## Version 3.6.2 - Help Guide catches up
 
 The in-panel Help Guide had not been touched since 3.1.0, so it described none
