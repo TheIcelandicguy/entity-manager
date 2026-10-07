@@ -45,7 +45,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
-| `.../frontend/entity-manager-panel.js` | 19,521 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
+| `.../frontend/entity-manager-panel.js` | 19,940 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 8,001 lines, all `--em-*` variables. |
 | `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
@@ -311,7 +311,17 @@ allowed. Everything else is WebSocket-only.
   `_refreshSuggestionsKeepingState()` snapshots which groups are open (keyed by
   header path, with `(N)` counts stripped), the scroll position and the search
   text, and restores them on the new render. Use it, not `_refreshView()`, for
-  any action inside that view.
+  any action inside that view. Area, Naming and Label sections each have a
+  **Select all** and **Ignore Selected** bar. Ignoring writes `area:<deviceId>`,
+  `naming:<entityId>` or `label:<name>` keys to `_ignoredSugKeys` (localStorage
+  `em-ignored-suggestions`, per browser) and removes the rows from the DOM
+  without a re-render, so open groups and scroll stay put; `refreshSugCounts`
+  then recounts the header counts, the "Found N" line and the cached tile
+  count from the DOM. Select all, the counts and the bulk actions cover only
+  rows the search box has not hidden (`pickBoxes`). View ignored /
+  Restore read the same keys. Label cards carry their own `em-label-ignore-cb`
+  because their inner checkboxes choose what **Apply** assigns, not what is
+  ignored.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
   *before* issuing the command. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.

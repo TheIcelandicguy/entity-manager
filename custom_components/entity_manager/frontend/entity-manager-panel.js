@@ -4336,10 +4336,10 @@ class EntityManagerPanel extends HTMLElement {
                 <li>Click the <strong>Suggestions</strong> stat card to analyse your entities</li>
                 <li>🟣 <strong>Health Issues</strong> — entities unavailable 7+ days → suggested for disable (reversible; stops HA tracking dead entities)</li>
                 <li>⬜ <strong>Disable Candidates</strong> — diagnostic entities unchanged 30+ days; disabling reduces database noise, re-enable anytime</li>
-                <li>🟠 <strong>Naming Improvements</strong> — auto-generated hashes or generic names; Rename changes the entity ID and propagates it across automations, scripts, and YAML</li>
-                <li>🔴 <strong>Area Suggestions</strong> — devices with no area, matched by device name (✨) and your mapping rules (📐); Apply sets the area on the device and its entities</li>
+                <li>🟠 <strong>Naming Improvements</strong> — auto-generated hashes or generic names; Rename changes the entity ID and propagates it across automations, scripts, and YAML. Tick entities (or <strong>Select all</strong>) and use <strong>Ignore Selected</strong> to hide the ones you want to keep as they are</li>
+                <li>🔴 <strong>Area Suggestions</strong> — devices with no area, matched by device name (✨) and your mapping rules (📐); Apply sets the area on the device and its entities. Devices that belong to no room (integrations, template helpers) can be ignored: tick them, or use <strong>Select all</strong>, then <strong>Ignore Selected</strong></li>
                 <li>🟠 <strong>Area Mismatch</strong> — the entity's own area differs from its device's area; Sync adopts the device's area, Choose Area picks another</li>
-                <li>🟡 <strong>Label Suggestions</strong> — smart HA label recommendations — click <em>Apply to N</em> to create &amp; assign instantly</li>
+                <li>🟡 <strong>Label Suggestions</strong> — smart HA label recommendations — click <em>Apply to N</em> to create &amp; assign instantly; tick the box at the left of a suggestion (or <strong>Select all</strong>) and use <strong>Ignore Selected</strong> to hide the ones you do not want</li>
                 <li>Every suggestion row has an <strong>Ignore</strong> button (permanent, this browser); restore anything via the <strong>View ignored</strong> bar at the top</li>
                 <li>Each section is colour-tinted for quick scanning</li>
               </ul>
@@ -13800,21 +13800,25 @@ class EntityManagerPanel extends HTMLElement {
               <input type="checkbox" class="em-naming-group-select-all" title="Select all in group"
                      style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary);flex-shrink:0">
               <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.intName)}</span>
-              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
+              <span class="em-naming-int-count" style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} entit${group.items.length !== 1 ? 'ies' : 'y'}</span>
             </div>
             <div class="em-naming-device-body" style="display:none">${entityRows}</div>
           </div>`;
       }
       rows = rows || '';
       const body = `<div style="padding:2px 0">
-        ${this._sectionHint('Entity IDs with auto-generated hashes or overly generic names. <b>Rename</b> updates the entity ID itself and propagates the change across automations, scripts, and YAML files.', 'help-suggestions')}
+        ${this._sectionHint('Entity IDs with auto-generated hashes or overly generic names. <b>Rename</b> updates the entity ID itself and propagates the change across automations, scripts, and YAML files. <b>Ignore Selected</b> hides the ticked entities from this list; <b>Restore</b> brings them back.', 'help-suggestions')}
         <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap" title="Select every entity in the list">
+            <input type="checkbox" class="em-naming-select-all" style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)"> Select all
+          </label>
           <button class="btn btn-primary btn-sm em-naming-rename-btn" disabled style="opacity:0.4;pointer-events:none">Rename Selected (0)</button>
-          <span style="font-size:11px;color:var(--em-text-secondary)">Check entities to bulk rename</span>
+          <button class="btn btn-sm em-naming-ignore-btn" disabled style="opacity:0.4;pointer-events:none" title="Hide the selected entities from this list. Reversible with Restore.">Ignore Selected (0)</button>
+          <span style="font-size:11px;color:var(--em-text-secondary)">Check entities to rename or ignore them</span>
         </div>
         ${rows || '<div style="padding:8px 4px;color:var(--em-text-secondary)">None</div>'}
       </div>`;
-      return this._collGroup(`${emoji} ${title} <span style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
+      return this._collGroup(`${emoji} ${title} <span class="em-sug-count" style="opacity:0.55;font-weight:400;font-size:12px">(${items.length})</span>`, body);
     };
 
     const renderAreaSection = (emoji, title, items) => {
@@ -13907,16 +13911,20 @@ class EntityManagerPanel extends HTMLElement {
               <input type="checkbox" class="em-area-int-select-all" title="Select all devices in group"
                      style="flex-shrink:0;cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)">
               <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(group.intName)}</span>
-              <span style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} device${group.items.length !== 1 ? 's' : ''}</span>
+              <span class="em-area-int-count" style="font-size:11px;color:var(--em-text-secondary);margin-right:4px">${group.items.length} device${group.items.length !== 1 ? 's' : ''}</span>
             </div>
             <div class="em-naming-device-body" style="display:none">${deviceCards}</div>
           </div>`;
       }
       return `<div style="padding:2px 0">
-        ${this._sectionHint('Devices with no area assigned, matched by device name (✨ Auto) and your own mapping rules (📐). <b>Apply</b> sets the suggested area on the device and all of its entities.', 'help-suggestions')}
+        ${this._sectionHint('Devices with no area assigned, matched by device name (✨ Auto) and your own mapping rules (📐). <b>Apply</b> sets the suggested area on the device and all of its entities. <b>Ignore</b> hides a device that has no physical room; <b>Ignore Selected</b> does it for every ticked device, and <b>Restore</b> brings them back.', 'help-suggestions')}
         <div class="em-sug-area-bulk-bar">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap" title="Select every device in the list">
+            <input type="checkbox" class="em-area-select-all" style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)"> Select all
+          </label>
           <button class="btn btn-primary btn-sm em-area-bulk-btn" disabled style="opacity:0.4;pointer-events:none">Assign Area to Selected (0)</button>
-          <span style="font-size:11px;color:var(--em-text-secondary)">Select devices to bulk assign area</span>
+          <button class="btn btn-sm em-area-ignore-btn" disabled style="opacity:0.4;pointer-events:none" title="Hide the selected devices from this list. Reversible with Restore.">Ignore Selected (0)</button>
+          <span style="font-size:11px;color:var(--em-text-secondary)">Select devices to assign an area or ignore them</span>
         </div>
         ${rows}
       </div>`;
@@ -14001,6 +14009,8 @@ class EntityManagerPanel extends HTMLElement {
           <div class="em-naming-device-group em-label-sug-card" data-label-name="${labelKey}" style="border-bottom:1px solid var(--em-border)">
             <div class="em-naming-device-toggle" style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;user-select:none;background:var(--em-bg-secondary)">
               <span class="em-naming-arrow em-collapsible-icon" style="transition:transform 0.15s;transform:rotate(-90deg)">${svgChev}</span>
+              <input type="checkbox" class="em-label-ignore-cb" data-label-key="${labelKey}" title="Select this suggestion to ignore"
+                     style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary);flex-shrink:0">
               <span style="flex-shrink:0">${this._icon(g.emoji, '16px')}</span>
               <span style="font-size:12px;font-weight:700;color:var(--em-text-primary);text-transform:uppercase;letter-spacing:0.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${this._escapeHtml(g.label)}</span>
               <span style="font-size:11px;color:var(--em-text-secondary);margin-right:2px">${g.entities.length} entit${g.entities.length !== 1 ? 'ies' : 'y'}</span>
@@ -14017,9 +14027,15 @@ class EntityManagerPanel extends HTMLElement {
           </div>`;
       }).join('');
       const body = `<div style="padding:2px 0">
-        ${this._sectionHint('Smart label recommendations grouped by semantic category (lights, motion sensors, power monitoring…). <b>Apply to N</b> creates the HA label if needed and assigns it — labels are HA-native and usable everywhere, not just in Entity Manager.', 'help-labels')}
+        ${this._sectionHint('Smart label recommendations grouped by semantic category (lights, motion sensors, power monitoring…). <b>Apply to N</b> creates the HA label if needed and assigns it — labels are HA-native and usable everywhere, not just in Entity Manager. Tick the box at the left of a suggestion (or <b>Select all</b>) and use <b>Ignore Selected</b> to hide the ones you do not want; <b>Restore</b> brings them back.', 'help-labels')}
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--em-border);background:var(--em-bg-secondary)">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap" title="Select every label suggestion">
+            <input type="checkbox" class="em-label-select-all" style="cursor:pointer;width:14px;height:14px;accent-color:var(--em-primary)"> Select all
+          </label>
+          <button class="btn btn-sm em-label-ignore-btn" disabled style="opacity:0.4;pointer-events:none" title="Hide the selected label suggestions. Reversible with Restore.">Ignore Selected (0)</button>
+        </div>
         ${rows}</div>`;
-      return this._collGroup(`${this._icon(EM_ICONS.labels, '16px')} Label Suggestions <span style="opacity:0.55;font-weight:400;font-size:12px">(${groups.length} group${groups.length !== 1 ? 's' : ''})</span>`, body);
+      return this._collGroup(`${this._icon(EM_ICONS.labels, '16px')} Label Suggestions <span class="em-sug-count" style="opacity:0.55;font-weight:400;font-size:12px">(${groups.length} group${groups.length !== 1 ? 's' : ''})</span>`, body);
     };
 
     const dialogBody = overlay.querySelector('.em-inline-view-body');
@@ -14028,7 +14044,7 @@ class EntityManagerPanel extends HTMLElement {
       ${total === 0
         ? `<div style="padding:32px;text-align:center;color:var(--em-success);font-size:15px">✓ No suggestions — everything looks great!</div>`
         : `<div style="font-size:12px;color:var(--em-text-secondary);margin-bottom:10px">
-             Found <strong style="color:var(--em-text-primary)">${total}</strong> suggestion${total !== 1 ? 's' : ''} across <strong style="color:var(--em-text-primary)">${allEntities.length}</strong> entities.
+             Found <strong class="em-sug-total" style="color:var(--em-text-primary)">${total}</strong> suggestion<span class="em-sug-total-s">${total !== 1 ? 's' : ''}</span> across <strong style="color:var(--em-text-primary)">${allEntities.length}</strong> entities.
            </div>
            <div class="em-sug-section em-sug-health">${renderSection(this._icon(EM_ICONS.configHealth, '16px'), 'Health Issues', health, 'health')}</div>
            <div class="em-sug-section em-sug-disable">${renderSection(this._icon(EM_ICONS.disable, '16px'), 'Disable Candidates', disable, 'disable')}</div>
@@ -14036,7 +14052,7 @@ class EntityManagerPanel extends HTMLElement {
            <div class="em-sug-section em-sug-area">${
              (area.length + mismatch.length) === 0 ? '' :
              this._collGroup(
-               `${this._icon(EM_ICONS.area, '16px')} Area Suggestions <span style="opacity:0.55;font-weight:400;font-size:12px">(${area.length + mismatch.length})</span>`,
+               `${this._icon(EM_ICONS.area, '16px')} Area Suggestions <span class="em-sug-count" style="opacity:0.55;font-weight:400;font-size:12px">(${area.length + mismatch.length})</span>`,
                `${renderAreaSection(this._icon(EM_ICONS.area, '16px'), 'Area Assignment', area)}
                 ${renderMismatchSection(this._icon('mdi:map-marker-alert', '16px'), 'Area Mismatch', mismatch)}`
              )
@@ -14067,6 +14083,7 @@ class EntityManagerPanel extends HTMLElement {
           body.style.display = hasVisible || !term ? '' : 'none';
           if (hdr) hdr.style.display = hasVisible || !term ? '' : 'none';
         });
+        dialogBody.dispatchEvent(new Event('em-sug-filter'));
       });
     }
 
@@ -14131,18 +14148,146 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
-    const updateNamingBulkBar = () => {
-      const checked = [...dialogBody.querySelectorAll('.em-sug-naming-cb:checked')];
-      const btn = dialogBody.querySelector('.em-naming-rename-btn');
-      if (!btn) return;
-      if (checked.length > 0) {
-        btn.textContent = `Rename Selected (${checked.length})`;
-        btn.disabled = false; btn.style.opacity = '1'; btn.style.pointerEvents = '';
-      } else {
-        btn.textContent = 'Rename Selected (0)';
-        btn.disabled = true; btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+    // Recount what is left after rows were removed without a re-render: the section
+    // header counts, the "Found N" line and the cached Suggestions tile count. A section
+    // with nothing left is cleared, and so is the whole view when nothing is left.
+    const refreshSugCounts = () => {
+      const count = (sel) => dialogBody.querySelectorAll(sel).length;
+      const setCount = (section, text) => {
+        const el = dialogBody.querySelector(`${section} .em-sug-count`);
+        if (el) el.textContent = text;
+      };
+      const naming = count('.em-sug-naming .em-sug-naming-row');
+      const areaDevices = count('.em-sug-area .em-sug-area-card');
+      const mismatches = count('.em-sug-area .em-sug-mismatch-row');
+      const labels = count('.em-sug-labels .em-label-sug-card');
+      setCount('.em-sug-naming', `(${naming})`);
+      setCount('.em-sug-area', `(${areaDevices + mismatches})`);
+      setCount('.em-sug-labels', `(${labels} group${labels !== 1 ? 's' : ''})`);
+      for (const [cls, n] of [['naming', naming], ['area', areaDevices + mismatches], ['labels', labels]]) {
+        if (!n) { const el = dialogBody.querySelector(`.em-sug-${cls}`); if (el) el.innerHTML = ''; }
+      }
+      const left = count('.em-sug-health .em-sug-row') + count('.em-sug-disable .em-sug-row') + naming + areaDevices + mismatches + labels;
+      this._suggestionsCount = left;
+      this._saveToStorage('em-suggestions-count', left);
+      const totalEl = dialogBody.querySelector('.em-sug-total');
+      if (totalEl) totalEl.textContent = String(left);
+      const sEl = dialogBody.querySelector('.em-sug-total-s');
+      if (sEl) sEl.textContent = left !== 1 ? 's' : '';
+      if (!left) {
+        dialogBody.innerHTML = `<div style="padding:8px 8px 4px"><div class="em-sug-ignored-wrap"></div>
+          <div style="padding:32px;text-align:center;color:var(--em-success);font-size:15px">✓ No suggestions — everything looks great!</div></div>`;
+        this._renderIgnoredListUI(dialogBody.querySelector('.em-sug-ignored-wrap'));
       }
     };
+    // Persist a batch of ignore keys, then refresh the "View ignored" bar and toast.
+    const ignoreKeys = (keys, singular, plural) => {
+      for (const key of keys) this._ignoredSugKeys.add(key);
+      this._saveToStorage('em-ignored-suggestions', [...this._ignoredSugKeys]);
+      this._showToast(`${keys.length} ${keys.length === 1 ? singular : plural} ignored`, 'info');
+      refreshSugCounts();
+      this._renderIgnoredListUI(dialogBody.querySelector('.em-sug-ignored-wrap'));
+    };
+    // Enable/disable a bulk-bar button and label it with the selection count.
+    const setBulkBtn = (btn, text, on) => {
+      if (!btn) return;
+      btn.textContent = text;
+      btn.disabled = !on;
+      btn.style.opacity = on ? '1' : '0.4';
+      btn.style.pointerEvents = on ? '' : 'none';
+    };
+
+    // Checkboxes whose row the search box has not hidden. Select all, the counts and the
+    // bulk actions only ever cover these, so nothing the user cannot see gets acted on.
+    const pickBoxes = (selector, rowSelector, checkedOnly = false) =>
+      [...dialogBody.querySelectorAll(selector)].filter(cb =>
+        (!checkedOnly || cb.checked) && cb.closest(rowSelector)?.style.display !== 'none');
+
+    const updateNamingBulkBar = () => {
+      const checked = pickBoxes('.em-sug-naming-cb', '.em-sug-naming-row', true);
+      const total = pickBoxes('.em-sug-naming-cb', '.em-sug-naming-row').length;
+      const on = checked.length > 0;
+      setBulkBtn(dialogBody.querySelector('.em-naming-rename-btn'), `Rename Selected (${checked.length})`, on);
+      setBulkBtn(dialogBody.querySelector('.em-naming-ignore-btn'), `Ignore Selected (${checked.length})`, on);
+      const allCb = dialogBody.querySelector('.em-naming-select-all');
+      if (allCb) {
+        allCb.checked = total > 0 && checked.length === total;
+        allCb.indeterminate = on && checked.length < total;
+      }
+    };
+    const namingSelectAll = dialogBody.querySelector('.em-naming-select-all');
+    if (namingSelectAll) {
+      namingSelectAll.addEventListener('change', () => {
+        pickBoxes('.em-sug-naming-cb', '.em-sug-naming-row').forEach(cb => { cb.checked = namingSelectAll.checked; });
+        dialogBody.querySelectorAll('.em-naming-group-select-all').forEach(cb => {
+          const boxes = [...cb.closest('.em-naming-device-group').querySelectorAll('.em-sug-naming-cb')];
+          const on = boxes.filter(b => b.checked).length;
+          cb.checked = boxes.length > 0 && on === boxes.length;
+          cb.indeterminate = on > 0 && on < boxes.length;
+        });
+        updateNamingBulkBar();
+      });
+      dialogBody.addEventListener('em-sug-filter', updateNamingBulkBar);
+    }
+    const namingIgnoreBtn = dialogBody.querySelector('.em-naming-ignore-btn');
+    if (namingIgnoreBtn) {
+      namingIgnoreBtn.addEventListener('click', () => {
+        const checked = pickBoxes('.em-sug-naming-cb', '.em-sug-naming-row', true);
+        if (!checked.length) return;
+        const groups = new Set();
+        for (const cb of checked) {
+          const row = cb.closest('.em-sug-naming-row');
+          const group = row?.closest('.em-naming-device-group');
+          row?.remove();
+          if (group) groups.add(group);
+        }
+        for (const group of groups) {
+          const left = group.querySelectorAll('.em-sug-naming-row').length;
+          if (!left) { group.remove(); continue; }
+          const count = group.querySelector('.em-naming-int-count');
+          if (count) count.textContent = `${left} entit${left !== 1 ? 'ies' : 'y'}`;
+          const groupCb = group.querySelector('.em-naming-group-select-all');
+          if (groupCb) { groupCb.checked = false; groupCb.indeterminate = false; }
+        }
+        updateNamingBulkBar();
+        ignoreKeys(checked.map(cb => 'naming:' + cb.dataset.entityId), 'entity', 'entities');
+      });
+    }
+
+    // Label suggestions — pick whole suggestions to ignore
+    const updateLabelIgnoreBar = () => {
+      const all = pickBoxes('.em-label-ignore-cb', '.em-label-sug-card');
+      const checked = all.filter(cb => cb.checked);
+      const on = checked.length > 0;
+      setBulkBtn(dialogBody.querySelector('.em-label-ignore-btn'), `Ignore Selected (${checked.length})`, on);
+      const allCb = dialogBody.querySelector('.em-label-select-all');
+      if (allCb) {
+        allCb.checked = all.length > 0 && checked.length === all.length;
+        allCb.indeterminate = on && checked.length < all.length;
+      }
+    };
+    dialogBody.querySelectorAll('.em-label-ignore-cb').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', updateLabelIgnoreBar);
+    });
+    const labelSelectAll = dialogBody.querySelector('.em-label-select-all');
+    if (labelSelectAll) {
+      labelSelectAll.addEventListener('change', () => {
+        pickBoxes('.em-label-ignore-cb', '.em-label-sug-card').forEach(cb => { cb.checked = labelSelectAll.checked; });
+        updateLabelIgnoreBar();
+      });
+      dialogBody.addEventListener('em-sug-filter', updateLabelIgnoreBar);
+    }
+    const labelIgnoreBtn = dialogBody.querySelector('.em-label-ignore-btn');
+    if (labelIgnoreBtn) {
+      labelIgnoreBtn.addEventListener('click', () => {
+        const checked = pickBoxes('.em-label-ignore-cb', '.em-label-sug-card', true);
+        if (!checked.length) return;
+        for (const cb of checked) cb.closest('.em-label-sug-card')?.remove();
+        updateLabelIgnoreBar();
+        ignoreKeys(checked.map(cb => 'label:' + cb.dataset.labelKey), 'label suggestion', 'label suggestions');
+      });
+    }
     dialogBody.querySelectorAll('.em-sug-naming-cb').forEach(cb => {
       cb.addEventListener('change', () => {
         const group = cb.closest('.em-naming-device-group');
@@ -14172,7 +14317,7 @@ class EntityManagerPanel extends HTMLElement {
     const namingRenameBtn = dialogBody.querySelector('.em-naming-rename-btn');
     if (namingRenameBtn) {
       namingRenameBtn.addEventListener('click', () => {
-        const checkedIds = [...dialogBody.querySelectorAll('.em-sug-naming-cb:checked')].map(cb => cb.dataset.entityId);
+        const checkedIds = pickBoxes('.em-sug-naming-cb', '.em-sug-naming-row', true).map(cb => cb.dataset.entityId);
         if (checkedIds.length === 0) return;
         closeDialog();
         // Pass ids explicitly — the old save-swap-restore of this.selectedEntities
@@ -14358,7 +14503,7 @@ class EntityManagerPanel extends HTMLElement {
         if (row) {
           row.style.transition = 'opacity 0.15s';
           row.style.opacity = '0';
-          setTimeout(() => row.remove(), 160);
+          setTimeout(() => { row.remove(); refreshSugCounts(); }, 160);
         }
         this._showToast('Suggestion ignored', 'info');
         this._renderIgnoredListUI(dialogBody.querySelector('.em-sug-ignored-wrap'));
@@ -14367,17 +14512,55 @@ class EntityManagerPanel extends HTMLElement {
 
     // Area section — device checkboxes and bulk assign bar
     const updateAreaBulkBar = () => {
-      const checked = [...dialogBody.querySelectorAll('.em-area-device-cb:checked')];
-      const btn = dialogBody.querySelector('.em-area-bulk-btn');
-      if (!btn) return;
-      if (checked.length > 0) {
-        btn.textContent = `Assign Area to Selected (${checked.length})`;
-        btn.disabled = false; btn.style.opacity = '1'; btn.style.pointerEvents = '';
-      } else {
-        btn.textContent = 'Assign Area to Selected (0)';
-        btn.disabled = true; btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none';
+      const checked = pickBoxes('.em-area-device-cb', '.em-sug-area-card', true);
+      const total = pickBoxes('.em-area-device-cb', '.em-sug-area-card').length;
+      const on = checked.length > 0;
+      setBulkBtn(dialogBody.querySelector('.em-area-bulk-btn'), `Assign Area to Selected (${checked.length})`, on);
+      setBulkBtn(dialogBody.querySelector('.em-area-ignore-btn'), `Ignore Selected (${checked.length})`, on);
+      const allCb = dialogBody.querySelector('.em-area-select-all');
+      if (allCb) {
+        allCb.checked = total > 0 && checked.length === total;
+        allCb.indeterminate = on && checked.length < total;
       }
     };
+    const areaSelectAll = dialogBody.querySelector('.em-area-select-all');
+    if (areaSelectAll) {
+      areaSelectAll.addEventListener('change', () => {
+        pickBoxes('.em-area-device-cb', '.em-sug-area-card').forEach(cb => { cb.checked = areaSelectAll.checked; });
+        dialogBody.querySelectorAll('.em-area-int-select-all').forEach(cb => {
+          const boxes = [...cb.closest('.em-naming-device-group').querySelectorAll('.em-area-device-cb')];
+          const on = boxes.filter(b => b.checked).length;
+          cb.checked = boxes.length > 0 && on === boxes.length;
+          cb.indeterminate = on > 0 && on < boxes.length;
+        });
+        updateAreaBulkBar();
+      });
+      dialogBody.addEventListener('em-sug-filter', updateAreaBulkBar);
+    }
+    const areaIgnoreBtn = dialogBody.querySelector('.em-area-ignore-btn');
+    if (areaIgnoreBtn) {
+      areaIgnoreBtn.addEventListener('click', () => {
+        const checked = pickBoxes('.em-area-device-cb', '.em-sug-area-card', true);
+        if (!checked.length) return;
+        const groups = new Set();
+        for (const cb of checked) {
+          const card = cb.closest('.em-sug-area-card');
+          const group = card?.parentElement?.closest('.em-naming-device-group');
+          card?.remove();
+          if (group) groups.add(group);
+        }
+        for (const group of groups) {
+          const left = group.querySelectorAll('.em-sug-area-card').length;
+          if (!left) { group.remove(); continue; }
+          const count = group.querySelector('.em-area-int-count');
+          if (count) count.textContent = `${left} device${left !== 1 ? 's' : ''}`;
+          const intCb = group.querySelector('.em-area-int-select-all');
+          if (intCb) { intCb.checked = false; intCb.indeterminate = false; }
+        }
+        updateAreaBulkBar();
+        ignoreKeys(checked.map(cb => 'area:' + cb.dataset.deviceId), 'device', 'devices');
+      });
+    }
     dialogBody.querySelectorAll('.em-area-device-cb').forEach(cb => {
       cb.addEventListener('click', e => e.stopPropagation());
       cb.addEventListener('change', () => {
@@ -14408,7 +14591,7 @@ class EntityManagerPanel extends HTMLElement {
     const areaBulkBtn = dialogBody.querySelector('.em-area-bulk-btn');
     if (areaBulkBtn) {
       areaBulkBtn.addEventListener('click', async () => {
-        const checked = [...dialogBody.querySelectorAll('.em-area-device-cb:checked')];
+        const checked = pickBoxes('.em-area-device-cb', '.em-sug-area-card', true);
         if (!checked.length) return;
         const entityObjects = checked.map(cb => {
           const eid = cb.dataset.entityId;
