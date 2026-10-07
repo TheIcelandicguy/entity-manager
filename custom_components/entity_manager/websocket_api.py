@@ -1,9 +1,14 @@
 """WebSocket API for Entity Manager."""
 
+import asyncio
+import functools
 import json
 import logging
+import os
 import re
+import shutil
 import uuid as uuid_module
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -31,6 +36,66 @@ from .voice_sentences import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_EDIT_LOCK_KEY = "entity_manager_edit_lock"
+
+
+def _serialised(
+    func: Callable[
+        [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
+    ],
+) -> Callable[
+    [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
+]:
+    """Run config-rewriting handlers one at a time.
+
+    They read a file or store, change it and write it back, with awaits in
+    between. Two overlapping calls would each write from the same starting text
+    and the second would silently undo the first, and overwrite its backup.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict[str, Any],
+    ) -> None:
+        lock = hass.data.setdefault(_EDIT_LOCK_KEY, asyncio.Lock())
+        async with lock:
+            await func(hass, connection, msg)
+
+    return wrapper
+
+
+def _read_yaml_text(path: Path) -> str:
+    """Read a YAML file as bytes so CRLF line endings and a BOM survive a rewrite."""
+    return path.read_bytes().decode("utf-8")
+
+
+def _write_yaml_text(path: Path, original: str, new: str, config_path: Path) -> None:
+    """Back up ``original`` beside ``path`` and replace the file with ``new``.
+
+    The first backup is ``<file>.em-bak``; if one exists already it is the
+    state before an earlier edit, so later backups get a timestamped name
+    instead of overwriting it. The new text goes to a temporary file that
+    replaces the original in one step, so a failed write cannot truncate a
+    config file. A path that resolves outside the config directory (a symlink)
+    is refused.
+    """
+    if not path.resolve().is_relative_to(config_path.resolve()):
+        raise OSError(f"{path.name} resolves outside the config directory")
+    backup = path.with_name(path.name + ".em-bak")
+    if backup.exists():
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        backup = path.with_name(f"{path.name}.em-bak-{stamp}")
+    backup.write_bytes(original.encode("utf-8"))
+    tmp = path.with_name(f".{path.name}.em-tmp")
+    try:
+        tmp.write_bytes(new.encode("utf-8"))
+        shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 async def _resolve_trigger_context(
@@ -872,6 +937,7 @@ async def handle_get_template_sensors(
 )
 @websocket_api.require_admin
 @websocket_api.async_response
+@_serialised
 async def handle_update_yaml_references(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -918,15 +984,11 @@ async def handle_update_yaml_references(
             if filepath.name == "secrets.yaml":
                 continue
             try:
-                content = filepath.read_text(encoding="utf-8")
+                content = _read_yaml_text(filepath)
                 new_content, count = rewriter.sub(content)
                 if count:
                     if not dry_run:
-                        # Keep a one-shot backup of the pre-edit content next to the file
-                        filepath.with_name(filepath.name + ".em-bak").write_text(
-                            content, encoding="utf-8"
-                        )
-                        filepath.write_text(new_content, encoding="utf-8")
+                        _write_yaml_text(filepath, content, new_content, config_path)
                     results.append(
                         {"file": str(rel), "replacements": count, "kind": "yaml"}
                     )
@@ -1137,6 +1199,13 @@ def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
                 total += 1
                 continue
             if isinstance(item, dict) and _dict_has_direct_match(item, entity_id):
+                if item.get("included_in_stat") == entity_id:
+                    # Only the parent link is dangling: the entry is a healthy
+                    # device, so clear the link instead of dropping the device.
+                    cleared = {k: v for k, v in item.items() if k != "included_in_stat"}
+                    total += 1
+                    items.append(cleared)
+                    continue
                 total += 1
                 continue
             new_item, n = _prune_entity(item, entity_id)
@@ -1148,6 +1217,11 @@ def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
         out: dict[Any, Any] = {}
         for key, value in obj.items():
             new_value, n = _prune_entity(value, entity_id)
+            if key == "conditions" and value and not new_value:
+                # An emptied conditions list would make the card always
+                # visible, which is not what the author wrote: leave it.
+                out[key] = value
+                continue
             out[key] = new_value
             total += n
         return out, total
@@ -1157,24 +1231,23 @@ def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
 def _remove_yaml_list_entry(text: str, entity_id: str) -> tuple[str, int]:
     """Delete ``entity_id`` from YAML text, only where it is unambiguously one
     list entry: alone on its own ``- id`` block-list line, or one element of
-    an inline ``[a, id, b]`` flow-list. Anything else — a bare scalar field,
-    a reference inside a Jinja template string — is left untouched, the same
-    "don't guess at a destructive edit" rule ``_prune_entity`` follows for
-    JSON-like structures. Returns ``(new_text, removed_count)``.
+    an inline ``[a, id, b]`` flow-list written as the value of a ``key:``.
+    Anything else — a bare scalar field, a reference inside a Jinja template
+    string (``states['light.x']`` is a subscript, not a list) — is left
+    untouched, the same "don't guess at a destructive edit" rule
+    ``_prune_entity`` follows for JSON-like structures. A block list that
+    loses its last item leaves its key as ``key: []`` rather than a null.
+    Returns ``(new_text, removed_count)``.
     """
     escaped = re.escape(entity_id)
     boundary = r"(?<![a-zA-Z0-9_\.])" + escaped + r"(?![a-zA-Z0-9_])"
-    removed = 0
-
-    line_re = re.compile(
-        r"^[ \t]*-[ \t]+[\"']?" + boundary + r"[\"']?[ \t]*\r?\n", re.MULTILINE
-    )
-    text, n = line_re.subn("", text)
-    removed += n
-
+    item_re = re.compile(r"^[ \t]*-[ \t]+[\"']?" + boundary + r"[\"']?[ \t]*$")
+    key_flow_re = re.compile(r"^[ \t]*(?:-[ \t]+)?[\"']?[\w.\-]+[\"']?[ \t]*:[ \t]*\[")
     flow_re = re.compile(
-        r"(?P<before>\[|,)\s*[\"']?" + boundary + r"[\"']?\s*(?P<after>,|\])"
+        r"(?P<before>\[|,)[ \t]*[\"']?" + boundary + r"[\"']?[ \t]*(?P<after>,|\])"
     )
+    empty_key_re = re.compile(r"^(?P<head>[ \t]*(?:-[ \t]+)?[^\s#-][^#]*?:)[ \t]*$")
+    removed = 0
 
     def _flow_sub(match: re.Match[str]) -> str:
         nonlocal removed
@@ -1188,8 +1261,36 @@ def _remove_yaml_list_entry(text: str, entity_id: str) -> tuple[str, int]:
             return "]"
         return ","
 
-    text = flow_re.sub(_flow_sub, text)
-    return text, removed
+    kept: list[str] = []
+    emptied: list[int] = []  # indexes in ``kept`` of keys that lost an item
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        ending = line[len(body) :]
+        if "{{" in body or "{%" in body or "{#" in body:
+            kept.append(line)
+        elif item_re.match(body):
+            removed += 1
+            if kept and (not emptied or emptied[-1] != len(kept) - 1):
+                if empty_key_re.match(kept[-1].rstrip("\r\n")):
+                    emptied.append(len(kept) - 1)
+        elif key_flow_re.match(body):
+            kept.append(flow_re.sub(_flow_sub, body) + ending)
+        else:
+            kept.append(line)
+
+    for idx in emptied:
+        parent = kept[idx].rstrip("\r\n")
+        # Column of the key itself, past any "- " that opens its list item.
+        indent = len(parent) - len(re.sub(r"^[ \t]*(?:-[ \t]+)?", "", parent))
+        nxt = kept[idx + 1] if idx + 1 < len(kept) else ""
+        stripped = nxt.lstrip()
+        still_list = stripped.startswith("- ") and len(nxt) - len(stripped) >= indent
+        still_nested = bool(stripped.strip()) and len(nxt) - len(stripped) > indent
+        if not (still_list or still_nested):
+            head = empty_key_re.match(parent).group("head")  # type: ignore[union-attr]
+            kept[idx] = head + " []" + kept[idx][len(parent) :]
+
+    return "".join(kept), removed
 
 
 async def _replace_in_dashboards(
@@ -1731,6 +1832,7 @@ async def handle_get_broken_references(
 )
 @websocket_api.require_admin
 @websocket_api.async_response
+@_serialised
 async def handle_remove_broken_reference(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -1768,6 +1870,19 @@ async def handle_remove_broken_reference(
             msg["id"], {"success": True, "removed": False, "message": reason}
         )
 
+    if not VALID_ENTITY_ID.fullmatch(entity_id):
+        connection.send_error(msg["id"], "invalid_format", "Invalid entity ID")
+        return
+    # A stale row in the panel must not strip an entity that has since come
+    # back: only a reference to something that no longer exists is removable.
+    if er.async_get(hass).async_get(entity_id) or hass.states.get(entity_id):
+        connection.send_error(
+            msg["id"],
+            "not_broken",
+            f"{entity_id} exists, so it is not a broken reference",
+        )
+        return
+
     try:
         if source == "yaml":
             if not target:
@@ -1785,8 +1900,10 @@ async def handle_remove_broken_reference(
                     "target must be inside the config directory",
                 )
                 return
-            if filepath.name == "secrets.yaml" or any(
-                p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]
+            if (
+                filepath.name == "secrets.yaml"
+                or filepath.suffix != ".yaml"
+                or any(p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1])
             ):
                 connection.send_error(
                     msg["id"], "not_found", "That file is not scanned"
@@ -1795,8 +1912,8 @@ async def handle_remove_broken_reference(
 
             def _remove_from_yaml() -> tuple[bool, str]:
                 try:
-                    text = filepath.read_text(encoding="utf-8")
-                except OSError as exc:
+                    text = _read_yaml_text(filepath)
+                except (OSError, UnicodeDecodeError) as exc:
                     return False, str(exc)
                 new_text, count = _remove_yaml_list_entry(text, entity_id)
                 if not count:
@@ -1804,10 +1921,10 @@ async def handle_remove_broken_reference(
                         f"{entity_id} isn't a standalone list entry in {rel} — "
                         "edit the file by hand, or use Update to repoint it."
                     )
-                filepath.with_name(filepath.name + ".em-bak").write_text(
-                    text, encoding="utf-8"
-                )
-                filepath.write_text(new_text, encoding="utf-8")
+                try:
+                    _write_yaml_text(filepath, text, new_text, config_path)
+                except OSError as exc:
+                    return False, str(exc)
                 return True, f"Removed {entity_id} from {rel}"
 
             removed, message = await hass.async_add_executor_job(_remove_from_yaml)
@@ -2247,6 +2364,7 @@ async def handle_get_areas_and_floors(
 )
 @websocket_api.require_admin
 @websocket_api.async_response
+@_serialised
 async def handle_register_template(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -2283,29 +2401,28 @@ async def handle_register_template(
             if filepath.name == "secrets.yaml":
                 continue
             try:
-                content = filepath.read_text(encoding="utf-8")
+                content = _read_yaml_text(filepath)
 
-                # Strategy 1 — new-style template block: find `name: <entity_name>`
+                # Strategy 1 — new-style template block: find `name: <entity_name>`,
+                # either as a plain key or as the first key of a `- name:` list item.
+                # Horizontal whitespace only: \s would match across blank lines and
+                # attach the unique_id to the wrong block.
                 if entity_name:
                     name_pat = re.compile(
-                        r'^(\s*)(name\s*:\s*["\']?)'
+                        r'^(?P<indent>[ \t]*)(?P<dash>-[ \t]+)?name[ \t]*:[ \t]*["\']?'
                         + re.escape(entity_name)
-                        + r'(["\']?\s*)$',
+                        + r'["\']?[ \t]*$',
                         re.MULTILINE,
                     )
                     m = name_pat.search(content)
                     if m:
-                        indent = m.group(1)
+                        indent = m.group("indent") + " " * len(m.group("dash") or "")
                         new_content = (
                             content[: m.end()]
                             + f"\n{indent}unique_id: {new_uuid}"
                             + content[m.end() :]
                         )
-                        # Keep a one-shot backup of the pre-edit content
-                        filepath.with_name(filepath.name + ".em-bak").write_text(
-                            content, encoding="utf-8"
-                        )
-                        filepath.write_text(new_content, encoding="utf-8")
+                        _write_yaml_text(filepath, content, new_content, config_path)
                         return {
                             "success": True,
                             "file": str(rel),
@@ -2314,7 +2431,7 @@ async def handle_register_template(
 
                 # Strategy 2 — old-style platform template: `<object_id>:` as a YAML key
                 old_pat = re.compile(
-                    r"^(\s+)(" + re.escape(object_id) + r")\s*:\s*$",
+                    r"^([ \t]+)(" + re.escape(object_id) + r")[ \t]*:[ \t]*$",
                     re.MULTILINE,
                 )
                 m = old_pat.search(content)
@@ -2325,11 +2442,7 @@ async def handle_register_template(
                         + f"\n{indent}  unique_id: {new_uuid}"
                         + content[m.end() :]
                     )
-                    # Keep a one-shot backup of the pre-edit content
-                    filepath.with_name(filepath.name + ".em-bak").write_text(
-                        content, encoding="utf-8"
-                    )
-                    filepath.write_text(new_content, encoding="utf-8")
+                    _write_yaml_text(filepath, content, new_content, config_path)
                     return {
                         "success": True,
                         "file": str(rel),

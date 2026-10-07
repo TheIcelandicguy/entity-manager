@@ -1,5 +1,6 @@
 """Unit tests for websocket_api.py core functions."""
 
+import asyncio
 import inspect
 import sys
 from datetime import datetime, timezone
@@ -16,9 +17,12 @@ from custom_components.entity_manager.websocket_api import (
     _bulk_toggle,
     _match_sentence,
     _prune_entity,
+    _read_yaml_text,
     _remove_yaml_list_entry,
     _replace_in_obj,
     _Rewriter,
+    _serialised,
+    _write_yaml_text,
     disable_entity,
     enable_entity,
     handle_bulk_disable,
@@ -1895,11 +1899,119 @@ def test_remove_yaml_list_entry_flow_list_only_element() -> None:
     assert new_text == "entity_id: []\n"
 
 
+def test_remove_yaml_list_entry_leaves_jinja_subscript_alone() -> None:
+    """states['light.ghost'] is a subscript, not a one-element flow list."""
+    text = "value: \"{{ states['light.ghost'] }}\"\nother: x[ 'light.ghost' ]\n"
+    new_text, count = _remove_yaml_list_entry(text, "light.ghost")
+    assert count == 0
+    assert new_text == text
+
+
+def test_remove_yaml_list_entry_emptied_block_list_becomes_empty_list() -> None:
+    """A key that loses its last item must not be left as a null."""
+    text = "entity_id:\n  - light.ghost\nname: x\n"
+    new_text, count = _remove_yaml_list_entry(text, "light.ghost")
+    assert count == 1
+    assert new_text == "entity_id: []\nname: x\n"
+
+
+def test_remove_yaml_list_entry_keeps_crlf() -> None:
+    text = "entity_id:\r\n  - light.a\r\n  - light.ghost\r\n"
+    new_text, count = _remove_yaml_list_entry(text, "light.ghost")
+    assert count == 1
+    assert new_text == "entity_id:\r\n  - light.a\r\n"
+
+
+def test_prune_entity_clears_included_in_stat_instead_of_dropping() -> None:
+    """A healthy Energy device whose parent link dangles keeps its entry."""
+    obj = {
+        "device_consumption": [
+            {"stat_consumption": "sensor.good", "included_in_stat": "sensor.ghost"}
+        ]
+    }
+    new_obj, count = _prune_entity(obj, "sensor.ghost")
+    assert count == 1
+    assert new_obj == {"device_consumption": [{"stat_consumption": "sensor.good"}]}
+
+
+def test_prune_entity_keeps_a_conditions_list_that_would_empty() -> None:
+    """An emptied conditions list would make a card always visible."""
+    obj = {"conditions": [{"condition": "state", "entity": "light.ghost"}]}
+    new_obj, count = _prune_entity(obj, "light.ghost")
+    assert count == 0
+    assert new_obj == obj
+
+
 def test_remove_yaml_list_entry_leaves_bare_scalar_untouched() -> None:
     text = "entity_id: light.ghost\n"
     new_text, count = _remove_yaml_list_entry(text, "light.ghost")
     assert count == 0
     assert new_text == text
+
+
+# ---------------------------------------------------------------------------
+# _write_yaml_text / _read_yaml_text / _serialised
+# ---------------------------------------------------------------------------
+
+
+def test_write_yaml_text_keeps_the_first_backup(tmp_path: Path) -> None:
+    """A second edit must not overwrite the backup of the original."""
+    target = tmp_path / "automations.yaml"
+    target.write_text("one\n", encoding="utf-8")
+
+    _write_yaml_text(target, "one\n", "two\n", tmp_path)
+    _write_yaml_text(target, "two\n", "three\n", tmp_path)
+
+    assert target.read_text(encoding="utf-8") == "three\n"
+    first = tmp_path / "automations.yaml.em-bak"
+    assert first.read_text(encoding="utf-8") == "one\n"
+    later = list(tmp_path.glob("automations.yaml.em-bak-*"))
+    assert len(later) == 1
+    assert later[0].read_text(encoding="utf-8") == "two\n"
+    assert not list(tmp_path.glob("*.em-tmp"))
+
+
+def test_yaml_text_round_trip_keeps_crlf_and_bom(tmp_path: Path) -> None:
+    target = tmp_path / "configuration.yaml"
+    target.write_bytes("﻿a: 1\r\nb: 2\r\n".encode("utf-8"))
+
+    text = _read_yaml_text(target)
+    assert "\r\n" in text
+    _write_yaml_text(target, text, text.replace("a: 1", "a: 9"), tmp_path)
+
+    assert target.read_bytes() == "﻿a: 9\r\nb: 2\r\n".encode("utf-8")
+
+
+def test_write_yaml_text_refuses_a_symlink_out_of_the_config(tmp_path: Path) -> None:
+    config = tmp_path / "config"
+    config.mkdir()
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("keep\n", encoding="utf-8")
+    link = config / "linked.yaml"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available")
+
+    with pytest.raises(OSError):
+        _write_yaml_text(link, "keep\n", "changed\n", config)
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
+async def test_serialised_handlers_do_not_overlap(hass: HomeAssistant) -> None:
+    """Two config rewrites must run one after the other, not interleave."""
+    log: list[str] = []
+
+    @_serialised
+    async def handler(hass_: HomeAssistant, connection: object, msg: dict) -> None:
+        log.append(f"start {msg['n']}")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        log.append(f"end {msg['n']}")
+
+    await asyncio.gather(handler(hass, None, {"n": 1}), handler(hass, None, {"n": 2}))
+
+    assert log == ["start 1", "end 1", "start 2", "end 2"]
 
 
 # ---------------------------------------------------------------------------
@@ -1960,6 +2072,60 @@ async def test_ws_remove_broken_reference_yaml_refuses_bare_scalar(
     assert result["removed"] is False
     assert "edit the file by hand" in result["message"]
     assert yaml_file.read_text(encoding="utf-8") == original
+
+
+async def test_ws_remove_broken_reference_refuses_an_entity_that_exists(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """A stale row must not strip a reference to an entity that came back."""
+    hass.config.config_dir = str(tmp_path)
+    yaml_file = tmp_path / "automations.yaml"
+    original = "- entity_id: [light.a, light.back]\n"
+    yaml_file.write_text(original, encoding="utf-8")
+    hass.states.async_set("light.back", "on")
+
+    conn = _mock_conn()
+    handle_remove_broken_reference(
+        hass,
+        conn,
+        {
+            "id": 72,
+            "type": "entity_manager/remove_broken_reference",
+            "source": "yaml",
+            "target": "automations.yaml",
+            "entity_id": "light.back",
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    conn.send_error.assert_called_once()
+    assert yaml_file.read_text(encoding="utf-8") == original
+
+
+async def test_ws_remove_broken_reference_refuses_non_yaml_target(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    hass.config.config_dir = str(tmp_path)
+    log = tmp_path / "home-assistant.log"
+    original = "- light.ghost\n"
+    log.write_text(original, encoding="utf-8")
+
+    conn = _mock_conn()
+    handle_remove_broken_reference(
+        hass,
+        conn,
+        {
+            "id": 73,
+            "type": "entity_manager/remove_broken_reference",
+            "source": "yaml",
+            "target": "home-assistant.log",
+            "entity_id": "light.ghost",
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    conn.send_error.assert_called_once()
+    assert log.read_text(encoding="utf-8") == original
 
 
 async def test_ws_remove_broken_reference_dashboard_success(
