@@ -284,8 +284,8 @@ class EntityManagerPanel extends HTMLElement {
     this.expandedCatCards = new Set(); // `${deviceId}::${bucketLabel}` — survives re-renders
     this.selectedEntities = new Set();
     this.selectedUpdates = new Set();
-    this._searchTerm = localStorage.getItem('em-search-term') || '';
-    this._viewState = localStorage.getItem('em-view-state') || 'all';
+    this._searchTerm = this._readPref('em-search-term');
+    this._viewState = this._readPref('em-view-state') || 'all';
     this.viewMode = 'integrations'; // 'integrations' | 'devices'
     this._viewingSelected = false;
     this._bulkRenameMode = false;
@@ -294,7 +294,7 @@ class EntityManagerPanel extends HTMLElement {
     // Persistent: suggestion keys (`<type>:<id>`) the user dismissed in the Suggestions view
     this._ignoredSugKeys = new Set(this._loadFromStorage('em-ignored-suggestions', []));
     this._migrateLegacyIgnoreData();
-    this._selectedDomain = localStorage.getItem('em-selected-domain') || 'all';
+    this._selectedDomain = this._readPref('em-selected-domain') || 'all';
     this.selectedIntegrationFilter = null; // Filter to show only one integration
     this.integrationViewFilter = {};       // Per-integration entity state filter: 'enabled' | 'disabled' | undefined
     this.deviceViewFilter = {};            // Per-device entity state filter: 'enabled' | 'disabled' | undefined
@@ -349,14 +349,13 @@ class EntityManagerPanel extends HTMLElement {
     this._brandsToken = '';
     
     // Sidebar state
-    this.sidebarCollapsed = localStorage.getItem('em-sidebar-collapsed') === 'true';
+    this.sidebarCollapsed = this._readPref('em-sidebar-collapsed') === 'true';
     // Which sidebar sections are open — stored as array of IDs; default all closed
-    const _ssSaved = localStorage.getItem('em-sidebar-sections');
-    this.sidebarOpenSections = new Set(_ssSaved ? JSON.parse(_ssSaved) : []);
+    this.sidebarOpenSections = new Set(this._loadFromStorage('em-sidebar-sections', []));
     
     // Undo/Redo state — persisted to localStorage so panel re-creations don't lose the stack
-    try { this.undoStack = JSON.parse(localStorage.getItem('em_undoStack') || '[]'); } catch { this.undoStack = []; }
-    try { this.redoStack = JSON.parse(localStorage.getItem('em_redoStack') || '[]'); } catch { this.redoStack = []; }
+    this.undoStack = this._loadFromStorage('em_undoStack', []);
+    this.redoStack = this._loadFromStorage('em_redoStack', []);
     this.maxUndoSteps = 50;
     
     // Saved filter presets
@@ -372,10 +371,10 @@ class EntityManagerPanel extends HTMLElement {
     this.integrationColors = this._loadFromStorage('em-integration-colors', {});
     
     // Groups state
-    this.smartGroupMode = localStorage.getItem('em-smart-group-mode') || 'integration'; // integration, room, type, device-name, custom
-    this.deviceNameFilter = localStorage.getItem('em-device-name-filter') || ''; // active keyword for device-name mode
-    this.savedDeviceFilters = JSON.parse(localStorage.getItem('em-saved-device-filters') || '[]'); // [{label, pattern}]
-    this.customGroups = JSON.parse(localStorage.getItem('em-custom-groups') || '[]'); // [{id, name, entityIds[]}]
+    this.smartGroupMode = this._readPref('em-smart-group-mode') || 'integration'; // integration, room, type, device-name, custom
+    this.deviceNameFilter = this._readPref('em-device-name-filter'); // active keyword for device-name mode
+    this.savedDeviceFilters = this._loadFromStorage('em-saved-device-filters', []); // [{label, pattern}]
+    this.customGroups = this._loadFromStorage('em-custom-groups', []); // [{id, name, entityIds[]}]
     this.presets = this._loadFromStorage('em-presets', []); // sidebar PRESETS: [{id, name, entityIds[]}] — distinct from filterPresets/Saved Views
     this.floorsData = null; // Lazy-loaded from entity_manager/get_areas_and_floors
     this._renderedSmartGroups = null; // Cached filtered groups from last smart-group render
@@ -434,10 +433,27 @@ class EntityManagerPanel extends HTMLElement {
   _loadFromStorage(key, defaultValue) {
     try {
       const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : defaultValue;
+      if (!saved) return defaultValue;
+      const parsed = JSON.parse(saved);
+      // A value of the wrong shape (hand-edited, or from another version) would throw
+      // later in a .filter() or new Set(); fall back to the default instead.
+      const wantsArray = Array.isArray(defaultValue);
+      const wantsObject = !wantsArray && defaultValue !== null && typeof defaultValue === 'object';
+      if (wantsArray && !Array.isArray(parsed)) return defaultValue;
+      if (wantsObject && (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))) return defaultValue;
+      return parsed;
     } catch {
       return defaultValue;
     }
+  }
+
+  // Plain string preferences. localStorage can throw (blocked, private mode) or be empty.
+  _readPref(key, fallback = '') {
+    try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+  }
+
+  _writePref(key, value) {
+    try { localStorage.setItem(key, value); } catch { /* blocked or full: the preference just is not kept */ }
   }
 
   _saveToStorage(key, value) {
@@ -1098,19 +1114,19 @@ class EntityManagerPanel extends HTMLElement {
   get searchTerm() { return this._searchTerm; }
   set searchTerm(value) {
     this._searchTerm = value;
-    localStorage.setItem('em-search-term', value);
+    this._writePref('em-search-term', value);
   }
 
   get viewState() { return this._viewState; }
   set viewState(value) {
     this._viewState = value;
-    localStorage.setItem('em-view-state', value);
+    this._writePref('em-view-state', value);
   }
 
   get selectedDomain() { return this._selectedDomain; }
   set selectedDomain(value) {
     this._selectedDomain = value;
-    localStorage.setItem('em-selected-domain', value);
+    this._writePref('em-selected-domain', value);
   }
 
   connectedCallback() {
@@ -1156,7 +1172,13 @@ class EntityManagerPanel extends HTMLElement {
   disconnectedCallback() {
     if (this._themeObserver) this._themeObserver.disconnect();
     if (this._themeOutsideHandler) document.removeEventListener('click', this._themeOutsideHandler);
-    if (this._domainOutsideHandler) document.removeEventListener('click', this._domainOutsideHandler);
+    if (this._notifOutsideHandler) document.removeEventListener('click', this._notifOutsideHandler);
+    if (this._intMenuClickHandler) document.removeEventListener('click', this._intMenuClickHandler);
+    if (this._intMenuKeyHandler) document.removeEventListener('keydown', this._intMenuKeyHandler);
+    // Forget them, so a re-attached element arms its handlers again
+    this._themeOutsideHandler = this._notifOutsideHandler = null;
+    this._intMenuClickHandler = this._intMenuKeyHandler = null;
+    this._intMenuCloserAttached = false;
     if (this._locationChangedHandler) window.removeEventListener('location-changed', this._locationChangedHandler);
     if (this._miniCardDetailsHandler) {
       this.removeEventListener('click', this._miniCardDetailsHandler);
@@ -1363,26 +1385,21 @@ class EntityManagerPanel extends HTMLElement {
   
   _handleLocalImageUpload() {
     return new Promise((resolve) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) {
+      this._pickFile((file) => {
+        if (!file.type.startsWith('image/')) {
+          this._showToast('Choose an image file', 'warning');
           resolve(null);
           return;
         }
-        
         // Convert to base64 for storage
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
-      };
-      input.click();
+      }, () => resolve(null));
     });
   }
-  
+
   _loadSavedThemes() {
     return this._loadFromStorage('em-custom-themes', {});
   }
@@ -1692,7 +1709,6 @@ class EntityManagerPanel extends HTMLElement {
     const preview = this.querySelector('#theme-preview');
     if (!preview) return;
     
-    const isDark = this.querySelector('#theme-mode-dark')?.checked;
     const primary = this.querySelector('#te-primary')?.value || '#2196f3';
     const success = this.querySelector('#te-success')?.value || '#2e9e4f';
     const danger = this.querySelector('#te-danger')?.value || '#e0473a';
@@ -2084,31 +2100,7 @@ class EntityManagerPanel extends HTMLElement {
     this._prevHassStates = Object.fromEntries(Object.entries(newStates).map(([k, v]) => [k, v.state]));
   }
 
-  _selectAllVisible() {
-    const checkboxes = this.querySelectorAll('.entity-checkbox:not(:checked)');
-    checkboxes.forEach(cb => {
-      cb.checked = true;
-      this.selectedEntities.add(cb.dataset.entityId);
-    });
-    this.querySelectorAll('.integration-select-checkbox').forEach(cb => {
-      cb.checked = true;
-      cb.indeterminate = false;
-    });
-    this._updateSelectionUI();
-    this._showToast(`Selected ${checkboxes.length} entities`, 'success');
-  }
   
-  _deselectAll() {
-    this.selectedEntities.clear();
-    this.querySelectorAll('.entity-checkbox:checked').forEach(cb => cb.checked = false);
-    this.querySelectorAll('.integration-select-checkbox').forEach(cb => {
-      cb.checked = false;
-      cb.indeterminate = false;
-    });
-    this._updateSelectionUI();
-    this._showToast('Selection cleared', 'info');
-  }
-
   _updateIntegrationCheckboxState(integrationId) {
     if (!integrationId) return;
     const integrationCb = this.content && this.content.querySelector(`.integration-select-checkbox[data-integration="${integrationId}"]`);
@@ -2233,16 +2225,6 @@ class EntityManagerPanel extends HTMLElement {
     return result;
   }
 
-  _closeAllDropdowns() {
-    this.querySelectorAll('.theme-dropdown-menu.active, .domain-menu.open').forEach(el => {
-      el.classList.remove('active', 'open');
-    });
-    // Close any overlay dialogs
-    const overlay = document.querySelector('.confirm-dialog-overlay, .theme-editor-overlay.active');
-    if (overlay) {
-      overlay.remove();
-    }
-  }
   
   _updateSelectionUI() {
     const count = this.selectedEntities.size;
@@ -2269,7 +2251,7 @@ class EntityManagerPanel extends HTMLElement {
     this.querySelector('#main-content')?.classList.add('em-bulk-rename-active');
     try {
       this._bulkRenameData = await this._hass.callWS({ type: 'entity_manager/get_disabled_entities', state: 'all' });
-    } catch (_) {
+    } catch {
       this._bulkRenameData = this.data || [];
     }
     this.updateView();
@@ -3007,7 +2989,7 @@ class EntityManagerPanel extends HTMLElement {
 
     // Entities from hass.states not in renameData — group by domain
     const extraByDomain = {};
-    for (const [id, s] of Object.entries(hassStates).sort(([a], [b]) => a.localeCompare(b))) {
+    for (const [id] of Object.entries(hassStates).sort(([a], [b]) => a.localeCompare(b))) {
       if (coveredIds.has(id)) continue;
       if (filterToSelected && !preSelected.has(id)) continue;
       const domain = id.split('.')[0];
@@ -3223,7 +3205,7 @@ class EntityManagerPanel extends HTMLElement {
           findPattern = useRegex
             ? new RegExp(findVal, flags)
             : new RegExp(findVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-        } catch (_) { /* invalid regex — ignore */ }
+        } catch { /* invalid regex — ignore */ }
       }
 
       const onlyDoubled = view.querySelector('#brp-only-doubled')?.checked;
@@ -3455,7 +3437,7 @@ class EntityManagerPanel extends HTMLElement {
       let pattern;
       try {
         pattern = useRegex ? new RegExp(findVal, flags) : new RegExp(findVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-      } catch (_) {
+      } catch {
         this._showToast('Invalid regex pattern', 'error');
         return;
       }
@@ -4057,7 +4039,7 @@ class EntityManagerPanel extends HTMLElement {
         if (ph) ph.outerHTML = impactContent;
         const badge = overlay.querySelector('#em-edd-impact-badge');
         if (badge && affected.length) { badge.textContent = affected.length; badge.style.display = ''; }
-      } catch (err) {
+      } catch {
         const ph = overlay.querySelector('#em-impact-placeholder');
         if (ph) ph.textContent = 'Failed to load automation impact';
       }
@@ -4688,12 +4670,11 @@ class EntityManagerPanel extends HTMLElement {
     overlay.querySelector('#em-act-export-btn').addEventListener('click', () => {
       const rows = [['timestamp', 'action', 'details']];
       this.activityLog.forEach(e => rows.push([e.timestamp, e.action, JSON.stringify(e.details || {})]));
-      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-      const a = Object.assign(document.createElement('a'), {
-        href: 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv),
-        download: `em-action-log-${new Date().toISOString().split('T')[0]}.csv`,
-      });
-      a.click();
+      const csv = rows.map(r => r.map(c => this._csvCell(c)).join(',')).join('\r\n');
+      this._downloadFile(
+        new Blob(['\ufeff' + csv + '\r\n'], { type: 'text/csv' }),
+        `em-action-log-${new Date().toISOString().split('T')[0]}.csv`,
+      );
     });
   }
   
@@ -5107,17 +5088,6 @@ class EntityManagerPanel extends HTMLElement {
     this._showToast('View deleted', 'info');
   }
   
-  _updateFilterPresetsUI() {
-    const container = this.querySelector('#filter-presets-list');
-    if (!container) return;
-    
-    container.innerHTML = this.filterPresets.map(preset => `
-      <div class="filter-preset-item" data-preset-id="${this._escapeAttr(String(preset.id))}">
-        <span class="preset-name">${this._escapeHtml(preset.name)}</span>
-        <button class="preset-delete" data-delete="${this._escapeAttr(String(preset.id))}">&times;</button>
-      </div>
-    `).join('');
-  }
   
   // ===== CUSTOM COLUMNS =====
   
@@ -5358,7 +5328,7 @@ class EntityManagerPanel extends HTMLElement {
       this._renderLabelsList(labelsList, this.labeledEntitiesCache, this.labeledDevicesCache, this.labeledAreasCache);
     } catch (e) {
       console.error('Error displaying labels:', e);
-      labelsList.innerHTML = `<div class="sidebar-item" style="color: var(--em-error);"><span class="icon">${this._icon(EM_ICONS.warning)}</span><span class="label">Error loading labels</span></div>`;
+      labelsList.innerHTML = `<div class="sidebar-item" style="color: var(--em-danger);"><span class="icon">${this._icon(EM_ICONS.warning)}</span><span class="label">Error loading labels</span></div>`;
     }
   }
 
@@ -5701,7 +5671,7 @@ class EntityManagerPanel extends HTMLElement {
         this.labeledAreasCache = null;
         closeDialog();
         this._loadAndDisplayLabels();
-      } catch (e) {
+      } catch {
         this._showToast('Error updating label', 'error');
       }
     });
@@ -5718,7 +5688,7 @@ class EntityManagerPanel extends HTMLElement {
         this.labeledAreasCache = null;
         closeDialog();
         this._loadAndDisplayLabels();
-      } catch (e) {
+      } catch {
         this._showToast('Error deleting label', 'error');
       }
     });
@@ -5995,7 +5965,7 @@ class EntityManagerPanel extends HTMLElement {
             <span>${this._escapeHtml(label.name)}</span>
           </label>
         `).join('');
-      } catch (e) {
+      } catch {
         this._showToast('Error creating label', 'error');
       }
     });
@@ -6318,7 +6288,6 @@ class EntityManagerPanel extends HTMLElement {
       // Update order
       const order = this.entityOrder[integrationId];
       const draggedIdx = order.indexOf(this.draggedEntity);
-      const targetIdx = order.indexOf(targetId);
       
       // Remove dragged from current position if exists
       if (draggedIdx > -1) {
@@ -6579,53 +6548,6 @@ class EntityManagerPanel extends HTMLElement {
     return `${years} year${years !== 1 ? 's' : ''}`;
   }
 
-  // ===== BATCH PREVIEW =====
-  
-  _showBatchPreview(action, entityIds) {
-    const entities = entityIds.map(id => ({
-      id,
-      name: this._findEntityById(id)?.original_name || id,
-      state: this._hass.states[id]?.state || 'unknown',
-      isDisabled: this._findEntityById(id)?.is_disabled
-    }));
-    
-    const { overlay, closeDialog } = this.createDialog({
-      title: `Preview: ${action === 'enable' ? 'Enable' : 'Disable'} ${entities.length} Entities`,
-      color: action === 'enable' ? 'var(--em-success)' : 'var(--em-danger)',
-      contentHtml: `
-        <div class="batch-preview">
-          <p style="margin-bottom: 12px;">The following entities will be ${action}d:</p>
-          <div class="batch-list" style="max-height: 300px; overflow-y: auto;">
-            ${entities.map(e => `
-              <div class="batch-item">
-                <span class="batch-name">${e.name || e.id}</span>
-                <span class="batch-id">${e.id}</span>
-                <span class="batch-state">${e.state}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      `,
-      actionsHtml: `
-        <button class="btn btn-secondary cancel-btn">Cancel</button>
-        <button class="btn ${action === 'enable' ? 'btn-success' : 'btn-danger'} confirm-btn">
-          ${action === 'enable' ? 'Enable' : 'Disable'} All
-        </button>
-      `
-    });
-    
-    return new Promise(resolve => {
-      overlay.querySelector('.cancel-btn').addEventListener('click', () => {
-        closeDialog();
-        resolve(false);
-      });
-      overlay.querySelector('.confirm-btn').addEventListener('click', () => {
-        closeDialog();
-        resolve(true);
-      });
-    });
-  }
-
   // ===== SIDEBAR =====
   
   _toggleSidebar() {
@@ -6867,8 +6789,8 @@ class EntityManagerPanel extends HTMLElement {
                 <div style="display:flex;gap:3px;flex-basis:100%">
                   <button class="btn em-preset-enable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-success);color:#fff;border:none;border-radius:3px">Enable</button>
                   <button class="btn em-preset-disable" data-ep-id="${this._escapeAttr(p.id)}" style="flex:1;font-size:10px;padding:2px 0;background:var(--em-danger);color:#fff;border:none;border-radius:3px">Disable</button>
-                  <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px" title="Rename">${this._icon(EM_ICONS.rename, '10px')}</button>
-                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="padding:2px 6px;background:transparent;border:1px solid var(--divider-color);border-radius:3px;color:var(--em-danger)" title="Delete">${this._icon(EM_ICONS.close, '10px')}</button>
+                  <button class="btn em-preset-rename-btn" data-ep-id="${this._escapeAttr(p.id)}" style="padding:2px 6px;background:transparent;border:1px solid var(--em-border);border-radius:3px" title="Rename">${this._icon(EM_ICONS.rename, '10px')}</button>
+                  <button class="btn em-preset-delete" data-ep-id="${this._escapeAttr(p.id)}" style="padding:2px 6px;background:transparent;border:1px solid var(--em-border);border-radius:3px;color:var(--em-danger)" title="Delete">${this._icon(EM_ICONS.close, '10px')}</button>
                 </div>
               </div>`).join('');
             return saveBtn + rows;
@@ -7023,7 +6945,7 @@ class EntityManagerPanel extends HTMLElement {
     try {
       const res = await this._hass.callWS({ type: 'brands/access_token' });
       this._brandsToken = res.access_token || res.token || '';
-    } catch (_) {
+    } catch {
       // Older HA versions don't have this command — fall back to CDN URLs
       this._brandsToken = null; // null = use CDN fallback
     }
@@ -7157,7 +7079,7 @@ class EntityManagerPanel extends HTMLElement {
         this._lastActivityCache = new Map(Object.entries(cached.data || {}));
         return; // cache is fresh — no WS call needed
       }
-    } catch (_) { /* corrupt cache — refetch */ }
+    } catch { /* corrupt cache — refetch */ }
 
     // Collect all entity IDs currently loaded
     const entityIds = [];
@@ -7178,7 +7100,7 @@ class EntityManagerPanel extends HTMLElement {
       this._lastActivityCache = new Map(Object.entries(result || {}));
       try {
         localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: result || {} }));
-      } catch (_) { /* storage full — cache in memory only */ }
+      } catch { /* storage full — cache in memory only */ }
       // Re-render with accurate timestamps now that the cache is loaded
       this.updateView();
     } catch (err) {
@@ -7483,7 +7405,7 @@ class EntityManagerPanel extends HTMLElement {
         const templateSensors = await this._hass.callWS({ type: 'entity_manager/get_template_sensors' });
         this.templateSensors = templateSensors;
         this.templateCount = templateSensors.length;
-      } catch (e) {
+      } catch {
         this.templateSensors = null;
         this.templateCount = states.filter(s => s.entity_id.startsWith('template.')).length;
       }
@@ -7492,7 +7414,7 @@ class EntityManagerPanel extends HTMLElement {
         const hacsItems = await this._hass.callWS({ type: 'entity_manager/list_hacs_items' });
         this.hacsItems = hacsItems;
         this.hacsCount = (hacsItems?.store || []).length;
-      } catch (e) {
+      } catch {
         this.hacsItems = null;
         this.hacsCount = 0;
       }
@@ -7521,14 +7443,14 @@ class EntityManagerPanel extends HTMLElement {
           } catch (e) { console.warn('[EM] lovelace config fetch failed for dashboard', dashboard.url_path, e); }
         }
         this.lovelaceCardCount = types.size;
-      } catch (e) {
+      } catch {
         this.lovelaceDashboardList = [];
         try {
           const config = await this._hass.callWS({ type: 'lovelace/config' });
           const fallbackTypes = new Set();
           _llCollectTypes(config?.views?.flatMap(v => v.cards || []) || [], fallbackTypes);
           this.lovelaceCardCount = fallbackTypes.size;
-        } catch (e2) {
+        } catch {
           this.lovelaceCardCount = 0;
         }
       }
@@ -8169,15 +8091,15 @@ class EntityManagerPanel extends HTMLElement {
       this._setupThemeEditor();
       
       // Close dropdown when clicking outside
-      if (!this._themeOutsideHandler) {
-        this._themeOutsideHandler = (event) => {
-          if (!themeDropdownMenu.classList.contains('active')) return;
-          if (!themeDropdownMenu.contains(event.target) && !themeDropdownBtn.contains(event.target)) {
-            themeDropdownMenu.classList.remove('active');
-          }
-        };
-        document.addEventListener('click', this._themeOutsideHandler);
-      }
+      // Re-bound on every render: the handler closes over this render's elements
+      if (this._themeOutsideHandler) document.removeEventListener('click', this._themeOutsideHandler);
+      this._themeOutsideHandler = (event) => {
+        if (!themeDropdownMenu.classList.contains('active')) return;
+        if (!themeDropdownMenu.contains(event.target) && !themeDropdownBtn.contains(event.target)) {
+          themeDropdownMenu.classList.remove('active');
+        }
+      };
+      document.addEventListener('click', this._themeOutsideHandler);
     }
 
     // Handle notification bell — mirrors the theme dropdown pattern exactly
@@ -8197,15 +8119,14 @@ class EntityManagerPanel extends HTMLElement {
       });
 
       // Close when clicking outside — bubble phase, same as theme dropdown
-      if (!this._notifOutsideHandler) {
-        this._notifOutsideHandler = (event) => {
-          if (!notifDropdown.classList.contains('active')) return;
-          if (!notifDropdown.contains(event.target) && !notifBtn.contains(event.target)) {
-            notifDropdown.classList.remove('active');
-          }
-        };
-        document.addEventListener('click', this._notifOutsideHandler);
-      }
+      if (this._notifOutsideHandler) document.removeEventListener('click', this._notifOutsideHandler);
+      this._notifOutsideHandler = (event) => {
+        if (!notifDropdown.classList.contains('active')) return;
+        if (!notifDropdown.contains(event.target) && !notifBtn.contains(event.target)) {
+          notifDropdown.classList.remove('active');
+        }
+      };
+      document.addEventListener('click', this._notifOutsideHandler);
 
       // Delegated: dismiss, mark-all-read, clear-all, settings toggle
       // stopPropagation prevents clicks inside the dropdown from reaching the outside-close handler
@@ -8454,7 +8375,7 @@ class EntityManagerPanel extends HTMLElement {
     // Handle click outside sidebar on mobile to close it
     const mainContent = this.querySelector('#main-content');
     if (mainContent) {
-      mainContent.addEventListener('click', (e) => {
+      mainContent.addEventListener('click', () => {
         // Only on mobile (check if sidebar is in fixed/overlay mode)
         const sidebar = this.querySelector('.em-sidebar');
         if (sidebar && !this.sidebarCollapsed && window.innerWidth <= 768) {
@@ -9356,152 +9277,6 @@ class EntityManagerPanel extends HTMLElement {
       + filteredDevices.map(({ deviceId, device, integration }) =>
         this._renderDeviceCard(deviceId, device, integration)
       ).join('');
-  }
-
-  _showIntegrationDetailDialog(integrationName) {
-    const integration = (this.data || []).find(i => i.integration === integrationName);
-    if (!integration) return;
-    const intLabel = integrationName.charAt(0).toUpperCase() + integrationName.slice(1);
-    const deviceEntries = Object.entries(integration.devices).filter(([d]) => d !== 'no_device');
-    const total = integration.total_entities;
-    const disabled = integration.disabled_entities;
-    const deviceCount = deviceEntries.length;
-
-    // Overview
-    const overviewHtml = `
-      <div style="padding:4px 0">
-        ${[
-          ['Integration', intLabel],
-          ['Domain / Platform', integrationName],
-          ['Devices', String(deviceCount)],
-          ['Total Entities', String(total)],
-          ['Disabled Entities', disabled > 0 ? `<span style="color:var(--em-warning)">${disabled}</span>` : '0'],
-        ].map(([k, v]) => `
-          <div style="display:flex;gap:12px;padding:5px 0;border-bottom:1px solid var(--em-border)">
-            <span style="font-size:0.82em;opacity:0.65;min-width:130px;flex-shrink:0">${k}</span>
-            <span style="font-size:0.9em">${v}</span>
-          </div>`).join('')}
-      </div>`;
-
-    // Devices list
-    const devicesHtml = deviceEntries.length
-      ? deviceEntries.map(([deviceId, device]) => {
-          const devName = this.getDeviceName ? this.getDeviceName(deviceId) : (this.deviceInfo?.[deviceId]?.name_by_user || this.deviceInfo?.[deviceId]?.name || deviceId);
-          const dc = device.entities.filter(e => e.is_disabled).length;
-          return `<div style="padding:6px 0;border-bottom:1px solid var(--em-border);display:flex;gap:8px;align-items:center">
-            <span style="flex:1;font-size:0.9em">${this._escapeHtml(devName)}</span>
-            <span style="font-size:0.82em;opacity:0.6">${device.entities.length} entit${device.entities.length !== 1 ? 'ies' : 'y'}${dc > 0 ? ` · <span style="color:var(--em-warning)">${dc} disabled</span>` : ''}</span>
-          </div>`;
-        }).join('')
-      : '<p style="opacity:0.5;font-size:0.9em;padding:8px 0">No devices</p>';
-
-    // Statistics - domain breakdown
-    const domainCounts = {};
-    Object.values(integration.devices).forEach(dev => {
-      dev.entities.forEach(e => {
-        const dom = e.entity_id.split('.')[0];
-        domainCounts[dom] = (domainCounts[dom] || 0) + 1;
-      });
-    });
-    const statsHtml = Object.entries(domainCounts).sort((a,b) => b[1]-a[1]).map(([dom, count]) =>
-      `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--em-border)">
-        <span style="flex:1;font-size:0.9em">${this._escapeHtml(dom)}</span>
-        <span style="font-size:0.82em;opacity:0.7">${count} entit${count !== 1 ? 'ies' : 'y'}</span>
-      </div>`
-    ).join('');
-
-    const bodyHtml = `
-      ${this._collGroup('<strong>Overview</strong>', overviewHtml, true)}
-      ${this._collGroup(`Devices (${deviceCount})`, `<div style="padding:0 4px">${devicesHtml}</div>`)}
-      ${this._collGroup('Statistics', `<div style="padding:0 4px">${statsHtml}</div>`)}
-    `;
-
-    const { overlay: intOverlay, closeDialog: closeIntDialog } = this.createDialog({
-      title: intLabel,
-      color: 'var(--em-primary)',
-      extraClass: 'entity-list-dialog',
-      contentHtml: `<div class="entity-list-content">${bodyHtml}</div>`,
-      actionsHtml: `<button class="btn btn-secondary" id="em-int-detail-close">Close</button>`,
-    });
-
-    this._reAttachCollapsibles(intOverlay);
-    intOverlay.querySelector('#em-int-detail-close')?.addEventListener('click', closeIntDialog);
-  }
-
-  _showDeviceDetailDialog(deviceId, integrationName) {
-    const integration = (this.data || []).find(i => i.integration === integrationName || i.devices[deviceId]);
-    const device = integration?.devices[deviceId];
-    if (!device) return;
-    const intName = integration.integration;
-    const intLabel = intName.charAt(0).toUpperCase() + intName.slice(1);
-    const devInfo = this.deviceInfo?.[deviceId] || {};
-    const devName = devInfo.name_by_user || devInfo.name || deviceId;
-    const total = device.entities.length;
-    const disabled = device.entities.filter(e => e.is_disabled).length;
-
-    // Overview
-    const overviewRows = [
-      ['Device Name', devName],
-      ['Integration', intLabel],
-      devInfo.manufacturer ? ['Manufacturer', devInfo.manufacturer] : null,
-      devInfo.model ? ['Model', devInfo.model] : null,
-      devInfo.sw_version ? ['SW Version', devInfo.sw_version] : null,
-      devInfo.hw_version ? ['HW Version', devInfo.hw_version] : null,
-      devInfo.serial_number ? ['Serial Number', `<code style="font-size:0.85em">${this._escapeHtml(devInfo.serial_number)}</code>`] : null,
-      ['Total Entities', String(total)],
-      ['Disabled Entities', disabled > 0 ? `<span style="color:var(--em-warning)">${disabled}</span>` : '0'],
-    ].filter(Boolean);
-
-    const overviewHtml = `<div style="padding:4px 0">
-      ${overviewRows.map(([k, v]) => `
-        <div style="display:flex;gap:12px;padding:5px 0;border-bottom:1px solid var(--em-border)">
-          <span style="font-size:0.82em;opacity:0.65;min-width:130px;flex-shrink:0">${k}</span>
-          <span style="font-size:0.9em">${v}</span>
-        </div>`).join('')}
-    </div>`;
-
-    // Entities list
-    const entitiesHtml = device.entities.map(entity => {
-      const st = this._hass?.states[entity.entity_id];
-      const stateVal = entity.is_disabled ? 'disabled' : (st?.state ?? '—');
-      const stateColor = entity.is_disabled ? '#9e9e9e' : (stateVal === 'unavailable' ? 'var(--em-danger)' : (stateVal === 'on' ? 'var(--em-success)' : 'var(--em-bg-secondary)'));
-      const textColor = (entity.is_disabled || stateVal === 'unavailable' || stateVal === 'on') ? '#fff' : 'var(--em-text-primary)';
-      return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--em-border);align-items:center;flex-wrap:wrap">
-        <span style="flex:1;font-size:0.85em">${this._escapeHtml(entity.original_name || entity.entity_id)}</span>
-        <span style="font-size:0.78em;opacity:0.6;flex:1;min-width:100px">${this._escapeHtml(entity.entity_id)}</span>
-        <span style="padding:1px 8px;border-radius:10px;font-size:0.78em;font-weight:600;background:${stateColor};color:${textColor};white-space:nowrap">${this._escapeHtml(stateVal)}</span>
-      </div>`;
-    }).join('');
-
-    // Statistics
-    const domainCounts = {};
-    device.entities.forEach(e => {
-      const dom = e.entity_id.split('.')[0];
-      domainCounts[dom] = (domainCounts[dom] || 0) + 1;
-    });
-    const statsHtml = Object.entries(domainCounts).sort((a,b) => b[1]-a[1]).map(([dom, count]) =>
-      `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--em-border)">
-        <span style="flex:1;font-size:0.9em">${this._escapeHtml(dom)}</span>
-        <span style="font-size:0.82em;opacity:0.7">${count}</span>
-      </div>`
-    ).join('');
-
-    const bodyHtml = `
-      ${this._collGroup('<strong>Overview</strong>', overviewHtml, true)}
-      ${this._collGroup(`Entities (${total})`, `<div style="padding:0 4px">${entitiesHtml}</div>`)}
-      ${this._collGroup('Statistics', `<div style="padding:0 4px">${statsHtml}</div>`)}
-    `;
-
-    const { overlay: devOverlay, closeDialog: closeDevDialog } = this.createDialog({
-      title: devName,
-      color: 'var(--em-primary)',
-      extraClass: 'entity-list-dialog',
-      contentHtml: `<div class="entity-list-content">${bodyHtml}</div>`,
-      actionsHtml: `<button class="btn btn-secondary" id="em-dev-detail-close">Close</button>`,
-    });
-
-    this._reAttachCollapsibles(devOverlay);
-    devOverlay.querySelector('#em-dev-detail-close')?.addEventListener('click', closeDevDialog);
   }
 
   _renderDeviceCard(deviceId, device, integration) {
@@ -10939,16 +10714,18 @@ class EntityManagerPanel extends HTMLElement {
     // One-time global closers: outside click + Escape
     if (!this._intMenuCloserAttached) {
       this._intMenuCloserAttached = true;
-      document.addEventListener('click', (e) => {
+      this._intMenuClickHandler = (e) => {
         if (!e.target.closest?.('.integration-menu-wrap')) {
           this.content?.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
         }
-      });
-      document.addEventListener('keydown', (e) => {
+      };
+      this._intMenuKeyHandler = (e) => {
         if (e.key === 'Escape') {
           this.content?.querySelectorAll('.integration-menu.open').forEach(m => m.classList.remove('open'));
         }
-      });
+      };
+      document.addEventListener('click', this._intMenuClickHandler);
+      document.addEventListener('keydown', this._intMenuKeyHandler);
     }
 
     this.content.querySelectorAll('.enable-integration').forEach(btn => {
@@ -11559,7 +11336,7 @@ class EntityManagerPanel extends HTMLElement {
           <button id="em-restart-toggle"
             title="Toggle restart after updates"
             style="padding:7px 20px;border-radius:20px;
-                   border:2px solid ${on ? 'var(--em-warning)' : 'var(--em-text-muted, #888)'};
+                   border:2px solid ${on ? 'var(--em-warning)' : 'var(--em-text-secondary)'};
                    background:${on ? 'var(--em-warning)' : 'transparent'};
                    color:${on ? 'white' : 'var(--em-text-secondary)'};
                    cursor:pointer;font-size:13px;font-weight:700;min-width:64px;flex-shrink:0">
@@ -11668,7 +11445,7 @@ class EntityManagerPanel extends HTMLElement {
         if (btn) {
           btn.textContent = on ? 'ON' : 'OFF';
           btn.style.background = on ? 'var(--em-warning)' : 'transparent';
-          btn.style.borderColor = on ? 'var(--em-warning)' : 'var(--em-text-muted, #888)';
+          btn.style.borderColor = on ? 'var(--em-warning)' : 'var(--em-text-secondary)';
           btn.style.color = on ? 'white' : 'var(--em-text-secondary)';
         }
         const desc = row.querySelector('#em-restart-desc');
@@ -11969,7 +11746,7 @@ class EntityManagerPanel extends HTMLElement {
     const renderEntityRow = entity => {
       const name = this._escapeHtml(entity.original_name || entity.entity_id);
       const disabled = entity.is_disabled;
-      const dot = `<span style="font-size:9px;color:${disabled ? 'var(--em-text-muted, #9e9e9e)' : 'var(--em-success)'}">●</span>`;
+      const dot = `<span style="font-size:9px;color:${disabled ? 'var(--em-text-secondary)' : 'var(--em-success)'}">●</span>`;
       const catBadge = entity.entity_category
         ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--em-bg-secondary);color:var(--em-text-secondary);flex-shrink:0">${this._escapeHtml(entity.entity_category)}</span>`
         : '';
@@ -12151,7 +11928,7 @@ class EntityManagerPanel extends HTMLElement {
     }
 
     const watchKey = 'em-activity-watch';
-    let watchConfig  = this._loadFromStorage(watchKey, { rooms: null });
+    const watchConfig  = this._loadFromStorage(watchKey, { rooms: null });
     let allEvents    = [];
     let searchTerm   = '';
     let currentHours = 1;
@@ -12350,7 +12127,7 @@ class EntityManagerPanel extends HTMLElement {
           if (val === '__all__')        { checkedRooms = null; }
           else if (val === '__none__')  { checkedRooms = new Set(); }
           else {
-            let set = checkedRooms === null ? new Set(rooms) : new Set(checkedRooms);
+            const set = checkedRooms === null ? new Set(rooms) : new Set(checkedRooms);
             if (set.has(val)) set.delete(val); else set.add(val);
             checkedRooms = set;
           }
@@ -12722,7 +12499,7 @@ class EntityManagerPanel extends HTMLElement {
 
     // Refresh — invalidate cache and reload
     contentEl.querySelector('#em-at-refresh')?.addEventListener('click', () => {
-      try { localStorage.removeItem('em_lastActivityCache'); } catch (_) {}
+      try { localStorage.removeItem('em_lastActivityCache'); } catch {}
       this._loadLastActivityCache(); // re-fetches from recorder; calls updateView() when done
     });
 
@@ -12763,7 +12540,6 @@ class EntityManagerPanel extends HTMLElement {
       const friendly = st?.attributes?.friendly_name || e.original_name || e.entity_id;
       const currentArea = this.entityAreaMap?.get(e.entity_id);
       const currentAreaName = currentArea ? (this.areaLookup?.get(currentArea)?.areaName || currentArea) : null;
-      const domain = e.entity_id.split('.')[0];
       return `<label class="em-confirm-entity-row">
         <input type="checkbox" class="em-confirm-cb" data-entity-id="${this._escapeAttr(e.entity_id)}" checked>
         <span style="flex:1;min-width:0">
@@ -13040,12 +12816,12 @@ class EntityManagerPanel extends HTMLElement {
 
     // ── Area data ──
     let floors = [], areas = [];
-    try { floors = ((await this._hass.callWS({ type: 'config/floor_registry/list' })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch (e) { /* keep */ }
-    try { areas  = ((await this._hass.callWS({ type: 'config/area_registry/list'  })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch (e) { /* keep */ }
+    try { floors = ((await this._hass.callWS({ type: 'config/floor_registry/list' })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch { /* keep */ }
+    try { areas  = ((await this._hass.callWS({ type: 'config/area_registry/list'  })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch { /* keep */ }
     const floorName = new Map(floors.map(f => [f.floor_id, f.name]));
     const refreshRegistries = async () => {
-      try { floors = ((await this._hass.callWS({ type: 'config/floor_registry/list' })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch (e) { /* keep */ }
-      try { areas  = ((await this._hass.callWS({ type: 'config/area_registry/list'  })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch (e) { /* keep */ }
+      try { floors = ((await this._hass.callWS({ type: 'config/floor_registry/list' })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch { /* keep */ }
+      try { areas  = ((await this._hass.callWS({ type: 'config/area_registry/list'  })) || []).sort((a, b) => a.name.localeCompare(b.name)); } catch { /* keep */ }
       floors.forEach(f => floorName.set(f.floor_id, f.name));
     };
     let selectedAreaId = undefined; // undefined = none chosen, null = "No Area"
@@ -13626,7 +13402,7 @@ class EntityManagerPanel extends HTMLElement {
 
     const allEntities = [];
     for (const intg of (this.data || [])) {
-      for (const [devId, dev] of Object.entries(intg.devices || {})) {
+      for (const [, dev] of Object.entries(intg.devices || {})) {
         const devEntityCount = (dev.entities || []).length;
         for (const entity of (dev.entities || [])) {
           allEntities.push({ ...entity, integration: intg.integration, deviceName: dev.name || null, deviceEntityCount: devEntityCount });
@@ -13732,9 +13508,9 @@ class EntityManagerPanel extends HTMLElement {
     };
 
     const LABEL_DEFS = [
-      { label: 'Lights',               emoji: 'mdi:lightbulb',          match: (e, st) => e.entity_id.split('.')[0] === 'light' },
+      { label: 'Lights',               emoji: 'mdi:lightbulb',          match: (e) => e.entity_id.split('.')[0] === 'light' },
       { label: 'Dimmable Lights',      emoji: 'mdi:lightbulb-on',       match: (e, st) => e.entity_id.split('.')[0] === 'light' && (st?.attributes?.supported_color_modes || []).some(m => !['onoff','unknown'].includes(m)) },
-      { label: 'Switches',             emoji: 'mdi:toggle-switch',      match: (e, st) => e.entity_id.split('.')[0] === 'switch' },
+      { label: 'Switches',             emoji: 'mdi:toggle-switch',      match: (e) => e.entity_id.split('.')[0] === 'switch' },
       { label: 'Temperature Sensors',  emoji: 'mdi:thermometer',        match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'temperature' },
       { label: 'Humidity Sensors',     emoji: 'mdi:water-percent',      match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && st?.attributes?.device_class === 'humidity' },
       { label: 'Motion Sensors',       emoji: 'mdi:motion-sensor',      match: (e, st) => e.entity_id.split('.')[0] === 'binary_sensor' && st?.attributes?.device_class === 'motion' },
@@ -13749,14 +13525,14 @@ class EntityManagerPanel extends HTMLElement {
       { label: 'Energy Consumed',      emoji: 'mdi:transmission-tower-import', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) && /consumed_energy|energy_consumed/i.test(e.entity_id) },
       { label: 'Energy Returned',      emoji: 'mdi:transmission-tower-export', match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) && /returned_energy|energy_return/i.test(e.entity_id) },
       { label: 'Energy Monitoring',     emoji: 'mdi:lightning-bolt',     match: (e, st) => e.entity_id.split('.')[0] === 'sensor' && ['energy','energy_storage'].includes(st?.attributes?.device_class) && !/consumed_energy|energy_consumed|returned_energy|energy_return/i.test(e.entity_id) },
-      { label: 'Covers',               emoji: 'mdi:window-shutter',     match: (e, st) => e.entity_id.split('.')[0] === 'cover' },
-      { label: 'Climate',              emoji: 'mdi:snowflake',          match: (e, st) => e.entity_id.split('.')[0] === 'climate' },
-      { label: 'Media Players',        emoji: 'mdi:speaker',            match: (e, st) => e.entity_id.split('.')[0] === 'media_player' },
-      { label: 'Cameras',              emoji: 'mdi:camera',             match: (e, st) => e.entity_id.split('.')[0] === 'camera' },
-      { label: 'Locks',                emoji: 'mdi:lock',               match: (e, st) => e.entity_id.split('.')[0] === 'lock' },
-      { label: 'Fans',                 emoji: 'mdi:fan',                match: (e, st) => e.entity_id.split('.')[0] === 'fan' },
-      { label: 'Vacuums',              emoji: 'mdi:robot-vacuum',       match: (e, st) => e.entity_id.split('.')[0] === 'vacuum' },
-      { label: 'Presence Detection',   emoji: 'mdi:account',            match: (e, st) => ['device_tracker','person'].includes(e.entity_id.split('.')[0]) },
+      { label: 'Covers',               emoji: 'mdi:window-shutter',     match: (e) => e.entity_id.split('.')[0] === 'cover' },
+      { label: 'Climate',              emoji: 'mdi:snowflake',          match: (e) => e.entity_id.split('.')[0] === 'climate' },
+      { label: 'Media Players',        emoji: 'mdi:speaker',            match: (e) => e.entity_id.split('.')[0] === 'media_player' },
+      { label: 'Cameras',              emoji: 'mdi:camera',             match: (e) => e.entity_id.split('.')[0] === 'camera' },
+      { label: 'Locks',                emoji: 'mdi:lock',               match: (e) => e.entity_id.split('.')[0] === 'lock' },
+      { label: 'Fans',                 emoji: 'mdi:fan',                match: (e) => e.entity_id.split('.')[0] === 'fan' },
+      { label: 'Vacuums',              emoji: 'mdi:robot-vacuum',       match: (e) => e.entity_id.split('.')[0] === 'vacuum' },
+      { label: 'Presence Detection',   emoji: 'mdi:account',            match: (e) => ['device_tracker','person'].includes(e.entity_id.split('.')[0]) },
     ];
 
     let labelGroups = [];
@@ -14554,9 +14330,16 @@ class EntityManagerPanel extends HTMLElement {
             await this._refreshSuggestionsKeepingState();
           }
         } else if (action === 'sync-to-device-area') {
+          const idleLabel = btn.textContent;
           btn.disabled = true; btn.textContent = '…';
           const oldAreaId = this.entityAreaMap?.get(entityId) || null;
-          await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: null });
+          try {
+            await this._hass.callWS({ type: 'config/entity_registry/update', entity_id: entityId, area_id: null });
+          } catch (err) {
+            btn.disabled = false; btn.textContent = idleLabel;
+            this._showToast(`Could not sync ${entityId}: ${err.message || err}`, 'error');
+            return;
+          }
           this._pushUndoAction({ type: 'assign_entity_area', entityId, oldAreaId, newAreaId: null });
           btn.closest('.em-sug-mismatch-row')?.remove();
           await this.loadData();
@@ -14786,7 +14569,7 @@ class EntityManagerPanel extends HTMLElement {
   async _showConfigEntryHealthDialog({ inline = false, container = null } = {}) {
     let overlay, closeDialog;
     if (inline && container) {
-      container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--secondary-text-color)">Loading…</div>`;
+      container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--em-text-secondary)">Loading…</div>`;
       overlay = container;
       closeDialog = () => {};
     } else {
@@ -14794,7 +14577,7 @@ class EntityManagerPanel extends HTMLElement {
         title: 'Integration Config Errors',
         color: 'var(--em-danger)',
         searchPlaceholder: 'Search integrations…',
-        contentHtml: `<div style="padding:16px;text-align:center;color:var(--secondary-text-color)">Loading…</div>`,
+        contentHtml: `<div style="padding:16px;text-align:center;color:var(--em-text-secondary)">Loading…</div>`,
         actionsHtml: `<button class="btn btn-secondary em-health-close">Close</button>`,
       });
       overlay = result.overlay;
@@ -14838,7 +14621,7 @@ class EntityManagerPanel extends HTMLElement {
             : `<button class="em-dialog-btn em-dialog-btn-secondary em-reload-entry" data-entry-id="${this._escapeHtml(e.entry_id)}">Reload</button>`,
         })).join('');
         html += this._collGroup(
-          `<span style="color:${color}">${label}</span> <span style="font-size:11px;color:var(--secondary-text-color)">(${items.length})</span>`,
+          `<span style="color:${color}">${label}</span> <span style="font-size:11px;color:var(--em-text-secondary)">(${items.length})</span>`,
           rows
         );
       }
@@ -14881,7 +14664,7 @@ class EntityManagerPanel extends HTMLElement {
       const body = (inline && container)
         ? container
         : overlay.querySelector('.confirm-dialog-box > *:not(.confirm-dialog-header):not(.confirm-dialog-actions)');
-      body.innerHTML = `<div style="padding:16px;color:var(--error-color)">⚠ ${this._escapeHtml(String(e.message || e))}</div>`;
+      body.innerHTML = `<div style="padding:16px;color:var(--em-danger)">⚠ ${this._escapeHtml(String(e.message || e))}</div>`;
     }
   }
 
@@ -16040,7 +15823,6 @@ class EntityManagerPanel extends HTMLElement {
 
   async _showCleanupDialog({ inline = false, container = null } = {}) {
     const dismissed = this._loadFromStorage('em-stale-dismissed', {});
-    const states = Object.values(this._hass?.states || {});
 
     // ── Section 1: Orphaned entities (true orphans — owner gone) ──────
     // NOT "entities without a device": automations, helpers, persons, groups etc.
@@ -16457,7 +16239,7 @@ class EntityManagerPanel extends HTMLElement {
               { id: 'bulk-remove', label: 'Remove…', variant: 'danger' },
             ]);
             entities = automations.map(a => ({ id: a.entity_id, name: a.name, state: a.state }));
-          } catch (e) {
+          } catch {
             entities = states.filter(s => s.entity_id.startsWith('automation.'))
               .map(s => ({ id: s.entity_id, name: s.attributes.friendly_name || s.entity_id, state: s.state }));
           }
@@ -16613,7 +16395,7 @@ class EntityManagerPanel extends HTMLElement {
                 }
                 if (lastRealChangeTime) t.last_real_changed = lastRealChangeTime;
               }
-            } catch (_histErr) {
+            } catch {
               // Recorder not available — fall back to last_changed
             }
 
@@ -16676,7 +16458,7 @@ class EntityManagerPanel extends HTMLElement {
             }
 
             entities = templateList.map(t => ({ id: t.entity_id, name: t.name || t.entity_id }));
-          } catch (e) {
+          } catch {
             // Fallback to simple state-based list
             entities = states.filter(s => s.entity_id.startsWith('template.'))
               .map(s => ({
@@ -16693,8 +16475,8 @@ class EntityManagerPanel extends HTMLElement {
           // Ignore state — shared with Suggestions' permanent ignore/restore system (_ignoredSugKeys)
           const isUnavailIgnored = eid => this._ignoredSugKeys.has('unavailable:' + eid);
           let _uvFilter = this._loadFromStorage('em-unavail-time-filter', 'all');
-          let _uvLastSeen = {};
-          let _uvWentUnavailAt = {}; // recorder-backed: when the entity last transitioned TO unavailable
+          const _uvLastSeen = {};
+          const _uvWentUnavailAt = {}; // recorder-backed: when the entity last transitioned TO unavailable
 
           // Excludes restored placeholder states — those are registry remnants with no
           // provider and live under Cleanup → Orphaned (Not Loaded) instead.
@@ -16954,7 +16736,7 @@ class EntityManagerPanel extends HTMLElement {
               name: item.name,
               category: item.category || 'unknown',
             }));
-          } catch (e) {
+          } catch {
             groupedHtml = `<p style="text-align:center;padding:24px;opacity:0.6">HACS store data not available.<br>Ensure HACS is installed and Home Assistant has been restarted.</p>`;
             entities = [];
           }
@@ -18873,7 +18655,7 @@ class EntityManagerPanel extends HTMLElement {
         const row = (label, count, unit) =>
           `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
              <span style="font-size:12px;font-family:monospace">${this._escapeHtml(label)}</span>
-             <span style="font-size:11px;color:var(--secondary-text-color)">${count} ${unit}${count !== 1 ? 's' : ''}</span>
+             <span style="font-size:11px;color:var(--em-text-secondary)">${count} ${unit}${count !== 1 ? 's' : ''}</span>
            </div>`;
         const fileRows = preview.files_updated.map(f => row(f.file, f.replacements, 'ref')).join('');
         const manualRows = manual.map(m => row(m.file, m.matches, 'match')).join('');
@@ -19037,7 +18819,7 @@ class EntityManagerPanel extends HTMLElement {
     const row = (label, count, one, many) =>
       `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.1)">
          <span style="font-size:12px;font-family:monospace;min-width:0;overflow-wrap:anywhere">${this._escapeHtml(label)}</span>
-         <span style="font-size:11px;color:var(--secondary-text-color);white-space:nowrap;flex-shrink:0">${count} ${count !== 1 ? many : one}</span>
+         <span style="font-size:11px;color:var(--em-text-secondary);white-space:nowrap;flex-shrink:0">${count} ${count !== 1 ? many : one}</span>
        </div>`;
     return new Promise(resolve => {
       let resolved = false;
@@ -19094,7 +18876,7 @@ class EntityManagerPanel extends HTMLElement {
    * The input stays in the page, visually hidden, until the picker closes,
    * rather than being clicked while detached.
    */
-  _pickFile(onFile) {
+  _pickFile(onFile, onCancel) {
     document.querySelectorAll('input.em-file-picker').forEach(el => el.remove());
     const input = Object.assign(document.createElement('input'), { type: 'file', className: 'em-file-picker' });
     input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
@@ -19102,8 +18884,9 @@ class EntityManagerPanel extends HTMLElement {
       const file = input.files?.[0];
       input.remove();
       if (file) onFile(file);
+      else onCancel?.();
     });
-    input.addEventListener('cancel', () => input.remove());
+    input.addEventListener('cancel', () => { input.remove(); onCancel?.(); });
     document.body.appendChild(input);
     input.click();
   }
@@ -19229,7 +19012,8 @@ class EntityManagerPanel extends HTMLElement {
     const seenOld = new Set();
     const seenNew = new Set();
     rows.forEach((cells, i) => {
-      const [oldId = '', rawNew = '', name = ''] = cells;
+      const [oldId = '', rawNew = '', rawName = ''] = cells;
+      const name = rawName.replace(/^'(?=[=+\-@])/, ''); // undo _csvCell's formula guard
       if (!cells.some(c => c) || oldId.startsWith('#')) return;
       if (i === 0 && !idRe.test(oldId) && /entity|old/i.test(oldId)) return; // header row
       const fail = reason => problems.push({ row: i + 1, text: cells.join(', '), reason });
@@ -19251,9 +19035,21 @@ class EntityManagerPanel extends HTMLElement {
     return { changes, problems };
   }
 
+  /**
+   * One CSV cell. Quoted when it holds a separator, quote or newline. A value that starts with
+   * = + - @ (or a tab or CR) is prefixed with an apostrophe, because Excel and Sheets would
+   * otherwise run it as a formula; a friendly name is free text that an integration chooses.
+   * _validateRenameCsv strips that apostrophe again on import.
+   */
+  _csvCell(value) {
+    let c = String(value ?? '');
+    if (/^[=+\-@\t\r]/.test(c)) c = `'${c}`;
+    return /[",;\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c;
+  }
+
   /** CSV template for bulk rename: each entity's ID twice plus its display name, BOM-prefixed for Excel. */
   _renameCsvText(entityIds) {
-    const cell = c => (/[",;\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
+    const cell = c => this._csvCell(c);
     const rows = [['old_entity_id', 'new_entity_id', 'display_name']];
     entityIds.forEach(id => rows.push([id, id, this._hass?.states?.[id]?.attributes?.friendly_name || '']));
     return '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';

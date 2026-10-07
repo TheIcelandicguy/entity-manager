@@ -34,6 +34,7 @@ def test_valid_entity_id_accepts_valid(entity_id):
     "1sensor.foo",              # domain starts with digit
     "sensor.foo bar",           # space in object_id
     "",                         # empty string
+    "light.x\n",                # trailing newline slipped past $
 ])
 def test_valid_entity_id_rejects_invalid(entity_id):
     assert not VALID_ENTITY_ID.match(entity_id), f"Expected {entity_id!r} to be invalid"

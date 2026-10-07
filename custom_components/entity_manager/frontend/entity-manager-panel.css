@@ -2729,7 +2729,7 @@ entity-manager-panel[data-theme="dark"] .device-select-checkbox {
 .empty-state h2 {
   font-size: 24px;
   margin-bottom: 12px;
-  color: var(--primary-text-color);
+  color: var(--em-text-primary);
 }
 
 .checkbox-group {

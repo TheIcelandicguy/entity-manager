@@ -741,7 +741,12 @@ async def handle_assign_entity_device(
     if not dev_reg.async_get(device_id):
         connection.send_error(msg["id"], "not_found", f"Device {device_id} not found")
         return
-    entity_reg.async_update_entity(entity_id, device_id=device_id)
+    try:
+        entity_reg.async_update_entity(entity_id, device_id=device_id)
+    except ValueError as err:
+        # e.g. the device belongs to a different config entry than the entity
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
     connection.send_result(msg["id"], {"success": True})
 
 
@@ -896,7 +901,7 @@ async def handle_get_template_sensors(
                 trig_states.append(state)
 
         results: list[dict[str, Any]] = []
-        for partial, state in zip(partials, trig_states):
+        for partial, state in zip(partials, trig_states, strict=False):
             try:
                 triggered_by, triggered_by_name = await _resolve_trigger_context(
                     hass, state
@@ -2488,7 +2493,7 @@ async def handle_register_template(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "entity_manager/get_last_activity",
-        vol.Optional("entity_ids"): [cv.entity_id],
+        vol.Optional("entity_ids"): vol.All([cv.entity_id], vol.Length(max=5000)),
     }
 )
 @websocket_api.require_admin
