@@ -1975,3 +1975,72 @@ describe('document listeners', () => {
     expect(added).toEqual([]);
   });
 });
+
+describe('_unavailableSince (how long an entity has really been down)', () => {
+  const t = days => Date.now() / 1000 - days * 86400;
+
+  it('finds the start of the current unavailable run', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({
+      'sensor.a': [
+        { s: 'on', lu: t(20) },
+        { s: 'unavailable', lu: t(9) },
+        { s: 'unavailable', lu: t(2) },
+      ],
+    });
+    const since = await el._unavailableSince(['sensor.a']);
+    expect(since.get('sensor.a').atLeast).toBe(false);
+    expect(since.get('sensor.a').ms).toBeCloseTo(t(9) * 1000, -2);
+  });
+
+  it('prefers last_changed and accepts epoch milliseconds', async () => {
+    const el = makePanel();
+    const ms = Date.now() - 12 * 86400000;
+    el._hass.callWS = vi.fn().mockResolvedValue({
+      'sensor.a': [{ s: 'ok', lu: t(30) }, { s: 'unavailable', lc: ms, lu: ms + 5000 }],
+    });
+    const since = await el._unavailableSince(['sensor.a']);
+    expect(since.get('sensor.a').ms).toBe(ms);
+  });
+
+  it('marks a run that reaches the oldest row as "at least"', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({
+      'sensor.a': [{ s: 'unavailable', lu: t(30) }],
+    });
+    const since = await el._unavailableSince(['sensor.a']);
+    expect(since.get('sensor.a').atLeast).toBe(true);
+  });
+
+  it('leaves out entities whose newest recorded state is not unavailable, or that have no rows', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({
+      'sensor.a': [{ s: 'unavailable', lu: t(20) }, { s: 'on', lu: t(1) }],
+      'sensor.b': [],
+    });
+    const since = await el._unavailableSince(['sensor.a', 'sensor.b', 'sensor.c']);
+    expect(since.size).toBe(0);
+  });
+
+  it('asks in batches of 50 and carries on when one batch fails', async () => {
+    const el = makePanel();
+    const ids = Array.from({ length: 120 }, (_, i) => `sensor.s${i}`);
+    let call = 0;
+    el._hass.callWS = vi.fn(async ({ entity_ids }) => {
+      if (call++ === 1) throw new Error('history unavailable');
+      return Object.fromEntries(entity_ids.map(id => [id, [{ s: 'unavailable', lu: t(10) }]]));
+    });
+    const since = await el._unavailableSince(ids);
+    expect(el._hass.callWS.mock.calls.map(([m]) => m.entity_ids.length)).toEqual([50, 50, 20]);
+    expect(since.size).toBe(70);
+    expect(el._hass.callWS.mock.calls[0][0]).toMatchObject({
+      type: 'history/history_during_period', minimal_response: true, no_attributes: true, significant_changes_only: false,
+    });
+  });
+
+  it('does not call the recorder when there is nothing to ask about', async () => {
+    const el = makePanel();
+    expect((await el._unavailableSince([])).size).toBe(0);
+    expect(el._hass.callWS).not.toHaveBeenCalled();
+  });
+});
