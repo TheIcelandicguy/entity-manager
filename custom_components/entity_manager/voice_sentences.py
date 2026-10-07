@@ -43,7 +43,15 @@ def _install_sentences(
         target = _target_path(config_dir, language, source.name)
         shipped = source.read_text(encoding="utf-8")
         if target.exists():
-            current = target.read_text(encoding="utf-8")
+            try:
+                current = target.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                # Saved in another encoding by hand (Icelandic letters in
+                # Windows-1252, say): that is an edited copy, so leave it.
+                if not force:
+                    _LOGGER.warning("Voice sentence file is not UTF-8: %s", target)
+                    continue
+                current = ""
             if current == shipped:
                 continue
             if not force and not current.lstrip().startswith(SENTENCE_MARKER):
@@ -96,7 +104,10 @@ def sentence_status(source_dir: Path, config_dir: Path) -> list[dict[str, Any]]:
         shipped = source.read_text(encoding="utf-8")
 
         installed = target.exists()
-        current = target.read_text(encoding="utf-8") if installed else ""
+        try:
+            current = target.read_text(encoding="utf-8") if installed else ""
+        except UnicodeDecodeError:
+            current = "# not UTF-8\n"
         up_to_date = installed and current == shipped
         user_edited = (
             installed
