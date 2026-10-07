@@ -12,6 +12,8 @@ It reads CLAUDE.md and checks the claims that go stale fastest:
   lines       "N lines" claims are within 10% of the real length (warning only)
   consistency command counts, the minimum HA version, the OVERVIEW version and the
               two string files agree with the source and with each other
+  skill       the repo's Claude skill quotes the right version, command count and minimum HA;
+              warns when the copy claude.ai syncs back differs (an upload is due)
 
 Exit status 1 when anything fails, so it can gate a commit or a CI job.
 The script is deliberately conservative: it only checks what the doc actually
@@ -375,6 +377,69 @@ def check_consistency() -> None:
         fail("strings: strings.json and translations/en.json differ")
 
 
+# ---- the Claude skill kept in the repo ---------------------------------------
+
+SKILL_NAME = "entity-manager-dev"
+SKILL = ROOT / ".claude" / "skills" / SKILL_NAME / "SKILL.md"
+
+
+def _norm(text: str) -> str:
+    return text.replace("\r\n", "\n").strip()
+
+
+def check_skill() -> None:
+    """The skill must agree with the source, and claude.ai's copy should not lag it.
+
+    Claude Code loads the skill from the clone. claude.ai and Cowork read their
+    own library, which only an upload changes; the app syncs that library back
+    under ~/.claude/skills/synced/, so a difference there means an upload is due.
+    That one is a warning, because only a person can do the upload.
+    """
+    if not SKILL.exists():
+        fail(f"skill: {SKILL.relative_to(ROOT).as_posix()} is missing")
+        return
+    text = read(SKILL)
+    head = re.match(r"^---\r?\n(.*?)\r?\n---\r?\n", text, re.S)
+    if not head:
+        fail("skill: SKILL.md has no frontmatter")
+        return
+    front = re.sub(r"\s+", " ", head.group(1))
+    name = re.search(r"^name:\s*(\S+)", head.group(1), re.M)
+    if not name or name.group(1) != SKILL_NAME:
+        fail(f"skill: frontmatter name is {name.group(1) if name else 'missing'}, expected {SKILL_NAME}")
+    if "description:" not in front:
+        fail("skill: frontmatter has no description")
+
+    rv = repo_version()
+    quoted = re.search(r"\bv(\d+\.\d+\.\d+)\b", front)
+    if rv and quoted and quoted.group(1) != rv[0]:
+        fail(f"skill: description says v{quoted.group(1)}; {rv[1].name} says {rv[0]}")
+
+    api = ROOT / "custom_components" / "entity_manager" / "websocket_api.py"
+    count = re.search(r"\b(\d+)-command\b", front)
+    if api.exists() and count:
+        have = len(set(WS_COMMAND.findall(read(api))))
+        if int(count.group(1)) != have:
+            fail(f"skill: description says {count.group(1)}-command; websocket_api.py has {have}")
+
+    hacs = ROOT / "hacs.json"
+    min_ha = re.search(r"Minimum Home Assistant is (\d{4}\.\d+\.\d+)", text)
+    if hacs.exists() and min_ha:
+        declared = json.loads(read(hacs)).get("homeassistant")
+        if declared and declared != min_ha.group(1):
+            fail(f"skill: says minimum HA {min_ha.group(1)}; hacs.json says {declared}")
+
+    synced = sorted((Path.home() / ".claude" / "skills" / "synced").glob(f"*/{SKILL_NAME}/SKILL.md"))
+    for copy in synced:
+        if _norm(read(copy)) != _norm(text):
+            warn(
+                "skill: the claude.ai copy of entity-manager-dev differs from the repo -- "
+                "run `python build_skill.py`, upload dist-skill/entity-manager-dev.skill, "
+                "and ask a new chat for the version"
+            )
+            break
+
+
 # ---- main --------------------------------------------------------------------
 
 def main() -> int:
@@ -390,6 +455,7 @@ def main() -> int:
     check_services(doc)
     check_lines(doc)
     check_consistency()
+    check_skill()
     for w in warnings:
         print(f"WARN  {w}")
     for f in failures:

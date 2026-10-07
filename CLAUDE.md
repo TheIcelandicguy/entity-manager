@@ -30,6 +30,16 @@ guide and silently scrolls nowhere. Between 3.1.0 and 3.6.1 the guide was never
 touched and fell five releases behind, and one of its claims (Set Alias is
 shared across browsers) was simply wrong.
 
+**The Claude skill for this repo is kept here, not only on claude.ai.** It is
+`.claude/skills/entity-manager-dev/SKILL.md`, which Claude Code loads from the
+clone. Update it in the same PR as the change it describes, and when you cut a
+release (its description quotes the version, the command count and the minimum
+HA; `check_docs.py` fails when any of them is stale). claude.ai and Cowork read
+their own library and nothing pushes to it: run `python build_skill.py`, upload
+`dist-skill/entity-manager-dev.skill` under Customize > Skills, and ask a new
+chat for the version. `check_docs.py` warns while the copy claude.ai syncs back
+under `~/.claude/skills/synced/` differs from the repo.
+
 ## Layout
 
 All paths below are relative to the repo root. Note that `tests/` lives at the
@@ -51,6 +61,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
+| `build_skill.py` | Zips the skill under `.claude/skills/` into `dist-skill/<name>.skill` (gitignored) for upload to claude.ai. |
 | `ruff.toml` | Pins Ruff lint rules (E4, E7, E9, F, plus bugbear and import sorting; tests are exempt from the last two) so CI does not inherit widened future defaults. |
 | `mypy.ini` | Mypy settings (missing third-party imports are ignored), so a local run and CI agree. |
 
