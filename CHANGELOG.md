@@ -1,5 +1,48 @@
 # Changelog
 
+## Version 3.7.1 - Audit fixes
+
+A full read of the 26 WebSocket commands, the 20,000-line panel, the tests and
+the CI turned up a handful of ways the cleanup tools could damage a config or
+the panel could be fooled, plus several places where a failure was swallowed.
+This release fixes them. It adds no feature.
+
+### Safety
+
+- **Removing a broken reference no longer corrupts templates.** A Jinja subscript such as `states['sensor.dead']` looked like a one-item list and was rewritten to `states[]`. Flow lists are now only edited when they are the value of a key, and any line holding a template is skipped. A list that loses its last item becomes `key: []`, not a null
+- **Remove checks what it is asked to remove.** It refuses an entity that exists again and only edits `.yaml` files, so a stale row cannot strip a live entity or rewrite `home-assistant.log`
+- **Energy devices survive.** A dangling parent link clears that link instead of dropping the whole device, and a `conditions` list that would end up empty is left alone
+- **Voice commands do not guess.** When only part of what was said matched a name, Assist names the closest entity and changes nothing; say the entity ID to confirm. A misheard Icelandic name could previously disable the wrong entity
+- **Escaped names.** Entity names, IDs, labels and integration names are escaped in the entity list, label picker, sidebar and alias dialog. A device advertising a friendly name with markup in it could run script in the admin panel
+- **A sentence file saved in another encoding** no longer stops the integration loading. It is treated as an edited copy and left alone
+
+### Bulk operations
+
+- **More than 500 entities now works.** Enable and disable go out in batches of 500, for a selection, a preset, a group or a whole integration. Before, anything over the cap failed outright. State imports batch the same way, and an import where every row already matches says so instead of failing
+- **Undo and redo report failures.** Undoing a 300-entity disable started 300 requests and 300 full reloads, and a failure was swallowed, so the toast said "Undid…" and the step was consumed. It now makes batched calls, reloads once and keeps the step if it fails
+- **Bulk removes** run in batches of 10 instead of all at once
+
+### Config rewrites
+
+- **The original backup survives.** `<file>.em-bak` was overwritten on every edit, so after two renames it held already-modified text. Later edits now get a timestamped copy
+- **A failed write cannot truncate a file.** New text goes to a temporary file that replaces the original in one step, and CRLF line endings and a BOM are kept
+- **Edits run one at a time**, so two overlapping rewrites cannot undo each other. A symlink out of the config directory is refused
+- **Templates with a name list item.** `register_template` matches a `- name:` item and no longer lets its patterns run across blank lines
+
+### Requirements
+
+- **Home Assistant 2024.7.0 or later.** The panel registration imports `StaticPathConfig`, which arrived in 2024.7, so the integration could not load on earlier versions
+
+### Also
+
+- **Services fail visibly.** `entity_manager.enable_entity` and `disable_entity` raise when the entity does not exist, so an automation sees it
+- **Corrupt stored preferences** no longer blank the panel, and blocked browser storage no longer breaks search
+- **Listeners are released** when the panel is closed, and the theme and notification menus close on an outside click after a re-render
+- **Spreadsheet-safe exports.** A name starting with `=`, `+`, `-` or `@` is exported with a leading apostrophe so Excel does not run it as a formula, and the rename import strips it
+- **Failed sync to device area** restores its button and says why
+- **Help Guide** covers batching, the apostrophe, the backups and the Remove limits
+- **CI** runs the panel tests, fails on any lint warning and pins its tools; `check_docs.py` also checks command counts, the minimum HA version and the string files
+
 ## Version 3.7.0 - Ignore in bulk
 
 The Suggestions view could already ignore a single row. For a house with dozens
