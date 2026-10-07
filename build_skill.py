@@ -10,6 +10,7 @@ the copy claude.ai has synced back to this machine differs from the repo.
 
   python build_skill.py                      every skill under .claude/skills/
   python build_skill.py entity-manager-dev   just that one
+  python build_skill.py --out DIR            write the .skill files to DIR instead
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def frontmatter(text: str) -> dict[str, str]:
     return found
 
 
-def build(name: str) -> Path:
+def build(name: str, out: Path = OUT) -> Path:
     folder = SKILLS / name
     skill_md = folder / "SKILL.md"
     if not skill_md.is_file():
@@ -52,8 +53,8 @@ def build(name: str) -> Path:
         raise SystemExit(f"{name}: frontmatter name is {meta.get('name')!r}, expected {name!r}")
     if not meta.get("description"):
         raise SystemExit(f"{name}: frontmatter has no description")
-    OUT.mkdir(exist_ok=True)
-    target = OUT / f"{name}.skill"
+    out.mkdir(parents=True, exist_ok=True)
+    target = out / f"{name}.skill"
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(folder.rglob("*")):
             if path.is_file():
@@ -62,15 +63,25 @@ def build(name: str) -> Path:
 
 
 def main(argv: list[str]) -> int:
-    names = list(argv)
+    args = list(argv)
+    out = OUT
+    if "--out" in args:
+        at = args.index("--out")
+        if at + 1 >= len(args):
+            print("--out needs a folder")
+            return 1
+        out = Path(args[at + 1]).resolve()
+        del args[at : at + 2]
+    names = args
     if not names and SKILLS.is_dir():
         names = sorted(p.name for p in SKILLS.iterdir() if (p / "SKILL.md").is_file())
     if not names:
         print("no skills under .claude/skills/")
         return 1
     for name in names:
-        target = build(name)
-        print(f"built {target.relative_to(ROOT)} ({target.stat().st_size:,} bytes)")
+        target = build(name, out)
+        shown = target.relative_to(ROOT) if target.is_relative_to(ROOT) else target
+        print(f"built {shown} ({target.stat().st_size:,} bytes)")
     print()
     print("To update claude.ai and Cowork (they share one library): upload each file under")
     print("Customize > Skills, replacing the old one, then ask a NEW chat which version it")

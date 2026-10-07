@@ -35,10 +35,12 @@ shared across browsers) was simply wrong.
 clone. Update it in the same PR as the change it describes, and when you cut a
 release (its description quotes the version, the command count and the minimum
 HA; `check_docs.py` fails when any of them is stale). claude.ai and Cowork read
-their own library and nothing pushes to it: run `python build_skill.py`, upload
-`dist-skill/entity-manager-dev.skill` under Customize > Skills, and ask a new
-chat for the version. `check_docs.py` warns while the copy claude.ai syncs back
-under `~/.claude/skills/synced/` differs from the repo.
+their own library and nothing pushes to it. After you change the skill, run
+`python build_skill.py --out "E:\skills for update claude_ai"` (Davíð's hand-off
+folder) and **tell him the file is ready to upload** under Customize > Skills, then
+to ask a new chat for the version. Say it in the final message of the session, not
+just in a commit. `check_docs.py` warns while the copy claude.ai syncs back under
+`~/.claude/skills/synced/` differs from the repo.
 
 ## Layout
 
