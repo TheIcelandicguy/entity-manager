@@ -36,11 +36,16 @@ node_modules/
 
 # Local dev tools
 sync-to-ha.ps1
-.claude/
+.claude/*
 sync-to-ha.ps1.bak-*
 
 # Rescued from the old Z:\ config-root checkout (13 Sep 2026)
 _from_Z/
 
 # Local Claude Code settings anywhere in the tree
-**/.claude/
+**/.claude/*
+# ...but the Claude Code skills kept with the code are tracked
+!/.claude/skills/
+
+# Built by build_skill.py
+dist-skill/
