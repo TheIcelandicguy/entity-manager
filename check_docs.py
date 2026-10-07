@@ -409,6 +409,12 @@ def check_skill() -> None:
         fail(f"skill: frontmatter name is {name.group(1) if name else 'missing'}, expected {SKILL_NAME}")
     if "description:" not in front:
         fail("skill: frontmatter has no description")
+    desc = re.search(r"^description:\s*(.*?)(?=^[A-Za-z_-]+:|\Z)", head.group(1), re.S | re.M)
+    if desc:
+        value = re.sub(r"\s+", " ", desc.group(1)).strip()
+        value = re.sub(r"^[>|][-+]?\s*", "", value)
+        if len(value) > 1024:
+            fail(f"skill: description is {len(value)} characters; claude.ai accepts at most 1024")
 
     rv = repo_version()
     quoted = re.search(r"\bv(\d+\.\d+\.\d+)\b", front)

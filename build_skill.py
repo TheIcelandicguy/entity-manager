@@ -23,6 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 SKILLS = ROOT / ".claude" / "skills"
 OUT = ROOT / "dist-skill"
+# claude.ai rejects a skill whose description is longer than this many characters
+MAX_DESCRIPTION = 1024
 
 
 def frontmatter(text: str) -> dict[str, str]:
@@ -37,6 +39,8 @@ def frontmatter(text: str) -> dict[str, str]:
         if top:
             key = top.group(1)
             value = top.group(2).strip()
+            if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]  # a quoted one-line value: the quotes are not part of it
             found[key] = "" if value in (">", ">-", "|", "|-") else value
         elif key and line.startswith((" ", "\t")):
             found[key] = (found[key] + " " + line.strip()).strip()
@@ -53,6 +57,10 @@ def build(name: str, out: Path = OUT) -> Path:
         raise SystemExit(f"{name}: frontmatter name is {meta.get('name')!r}, expected {name!r}")
     if not meta.get("description"):
         raise SystemExit(f"{name}: frontmatter has no description")
+    if len(meta["description"]) > MAX_DESCRIPTION:
+        raise SystemExit(
+            f"{name}: description is {len(meta['description'])} characters; claude.ai accepts at most {MAX_DESCRIPTION}"
+        )
     out.mkdir(parents=True, exist_ok=True)
     target = out / f"{name}.skill"
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
