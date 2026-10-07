@@ -204,6 +204,20 @@ def test_install_never_overwrites_an_edited_copy(tmp_path: Path) -> None:
     assert target.read_text(encoding="utf-8") == mine
 
 
+def test_install_leaves_a_non_utf8_copy_alone(tmp_path: Path) -> None:
+    """A copy saved as Windows-1252 must not raise out of setup."""
+    source_dir = _source(tmp_path, SHIPPED)
+    config_dir = tmp_path / "config"
+    target = config_dir / "custom_sentences" / "en" / "entity_manager.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_bytes("language: en\n# eldhús\n".encode("cp1252"))
+
+    assert _install_sentences(source_dir, config_dir) == []
+    assert _install_sentences(source_dir, config_dir, force=True) == ["en"]
+    (status,) = sentence_status(source_dir, config_dir)
+    assert status["up_to_date"]
+
+
 # ---------------------------------------------------------------------------
 # Icelandic names
 # ---------------------------------------------------------------------------
@@ -371,6 +385,24 @@ async def test_intent_reports_an_unknown_name(
     assert (
         "could not find an entity called toaster" in response.speech["plain"]["speech"]
     )
+
+
+async def test_intent_does_not_act_on_a_word_match(
+    hass: HomeAssistant, hass_admin_user
+) -> None:
+    """A partial word match is read back; the registry is left alone."""
+    await async_setup_intents(hass)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.hue_lamp_3", "Hue color lamp 3")
+
+    response = await _speak(
+        hass, INTENT_DISABLE_ENTITY, "hue lamp 3", hass_admin_user.id
+    )
+
+    speech = response.speech["plain"]["speech"]
+    assert "light.hue_lamp_3" in speech
+    assert "Say the entity ID" in speech
+    assert entity_reg.async_get("light.hue_lamp_3").disabled_by is None
 
 
 async def test_resolve_survives_a_non_string_name(hass: HomeAssistant) -> None:
