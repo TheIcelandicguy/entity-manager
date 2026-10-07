@@ -2,6 +2,8 @@
 // Loads external CSS for cleaner code organization
 
 const EM_VERSION = '3.7.0';
+// The backend rejects a bulk call over 500 entities (MAX_BULK_ENTITIES in const.py).
+const EM_BULK_CHUNK = 500;
 
 // Determine base URL for loading external resources
 const _emScripts = document.querySelectorAll('script[src*="entity-manager-panel"]');
@@ -4730,20 +4732,30 @@ class EntityManagerPanel extends HTMLElement {
         break;
       }
       case 'bulk_enable':
-        for (const id of action.entityIds) await (isUndo ? this.disableEntity : this.enableEntity).call(this, id, true);
-        this._showToast(`${verb} bulk enable (${action.entityIds.length})`, 'info');
+      case 'bulk_disable': {
+        const enable = (action.type === 'bulk_enable') !== isUndo;
+        const res = await this._bulkSetEnabled(action.entityIds, enable);
+        this._suppressEntityNotif(res.success, !enable);
+        const label = action.type === 'bulk_enable' ? 'bulk enable' : 'bulk disable';
+        if (res.failed.length) {
+          this._showToast(`${verb} ${label} (${res.success.length}), failed ${res.failed.length}`, 'warning');
+        } else {
+          this._showToast(`${verb} ${label} (${res.success.length})`, 'info');
+        }
         break;
-      case 'bulk_disable':
-        for (const id of action.entityIds) await (isUndo ? this.enableEntity : this.disableEntity).call(this, id, true);
-        this._showToast(`${verb} bulk disable (${action.entityIds.length})`, 'info');
-        break;
+      }
       case 'states_import': {
         // Import applied both directions at once — reverse each list on undo
         const toEnable  = isUndo ? action.disabledIds : action.enabledIds;
         const toDisable = isUndo ? action.enabledIds  : action.disabledIds;
-        for (const id of toEnable)  await this.enableEntity(id, true);
-        for (const id of toDisable) await this.disableEntity(id, true);
-        this._showToast(`${verb} import (${toEnable.length + toDisable.length} entities)`, 'info');
+        let failedCount = 0;
+        if (toEnable.length)  failedCount += (await this._bulkSetEnabled(toEnable, true)).failed.length;
+        if (toDisable.length) failedCount += (await this._bulkSetEnabled(toDisable, false)).failed.length;
+        this._showToast(
+          `${verb} import (${toEnable.length + toDisable.length - failedCount} entities)` +
+            (failedCount ? `, failed ${failedCount}` : ''),
+          failedCount ? 'warning' : 'info',
+        );
         break;
       }
       case 'assign_entity_area':
@@ -6499,13 +6511,32 @@ class EntityManagerPanel extends HTMLElement {
           return current && Boolean(current.is_disabled) !== Boolean(is_disabled);
         });
 
+        if (!toApply.length) {
+          // The backend rejects an empty list, and there is nothing to confirm
+          this._showToast(
+            `Nothing to change — all ${entities.length} already match current state` +
+              (localMsg ? `;${localMsg.replace(/,$/, '')}` : ''),
+            'info',
+          );
+          if (localMsg) this.updateView();
+          return;
+        }
+
         if (!(await this._confirmAsync('Import entity states', `Apply ${toApply.length} enable/disable changes from this export?\n\n` +
                      `(${entities.length - toApply.length} already match current state)`))) return;
 
-        const result = await this._hass.callWS({
-          type: 'entity_manager/import_entity_states',
-          entities: toApply.map(({ entity_id, is_disabled }) => ({ entity_id, is_disabled: Boolean(is_disabled) })),
-        });
+        // One call is capped at 500 entities, so large exports go in batches
+        const result = { success: 0, failed: 0 };
+        for (let i = 0; i < toApply.length; i += EM_BULK_CHUNK) {
+          const part = await this._hass.callWS({
+            type: 'entity_manager/import_entity_states',
+            entities: toApply
+              .slice(i, i + EM_BULK_CHUNK)
+              .map(({ entity_id, is_disabled }) => ({ entity_id, is_disabled: Boolean(is_disabled) })),
+          });
+          result.success += part.success || 0;
+          result.failed += part.failed || 0;
+        }
 
         // Undo support — every toApply entry flipped state, so undo flips them back.
         // (Items the backend failed to apply kept their old state; "undoing" them just
@@ -8458,12 +8489,14 @@ class EntityManagerPanel extends HTMLElement {
           presetBtn.disabled = true;
           presetBtn.textContent = '…';
           try {
-            const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
-            const res = await this._hass.callWS({ type: wsType, entity_ids: preset.entityIds });
-            const n = res.success?.length ?? preset.entityIds.length;
-            this._suppressEntityNotif(preset.entityIds, !isEnable);
-            this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds: [...preset.entityIds] });
-            this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`, 'success');
+            const res = await this._bulkSetEnabled(preset.entityIds, isEnable);
+            const n = res.success.length;
+            if (n) {
+              this._suppressEntityNotif(res.success, !isEnable);
+              this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds: [...res.success] });
+            }
+            const done = `${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'} in "${preset.name}"`;
+            this._showToast(res.failed.length ? `${done}, failed ${res.failed.length}` : done, res.failed.length ? 'warning' : 'success');
             await this.loadData();
           } catch (err) {
             this._showToast('Preset action failed: ' + (err.message || err), 'error');
@@ -11139,9 +11172,14 @@ class EntityManagerPanel extends HTMLElement {
       this.selectedEntities.delete(entityId);
       this.updateSelectedCount();
       this._suppressEntityNotif(entityId, false);
-      this.loadData();
-      if (!skipUndo) this._showToast(`Enabled ${entityId}`);
+      // Undo/redo reload once when they finish, not once per entity
+      if (!skipUndo) {
+        this.loadData();
+        this._showToast(`Enabled ${entityId}`);
+      }
     } catch (error) {
+      // Undo/redo must see the failure to restore their stacks
+      if (skipUndo) throw error;
       this.showErrorDialog(`Error enabling entity: ${error.message}`);
     }
   }
@@ -11165,9 +11203,12 @@ class EntityManagerPanel extends HTMLElement {
       this.selectedEntities.delete(entityId);
       this.updateSelectedCount();
       this._suppressEntityNotif(entityId, true);
-      this.loadData();
-      if (!skipUndo) this._showToast(`Disabled ${entityId}`);
+      if (!skipUndo) {
+        this.loadData();
+        this._showToast(`Disabled ${entityId}`);
+      }
     } catch (error) {
+      if (skipUndo) throw error;
       this.showErrorDialog(`Error disabling entity: ${error.message}`);
     }
   }
@@ -11200,6 +11241,46 @@ class EntityManagerPanel extends HTMLElement {
     }
   }
 
+  /**
+   * Enable or disable many entities in batches the backend accepts (one call is capped at 500).
+   * Returns the merged `{ success: [ids], failed: [{ entity_id, error }] }`. Throws only when a
+   * call errored and nothing at all succeeded, so callers keep their existing error handling.
+   */
+  async _bulkSetEnabled(entityIds, enable) {
+    const type = enable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
+    const success = [];
+    const failed = [];
+    let lastError = null;
+    for (let i = 0; i < entityIds.length; i += EM_BULK_CHUNK) {
+      const chunk = entityIds.slice(i, i + EM_BULK_CHUNK);
+      try {
+        const res = await this._hass.callWS({ type, entity_ids: chunk });
+        success.push(...(res?.success ?? chunk));
+        if (res?.failed?.length) failed.push(...res.failed);
+      } catch (err) {
+        lastError = err;
+        failed.push(...chunk.map(entity_id => ({ entity_id, error: err?.message || String(err) })));
+      }
+    }
+    if (!success.length && lastError) throw lastError;
+    return { success, failed };
+  }
+
+  /**
+   * Remove entities from the registry in parallel batches of 10, so a few hundred removals do
+   * not flood HA. Resolves like `Promise.allSettled` over the whole list, in the same order.
+   */
+  async _removeEntitiesSettled(entityIds) {
+    const CHUNK = 10;
+    const results = [];
+    for (let i = 0; i < entityIds.length; i += CHUNK) {
+      results.push(...await Promise.allSettled(
+        entityIds.slice(i, i + CHUNK).map(eid => this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid }))
+      ));
+    }
+    return results;
+  }
+
   async bulkEnable() {
     if (this.selectedEntities.size === 0) {
       this.showErrorDialog('No entities selected');
@@ -11225,11 +11306,8 @@ class EntityManagerPanel extends HTMLElement {
     try {
       // Note: `success`/`failed` here, matching every other well-behaved bulk handler in this
       // file — undo and notification suppression only apply to entities that actually changed.
-      const res = await this._hass.callWS({
-        type: 'entity_manager/bulk_disable',
-        entity_ids: toDisable,
-      });
-      const succeededIds = res?.success ?? toDisable;
+      const res = await this._bulkSetEnabled(toDisable, false);
+      const succeededIds = res.success;
 
       if (succeededIds.length) {
         this._pushUndoAction({ type: 'bulk_disable', entityIds: [...succeededIds] });
@@ -11253,11 +11331,8 @@ class EntityManagerPanel extends HTMLElement {
   async bulkEnableEntities(entityIds) {
     this.setLoading(true);
     try {
-      const res = await this._hass.callWS({
-        type: 'entity_manager/bulk_enable',
-        entity_ids: entityIds,
-      });
-      const succeededIds = res?.success ?? entityIds;
+      const res = await this._bulkSetEnabled(entityIds, true);
+      const succeededIds = res.success;
 
       if (succeededIds.length) {
         this._pushUndoAction({ type: 'bulk_enable', entityIds: [...succeededIds] });
@@ -11294,12 +11369,14 @@ class EntityManagerPanel extends HTMLElement {
     btn.disabled = true;
     btn.textContent = '…';
     try {
-      const wsType = isEnable ? 'entity_manager/bulk_enable' : 'entity_manager/bulk_disable';
-      const res = await this._hass.callWS({ type: wsType, entity_ids: entityIds });
-      const n = res?.success?.length ?? entityIds.length;
-      this._suppressEntityNotif(entityIds, !isEnable);
-      this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds, timestamp: Date.now() });
-      this._showToast(`${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`, 'success');
+      const res = await this._bulkSetEnabled(entityIds, isEnable);
+      const n = res.success.length;
+      if (n) {
+        this._suppressEntityNotif(res.success, !isEnable);
+        this._pushUndoAction({ type: isEnable ? 'bulk_enable' : 'bulk_disable', entityIds: [...res.success], timestamp: Date.now() });
+      }
+      const done = `${isEnable ? 'Enabled' : 'Disabled'} ${n} entit${n !== 1 ? 'ies' : 'y'}`;
+      this._showToast(res.failed.length ? `${done}, failed ${res.failed.length}` : done, res.failed.length ? 'warning' : 'success');
       await this.loadData();
     } catch (err) {
       this._showToast(`Bulk ${isEnable ? 'enable' : 'disable'} failed: ${err.message || err}`, 'error');
@@ -16171,9 +16248,7 @@ class EntityManagerPanel extends HTMLElement {
         { id: 'bulk-orphan-remove', handler: async (entityIds, entityNames) => {
           const preview = entityNames.slice(0, 3).join(', ') + (entityNames.length > 3 ? ` and ${entityNames.length - 3} more` : '');
           if (!(await this._confirmAsync('Remove entities', `Remove ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} from the entity registry?\n\n${preview}\n\nThis cannot be undone.`))) return;
-          const results = await Promise.allSettled(
-            entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid }))
-          );
+          const results = await this._removeEntitiesSettled(entityIds);
           let ok = 0, fail = 0;
           results.forEach((r, i) => {
             if (r.status === 'fulfilled') { overlay.querySelector(`.em-cleanup-orphaned-row[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
@@ -17203,9 +17278,7 @@ class EntityManagerPanel extends HTMLElement {
       const _bulkRemoveHandler = async (entityIds, entityNames) => {
         const preview = entityNames.slice(0, 3).join(', ') + (entityNames.length > 3 ? ` and ${entityNames.length - 3} more` : '');
         if (!(await this._confirmAsync('Remove entities', `Remove ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} from the entity registry?\n\n${preview}\n\nThis cannot be undone.`))) return;
-        const results = await Promise.allSettled(
-          entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid }))
-        );
+        const results = await this._removeEntitiesSettled(entityIds);
         let ok = 0, fail = 0;
         results.forEach((r, i) => {
           if (r.status === 'fulfilled') {
@@ -17307,9 +17380,7 @@ class EntityManagerPanel extends HTMLElement {
           { id: 'bulk-unavail-remove', handler: async (entityIds, entityNames) => {
             const preview = entityNames.slice(0, 3).join(', ') + (entityNames.length > 3 ? ` and ${entityNames.length - 3} more` : '');
             if (!(await this._confirmAsync('Remove entities', `Remove ${entityIds.length} entit${entityIds.length !== 1 ? 'ies' : 'y'} from the entity registry?\n\n${preview}\n\nThis cannot be undone.`))) return;
-            const results = await Promise.allSettled(
-              entityIds.map(eid => this._hass.callWS({ type: 'entity_manager/remove_entity', entity_id: eid }))
-            );
+            const results = await this._removeEntitiesSettled(entityIds);
             let ok = 0, fail = 0;
             results.forEach((r, i) => {
               if (r.status === 'fulfilled') { overlay.querySelector(`.em-mini-card[data-entity-id="${CSS.escape(entityIds[i])}"]`)?.remove(); ok++; }
