@@ -1897,3 +1897,81 @@ describe('bulk enable/disable batching and undo', () => {
     expect(results[12].status).toBe('fulfilled');
   });
 });
+
+describe('spreadsheet-safe CSV cells', () => {
+  it('prefixes values a spreadsheet would run as formulas', () => {
+    const el = makePanel();
+    expect(el._csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
+    expect(el._csvCell('+1')).toBe("'+1");
+    expect(el._csvCell('-2')).toBe("'-2");
+    expect(el._csvCell('@sum')).toBe("'@sum");
+  });
+
+  it('quotes separators and leaves plain values alone', () => {
+    const el = makePanel();
+    expect(el._csvCell('light.kitchen')).toBe('light.kitchen');
+    expect(el._csvCell('a,b')).toBe('"a,b"');
+    expect(el._csvCell(null)).toBe('');
+  });
+
+  it('a display name starting with = survives an export/import round trip', () => {
+    const el = makePanel();
+    el._hass.states = {
+      'light.a': { attributes: { friendly_name: '=Weird name' }, state: 'on' },
+    };
+    const csv = el._renameCsvText(['light.a']);
+    const rows = el._parseCsv(csv.replace(/^﻿/, ''));
+    const known = new Map([['light.a', 'Old name']]);
+    const { changes, problems } = el._validateRenameCsv(rows, known);
+    expect(problems).toEqual([]);
+    expect(changes).toEqual([{ old: 'light.a', new: 'light.a', name: '=Weird name' }]);
+  });
+});
+
+describe('stored preferences', () => {
+  it('falls back to the default when a stored value has the wrong shape', () => {
+    const el = makePanel();
+    localStorage.setItem('em-test-list', '{"not":"a list"}');
+    localStorage.setItem('em-test-obj', '[1,2]');
+    localStorage.setItem('em-test-null', 'null');
+    expect(el._loadFromStorage('em-test-list', [])).toEqual([]);
+    expect(el._loadFromStorage('em-test-obj', {})).toEqual({});
+    expect(el._loadFromStorage('em-test-null', [])).toEqual([]);
+    localStorage.setItem('em-test-list', '["a"]');
+    expect(el._loadFromStorage('em-test-list', [])).toEqual(['a']);
+  });
+
+  it('survives storage that throws', () => {
+    const el = makePanel();
+    const spy = vi.spyOn(globalThis.localStorage, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    const setSpy = vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => { throw new Error('full'); });
+    expect(el._readPref('em-x', 'fallback')).toBe('fallback');
+    expect(() => { el.searchTerm = 'abc'; }).not.toThrow();
+    expect(el.searchTerm).toBe('abc');
+    spy.mockRestore();
+    setSpy.mockRestore();
+  });
+});
+
+describe('document listeners', () => {
+  it('disconnectedCallback removes every document-level handler it added', () => {
+    const el = makePanel();
+    const added = [];
+    const removed = [];
+    const addSpy = vi.spyOn(document, 'addEventListener').mockImplementation((t, h) => { added.push([t, h]); });
+    const rmSpy = vi.spyOn(document, 'removeEventListener').mockImplementation((t, h) => { removed.push([t, h]); });
+    el._themeOutsideHandler = () => {};
+    el._notifOutsideHandler = () => {};
+    el._intMenuClickHandler = () => {};
+    el._intMenuKeyHandler = () => {};
+    el._intMenuCloserAttached = true;
+    const handlers = [el._themeOutsideHandler, el._notifOutsideHandler, el._intMenuClickHandler, el._intMenuKeyHandler];
+    el.disconnectedCallback();
+    for (const h of handlers) expect(removed.some(([, fn]) => fn === h)).toBe(true);
+    expect(el._intMenuCloserAttached).toBe(false);
+    expect(el._themeOutsideHandler).toBeNull();
+    addSpy.mockRestore();
+    rmSpy.mockRestore();
+    expect(added).toEqual([]);
+  });
+});

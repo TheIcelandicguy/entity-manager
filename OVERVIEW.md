@@ -223,7 +223,7 @@ Exposure displays Assist and Google status; bulk writes target Assist only.
 
 | Module | Responsibility |
 |---|---|
-| `const.py` | `DOMAIN = "entity_manager"`, `MAX_BULK_ENTITIES = 500`, and `VALID_ENTITY_ID` (`^[a-z][a-z0-9_]*\.[a-z0-9_]+$`) used to validate IDs before registry writes. |
+| `const.py` | `DOMAIN = "entity_manager"`, `MAX_BULK_ENTITIES = 500`, and `VALID_ENTITY_ID` (`^[a-z][a-z0-9_]*\.[a-z0-9_]+\Z`) used to validate IDs before registry writes. |
 | `__init__.py` | `async_setup_entry` registers the frontend static path (`/api/entity_manager/frontend`), the WebSocket API (`async_setup_ws_api`), voice intents (`async_setup_intents`), the two HA services, and the sidebar panel via `frontend.async_register_built_in_panel(..., require_admin=True)`. Services share an admin gate that mirrors the WS `require_admin`; system-initiated calls (no `user_id`) are allowed. `async_unload_entry` removes the panel + services. |
 | `config_flow.py` | `EntityManagerConfigFlow` — single-step, unique-ID-guarded, no options. |
 | `websocket_api.py` | All 26 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |

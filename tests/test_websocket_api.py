@@ -9,9 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.entity_manager import _make_service_handler
 from custom_components.entity_manager.voice_assistant import async_setup_intents
 from custom_components.entity_manager.websocket_api import (
     _bulk_toggle,
@@ -25,23 +29,29 @@ from custom_components.entity_manager.websocket_api import (
     _write_yaml_text,
     disable_entity,
     enable_entity,
+    handle_assign_entity_device,
     handle_bulk_disable,
     handle_bulk_enable,
     handle_disable_entity,
     handle_enable_entity,
     handle_export_states,
+    handle_get_areas_and_floors,
     handle_get_automations,
     handle_get_broken_references,
     handle_get_config_entry_health,
     handle_get_disabled_entities,
     handle_get_entity_details,
+    handle_get_last_activity,
     handle_get_template_sensors,
     handle_get_voice_status,
     handle_import_entity_states,
+    handle_list_hacs_items,
+    handle_register_template,
     handle_reinstall_voice_sentences,
     handle_remove_broken_reference,
     handle_remove_entity,
     handle_rename_entity,
+    handle_unassign_entity_device,
     handle_resolve_voice_target,
     handle_update_entity_display_name,
     handle_update_yaml_references,
@@ -2012,6 +2022,206 @@ async def test_serialised_handlers_do_not_overlap(hass: HomeAssistant) -> None:
     await asyncio.gather(handler(hass, None, {"n": 1}), handler(hass, None, {"n": 2}))
 
     assert log == ["start 1", "end 1", "start 2", "end 2"]
+
+
+# ---------------------------------------------------------------------------
+# Handlers that had no tests: device assignment, areas, last activity, HACS,
+# register_template, and the services
+# ---------------------------------------------------------------------------
+
+
+def _device_for(hass: HomeAssistant, entry_id: str, ident: str) -> str:
+    dev_reg = dr.async_get(hass)
+    return dev_reg.async_get_or_create(
+        config_entry_id=entry_id, identifiers={("test", ident)}, name=ident
+    ).id
+
+
+async def test_ws_assign_and_unassign_entity_device(hass: HomeAssistant) -> None:
+    entry = MockConfigEntry(domain="test")
+    entry.add_to_hass(hass)
+    device_id = _device_for(hass, entry.entry_id, "dev1")
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.assign_me")
+
+    conn = _mock_conn()
+    handle_assign_entity_device(
+        hass,
+        conn,
+        {
+            "id": 90,
+            "type": "entity_manager/assign_entity_device",
+            "entity_id": "sensor.assign_me",
+            "device_id": device_id,
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    conn.send_result.assert_called_once()
+    assert entity_reg.async_get("sensor.assign_me").device_id == device_id
+
+    conn = _mock_conn()
+    handle_unassign_entity_device(
+        hass,
+        conn,
+        {
+            "id": 91,
+            "type": "entity_manager/unassign_entity_device",
+            "entity_id": "sensor.assign_me",
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    conn.send_result.assert_called_once()
+    assert entity_reg.async_get("sensor.assign_me").device_id is None
+
+
+async def test_ws_assign_entity_device_not_found(hass: HomeAssistant) -> None:
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.lonely")
+
+    for entity_id, device_id in (("sensor.ghost", "x"), ("sensor.lonely", "nodev")):
+        conn = _mock_conn()
+        handle_assign_entity_device(
+            hass,
+            conn,
+            {
+                "id": 92,
+                "type": "entity_manager/assign_entity_device",
+                "entity_id": entity_id,
+                "device_id": device_id,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert conn.send_error.call_args[0][1] == "not_found"
+
+
+async def test_ws_assign_entity_device_reports_a_registry_refusal(
+    hass: HomeAssistant,
+) -> None:
+    """The registry raises ValueError when the device does not fit; say so."""
+    entry = MockConfigEntry(domain="test")
+    entry.add_to_hass(hass)
+    device_id = _device_for(hass, entry.entry_id, "dev2")
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.refused")
+
+    conn = _mock_conn()
+    with patch.object(
+        er.EntityRegistry, "async_update_entity", side_effect=ValueError("no fit")
+    ):
+        handle_assign_entity_device(
+            hass,
+            conn,
+            {
+                "id": 93,
+                "type": "entity_manager/assign_entity_device",
+                "entity_id": "sensor.refused",
+                "device_id": device_id,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert conn.send_error.call_args[0][1] == "invalid_format"
+    assert "no fit" in conn.send_error.call_args[0][2]
+
+
+async def test_ws_get_areas_and_floors_lists_areas(hass: HomeAssistant) -> None:
+    ar.async_get(hass).async_create("Stofa")
+
+    conn = _mock_conn()
+    handle_get_areas_and_floors(
+        hass, conn, {"id": 94, "type": "entity_manager/get_areas_and_floors"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert "Stofa" in [a["name"] for a in result["areas"]]
+    assert isinstance(result["floors"], list)
+
+
+async def test_ws_get_last_activity_without_a_recorder_returns_empty(
+    hass: HomeAssistant,
+) -> None:
+    conn = _mock_conn()
+    handle_get_last_activity(
+        hass,
+        conn,
+        {
+            "id": 95,
+            "type": "entity_manager/get_last_activity",
+            "entity_ids": ["light.a"],
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    conn.send_result.assert_called_once()
+    assert conn.send_result.call_args[0][1] == {}
+    conn.send_error.assert_not_called()
+
+
+async def test_ws_list_hacs_items_with_no_hacs_installed(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    hass.config.config_dir = str(tmp_path)
+
+    conn = _mock_conn()
+    handle_list_hacs_items(
+        hass, conn, {"id": 96, "type": "entity_manager/list_hacs_items"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    conn.send_result.assert_called_once()
+    conn.send_error.assert_not_called()
+
+
+async def test_ws_register_template_refuses_unknown_and_registered(
+    hass: HomeAssistant,
+) -> None:
+    """A registry entity always has a unique_id, so it is never rewritten."""
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "sensor.has_uid")
+
+    for entity_id, code in (
+        ("sensor.nope", "not_found"),
+        ("sensor.has_uid", "already_registered"),
+    ):
+        conn = _mock_conn()
+        handle_register_template(
+            hass,
+            conn,
+            {
+                "id": 97,
+                "type": "entity_manager/register_template",
+                "entity_id": entity_id,
+            },
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert conn.send_error.call_args[0][1] == code
+
+
+async def test_service_raises_for_a_missing_entity(hass: HomeAssistant) -> None:
+    """An automation calling the service must see the failure."""
+    handler = _make_service_handler(hass, "disable", disable_entity)
+    call = MagicMock()
+    call.context.user_id = None
+    call.data = {"entity_id": "light.ghost"}
+
+    with pytest.raises(ServiceValidationError):
+        await handler(call)
+
+
+async def test_service_disables_a_real_entity(hass: HomeAssistant) -> None:
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    handler = _make_service_handler(hass, "disable", disable_entity)
+    call = MagicMock()
+    call.context.user_id = None
+    call.data = {"entity_id": "light.real"}
+
+    await handler(call)
+
+    assert (
+        entity_reg.async_get("light.real").disabled_by is er.RegistryEntryDisabler.USER
+    )
 
 
 # ---------------------------------------------------------------------------

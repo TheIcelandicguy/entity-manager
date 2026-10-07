@@ -39,7 +39,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 |---|---|
 | `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
-| `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+$`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
+| `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+\Z`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
 | `.../websocket_api.py` | 2,650 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
@@ -51,7 +51,8 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
-| `ruff.toml` | Pins Ruff lint rules for this repo so CI does not inherit widened future defaults. |
+| `ruff.toml` | Pins Ruff lint rules (E4, E7, E9, F, plus bugbear and import sorting; tests are exempt from the last two) so CI does not inherit widened future defaults. |
+| `mypy.ini` | Mypy settings (missing third-party imports are ignored), so a local run and CI agree. |
 
 ## Architecture
 

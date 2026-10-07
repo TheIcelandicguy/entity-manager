@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: "20"
       - run: npm install --no-audit
-      - run: npx eslint custom_components/entity_manager/frontend/
+      - run: npx eslint --max-warnings 0 custom_components/entity_manager/frontend/
 
   python-lint-type-check:
     name: Python Lint & Type Check

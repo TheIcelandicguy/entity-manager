@@ -6,17 +6,21 @@ import logging
 from pathlib import Path
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry  # type: ignore
-from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.components import frontend  # type: ignore
 from homeassistant.components.http import StaticPathConfig  # type: ignore
-from homeassistant.exceptions import Unauthorized  # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.exceptions import (  # type: ignore
+    HomeAssistantError,
+    ServiceValidationError,
+    Unauthorized,
+)
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .const import DOMAIN
-from .websocket_api import async_setup_ws_api, enable_entity, disable_entity
 from .voice_assistant import async_setup_intents
 from .voice_sentences import async_install_sentences
+from .websocket_api import async_setup_ws_api, disable_entity, enable_entity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +32,37 @@ SERVICE_SCHEMA = vol.Schema(
         vol.Required("entity_id"): cv.entity_id,
     }
 )
+
+
+def _make_service_handler(hass: HomeAssistant, action: str, fn):
+    """Build a service handler that delegates to the shared enable/disable helper."""
+
+    async def _handler(call):
+        # Admin gate — mirrors @websocket_api.require_admin on the WS commands.
+        # Calls without a user context (automations/scripts run by HA itself)
+        # are system-initiated and allowed, matching core conventions.
+        if call.context.user_id:
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=call.context)
+        entity_id = call.data["entity_id"]
+        try:
+            fn(hass, entity_id)
+            _LOGGER.info("%s entity: %s", action, entity_id)
+        except ValueError as err:
+            # Raised, not just logged, so an automation or script sees it fail
+            raise ServiceValidationError(
+                f"Failed to {action} entity {entity_id}: {err}"
+            ) from err
+        except Exception as err:
+            _LOGGER.error(
+                "Unexpected error %sing entity %s: %s", action, entity_id, err
+            )
+            raise HomeAssistantError(
+                f"Unexpected error trying to {action} entity {entity_id}: {err}"
+            ) from err
+
+    return _handler
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -52,39 +87,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await async_install_sentences(hass)
 
     # Register services (delegates to shared helpers in websocket_api)
-    def _make_service_handler(action, fn):
-        async def _handler(call):
-            # Admin gate — mirrors @websocket_api.require_admin on the WS commands.
-            # Calls without a user context (automations/scripts run by HA itself)
-            # are system-initiated and allowed, matching core conventions.
-            if call.context.user_id:
-                user = await hass.auth.async_get_user(call.context.user_id)
-                if user is None or not user.is_admin:
-                    raise Unauthorized(context=call.context)
-            entity_id = call.data["entity_id"]
-            try:
-                fn(hass, entity_id)
-                _LOGGER.info("%s entity: %s", action, entity_id)
-            except ValueError as err:
-                _LOGGER.error("Failed to %s entity %s: %s", action, entity_id, err)
-            except Exception as err:
-                _LOGGER.error(
-                    "Unexpected error %sing entity %s: %s", action, entity_id, err
-                )
-
-        return _handler
-
     hass.services.async_register(
         DOMAIN,
         SERVICE_ENABLE_ENTITY,
-        _make_service_handler("enable", enable_entity),
+        _make_service_handler(hass, "enable", enable_entity),
         schema=SERVICE_SCHEMA,
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_DISABLE_ENTITY,
-        _make_service_handler("disable", disable_entity),
+        _make_service_handler(hass, "disable", disable_entity),
         schema=SERVICE_SCHEMA,
     )
 
