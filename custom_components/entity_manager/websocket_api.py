@@ -1137,6 +1137,13 @@ def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
                 total += 1
                 continue
             if isinstance(item, dict) and _dict_has_direct_match(item, entity_id):
+                if item.get("included_in_stat") == entity_id:
+                    # Only the parent link is dangling: the entry is a healthy
+                    # device, so clear the link instead of dropping the device.
+                    cleared = {k: v for k, v in item.items() if k != "included_in_stat"}
+                    total += 1
+                    items.append(cleared)
+                    continue
                 total += 1
                 continue
             new_item, n = _prune_entity(item, entity_id)
@@ -1148,6 +1155,11 @@ def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
         out: dict[Any, Any] = {}
         for key, value in obj.items():
             new_value, n = _prune_entity(value, entity_id)
+            if key == "conditions" and value and not new_value:
+                # An emptied conditions list would make the card always
+                # visible, which is not what the author wrote: leave it.
+                out[key] = value
+                continue
             out[key] = new_value
             total += n
         return out, total
@@ -1157,24 +1169,23 @@ def _prune_entity(obj: Any, entity_id: str) -> tuple[Any, int]:
 def _remove_yaml_list_entry(text: str, entity_id: str) -> tuple[str, int]:
     """Delete ``entity_id`` from YAML text, only where it is unambiguously one
     list entry: alone on its own ``- id`` block-list line, or one element of
-    an inline ``[a, id, b]`` flow-list. Anything else — a bare scalar field,
-    a reference inside a Jinja template string — is left untouched, the same
-    "don't guess at a destructive edit" rule ``_prune_entity`` follows for
-    JSON-like structures. Returns ``(new_text, removed_count)``.
+    an inline ``[a, id, b]`` flow-list written as the value of a ``key:``.
+    Anything else — a bare scalar field, a reference inside a Jinja template
+    string (``states['light.x']`` is a subscript, not a list) — is left
+    untouched, the same "don't guess at a destructive edit" rule
+    ``_prune_entity`` follows for JSON-like structures. A block list that
+    loses its last item leaves its key as ``key: []`` rather than a null.
+    Returns ``(new_text, removed_count)``.
     """
     escaped = re.escape(entity_id)
     boundary = r"(?<![a-zA-Z0-9_\.])" + escaped + r"(?![a-zA-Z0-9_])"
-    removed = 0
-
-    line_re = re.compile(
-        r"^[ \t]*-[ \t]+[\"']?" + boundary + r"[\"']?[ \t]*\r?\n", re.MULTILINE
-    )
-    text, n = line_re.subn("", text)
-    removed += n
-
+    item_re = re.compile(r"^[ \t]*-[ \t]+[\"']?" + boundary + r"[\"']?[ \t]*$")
+    key_flow_re = re.compile(r"^[ \t]*(?:-[ \t]+)?[\"']?[\w.\-]+[\"']?[ \t]*:[ \t]*\[")
     flow_re = re.compile(
-        r"(?P<before>\[|,)\s*[\"']?" + boundary + r"[\"']?\s*(?P<after>,|\])"
+        r"(?P<before>\[|,)[ \t]*[\"']?" + boundary + r"[\"']?[ \t]*(?P<after>,|\])"
     )
+    empty_key_re = re.compile(r"^(?P<head>[ \t]*(?:-[ \t]+)?[^\s#-][^#]*?:)[ \t]*$")
+    removed = 0
 
     def _flow_sub(match: re.Match[str]) -> str:
         nonlocal removed
@@ -1188,8 +1199,36 @@ def _remove_yaml_list_entry(text: str, entity_id: str) -> tuple[str, int]:
             return "]"
         return ","
 
-    text = flow_re.sub(_flow_sub, text)
-    return text, removed
+    kept: list[str] = []
+    emptied: list[int] = []  # indexes in ``kept`` of keys that lost an item
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        ending = line[len(body) :]
+        if "{{" in body or "{%" in body or "{#" in body:
+            kept.append(line)
+        elif item_re.match(body):
+            removed += 1
+            if kept and (not emptied or emptied[-1] != len(kept) - 1):
+                if empty_key_re.match(kept[-1].rstrip("\r\n")):
+                    emptied.append(len(kept) - 1)
+        elif key_flow_re.match(body):
+            kept.append(flow_re.sub(_flow_sub, body) + ending)
+        else:
+            kept.append(line)
+
+    for idx in emptied:
+        parent = kept[idx].rstrip("\r\n")
+        # Column of the key itself, past any "- " that opens its list item.
+        indent = len(parent) - len(re.sub(r"^[ \t]*(?:-[ \t]+)?", "", parent))
+        nxt = kept[idx + 1] if idx + 1 < len(kept) else ""
+        stripped = nxt.lstrip()
+        still_list = stripped.startswith("- ") and len(nxt) - len(stripped) >= indent
+        still_nested = bool(stripped.strip()) and len(nxt) - len(stripped) > indent
+        if not (still_list or still_nested):
+            head = empty_key_re.match(parent).group("head")  # type: ignore[union-attr]
+            kept[idx] = head + " []" + kept[idx][len(parent) :]
+
+    return "".join(kept), removed
 
 
 async def _replace_in_dashboards(
@@ -1768,6 +1807,19 @@ async def handle_remove_broken_reference(
             msg["id"], {"success": True, "removed": False, "message": reason}
         )
 
+    if not VALID_ENTITY_ID.fullmatch(entity_id):
+        connection.send_error(msg["id"], "invalid_format", "Invalid entity ID")
+        return
+    # A stale row in the panel must not strip an entity that has since come
+    # back: only a reference to something that no longer exists is removable.
+    if er.async_get(hass).async_get(entity_id) or hass.states.get(entity_id):
+        connection.send_error(
+            msg["id"],
+            "not_broken",
+            f"{entity_id} exists, so it is not a broken reference",
+        )
+        return
+
     try:
         if source == "yaml":
             if not target:
@@ -1785,8 +1837,10 @@ async def handle_remove_broken_reference(
                     "target must be inside the config directory",
                 )
                 return
-            if filepath.name == "secrets.yaml" or any(
-                p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1]
+            if (
+                filepath.name == "secrets.yaml"
+                or filepath.suffix != ".yaml"
+                or any(p in _YAML_SKIP or p.startswith(".") for p in rel.parts[:-1])
             ):
                 connection.send_error(
                     msg["id"], "not_found", "That file is not scanned"

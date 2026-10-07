@@ -4460,7 +4460,7 @@ class EntityManagerPanel extends HTMLElement {
               <h3>${this._icon(EM_ICONS.voice, '16px')} Voice</h3>
               <ul>
                 <li>Sidebar → Actions → <strong>Voice</strong>. Entity Manager's voice commands change an entity's enabled/disabled state in the registry (say "disable entity desk lamp") — they do not switch a light on or off. They need an admin user, so a voice satellite can't use them</li>
-                <li><strong>Test a phrase:</strong> type what you would say and see what it matches, without changing anything. Routing (does the wording reach Entity Manager — "entity" is the word that does) and matching (which entity) are reported separately. A miss lists the closest names and the share of your words each matched, against the 60% needed</li>
+                <li><strong>Test a phrase:</strong> type what you would say and see what it matches, without changing anything. Routing (does the wording reach Entity Manager — "entity" is the word that does) and matching (which entity) are reported separately. A miss lists the closest names and the share of your words each matched, against the 60% needed. When you speak a command and only part of your words matched a name, Entity Manager says the closest entity and changes nothing — say the entity ID to confirm</li>
                 <li><strong>Aliases:</strong> add a second name Assist answers to, in bulk, with an English suggestion built from the Icelandic name. Stored in the HA registry, so shared across browsers and with Assist's own commands</li>
                 <li><strong>Status:</strong> the sentence file (where it is, whether you edited it, a button to reinstall it) and every pipeline, with warnings when one can't work — e.g. speech-to-phrase can't fill the free-text slot, and an English sentence file won't match another language</li>
                 <li><strong>Exposure:</strong> shows Assist and Google status; the bulk buttons change Assist exposure only, up to 500 at a time</li>
@@ -5929,9 +5929,9 @@ class EntityManagerPanel extends HTMLElement {
             ${allLabels.length === 0 ? '<p style="color: var(--em-text-secondary);">No labels defined yet.</p>' :
               allLabels.map(label => `
                 <label class="label-checkbox">
-                  <input type="checkbox" data-label-id="${label.label_id}">
+                  <input type="checkbox" data-label-id="${this._escapeAttr(label.label_id)}">
                   <span style="width:20px;height:20px;border-radius:50%;background:${this._labelColorCss(label.color)};display:inline-block;flex-shrink:0;border:1px solid rgba(0,0,0,0.15)"></span>
-                  <span>${label.name}</span>
+                  <span>${this._escapeHtml(label.name)}</span>
                 </label>
               `).join('')}
           </div>
@@ -6890,10 +6890,10 @@ class EntityManagerPanel extends HTMLElement {
             </div>
           ` : ''}
           ${(this.showAllSidebarIntegrations ? integrationList : integrationList.slice(0, 10)).map(int => `
-            <div class="sidebar-item ${this.selectedIntegrationFilter === int.name ? 'active' : ''}" data-integration="${int.name}">
-              <img class="sidebar-icon" src="${this._brandIconUrl(int.name)}"
+            <div class="sidebar-item ${this.selectedIntegrationFilter === int.name ? 'active' : ''}" data-integration="${this._escapeAttr(int.name)}">
+              <img class="sidebar-icon" src="${this._escapeAttr(this._brandIconUrl(int.name))}"
                    onerror="this.style.display='none'" alt="">
-              <span class="label">${int.name}</span>
+              <span class="label">${this._escapeHtml(int.name)}</span>
               <span class="count">${int.count}</span>
             </div>
           `).join('')}
@@ -17155,16 +17155,16 @@ class EntityManagerPanel extends HTMLElement {
       const entityList = entities.filter(Boolean).map(e => `
         <div class="entity-list-item">
           <div class="entity-list-row">
-            <span class="entity-list-name">${e.name}</span>
-            <span class="entity-list-id-inline">${e.id}</span>
-            ${e.meta ? `<span class="entity-list-id-inline">${e.meta}</span>` : ''}
+            <span class="entity-list-name">${this._escapeHtml(e.name)}</span>
+            <span class="entity-list-id-inline">${this._escapeHtml(e.id)}</span>
+            ${e.meta ? `<span class="entity-list-id-inline">${this._escapeHtml(e.meta)}</span>` : ''}
             <span class="entity-list-actions">
               ${allowToggle ? `
-                <button class="entity-list-toggle ${e.state === 'on' ? 'on' : 'off'}" data-entity-id="${e.id}" data-entity-type="${type}">
+                <button class="entity-list-toggle ${e.state === 'on' ? 'on' : 'off'}" data-entity-id="${this._escapeAttr(e.id)}" data-entity-type="${this._escapeAttr(type)}">
                   ${e.state === 'on' ? 'On' : 'Off'}
                 </button>
               ` : ''}
-              <button class="entity-list-action-btn info-btn" data-entity-id="${e.id}" title="Show info">
+              <button class="entity-list-action-btn info-btn" data-entity-id="${this._escapeAttr(e.id)}" title="Show info">
                 <svg viewBox="0 0 24 24" width="16" height="16"><path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" fill="currentColor"/></svg>
               </button>
               <button class="entity-list-action-btn edit-btn" data-entity-id="${e.id}" data-entity-type="${type}" title="Edit in HA">
@@ -19706,7 +19706,7 @@ class EntityManagerPanel extends HTMLElement {
     const suggestion = this._suggestVoiceAlias(row.name);
     return new Promise(resolve => {
       const { overlay, closeDialog } = this.createDialog({
-        title: `Alias for ${row.name}`,
+        title: `Alias for ${this._escapeHtml(row.name)}`,
         color: 'var(--em-primary)',
         contentHtml: `
           <div class="confirm-dialog-content">
