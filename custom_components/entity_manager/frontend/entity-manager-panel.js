@@ -4267,7 +4267,7 @@ class EntityManagerPanel extends HTMLElement {
                 <li>Lowercase letters, numbers, and underscores only</li>
                 <li>References in automations and scripts update automatically</li>
                 <li>Right-click → Rename for the same dialog</li>
-                <li>Every rename path (single, bulk, undo/redo) also rewrites references in YAML, storage dashboards, helpers, persons, Assist pipelines and the Energy dashboard, writing a backup first</li>
+                <li>Every rename path (single, bulk, undo/redo) also rewrites references in YAML, storage dashboards, helpers, persons, Assist pipelines and the Energy dashboard, writing a backup first. A YAML file is saved as <code>&lt;file&gt;.em-bak</code>; a later edit to the same file leaves that one alone and adds a timestamped copy, so the original stays available</li>
               </ul>
             </div>
 
@@ -4279,6 +4279,8 @@ class EntityManagerPanel extends HTMLElement {
                 <li><strong>Bulk Rename:</strong> apply prefix, suffix, regex replacements to all selected. A preview shows which references will be updated before anything is written</li>
                 <li><strong>Import CSV / Export CSV:</strong> plan a rename in a spreadsheet (<code>old_entity_id,new_entity_id,display_name</code>) and load it into the queue. Rows targeting an ID already in use are rejected. Excel's plain "CSV" is read correctly, but Excel workbooks (.xlsx) are refused — use Save As → CSV</li>
                 <li><strong>Device button:</strong> rename a device and its entities follow — the entity changes go into the same queue, so they keep the reference update and undo</li>
+                <li>Enable / Disable go to Home Assistant in batches of 500, so a selection, preset or group of any size works. If a batch fails, the rest still apply and the toast says how many did not. Undo and redo use the same batches</li>
+                <li>In an exported CSV, a name that starts with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> gets a leading apostrophe so a spreadsheet does not run it as a formula; import removes it again</li>
                 <li>Use the integration-level checkbox to select an entire integration at once</li>
                 <li>Sidebar → Actions → Deselect All to clear selection</li>
               </ul>
@@ -4431,7 +4433,7 @@ class EntityManagerPanel extends HTMLElement {
                 <li>Scans YAML, storage dashboards, config entries, persons, Assist pipelines and the Energy dashboard for entity IDs that exist neither in the registry nor as a state. The scan itself writes nothing</li>
                 <li>When HA still remembers the removal, the row says whether the whole integration or just that entity went away</li>
                 <li><strong>Open…</strong> jumps to where the reference sits (a dashboard, integration entry, person, Energy page or Assist pipelines list). On a dashboard it then scrolls to and pulses the missing entity's placeholder after the page settles. YAML has no Open button</li>
-                <li><strong>Remove</strong> deletes the reference only where that is unambiguous — a list entry, or a card or Energy flow that held only that entity. Elsewhere it explains why it won't guess. A backup is written first</li>
+                <li><strong>Remove</strong> deletes the reference only where that is unambiguous — a list entry, or a card or Energy flow that held only that entity. Elsewhere it explains why it won't guess. It refuses an entity that exists again, and only edits <code>.yaml</code> files. A backup is written first</li>
                 <li><strong>Update…</strong> repoints <em>every</em> reference to that ID at a replacement you pick (the likeliest match is suggested), like a rename</li>
                 <li>Click a row to see every place that ID is broken</li>
                 <li>Not reported: service-call targets, trigger platforms and glob filters like <code>sensor.shelly*cloud</code>. A domain with no surviving entities at all can't be detected</li>
