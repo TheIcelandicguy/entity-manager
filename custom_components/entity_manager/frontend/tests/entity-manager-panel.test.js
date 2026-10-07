@@ -1822,3 +1822,78 @@ describe('Voice exposure safeguards', () => {
     expect(body.textContent).toContain('not light power');
   });
 });
+
+describe('bulk enable/disable batching and undo', () => {
+  const ids = n => Array.from({ length: n }, (_, i) => `light.l${i}`);
+
+  it('splits a bulk call into batches of 500 and merges the results', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn(async ({ entity_ids }) => ({
+      success: entity_ids.filter(id => id !== 'light.l600'),
+      failed: entity_ids.includes('light.l600') ? [{ entity_id: 'light.l600', error: 'x' }] : [],
+    }));
+    const res = await el._bulkSetEnabled(ids(1201), false);
+    const sizes = el._hass.callWS.mock.calls.map(([m]) => m.entity_ids.length);
+    expect(sizes).toEqual([500, 500, 201]);
+    expect(el._hass.callWS.mock.calls.every(([m]) => m.type === 'entity_manager/bulk_disable')).toBe(true);
+    expect(res.success).toHaveLength(1200);
+    expect(res.failed).toHaveLength(1);
+  });
+
+  it('counts a failed batch as failed but keeps the others', async () => {
+    const el = makePanel();
+    let call = 0;
+    el._hass.callWS = vi.fn(async ({ entity_ids }) => {
+      if (call++ === 0) throw new Error('boom');
+      return { success: entity_ids, failed: [] };
+    });
+    const res = await el._bulkSetEnabled(ids(700), true);
+    expect(res.success).toHaveLength(200);
+    expect(res.failed).toHaveLength(500);
+  });
+
+  it('throws when nothing succeeded and a call errored', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockRejectedValue(new Error('boom'));
+    await expect(el._bulkSetEnabled(ids(3), true)).rejects.toThrow('boom');
+  });
+
+  it('undo of a bulk disable enables in batches without reloading per entity', async () => {
+    const el = makePanel();
+    el.loadData = vi.fn();
+    el._hass.callWS = vi.fn(async ({ entity_ids }) => ({ success: entity_ids, failed: [] }));
+    await el._executeAction({ type: 'bulk_disable', entityIds: ids(600) }, true);
+    expect(el._hass.callWS.mock.calls.map(([m]) => m.type)).toEqual([
+      'entity_manager/bulk_enable',
+      'entity_manager/bulk_enable',
+    ]);
+    expect(el.loadData).not.toHaveBeenCalled();
+  });
+
+  it('a failing enable during undo propagates so the stack can be restored', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockRejectedValue(new Error('nope'));
+    el.showErrorDialog = vi.fn();
+    await expect(el.enableEntity('light.a', true)).rejects.toThrow('nope');
+    expect(el.showErrorDialog).not.toHaveBeenCalled();
+  });
+
+  it('removes entities in batches of 10 and keeps the result order', async () => {
+    const el = makePanel();
+    let inFlight = 0;
+    let peak = 0;
+    el._hass.callWS = vi.fn(async ({ entity_id }) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise(r => setTimeout(r, 0));
+      inFlight--;
+      if (entity_id === 'light.l13') throw new Error('x');
+      return {};
+    });
+    const results = await el._removeEntitiesSettled(ids(25));
+    expect(results).toHaveLength(25);
+    expect(peak).toBeLessThanOrEqual(10);
+    expect(results[13].status).toBe('rejected');
+    expect(results[12].status).toBe('fulfilled');
+  });
+});

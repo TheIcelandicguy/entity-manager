@@ -243,10 +243,21 @@ class _EntityManagerIntentHandler(intent.IntentHandler):
             response.async_set_speech(f"Please specify which entity to {self.verb}")
             return response
 
-        try:
-            entity_id = _resolve_entity_id(hass, spoken)
-        except _EntityIdError as err:
-            response.async_set_speech(str(err))
+        resolution = resolve_voice_target(hass, spoken)
+        if resolution.error or resolution.entity_id is None:
+            response.async_set_speech(
+                resolution.error or "Please say which entity you mean"
+            )
+            return response
+        entity_id = resolution.entity_id
+        if resolution.method == "words":
+            # A partial word match is a guess at a mishearing. Registry writes
+            # are not worth guessing at, so say what it came closest to and
+            # leave the entity as it was.
+            response.async_set_speech(
+                f"I only partly matched {spoken}. The closest is {entity_id}. "
+                f"Say the entity ID to {self.verb} it."
+            )
             return response
 
         try:
