@@ -1,7 +1,7 @@
 # Entity Manager — Project Overview
 
 > A comprehensive overview of the **Entity Manager** Home Assistant custom integration
-> (domain `entity_manager`, version **3.6.0**). Covers both user-facing behaviour and
+> (domain `entity_manager`, version **3.7.0**). Covers both user-facing behaviour and
 > developer/architecture detail. Generated from the repository source.
 
 ## Table of Contents
@@ -131,7 +131,7 @@ cannot run from a satellite without user identity.
 ## 3. Installation & Configuration
 
 ### Requirements
-- **Home Assistant 2024.1.0 or later** (`hacs.json` / `manifest.json`).
+- **Home Assistant 2024.7.0 or later** (`hacs.json` / `manifest.json`).
 - **Admin user account** — registry writes and administrative reads require an admin; the panel is registered with `require_admin=True`.
 - Modern ES6+ browser. Integration has **no Python `requirements`** (empty list in `manifest.json`).
 - `manifest.json`: `integration_type: service`, `iot_class: calculated`, `config_flow: true`, `dependencies: ["frontend"]`.
@@ -186,7 +186,7 @@ panel appears in the sidebar.
 ```
 Frontend (Vanilla-JS Web Component: entity-manager-panel.js)
         |  Home Assistant WebSocket (this.hass.callWS)
-Backend (Python WebSocket API: websocket_api.py — 24 commands, all admin-gated)
+Backend (Python WebSocket API: websocket_api.py — 26 commands, all admin-gated)
         |
 Home Assistant Core: Entity / Device / Area / Label registries, config entries, recorder DB
 ```
@@ -198,12 +198,12 @@ entity-manager/
 │   ├── __init__.py            # Entry point: panel + resource/WS/service/intent registration
 │   ├── config_flow.py         # Single-step UI config flow (no options)
 │   ├── const.py               # DOMAIN, MAX_BULK_ENTITIES (500), VALID_ENTITY_ID regex
-│   ├── manifest.json          # Integration metadata (v3.6.0, service, calculated)
+│   ├── manifest.json          # Integration metadata (v3.7.0, service, calculated)
 │   ├── services.yaml          # enable_entity / disable_entity service schemas
 │   ├── strings.json / en.json / translations/en.json  # UI + config-flow strings
 │   ├── voice_assistant.py     # Enable/Disable intents and shared entity resolver
 │   ├── voice_sentences.py     # Sentence installation, status and reload
-│   ├── websocket_api.py       # 24 WebSocket command handlers
+│   ├── websocket_api.py       # 26 WebSocket command handlers
 │   ├── frontend/
 │   │   ├── entity-manager-panel.js   # Full UI web component (single component)
 │   │   ├── entity-manager-panel.css  # Stylesheet (all --em-* vars)
@@ -226,7 +226,7 @@ Exposure displays Assist and Google status; bulk writes target Assist only.
 | `const.py` | `DOMAIN = "entity_manager"`, `MAX_BULK_ENTITIES = 500`, and `VALID_ENTITY_ID` (`^[a-z][a-z0-9_]*\.[a-z0-9_]+$`) used to validate IDs before registry writes. |
 | `__init__.py` | `async_setup_entry` registers the frontend static path (`/api/entity_manager/frontend`), the WebSocket API (`async_setup_ws_api`), voice intents (`async_setup_intents`), the two HA services, and the sidebar panel via `frontend.async_register_built_in_panel(..., require_admin=True)`. Services share an admin gate that mirrors the WS `require_admin`; system-initiated calls (no `user_id`) are allowed. `async_unload_entry` removes the panel + services. |
 | `config_flow.py` | `EntityManagerConfigFlow` — single-step, unique-ID-guarded, no options. |
-| `websocket_api.py` | All 24 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |
+| `websocket_api.py` | All 26 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |
 | `voice_assistant.py` | Admin-gated registry intents and `resolve_voice_target()` returning a structured match/refusal; `_resolve_entity_id` shares it with the intents. |
 | `voice_sentences.py` | Install and inspect the sentence files; preserve edited copies unless `force` is requested, and reload the conversation agent. |
 
@@ -255,7 +255,7 @@ queries, HACS scanning, config-entry health).
 
 ## 6. WebSocket API & Services Reference
 
-All 24 WebSocket commands are decorated with `@websocket_api.require_admin` +
+All 26 WebSocket commands are decorated with `@websocket_api.require_admin` +
 `@websocket_api.async_response`. Names below are the real `type` strings registered in
 `async_setup_ws_api()`.
 
@@ -273,6 +273,7 @@ All 24 WebSocket commands are decorated with `@websocket_api.require_admin` +
 | `entity_manager/list_hacs_items` | — | Installed HACS integrations/frontend + parsed community store from `.storage`. |
 | `entity_manager/resolve_voice_target` | `phrase` | Read-only EM routing and entity resolution, candidates and near misses. |
 | `entity_manager/get_voice_status` | — | Sentence file status and intent registration. |
+| `entity_manager/get_broken_references` | — | Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and Energy preferences that exist in neither the registry nor the state machine, with a `reason` when the registry remembers why. Writes nothing. |
 
 ### Entity-operation commands
 | Command | Params | Description |
@@ -290,10 +291,13 @@ All 24 WebSocket commands are decorated with `@websocket_api.require_admin` +
 | `entity_manager/update_yaml_references` | `old_entity_id`, `new_entity_id`, `dry_run` | Rewrite references after one rename or a `renames` list (≤500) across YAML config files, storage-mode dashboards, config entry data/options, persons, Assist pipelines and Energy dashboard preferences; reports remaining hits in integration Stores and `custom_components` as `manual_references` (preview when `dry_run`). |
 | `entity_manager/register_template` | `entity_id` | Inject a generated `unique_id` into a YAML template entity and reload templates. |
 | `entity_manager/reinstall_voice_sentences` | `force` (optional) | Reinstall sentences and reload the conversation agent; force replaces an edited copy. |
+| `entity_manager/remove_broken_reference` | `source`, `target`, `entity_id` | Remove one broken reference reported by `get_broken_references`, only where deletion is unambiguous (a list item, a single-entity card). Refuses an entity that exists, and anything else with a `message`. |
 
-> **YAML safety:** the YAML-writing commands (`update_yaml_references`, `register_template`)
+> **YAML safety:** the YAML-writing commands (`update_yaml_references`, `register_template`,
+> `remove_broken_reference`) run one at a time,
 > skip `secrets.yaml` and directories like `custom_components`, `.storage`, `www`, `backups`,
-> `.git`, and write a `.em-bak` backup of each file before modifying it.
+> `.git`, and write a `.em-bak` backup of each file before modifying it (a later edit gets a
+> timestamped `.em-bak-…` name, so the first backup survives).
 > `update_yaml_references` additionally rewrites storage dashboards, config entries, persons and
 > Assist pipelines and Energy dashboard preferences through HA's APIs (JSON backups in `.storage/entity_manager_backups/`), reloads automations, scripts,
 > scenes and templates after a YAML write, and only *reports* hits in integration Stores and
@@ -317,9 +321,9 @@ itself — are allowed). All other operations are WebSocket-only.
    `entity_manager/get_last_activity` and cached in localStorage (1-hour TTL).
 2. **Render** — `updateView()` applies the active filter/search/grouping and renders the tree,
    stat wall, and sidebar.
-3. **Mutate** — A user action (enable, disable, rename, assign, label, import…) first calls
-   `_pushUndoAction({...})` to record reversible state, then issues the WS command (or a native
-   HA service call). `remove_entity` is the one intentional undo-exempt operation.
+3. **Mutate** — A user action (enable, disable, rename, assign, label, import…) issues the WS
+   command (or a native HA service call) and, once it succeeds, calls `_pushUndoAction({...})`
+   to record reversible state, so a failed command leaves no undo step. `remove_entity` is the one intentional undo-exempt operation.
 4. **Backend applies** — The Python handler validates input, writes to the appropriate HA
    registry (or rewrites YAML with a `.em-bak` backup), and returns a structured result. Bulk
    handlers report `{"success": [...], "failed": [...]}` so the UI can show accurate partial

@@ -8,7 +8,7 @@ disabling, renaming, auditing and bulk-managing every entity across every
 integration, plus device/area/label assignment and firmware updates. Built for
 large installs. No Python requirements; `integration_type: service`,
 `iot_class: calculated`, `config_flow: true`, `dependencies: ["frontend"]`,
-minimum HA 2024.1.0.
+minimum HA 2024.7.0.
 
 `OVERVIEW.md` in this repo is current and was verified against source — use it
 when you need more depth than this file. The unverified root docs that used to
@@ -323,7 +323,7 @@ allowed. Everything else is WebSocket-only.
   because their inner checkboxes choose what **Apply** assigns, not what is
   ignored.
 - Frontend mutations call `_pushUndoAction({...})` to record reversible state
-  *before* issuing the command. Undo/redo is 50 steps, persisted to
+  once the command has succeeded, so a failed command leaves no undo step. Undo/redo is 50 steps, persisted to
   `localStorage`. `remove_entity` is deliberately undo-exempt.
 - All colour comes from `--em-*` CSS variables, never HA theme variables
   directly, so the theme engine can override light/dark correctly.
@@ -414,9 +414,10 @@ pytest tests/ -v --tb=short                               # CI only — see belo
   `pytest-homeassistant-custom-component`. `ruff format --check` fails the build
   on formatting alone, so run ruff and mypy before pushing. The
   "Python Tests (3.11)" job is a deliberate no-op and the E2E job is a
-  placeholder — no Playwright tests exist. The "frontend-tests" job only runs
-  `node --check` on the panel; CI never runs the Vitest specs, so run `npm test`
-  yourself.
+  placeholder — no Playwright tests exist. Both are required checks in the
+  repository ruleset, so deleting either job blocks every merge until the ruleset
+  is edited. The "frontend-tests" job runs `node --check` on the panel and then
+  `npm test`.
 
 ## Deploy
 
@@ -494,4 +495,5 @@ gitignored along with sync-to-ha.ps1 itself, so neither is in the repo.
   is refused, so a Voice satellite cannot use these intents, and Google
   Assistant never reaches them at all — it maps exposed entities to traits and
   never consults the conversation agent.
-- `strings.json` contains vestigial `options` strings; there is no options flow.
+- `strings.json` and `translations/en.json` hold the same text (`check_docs.py`
+  fails when they differ); there is no options flow, so neither has `options`.

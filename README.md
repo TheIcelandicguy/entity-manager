@@ -1,7 +1,7 @@
 # Entity Manager for Home Assistant
 A powerful, feature-rich Home Assistant integration for managing entities across all your integrations. View, enable, disable, rename, analyze, and bulk-manage entities and firmware updates from a single modern interface.
 ![Version](https://img.shields.io/badge/version-3.7.0-blue)
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue)
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.7+-blue)
 ![Downloads](https://img.shields.io/github/downloads/TheIcelandicguy/entity-manager/total?color=brightgreen)
 ![Stars](https://img.shields.io/github/stars/TheIcelandicguy/entity-manager?color=yellow)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange)](https://github.com/hacs/integration)
@@ -485,7 +485,7 @@ Three-breakpoint responsive layout designed and tested on real Android phones:
 ---
 ## Technical Details
 ### Requirements
-- **Home Assistant** 2024.1.0 or later
+- **Home Assistant** 2024.7.0 or later
 - Modern web browser with ES6+ support
 - Admin user account (all operations require admin privileges)
 ### Architecture
@@ -500,7 +500,7 @@ Home Assistant Entity & Device Registries
 | Component | Description |
 |---|---|
 | `__init__.py` | Integration setup, service registration, sidebar panel |
-| `websocket_api.py` | 24 admin-gated WebSocket command handlers |
+| `websocket_api.py` | 26 admin-gated WebSocket command handlers |
 | `voice_assistant.py` | Registry enable/disable intents and shared entity resolver |
 | `voice_sentences.py` | Sentence installation, status and conversation reload |
 | `config_flow.py` | UI-based configuration flow |
