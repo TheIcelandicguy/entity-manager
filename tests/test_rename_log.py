@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from homeassistant.core import Context, Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.entity_manager.const import RENAME_LOG_MAX_ENTRIES
@@ -18,6 +18,7 @@ from custom_components.entity_manager.rename_log import (
 from custom_components.entity_manager.websocket_api import (
     handle_get_broken_references,
     handle_get_rename_log,
+    handle_rename_entity,
 )
 
 
@@ -156,15 +157,14 @@ async def test_load_with_no_file_starts_empty(hass: HomeAssistant) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_setup_records_a_rename_with_the_users_context(
+async def test_a_rename_from_outside_entity_manager_has_no_user(
     hass: HomeAssistant,
 ) -> None:
+    """HA's registry events carry no user, so nothing can name one."""
     log = await async_setup_rename_log(hass)
 
     hass.bus.async_fire(
-        er.EVENT_ENTITY_REGISTRY_UPDATED,
-        _rename_data("light.old", "light.new"),
-        context=Context(user_id="user-1"),
+        er.EVENT_ENTITY_REGISTRY_UPDATED, _rename_data("light.old", "light.new")
     )
     hass.bus.async_fire(
         er.EVENT_ENTITY_REGISTRY_UPDATED,
@@ -173,8 +173,86 @@ async def test_setup_records_a_rename_with_the_users_context(
     await hass.async_block_till_done()
 
     assert [(e["old"], e["new"], e["user_id"]) for e in log.entries] == [
-        ("light.old", "light.new", "user-1")
+        ("light.old", "light.new", None)
     ]
+
+
+async def test_expect_names_the_user_for_that_one_rename(hass: HomeAssistant) -> None:
+    log = await async_setup_rename_log(hass)
+    log.expect("light.old", "light.new", "user-1")
+
+    hass.bus.async_fire(
+        er.EVENT_ENTITY_REGISTRY_UPDATED, _rename_data("light.old", "light.new")
+    )
+    # the expectation is used up: the same rename again has no user
+    hass.bus.async_fire(
+        er.EVENT_ENTITY_REGISTRY_UPDATED, _rename_data("light.old", "light.new")
+    )
+    await hass.async_block_till_done()
+
+    assert [e["user_id"] for e in log.entries] == ["user-1", None]
+
+
+async def test_forget_drops_an_expectation(hass: HomeAssistant) -> None:
+    log = await async_setup_rename_log(hass)
+    log.expect("light.old", "light.new", "user-1")
+    log.forget("light.old", "light.new")
+
+    hass.bus.async_fire(
+        er.EVENT_ENTITY_REGISTRY_UPDATED, _rename_data("light.old", "light.new")
+    )
+    await hass.async_block_till_done()
+
+    assert log.entries[0]["user_id"] is None
+
+
+async def test_rename_entity_command_records_the_admin(hass: HomeAssistant) -> None:
+    log = await async_setup_rename_log(hass)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.before")
+    conn = MagicMock()
+    conn.user.id = "admin-1"
+
+    handle_rename_entity(
+        hass,
+        conn,
+        {
+            "id": 9,
+            "type": "entity_manager/rename_entity",
+            "old_entity_id": "light.before",
+            "new_entity_id": "light.after",
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert [(e["old"], e["new"], e["user_id"]) for e in log.entries] == [
+        ("light.before", "light.after", "admin-1")
+    ]
+
+
+async def test_a_failed_rename_leaves_no_expectation(hass: HomeAssistant) -> None:
+    log = await async_setup_rename_log(hass)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.before")
+    _register(entity_reg, "light.taken")
+    conn = MagicMock()
+    conn.user.id = "admin-1"
+
+    handle_rename_entity(
+        hass,
+        conn,
+        {
+            "id": 10,
+            "type": "entity_manager/rename_entity",
+            "old_entity_id": "light.before",
+            "new_entity_id": "light.taken",
+        },
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert conn.send_error.called
+    assert log.entries == []
+    assert log._expected == {}  # noqa: SLF001
 
 
 async def test_setup_twice_returns_the_same_log(hass: HomeAssistant) -> None:

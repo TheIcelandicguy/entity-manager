@@ -5,6 +5,10 @@ every rename, whoever makes it (this panel, HA's own UI, an integration), so
 the ledger listens for that rather than hooking each rename route. It is kept
 in ``.storage/entity_manager_renames`` so every browser sees the same history,
 which the panel's own undo stack (per-browser localStorage) cannot offer.
+
+The event carries no user, so the admin is known only for renames made through
+Entity Manager's ``rename_entity`` command (it calls ``expect`` first); a
+rename made anywhere else is recorded with no user.
 """
 
 from __future__ import annotations
@@ -49,6 +53,9 @@ class RenameLog:
         self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.entries: list[dict[str, Any]] = []
         self._unsub: Any = None
+        # Who is about to rename what. HA's registry events carry no user, so a
+        # rename made through Entity Manager says who it is for before it writes.
+        self._expected: dict[tuple[str, str], str | None] = {}
 
     async def async_load(self) -> None:
         data = await self._store.async_load()
@@ -81,7 +88,17 @@ class RenameLog:
         pair = rename_from_event(event)
         if pair is None:
             return
-        self.record(pair[0], pair[1], event.context.user_id)
+        self.record(pair[0], pair[1], self._expected.pop(pair, None))
+
+    @callback
+    def expect(self, old: str, new: str, user_id: str | None) -> None:
+        """Say who is about to rename ``old`` to ``new``, before the registry write."""
+        self._expected[(old, new)] = user_id
+
+    @callback
+    def forget(self, old: str, new: str) -> None:
+        """Drop an expectation whose rename did not happen."""
+        self._expected.pop((old, new), None)
 
     @callback
     def record(self, old: str, new: str, user_id: str | None) -> None:

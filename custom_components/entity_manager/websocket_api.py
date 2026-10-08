@@ -404,8 +404,23 @@ async def handle_rename_entity(
         if entity_reg.async_get(new_entity_id):
             raise ValueError(f"Entity {new_entity_id} already exists")
 
+        # HA's registry event carries no user, so tell the rename log who this is
+        rename_log = get_rename_log(hass)
+        user_id = getattr(connection.user, "id", None)
+        if rename_log is not None:
+            rename_log.expect(
+                old_entity_id,
+                new_entity_id,
+                user_id if isinstance(user_id, str) else None,
+            )
+
         # Update the entity ID in the entity registry
-        entity_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
+        try:
+            entity_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
+        except Exception:
+            if rename_log is not None:
+                rename_log.forget(old_entity_id, new_entity_id)
+            raise
 
         _LOGGER.info("Renamed entity from %s to %s", old_entity_id, new_entity_id)
         connection.send_result(

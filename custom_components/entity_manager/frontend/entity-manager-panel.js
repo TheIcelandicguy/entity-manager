@@ -15902,7 +15902,7 @@ class EntityManagerPanel extends HTMLElement {
       return;
     }
     const rowsHtml = entries.map((e, i) => {
-      const who = e.user ? this._escapeHtml(e.user) : 'system or unknown';
+      const who = e.user ? `By ${this._escapeHtml(e.user)}` : 'Made outside Entity Manager (Home Assistant’s own UI or an integration)';
       const status = e.exists ? '' : ' · <em>no longer exists under this name</em>';
       const undoBtn = e.can_undo
         ? `<button class="em-dialog-btn em-dialog-btn-outline-primary em-rename-undo" data-idx="${i}">Rename back</button>`
@@ -15911,7 +15911,7 @@ class EntityManagerPanel extends HTMLElement {
         entity_id: e.new,
         name: `${e.old} → ${e.new}`,
         timeAgo: e.ts ? this._fmtAgo(e.ts) : '',
-        infoLine: `By ${who}${status}`,
+        infoLine: `${who}${status}`,
         extraClass: 'em-rename-row',
         notClickable: true,
         actionsHtml: undoBtn,
@@ -15919,7 +15919,7 @@ class EntityManagerPanel extends HTMLElement {
     }).join('');
     const total = result.total || entries.length;
     container.innerHTML = this._sectionHint(
-      'Every entity rename Home Assistant has seen since this log started, whoever made it — newest first'
+      'Every entity rename Home Assistant has seen since this log started — newest first. Home Assistant does not say who made a rename, so a name is shown only for renames made here'
       + (total > entries.length ? ` (the latest ${entries.length} of ${total})` : '')
       + '. <strong>Rename back</strong> restores the old ID and repoints references to it, and is offered only '
       + 'while the new ID still exists and the old one is free.',

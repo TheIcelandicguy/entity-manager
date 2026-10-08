@@ -2125,7 +2125,7 @@ describe('_showRecentRenamesSection (the server-side rename log)', () => {
     expect(box.querySelectorAll('.em-rename-row')).toHaveLength(2);
     expect(box.textContent).toContain('light.old → light.new');
     expect(box.textContent).toContain('By Davíð');
-    expect(box.textContent).toContain('By system or unknown');
+    expect(box.textContent).toContain('Made outside Entity Manager');
   });
 
   it('offers Rename back only where the server says it is possible', async () => {
