@@ -49,3 +49,6 @@ _from_Z/
 
 # Built by build_skill.py
 dist-skill/
+
+# Another coding assistant mirrors skills here; it is a generated copy
+.agents/
