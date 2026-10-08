@@ -23,7 +23,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import intent
 from homeassistant.helpers import label_registry as lr
 
-from .const import MAX_BULK_ENTITIES, VALID_ENTITY_ID
+from .const import MAX_BULK_ENTITIES, RENAME_LOG_MAX_ENTRIES, VALID_ENTITY_ID
+from .rename_log import get_rename_log
 from .voice_assistant import (
     INTENT_DISABLE_ENTITY,
     INTENT_ENABLE_ENTITY,
@@ -1100,6 +1101,7 @@ _STORAGE_REPORT_SKIP = re.compile(
     r"|lovelace|person$|assist_pipeline\.|trace\.|auth|http|cloud|onboarding"
     r"|energy$"
     r"|hacs\.|repairs\.|homeassistant\.exposed_entities|entity_manager_backups"
+    r"|entity_manager_renames"
     r"|google\.|local_calendar\.|local_todo\.|bluetooth\.|backup$)"
     r"|\.(pem|ics)$|bak|pre-|rollback",
 )
@@ -1684,7 +1686,23 @@ async def handle_get_broken_references(
                 for token in tokens
                 if token not in existing_ids and token.split(".", 1)[0] in known_domains
             )
-            return [{"entity_id": eid, "reason": _reason_for(eid)} for eid in ids]
+            rename_log = get_rename_log(hass)
+
+            def _now_called(entity_id: str) -> str | None:
+                """Where the rename log says this ID went, if that exists."""
+                if rename_log is None:
+                    return None
+                target = rename_log.now_called(entity_id)
+                return target if target in existing_ids else None
+
+            rows: list[dict[str, Any]] = []
+            for eid in ids:
+                row: dict[str, Any] = {"entity_id": eid, "reason": _reason_for(eid)}
+                now_called = _now_called(eid)
+                if now_called:
+                    row["now_called"] = now_called
+                rows.append(row)
+            return rows
 
         config_path = Path(hass.config.config_dir)
 
@@ -2741,6 +2759,65 @@ async def handle_reinstall_voice_sentences(
         connection.send_error(msg["id"], "reinstall_failed", str(err))
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "entity_manager/get_rename_log",
+        vol.Optional("limit", default=100): vol.All(
+            int, vol.Range(min=1, max=RENAME_LOG_MAX_ENTRIES)
+        ),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def handle_get_rename_log(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the newest entity renames the server has seen, newest first.
+
+    Home Assistant offers no history of renames, so Entity Manager keeps one
+    (see ``rename_log.py``). It records renames from any source. Each entry
+    says whether the new ID still exists and whether renaming it back is
+    possible (the new ID exists and the old one is free). Writes nothing.
+    """
+    try:
+        log = get_rename_log(hass)
+        entries = list(reversed(log.entries)) if log else []
+        total = len(entries)
+        registry = er.async_get(hass)
+        user_names: dict[str | None, str | None] = {None: None}
+
+        async def _user_name(user_id: str | None) -> str | None:
+            if user_id not in user_names:
+                user = await hass.auth.async_get_user(user_id) if user_id else None
+                user_names[user_id] = user.name if user else None
+            return user_names[user_id]
+
+        out: list[dict[str, Any]] = []
+        for entry in entries[: msg["limit"]]:
+            new_exists = entry["new"] in registry.entities
+            old_taken = (
+                entry["old"] in registry.entities
+                or hass.states.get(entry["old"]) is not None
+            )
+            out.append(
+                {
+                    "ts": entry.get("ts"),
+                    "old": entry["old"],
+                    "new": entry["new"],
+                    "user_id": entry.get("user_id"),
+                    "user": await _user_name(entry.get("user_id")),
+                    "exists": new_exists,
+                    "can_undo": new_exists and not old_taken,
+                }
+            )
+        connection.send_result(msg["id"], {"entries": out, "total": total})
+    except Exception as err:
+        _LOGGER.error("Error reading the rename log: %s", err, exc_info=True)
+        connection.send_error(msg["id"], "get_failed", str(err))
+
+
 def async_setup_ws_api(hass: HomeAssistant) -> None:
     """Set up the WebSocket API."""
     websocket_api.async_register_command(hass, handle_get_disabled_entities)
@@ -2769,4 +2846,5 @@ def async_setup_ws_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, handle_resolve_voice_target)
     websocket_api.async_register_command(hass, handle_get_voice_status)
     websocket_api.async_register_command(hass, handle_reinstall_voice_sentences)
+    websocket_api.async_register_command(hass, handle_get_rename_log)
     _LOGGER.debug("Entity Manager WebSocket API commands registered")

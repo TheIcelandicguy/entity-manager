@@ -49,17 +49,18 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 
 | Path | Responsibility |
 |---|---|
-| `custom_components/entity_manager/__init__.py` | 132 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
+| `custom_components/entity_manager/__init__.py` | 150 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
-| `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+\Z`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 2,650 lines. All 26 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `RENAME_LOG_MAX_ENTRIES = 1000`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+\Z`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
+| `.../websocket_api.py` | 2,650 lines. All 27 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
+| `.../rename_log.py` | The server-side rename ledger. `RenameLog` listens for HA's `entity_registry_updated` event (the one with `old_entity_id`, fired for a rename from any source: this panel, HA's UI, an integration) and keeps the newest 1,000 renames in `.storage/entity_manager_renames` (timestamp, old ID, new ID, `context.user_id`), saved 10 s after the last one. `now_called()` follows a dead ID through later renames. Started in `async_setup_entry`, flushed on unload, found through `get_rename_log(hass)`. The file is in `_STORAGE_REPORT_SKIP`, so the manual-references report ignores it. |
 | `.../sentences/en/entity_manager.yaml` | Voice sentences, copied into `<config>/custom_sentences/en/` at startup. Inside the component, because only that directory is deployed. |
 | `.../config_flow.py` | Single step, unique-ID guarded, no options flow. |
 | `.../frontend/entity-manager-panel.js` | 19,940 lines. The whole UI as one `EntityManagerPanel extends HTMLElement`. |
 | `.../frontend/entity-manager-panel.css` | 8,001 lines, all `--em-*` variables. |
-| `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `conftest.py`. |
+| `tests/` | Python tests: `test_const.py`, `test_websocket_api.py`, `test_voice_assistant.py`, `test_rename_log.py`, `conftest.py`. |
 | `.../frontend/tests/` | Vitest specs + `vitest.setup.js`. |
 | `deploy.ps1` | Thin wrapper over `E:\tools\deploy-to-ha.ps1` (see Deploy). No `sync-to-ha.ps1` helper is checked in; that old name is still used locally on this machine only. |
 | `check_docs.py` | Verifies this file against the repo. Run it before ending a session. |
@@ -75,8 +76,8 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
 
 - The panel talks to the backend **only** over HA's WebSocket bus. There is no
   HTTP view and no REST endpoint.
-- All 26 commands are named `entity_manager/<name>` and carry **both**
-  `@websocket_api.require_admin` and `@websocket_api.async_response` (26/26 in
+- All 27 commands are named `entity_manager/<name>` and carry **both**
+  `@websocket_api.require_admin` and `@websocket_api.async_response` (27/27 in
   source). The panel itself is `require_admin=True`. Every command reads or
   writes registry data, so a handler missing either decorator is a security hole.
 - `async_setup_ws_api()` is the single registration point. A handler that isn't
@@ -92,7 +93,7 @@ entity-manager-panel.js  --this.hass.callWS-->  websocket_api.py  -->  HA regist
   queries, HACS scanning, config-entry health. Do not add a command that
   duplicates a native API.
 
-### The 26 commands
+### The 27 commands
 
 Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 `get_automations`, `get_template_sensors`, `get_entity_details`,
@@ -102,8 +103,12 @@ Read: `get_disabled_entities` (`state` = disabled|enabled|all), `export_states`,
 writing nothing), `get_voice_status` (sentence files, registered intents),
 `get_broken_references` (entity IDs referenced in config that exist in
 neither the entity registry nor the state machine, each with a `reason` when
-the registry still remembers why it's gone, and a `target` identifying which
-item to pass to `remove_broken_reference`; writes nothing).
+the registry still remembers why it's gone, a `now_called` when the rename log
+shows where it went and that ID exists, and a `target` identifying which
+item to pass to `remove_broken_reference`; writes nothing), `get_rename_log`
+(optional `limit`, 1–1000, default 100; the newest renames first, each with the
+admin's name, whether the new ID `exists` and whether renaming it back is
+possible, `can_undo`; writes nothing).
 
 Write: `enable_entity`, `disable_entity`, `bulk_enable`, `bulk_disable`
 (`entity_ids`, 1–500), `rename_entity` (`old_entity_id`, `new_entity_id`),

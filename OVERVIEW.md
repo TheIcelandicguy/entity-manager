@@ -186,7 +186,7 @@ panel appears in the sidebar.
 ```
 Frontend (Vanilla-JS Web Component: entity-manager-panel.js)
         |  Home Assistant WebSocket (this.hass.callWS)
-Backend (Python WebSocket API: websocket_api.py — 26 commands, all admin-gated)
+Backend (Python WebSocket API: websocket_api.py — 27 commands, all admin-gated)
         |
 Home Assistant Core: Entity / Device / Area / Label registries, config entries, recorder DB
 ```
@@ -203,7 +203,8 @@ entity-manager/
 │   ├── strings.json / en.json / translations/en.json  # UI + config-flow strings
 │   ├── voice_assistant.py     # Enable/Disable intents and shared entity resolver
 │   ├── voice_sentences.py     # Sentence installation, status and reload
-│   ├── websocket_api.py       # 26 WebSocket command handlers
+│   ├── rename_log.py          # Server-side ledger of entity renames (.storage/entity_manager_renames)
+│   ├── websocket_api.py       # 27 WebSocket command handlers
 │   ├── frontend/
 │   │   ├── entity-manager-panel.js   # Full UI web component (single component)
 │   │   ├── entity-manager-panel.css  # Stylesheet (all --em-* vars)
@@ -226,8 +227,9 @@ Exposure displays Assist and Google status; bulk writes target Assist only.
 | `const.py` | `DOMAIN = "entity_manager"`, `MAX_BULK_ENTITIES = 500`, and `VALID_ENTITY_ID` (`^[a-z][a-z0-9_]*\.[a-z0-9_]+\Z`) used to validate IDs before registry writes. |
 | `__init__.py` | `async_setup_entry` registers the frontend static path (`/api/entity_manager/frontend`), the WebSocket API (`async_setup_ws_api`), voice intents (`async_setup_intents`), the two HA services, and the sidebar panel via `frontend.async_register_built_in_panel(..., require_admin=True)`. Services share an admin gate that mirrors the WS `require_admin`; system-initiated calls (no `user_id`) are allowed. `async_unload_entry` removes the panel + services. |
 | `config_flow.py` | `EntityManagerConfigFlow` — single-step, unique-ID-guarded, no options. |
-| `websocket_api.py` | All 26 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |
+| `websocket_api.py` | All 27 admin-gated command handlers plus standalone helpers `enable_entity()` / `disable_entity()` (raise `ValueError` if missing), `_bulk_toggle()` (per-item error handling returning `{"success": [...], "failed": [...]}`), and `_resolve_trigger_context()` (classifies a state change as human/automation/system). Registered in `async_setup_ws_api()` — the single registration point. |
 | `voice_assistant.py` | Admin-gated registry intents and `resolve_voice_target()` returning a structured match/refusal; `_resolve_entity_id` shares it with the intents. |
+| `rename_log.py` | Listens for HA's `entity_registry_updated` event and keeps the newest 1,000 entity renames (any source) in `.storage/entity_manager_renames`; `now_called()` follows a dead ID through later renames. |
 | `voice_sentences.py` | Install and inspect the sentence files; preserve edited copies unless `force` is requested, and reload the conversation agent. |
 
 ### Frontend Panel
@@ -255,7 +257,7 @@ queries, HACS scanning, config-entry health).
 
 ## 6. WebSocket API & Services Reference
 
-All 26 WebSocket commands are decorated with `@websocket_api.require_admin` +
+All 27 WebSocket commands are decorated with `@websocket_api.require_admin` +
 `@websocket_api.async_response`. Names below are the real `type` strings registered in
 `async_setup_ws_api()`.
 
@@ -273,7 +275,8 @@ All 26 WebSocket commands are decorated with `@websocket_api.require_admin` +
 | `entity_manager/list_hacs_items` | — | Installed HACS integrations/frontend + parsed community store from `.storage`. |
 | `entity_manager/resolve_voice_target` | `phrase` | Read-only EM routing and entity resolution, candidates and near misses. |
 | `entity_manager/get_voice_status` | — | Sentence file status and intent registration. |
-| `entity_manager/get_broken_references` | — | Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and Energy preferences that exist in neither the registry nor the state machine, with a `reason` when the registry remembers why. Writes nothing. |
+| `entity_manager/get_broken_references` | — | Entity IDs referenced in YAML, storage dashboards, config entries, persons, Assist pipelines and Energy preferences that exist in neither the registry nor the state machine, with a `reason` when the registry remembers why and a `now_called` when the rename log shows where it went. Writes nothing. |
+| `entity_manager/get_rename_log` | `limit` (optional, 1–1000, default 100) | The newest entity renames the server has seen, newest first, with who made each, whether the new ID still exists (`exists`) and whether renaming back is possible (`can_undo`). Writes nothing. |
 
 ### Entity-operation commands
 | Command | Params | Description |

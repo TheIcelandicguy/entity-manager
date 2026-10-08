@@ -2097,3 +2097,122 @@ describe('_unchangedSince (diagnostics the recorder has never seen change)', () 
     expect(el._hass.callWS.mock.calls[0][0].significant_changes_only).toBe(false);
   });
 });
+
+
+describe('_showRecentRenamesSection (the server-side rename log)', () => {
+  const entry = (over = {}) => ({
+    ts: new Date(Date.now() - 3600_000).toISOString(),
+    old: 'light.old', new: 'light.new', user_id: 'u1', user: 'Davíð', exists: true, can_undo: true, ...over,
+  });
+
+  async function render(entries, total = entries.length) {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({ entries, total });
+    el._renameWithReferences = vi.fn().mockResolvedValue(true);
+    el._confirmAsync = vi.fn().mockResolvedValue(true);
+    const box = document.createElement('div');
+    await el._showRecentRenamesSection(box);
+    return { el, box };
+  }
+
+  it('asks the server for the latest 100', async () => {
+    const { el } = await render([entry()]);
+    expect(el._hass.callWS).toHaveBeenCalledWith({ type: 'entity_manager/get_rename_log', limit: 100 });
+  });
+
+  it('lists each rename with who made it', async () => {
+    const { box } = await render([entry(), entry({ old: 'sensor.a', new: 'sensor.b', user: null })]);
+    expect(box.querySelectorAll('.em-rename-row')).toHaveLength(2);
+    expect(box.textContent).toContain('light.old → light.new');
+    expect(box.textContent).toContain('By Davíð');
+    expect(box.textContent).toContain('By system or unknown');
+  });
+
+  it('offers Rename back only where the server says it is possible', async () => {
+    const { box } = await render([entry(), entry({ can_undo: false, exists: false })]);
+    expect(box.querySelectorAll('.em-rename-undo')).toHaveLength(1);
+    expect(box.textContent).toContain('no longer exists under this name');
+  });
+
+  it('says how many are shown when the log is longer than the page', async () => {
+    const { box } = await render([entry()], 400);
+    expect(box.textContent).toContain('the latest 1 of 400');
+  });
+
+  it('shows an empty state', async () => {
+    const { box } = await render([]);
+    expect(box.textContent).toContain('No renames recorded yet');
+    expect(box.querySelectorAll('.em-rename-row')).toHaveLength(0);
+  });
+
+  it('escapes names so an odd ID cannot inject markup', async () => {
+    const { box } = await render([entry({ old: 'light.<img src=x>', new: 'light.safe', user: '<b>x</b>' })]);
+    expect(box.querySelector('img')).toBeNull();
+    expect(box.querySelector('b')).toBeNull();
+  });
+
+  it('Rename back renames the new ID to the old one, with references, after a confirm', async () => {
+    const { el, box } = await render([entry()]);
+    box.querySelector('.em-rename-undo').click();
+    await vi.waitFor(() => expect(el._renameWithReferences).toHaveBeenCalledWith('light.new', 'light.old'));
+    expect(el._confirmAsync).toHaveBeenCalled();
+  });
+
+  it('does nothing when the confirm is declined', async () => {
+    const { el, box } = await render([entry()]);
+    el._confirmAsync.mockResolvedValue(false);
+    box.querySelector('.em-rename-undo').click();
+    await vi.waitFor(() => expect(el._confirmAsync).toHaveBeenCalled());
+    expect(el._renameWithReferences).not.toHaveBeenCalled();
+  });
+
+  it('reports a read failure instead of throwing', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockRejectedValue(new Error('boom'));
+    const box = document.createElement('div');
+    await el._showRecentRenamesSection(box);
+    expect(box.textContent).toContain("Couldn't read the rename log: boom");
+  });
+});
+
+
+describe('Broken References: "now called" from the rename log', () => {
+  const scan = nowCalled => ({
+    total: 1,
+    sources: [{
+      source: 'yaml', label: 'automations.yaml', target: 'automations.yaml',
+      entities: [{ entity_id: 'light.before', reason: null, ...(nowCalled ? { now_called: nowCalled } : {}) }],
+    }],
+  });
+
+  async function render(result) {
+    const el = makePanel();
+    el._hass.callWS = vi.fn(async msg => (msg.type === 'entity_manager/get_broken_references' ? result : { total_replacements: 3 }));
+    el._confirmAsync = vi.fn().mockResolvedValue(true);
+    const box = document.createElement('div');
+    await el._showBrokenReferencesSection(box);
+    return { el, box };
+  }
+
+  it('names the new ID and offers a one-click button when the log knows it', async () => {
+    const { box } = await render(scan('light.after'));
+    expect(box.textContent).toContain('Renamed to light.after');
+    expect(box.querySelector('.em-brokenref-nowcalled').dataset.nowCalled).toBe('light.after');
+  });
+
+  it('offers no such button when the log does not know', async () => {
+    const { box } = await render(scan(null));
+    expect(box.querySelector('.em-brokenref-nowcalled')).toBeNull();
+    expect(box.textContent).not.toContain('Renamed to');
+  });
+
+  it('the button repoints every reference at the new ID after a confirm', async () => {
+    const { el, box } = await render(scan('light.after'));
+    box.querySelector('.em-brokenref-nowcalled').click();
+    await vi.waitFor(() => expect(el._hass.callWS).toHaveBeenCalledWith({
+      type: 'entity_manager/update_yaml_references',
+      old_entity_id: 'light.before', new_entity_id: 'light.after', dry_run: false,
+    }));
+    expect(el._confirmAsync).toHaveBeenCalled();
+  });
+});
