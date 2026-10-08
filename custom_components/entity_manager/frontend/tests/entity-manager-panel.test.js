@@ -2044,3 +2044,56 @@ describe('_unavailableSince (how long an entity has really been down)', () => {
     expect(el._hass.callWS).not.toHaveBeenCalled();
   });
 });
+
+describe('_unchangedSince (diagnostics the recorder has never seen change)', () => {
+  const t = days => Date.now() / 1000 - days * 86400;
+
+  it('includes an entity whose every recorded state is the same, stamped with its oldest row', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({
+      'sensor.fw': [{ s: '1.2.3', lu: t(30) }, { s: '1.2.3', lu: t(2) }],
+    });
+    const since = await el._unchangedSince(['sensor.fw']);
+    expect(since.get('sensor.fw').ms).toBeCloseTo(t(30) * 1000, -2);
+  });
+
+  it('leaves out an entity that changed, one the recorder has no rows for, and one without a time', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({
+      'binary_sensor.a': [{ s: 'off', lu: t(30) }, { s: 'on', lu: t(5) }],
+      'binary_sensor.b': [],
+      'binary_sensor.c': [{ s: 'off' }],
+    });
+    const since = await el._unchangedSince(['binary_sensor.a', 'binary_sensor.b', 'binary_sensor.c', 'binary_sensor.d']);
+    expect(since.size).toBe(0);
+  });
+
+  it('asks HA for significant changes only, so the answer stays small', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({});
+    await el._unchangedSince(['sensor.a']);
+    expect(el._hass.callWS.mock.calls[0][0]).toMatchObject({
+      type: 'history/history_during_period', significant_changes_only: true, minimal_response: true, no_attributes: true,
+    });
+  });
+
+  it('works in batches of 50 and skips a batch that fails', async () => {
+    const el = makePanel();
+    const ids = Array.from({ length: 110 }, (_, i) => `sensor.d${i}`);
+    let call = 0;
+    el._hass.callWS = vi.fn(async ({ entity_ids }) => {
+      if (call++ === 0) throw new Error('history unavailable');
+      return Object.fromEntries(entity_ids.map(id => [id, [{ s: 'x', lu: t(20) }]]));
+    });
+    const since = await el._unchangedSince(ids);
+    expect(el._hass.callWS.mock.calls.map(([m]) => m.entity_ids.length)).toEqual([50, 50, 10]);
+    expect(since.size).toBe(60);
+  });
+
+  it('the unavailable reading still asks for every row, not only the significant ones', async () => {
+    const el = makePanel();
+    el._hass.callWS = vi.fn().mockResolvedValue({});
+    await el._unavailableSince(['sensor.a']);
+    expect(el._hass.callWS.mock.calls[0][0].significant_changes_only).toBe(false);
+  });
+});

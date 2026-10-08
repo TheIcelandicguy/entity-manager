@@ -4323,7 +4323,7 @@ class EntityManagerPanel extends HTMLElement {
               <ul>
                 <li>Click the <strong>Suggestions</strong> stat card to analyse your entities</li>
                 <li>🟣 <strong>Health Issues</strong> — entities unavailable 7+ days → suggested for disable (reversible; stops HA tracking dead entities). The time comes from the recorder, so restarting Home Assistant does not reset it; "at least" means the outage reaches back past what was looked up. An entity the recorder has no history for is timed from the last restart</li>
-                <li>⬜ <strong>Disable Candidates</strong> — diagnostic entities unchanged 30+ days; disabling reduces database noise, re-enable anytime. This one is timed from the last Home Assistant restart, because the recorder does not keep 30 days, so it fills up again over the 30 days after a restart</li>
+                <li>⬜ <strong>Disable Candidates</strong> — diagnostic entities (text and on/off ones such as firmware versions and flags; numeric sensors are left out) whose state the recorder has never seen change, with at least 7 days on record. Disabling cuts clutter; re-enable anytime. The time is how far back the recorder goes, up to 30 days, so it reads "at least" and does not reset when Home Assistant restarts</li>
                 <li>🟠 <strong>Naming Improvements</strong> — auto-generated hashes or generic names; Rename changes the entity ID and propagates it across automations, scripts, and YAML. Tick entities (or <strong>Select all</strong>) and use <strong>Ignore Selected</strong> to hide the ones you want to keep as they are</li>
                 <li>🔴 <strong>Area Suggestions</strong> — devices with no area, matched by device name (✨) and your mapping rules (📐); Apply sets the area on the device and its entities. Devices that belong to no room (integrations, template helpers) can be ignored: tick them, or use <strong>Select all</strong>, then <strong>Ignore Selected</strong></li>
                 <li>🟠 <strong>Area Mismatch</strong> — the entity's own area differs from its device's area; Sync adopts the device's area, Choose Area picks another</li>
@@ -13356,15 +13356,16 @@ class EntityManagerPanel extends HTMLElement {
   }
 
   /**
-   * When each of these entities went unavailable, from the recorder: the start of its current run of
-   * `unavailable` states. A live state object only knows its age since the last HA restart, which
-   * recreates every state, so it cannot say how long something has really been down.
-   * Resolves to Map(entity_id -> { ms, atLeast }). `atLeast` is true when the run reaches the oldest
-   * row the query returned, so the real figure may be larger. An entity the recorder has nothing for is
-   * left out, and the caller falls back to the live timestamp.
+   * The recorder's rows for these entities over the lookback window, as Map(entity_id -> [{ s, ms }])
+   * oldest first, where `s` is the state and `ms` the time the row's state began. Asked 50 entities at a
+   * time; a batch the recorder cannot answer is skipped. The first row is HA's "state at the start of the
+   * window" when the entity already existed then, so it is stamped with the start of the window.
+   * `significantOnly` is HA's own filter: for most domains it keeps just the real state changes, which
+   * keeps the answer small for entities that rarely change; for numeric sensors it keeps only the first
+   * and last row.
    */
-  async _unavailableSince(entityIds) {
-    const since = new Map();
+  async _historyRows(entityIds, significantOnly) {
+    const out = new Map();
     const startIso = new Date(Date.now() - EM_UNAVAILABLE_LOOKBACK_DAYS * 86400000).toISOString();
     const toMs = ts => (ts > 1e10 ? ts : ts * 1000);
     for (let i = 0; i < entityIds.length; i += 50) {
@@ -13374,19 +13375,50 @@ class EntityManagerPanel extends HTMLElement {
           type: 'history/history_during_period',
           start_time: startIso,
           entity_ids: entityIds.slice(i, i + 50),
-          significant_changes_only: false, minimal_response: true, no_attributes: true,
+          significant_changes_only: significantOnly, minimal_response: true, no_attributes: true,
         });
       } catch { continue; }
       for (const [id, rows] of Object.entries(history || {})) {
         if (!Array.isArray(rows) || !rows.length) continue;
-        let first = rows.length;
-        while (first > 0 && (rows[first - 1].s ?? rows[first - 1].state) === 'unavailable') first--;
-        if (first === rows.length) continue; // its newest recorded state is not unavailable
-        const row = rows[first];
-        const ts = row.lc ?? row.lu ?? row.last_changed ?? row.last_updated;
-        if (ts == null) continue;
-        since.set(id, { ms: toMs(ts), atLeast: first === 0 });
+        out.set(id, rows.map(r => {
+          const ts = r.lc ?? r.lu ?? r.last_changed ?? r.last_updated;
+          return { s: r.s ?? r.state, ms: ts == null ? null : toMs(ts) };
+        }));
       }
+    }
+    return out;
+  }
+
+  /**
+   * When each of these entities went unavailable, from the recorder: the start of its current run of
+   * `unavailable` states. A live state object only knows its age since the last HA restart, which
+   * recreates every state, so it cannot say how long something has really been down.
+   * Resolves to Map(entity_id -> { ms, atLeast }). `atLeast` is true when the run reaches the oldest
+   * row the query returned, so the real figure may be larger. An entity the recorder has nothing for is
+   * left out, and the caller falls back to the live timestamp.
+   */
+  async _unavailableSince(entityIds) {
+    const since = new Map();
+    for (const [id, rows] of await this._historyRows(entityIds, false)) {
+      let first = rows.length;
+      while (first > 0 && rows[first - 1].s === 'unavailable') first--;
+      if (first === rows.length || rows[first].ms == null) continue; // newest recorded state is not unavailable
+      since.set(id, { ms: rows[first].ms, atLeast: first === 0 });
+    }
+    return since;
+  }
+
+  /**
+   * The entities among these whose state the recorder has never seen change, as
+   * Map(entity_id -> { ms }) where `ms` is the oldest row it returned, so the figure is "at least".
+   * Do not pass numeric sensors: HA's significant-changes filter gives only their first and last row,
+   * and a reading that comes back to where it began would look unchanged.
+   */
+  async _unchangedSince(entityIds) {
+    const since = new Map();
+    for (const [id, rows] of await this._historyRows(entityIds, true)) {
+      if (new Set(rows.map(r => r.s)).size !== 1 || rows[0].ms == null) continue;
+      since.set(id, { ms: rows[0].ms });
     }
     return since;
   }
@@ -13434,7 +13466,6 @@ class EntityManagerPanel extends HTMLElement {
     const states  = this._hass?.states || {};
     const now     = Date.now();
     const day7ms  = 7  * 86400000;
-    const day30ms = 30 * 86400000;
     const helperDomains = new Set(['input_boolean','input_number','input_select','input_text',
       'input_datetime','timer','counter','schedule','template','group','scene','automation','script']);
     const genericNames  = new Set(['sensor','switch','light','binary_sensor','button','number',
@@ -13460,12 +13491,23 @@ class EntityManagerPanel extends HTMLElement {
         .filter(e => !e.is_disabled && states[e.entity_id]?.state === 'unavailable' && !states[e.entity_id]?.attributes?.restored)
         .map(e => e.entity_id),
     );
+    // Diagnostic entities whose state the recorder has never seen change. Numeric sensors are left out
+    // (see _unchangedSince), and so is anything unavailable: that is Health Issues' business.
+    const unchangedSince = await this._unchangedSince(
+      allEntities
+        .filter(e => {
+          const st = states[e.entity_id];
+          return !e.is_disabled && e.entity_category === 'diagnostic' && st
+            && st.state !== 'unavailable' && st.state !== 'unknown'
+            && !st.attributes?.unit_of_measurement && !st.attributes?.state_class;
+        })
+        .map(e => e.entity_id),
+    );
 
     for (const entity of allEntities) {
       const state  = states[entity.entity_id];
       const name   = state?.attributes?.friendly_name || entity.original_name || entity.entity_id;
       const updMs  = state?.last_updated  ? Date.parse(state.last_updated)  : null;
-      const chgMs  = state?.last_changed  ? Date.parse(state.last_changed)  : null;
       const domain = entity.entity_id.split('.')[0];
 
       // Restored placeholder states are registry remnants (Cleanup → Orphaned territory);
@@ -13476,8 +13518,9 @@ class EntityManagerPanel extends HTMLElement {
       if (!entity.is_disabled && isLiveUnavailable && goneMs && (now - goneMs) > day7ms) {
         health.push({ entity, name, reason: `Unavailable for ${gone?.atLeast ? 'at least ' : ''}${this._formatTimeDiff(now - goneMs)}`, action: 'disable', actionLabel: 'Disable' });
       }
-      if (!entity.is_disabled && entity.entity_category === 'diagnostic' && chgMs && (now - chgMs) > day30ms) {
-        disable.push({ entity, name, reason: `Diagnostic, unchanged for ${this._fmtAgo(state?.last_changed)}`, action: 'disable', actionLabel: 'Disable' });
+      const still = unchangedSince.get(entity.entity_id);
+      if (!entity.is_disabled && entity.entity_category === 'diagnostic' && still && (now - still.ms) > day7ms) {
+        disable.push({ entity, name, reason: `Diagnostic, unchanged for at least ${this._formatTimeDiff(now - still.ms)} on record`, action: 'disable', actionLabel: 'Disable' });
       }
 
       const localId = entity.entity_id.split('.')[1] || '';
