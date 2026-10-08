@@ -1,5 +1,26 @@
 # Changelog
 
+## Version 3.7.2 - Ages that survive a restart
+
+The Suggestions view decided how long something had been unavailable, or unchanged,
+from the age of its live state. Home Assistant creates a fresh state for every entity
+when it starts, so every age restarted from zero. After the restart on 7 October the
+Health Issues section lost every long-dead entity on this house: a light that had been
+unavailable for over ten days read "changed 13:03 today", and 200 entities were
+unavailable at the time.
+
+### Health Issues
+
+- **The time comes from the recorder.** The panel asks for the start of each unavailable entity's current run of unavailable states, so a restart no longer resets the clock. A run that reaches the oldest row on record reads "at least"
+- **Attribute changes no longer reset it.** Only state changes count, so an unavailable entity that still updates its attributes ages out like any other
+- **The 30-day rule is gone.** It could never fire: anything unavailable for 30 days is already past the 7-day rule
+
+### Disable Candidates
+
+- **Unchanged means unchanged on record.** Diagnostic entities qualify when the recorder has never seen their state change, with at least 7 days on record, instead of when their live state is 30 days old, which only became true 30 days after each restart
+- **Text and on/off diagnostics only.** Numeric sensors are left out, because the history Home Assistant returns for them is too thin to tell "never changed" from "changed and came back"
+- **Honest about the window.** The reason reads "unchanged for at least N on record", and the Help Guide no longer says disabling these reduces database noise: an entity that never changes writes almost nothing
+
 ## Version 3.7.1 - Audit fixes
 
 A full read of the 26 WebSocket commands, the 20,000-line panel, the tests and
