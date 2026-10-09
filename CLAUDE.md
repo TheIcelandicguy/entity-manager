@@ -1,6 +1,6 @@
 # CLAUDE.md — Entity Manager
 
-Home Assistant custom integration, domain `entity_manager`, **v3.7.2**.
+Home Assistant custom integration, domain `entity_manager`, **v3.7.5**.
 Repo `TheIcelandicguy/entity-manager`; source at `E:\entity-manager`.
 
 An admin-only sidebar panel ("Entity Manager", `mdi:tune`) for viewing, enabling,

@@ -1,7 +1,7 @@
 # Entity Manager — Project Overview
 
 > A comprehensive overview of the **Entity Manager** Home Assistant custom integration
-> (domain `entity_manager`, version **3.7.2**). Covers both user-facing behaviour and
+> (domain `entity_manager`, version **3.7.5**). Covers both user-facing behaviour and
 > developer/architecture detail. Generated from the repository source.
 
 ## Table of Contents
@@ -198,7 +198,7 @@ entity-manager/
 │   ├── __init__.py            # Entry point: panel + resource/WS/service/intent registration
 │   ├── config_flow.py         # Single-step UI config flow (no options)
 │   ├── const.py               # DOMAIN, MAX_BULK_ENTITIES (500), VALID_ENTITY_ID regex
-│   ├── manifest.json          # Integration metadata (v3.7.2, service, calculated)
+│   ├── manifest.json          # Integration metadata (v3.7.5, service, calculated)
 │   ├── services.yaml          # enable_entity / disable_entity service schemas
 │   ├── strings.json / en.json / translations/en.json  # UI + config-flow strings
 │   ├── voice_assistant.py     # Enable/Disable intents and shared entity resolver
