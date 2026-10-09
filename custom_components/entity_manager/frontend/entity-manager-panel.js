@@ -2434,7 +2434,7 @@ class EntityManagerPanel extends HTMLElement {
       </div>`;
     contentEl.querySelector('.em-inline-back-btn').addEventListener('click', () => this._closeView());
     contentEl.querySelector('.em-inline-refresh-btn').addEventListener('click', () => this._refreshView());
-    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'broken-references', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
+    await this._renderMergedEntitySections(['cleanup', 'duplicate-names', 'broken-references', 'recent-renames', 'config-health', 'unavailable'], contentEl.querySelector('#em-health-cleanup-body'));
     this._attachDialogSearch(contentEl);
   }
 
@@ -2448,8 +2448,9 @@ class EntityManagerPanel extends HTMLElement {
       'cleanup':       'Cleanup',
       'duplicate-names': 'Duplicate Names',
       'broken-references': 'Broken References',
+      'recent-renames': 'Recent Renames',
     };
-    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate', 'broken-references': 'mdi:link-off' };
+    const sectionEmojis = { automation: EM_ICONS.automation, script: EM_ICONS.script, helper: EM_ICONS.helper, 'config-health': EM_ICONS.configHealth, unavailable: EM_ICONS.warning, cleanup: EM_ICONS.cleanup, 'duplicate-names': 'mdi:content-duplicate', 'broken-references': 'mdi:link-off', 'recent-renames': 'mdi:history' };
 
     // Build all section shells upfront as collapsible groups with a loading placeholder
     let html = '';
@@ -2469,7 +2470,7 @@ class EntityManagerPanel extends HTMLElement {
       const sectionEl = bodyEl.querySelector(`#em-section-${t}`);
       const groupBody = sectionEl.querySelector('.em-group-body');
       try {
-        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names' || t === 'broken-references') {
+        if (t === 'config-health' || t === 'cleanup' || t === 'unavailable' || t === 'automation' || t === 'script' || t === 'helper' || t === 'duplicate-names' || t === 'broken-references' || t === 'recent-renames') {
           // These dialogs attach all button listeners to their container element via delegation.
           // Pass groupBody directly so listeners (and the bulk-action bar) remain live; skip the
           // temp+move pattern, which silently dropped the bulk bar and tint wrapper for
@@ -2483,6 +2484,8 @@ class EntityManagerPanel extends HTMLElement {
             await this._showDuplicateNamesSection(groupBody);
           } else if (t === 'broken-references') {
             await this._showBrokenReferencesSection(groupBody);
+          } else if (t === 'recent-renames') {
+            await this._showRecentRenamesSection(groupBody);
           } else if (t === 'automation' || t === 'script' || t === 'helper') {
             // skipOuterGroup avoids a duplicate section header, since this section
             // shell already provides one (built above via _collGroup).
@@ -4437,6 +4440,8 @@ class EntityManagerPanel extends HTMLElement {
                 <li><strong>Open…</strong> jumps to where the reference sits (a dashboard, integration entry, person, Energy page or Assist pipelines list). On a dashboard it then scrolls to and pulses the missing entity's placeholder after the page settles. YAML has no Open button</li>
                 <li><strong>Remove</strong> deletes the reference only where that is unambiguous — a list entry, or a card or Energy flow that held only that entity. Elsewhere it explains why it won't guess. It refuses an entity that exists again, and only edits <code>.yaml</code> files. A backup is written first</li>
                 <li><strong>Update…</strong> repoints <em>every</em> reference to that ID at a replacement you pick (the likeliest match is suggested), like a rename</li>
+                <li>When the rename log knows the ID was renamed, the row says what it is called now and offers <strong>Use …</strong> to repoint every reference there in one click</li>
+                <li><strong>Recent Renames</strong> (the next section) is that log: every entity rename Home Assistant has seen since Entity Manager started keeping it, from any source and any browser, newest first. <strong>Rename back</strong> restores the old ID and repoints references to it. It is offered only while the new ID exists and the old one is free</li>
                 <li>Click a row to see every place that ID is broken</li>
                 <li>Not reported: service-call targets, trigger platforms and glob filters like <code>sensor.shelly*cloud</code>. A domain with no surviving entities at all can't be detected</li>
               </ul>
@@ -15754,14 +15759,19 @@ class EntityManagerPanel extends HTMLElement {
       bySource.get(s.source).push(s);
     });
 
-    const actionsHtml = (source, target, label, entityId) => {
+    const actionsHtml = (source, target, label, entityId, nowCalled = null) => {
       const openPath = this._brokenRefOpenPath(source, target, label);
+      const nowCalledBtn = nowCalled
+        ? `<button class="em-dialog-btn em-dialog-btn-primary em-brokenref-nowcalled"
+          data-entity-id="${this._escapeAttr(entityId)}" data-now-called="${this._escapeAttr(nowCalled)}">Use ${this._escapeHtml(nowCalled)}</button>`
+        : '';
       const openBtn = openPath
         ? `<button class="em-dialog-btn em-dialog-btn-secondary em-brokenref-open" data-open-path="${this._escapeAttr(openPath)}"
           data-source="${this._escapeAttr(source)}" data-entity-id="${this._escapeAttr(entityId)}">Open…</button>`
         : '';
       return `
       ${openBtn}
+      ${nowCalledBtn}
       <button class="em-dialog-btn em-dialog-btn-danger em-brokenref-remove"
         data-source="${this._escapeAttr(source)}" data-target="${this._escapeAttr(target || '')}"
         data-entity-id="${this._escapeAttr(entityId)}">Remove</button>
@@ -15785,12 +15795,14 @@ class EntityManagerPanel extends HTMLElement {
         item.entities.map(e => this._renderMiniEntityCard({
           entity_id: e.entity_id,
           name: e.entity_id,
-          infoLine: e.reason
+          infoLine: (e.now_called
+            ? `<strong>Renamed to ${this._escapeHtml(e.now_called)}</strong> (from the rename log). `
+            : '') + (e.reason
             ? this._escapeHtml(e.reason)
-            : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`,
+            : `Domain: ${this._escapeHtml(e.entity_id.split('.')[0])} — no removal record left (older than 30 days, or never registered under this ID)`),
           extraClass: 'em-brokenref-row',
           notClickable: true,
-          actionsHtml: actionsHtml(item.source, item.target, item.label, e.entity_id),
+          actionsHtml: actionsHtml(item.source, item.target, item.label, e.entity_id, e.now_called),
         })).join(''),
       )).join(''),
     )).join('');
@@ -15827,6 +15839,25 @@ class EntityManagerPanel extends HTMLElement {
       });
     });
 
+    container.querySelectorAll('.em-brokenref-nowcalled').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const { entityId, nowCalled } = { entityId: btn.dataset.entityId, nowCalled: btn.dataset.nowCalled };
+        if (!(await this._confirmAsync('Use the new name', `Point every reference to ${entityId} at ${nowCalled}, where the rename log says it went? A backup is saved first.`))) return;
+        btn.disabled = true;
+        try {
+          const res = await this._hass.callWS({
+            type: 'entity_manager/update_yaml_references',
+            old_entity_id: entityId, new_entity_id: nowCalled, dry_run: false,
+          });
+          this._showToast(`Updated ${res.total_replacements || 0} reference(s) to ${nowCalled}`, 'success');
+          await this._showBrokenReferencesSection(container);
+        } catch (err) {
+          this._showToast(`Update failed: ${err?.message || err}`, 'error');
+          btn.disabled = false;
+        }
+      });
+    });
+
     container.querySelectorAll('.em-brokenref-update').forEach(btn => {
       btn.addEventListener('click', () => {
         const entityId = btn.dataset.entityId;
@@ -15849,6 +15880,62 @@ class EntityManagerPanel extends HTMLElement {
       row.addEventListener('click', (e) => {
         if (e.target.closest('button, a, .em-mini-card-actions, .em-mini-card-link')) return;
         this._showBrokenReferenceDetailsDialog(row.dataset.entityId, sources, sourceLabels);
+      });
+    });
+  }
+
+  /** Recent entity renames from the server-side rename log. Records renames from
+   *  every source (this panel, HA's own UI, integrations), so it is the same from every
+   *  browser, unlike the undo stack. Undo renames the entity back and repoints the
+   *  references, exactly like undoing a rename in the panel. */
+  async _showRecentRenamesSection(container) {
+    let result;
+    try {
+      result = await this._hass.callWS({ type: 'entity_manager/get_rename_log', limit: 100 });
+    } catch (err) {
+      container.innerHTML = `<p style="text-align:center;padding:24px;color:var(--em-danger)">Couldn't read the rename log: ${this._escapeHtml(err?.message || String(err))}</p>`;
+      return;
+    }
+    const entries = result?.entries || [];
+    if (!entries.length) {
+      container.innerHTML = '<p style="text-align:center;padding:24px;opacity:0.6">No renames recorded yet. Entity Manager keeps a log of every entity rename from now on.</p>';
+      return;
+    }
+    const rowsHtml = entries.map((e, i) => {
+      const who = e.user ? `By ${this._escapeHtml(e.user)}` : 'Made outside Entity Manager (Home Assistant’s own UI or an integration)';
+      const status = e.exists ? '' : ' · <em>no longer exists under this name</em>';
+      const undoBtn = e.can_undo
+        ? `<button class="em-dialog-btn em-dialog-btn-outline-primary em-rename-undo" data-idx="${i}">Rename back</button>`
+        : '';
+      return this._renderMiniEntityCard({
+        entity_id: e.new,
+        name: `${e.old} → ${e.new}`,
+        timeAgo: e.ts ? this._fmtAgo(e.ts) : '',
+        infoLine: `${who}${status}`,
+        extraClass: 'em-rename-row',
+        notClickable: true,
+        actionsHtml: undoBtn,
+      });
+    }).join('');
+    const total = result.total || entries.length;
+    container.innerHTML = this._sectionHint(
+      'Every entity rename Home Assistant has seen since this log started — newest first. Home Assistant does not say who made a rename, so a name is shown only for renames made here'
+      + (total > entries.length ? ` (the latest ${entries.length} of ${total})` : '')
+      + '. <strong>Rename back</strong> restores the old ID and repoints references to it, and is offered only '
+      + 'while the new ID still exists and the old one is free.',
+      'help-broken-refs',
+    ) + rowsHtml;
+    this._reAttachCollapsibles(container);
+
+    container.querySelectorAll('.em-rename-undo').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const entry = entries[Number(btn.dataset.idx)];
+        if (!entry) return;
+        if (!(await this._confirmAsync('Rename back', `Rename ${entry.new} back to ${entry.old}, and point references at ${entry.old} again?`))) return;
+        btn.disabled = true;
+        const ok = await this._renameWithReferences(entry.new, entry.old);
+        if (!ok) btn.disabled = false;
+        await this._showRecentRenamesSection(container);
       });
     });
   }

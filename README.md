@@ -500,9 +500,10 @@ Home Assistant Entity & Device Registries
 | Component | Description |
 |---|---|
 | `__init__.py` | Integration setup, service registration, sidebar panel |
-| `websocket_api.py` | 26 admin-gated WebSocket command handlers |
+| `websocket_api.py` | 27 admin-gated WebSocket command handlers |
 | `voice_assistant.py` | Registry enable/disable intents and shared entity resolver |
 | `voice_sentences.py` | Sentence installation, status and conversation reload |
+| `rename_log.py` | Server-side log of entity renames, from any source |
 | `config_flow.py` | UI-based configuration flow |
 | `entity-manager-panel.js` | Full frontend as a single web component |
 | `entity-manager-panel.css` | Extracted stylesheet |

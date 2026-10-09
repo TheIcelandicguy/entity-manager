@@ -18,6 +18,7 @@ from homeassistant.exceptions import (  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .const import DOMAIN
+from .rename_log import async_setup_rename_log, async_unload_rename_log
 from .voice_assistant import async_setup_intents
 from .voice_sentences import async_install_sentences
 from .websocket_api import async_setup_ws_api, disable_entity, enable_entity
@@ -82,6 +83,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register WebSocket API
     async_setup_ws_api(hass)
 
+    # Record every entity rename, from any source, in a server-side ledger
+    await async_setup_rename_log(hass)
+
     # Set up voice assistant intents
     await async_setup_intents(hass)
     await async_install_sentences(hass)
@@ -140,6 +144,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     frontend.async_remove_panel(hass, DOMAIN)
+    await async_unload_rename_log(hass)
     hass.services.async_remove(DOMAIN, SERVICE_ENABLE_ENTITY)
     hass.services.async_remove(DOMAIN, SERVICE_DISABLE_ENTITY)
     return True

@@ -6,7 +6,7 @@ description: >-
   repo TheIcelandicguy/entity-manager, deployed to Z:\custom_components\entity_manager
   with deploy.ps1). An admin-only sidebar panel for viewing, enabling, disabling,
   renaming, auditing and bulk-managing every entity across all integrations, built
-  from a 26-command admin-gated WebSocket API plus one large vanilla-JS web
+  from a 27-command admin-gated WebSocket API plus one large vanilla-JS web
   component. Use whenever working on this integration — WebSocket handlers,
   registry writes, YAML reference rewriting and broken-reference removal, the panel
   UI, undo/redo, bulk operations, voice intents and sentences, the in-panel Help
