@@ -1,5 +1,22 @@
 # Changelog
 
+## Version 3.7.5 - A log of renames
+
+Undo lived in each browser's localStorage, so a rename made on the phone could not
+be undone from the desktop, and nothing recorded which renames had been made. Entity
+Manager now keeps its own log, and uses it in Broken References.
+
+### Recent Renames
+
+- **A server-side log.** Entity Manager listens for Home Assistant's own entity registry event, so it records a rename from any source: this panel, Home Assistant's own UI, or an integration. The newest 1,000 are kept in `.storage/entity_manager_renames`, the same from every browser, and survive a restart
+- **A new section in Health & Cleanup.** Recent Renames lists them newest first. **Rename back** restores the old ID and repoints references to it, like undoing a rename in the panel. It is offered only while the new ID exists and the old one is free
+- **Who made it, where known.** Home Assistant does not say who made a rename, so a name is shown only for renames made through Entity Manager; the rest read "Made outside Entity Manager"
+- **A new read-only command,** `get_rename_log` (27 commands now)
+
+### Broken References
+
+- **Renamed, not lost.** When the log shows that a missing ID was renamed, its row says what it is called now and offers **Use ...**, which repoints every reference there in one click. The row's other buttons are unchanged
+
 ## Version 3.7.2 - Ages that survive a restart
 
 The Suggestions view decided how long something had been unavailable, or unchanged,

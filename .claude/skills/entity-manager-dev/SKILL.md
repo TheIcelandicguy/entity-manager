@@ -2,7 +2,7 @@
 name: entity-manager-dev
 description: >-
   Reference for developing Davíð's Entity Manager — the Home Assistant custom
-  integration at E:\entity-manager (domain entity_manager, v3.7.2 as of 2026-10-08,
+  integration at E:\entity-manager (domain entity_manager, v3.7.5 as of 2026-10-09,
   repo TheIcelandicguy/entity-manager, deployed to Z:\custom_components\entity_manager
   with deploy.ps1). An admin-only sidebar panel for viewing, enabling, disabling,
   renaming, auditing and bulk-managing every entity across all integrations, built

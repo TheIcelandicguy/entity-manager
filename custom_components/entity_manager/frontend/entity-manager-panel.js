@@ -1,7 +1,7 @@
 // Entity Manager Panel - Updated UI v2.0
 // Loads external CSS for cleaner code organization
 
-const EM_VERSION = '3.7.2';
+const EM_VERSION = '3.7.5';
 // The backend rejects a bulk call over 500 entities (MAX_BULK_ENTITIES in const.py).
 const EM_BULK_CHUNK = 500;
 // How far back the recorder is asked when working out how long an entity has been unavailable.
