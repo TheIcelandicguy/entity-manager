@@ -52,7 +52,7 @@ All paths below are relative to the repo root. Note that `tests/` lives at the
 | `custom_components/entity_manager/__init__.py` | 150 lines. Registers the static path `/api/entity_manager/frontend` (served with long cache headers), the WS API, voice intents, the two services, and the sidebar panel (`require_admin=True`), and installs the voice sentences
 (`async_install_sentences`). The panel JS `?v=` key is `<manifest version>-<first 10 hex of the file's SHA-256>`, so any redeploy that changes the panel reaches browsers and Companion apps after an HA restart, even without a version bump. |
 | `.../const.py` | `DOMAIN`, `MAX_BULK_ENTITIES = 500`, `RENAME_LOG_MAX_ENTRIES = 1000`, `VALID_ENTITY_ID = ^[a-z][a-z0-9_]*\.[a-z0-9_]+\Z`. No VERSION constant — the version lives only in `manifest.json` and `package.json`. |
-| `.../websocket_api.py` | 2,650 lines. All 27 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
+| `.../websocket_api.py` | 2,936 lines. All 27 WS handlers, `async_setup_ws_api()`, and the `enable_entity()` / `disable_entity()` helpers the services reuse. |
 | `.../voice_assistant.py` | Enable/Disable intent handlers and `resolve_voice_target()`, which turns what was said into an entity ID. It returns a `VoiceResolution` (entity, how it matched, the other candidates, the near misses); `_resolve_entity_id` is the thin wrapper the intents use, so the panel and intents share entity matching; routing and pipeline execution are separate checks. |
 | `.../voice_sentences.py` | 168 lines. Installing the sentence files into `<config>/custom_sentences/<lang>/` and reporting on them (`sentence_status`). Kept out of `__init__` because `websocket_api` reads the same files and cannot import `__init__` without a cycle. |
 | `.../rename_log.py` | The server-side rename ledger. `RenameLog` listens for HA's `entity_registry_updated` event (the one with `old_entity_id`, fired for a rename from any source: this panel, HA's UI, an integration) and keeps the newest 1,000 renames in `.storage/entity_manager_renames` (timestamp, old ID, new ID, and the admin only for a rename made through `rename_entity`: HA's registry event carries no user, so `rename_entity` calls `expect()` first and any other rename is logged with none), saved 10 s after the last one. `now_called()` follows a dead ID through later renames. Started in `async_setup_entry`, flushed on unload, found through `get_rename_log(hass)`. The file is in `_STORAGE_REPORT_SKIP`, so the manual-references report ignores it. |
@@ -188,7 +188,14 @@ allowed. Everything else is WebSocket-only.
   this registry mechanism saw it. Each source group also carries a `target`
   (the file path, dashboard `url_path`, config entry ID, person ID or
   pipeline ID — `energy` has none, it's a singleton) identifying exactly
-  which item a `remove_broken_reference` call should act on. The scanner also
+  which item a `remove_broken_reference` call should act on. The YAML scan
+  blanks comments first (`_blank_yaml_comments`, offsets preserved): an ID in
+  a commented-out card or a note is not a reference. A `#` counts only at line
+  start or after whitespace and outside quotes; block-scalar lines (`key: |` /
+  `>`) and Jinja's `#}` are left alone, and where the per-line quote tracking
+  is unsure it keeps the text, so the failure mode is a commented ID still
+  reported, never a real reference hidden. Scanner-only — a rename still
+  rewrites IDs inside comments. The scanner also
   excludes a `service:`/`perform_action:`/`action:`/`trigger:` call target
   (`light.turn_on`, `notify.mobile_app_<device>`, …) — same `domain.name`
   shape as an entity ID, never one. `action:` is in that list because HA

@@ -1585,6 +1585,75 @@ _SERVICE_KEY_RE = re.compile(
 )
 
 
+_BLOCK_SCALAR_RE = re.compile(r"(?:^|[ \t])[|>][+-]?[1-9]?[+-]?[ \t]*$")
+_YAML_INDENT_RE = re.compile(r"[ \t]*(?:-[ \t]+)*")
+
+
+def _blank_yaml_comments(text: str) -> str:
+    """Return YAML text with every comment overwritten by spaces.
+
+    Used by the broken-references scan only: an entity ID that appears in a
+    comment (a commented-out card, a note about what a sensor used to be
+    called) is not a reference, and reporting it sends the user hunting for a
+    problem that does not exist. Length and line breaks are preserved, so
+    match offsets in the result line up with the original text.
+
+    A ``#`` starts a comment when it opens the line or follows whitespace, and
+    is not inside a quoted scalar. Two things that look like that and are not
+    comments are left alone: the lines of a block scalar (``key: |`` /
+    ``key: >``, where templates and shell commands live and ``#`` is literal
+    text), and the ``#}`` that closes a Jinja comment. Quote tracking is per
+    line and deliberately simple; wherever it is unsure (a quoted scalar that
+    spans lines) the text is kept, so the worst case is the old behaviour — a
+    commented ID still reported — never a real reference hidden.
+    """
+    out: list[str] = []
+    block_indent: int | None = None  # indent of the key that opened a block scalar
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        stripped = body.strip()
+        indent = len(_YAML_INDENT_RE.match(body).group(0))  # type: ignore[union-attr]
+        if block_indent is not None:
+            if not stripped or len(body) - len(body.lstrip(" \t")) > block_indent:
+                out.append(line)
+                continue
+            block_indent = None
+
+        quote = ""
+        cut = -1
+        i = 0
+        while i < len(body):
+            ch = body[i]
+            if quote:
+                if quote == '"' and ch == "\\":
+                    i += 2
+                    continue
+                if ch == quote:
+                    if quote == "'" and body[i + 1 : i + 2] == "'":
+                        i += 2
+                        continue
+                    quote = ""
+            elif ch in "\"'":
+                # An apostrophe inside a word ("don't") opens nothing.
+                if i == 0 or not body[i - 1].isalnum():
+                    quote = ch
+            elif ch == "#" and (i == 0 or body[i - 1] in " \t"):
+                if body[i + 1 : i + 2] != "}":
+                    cut = i
+                    break
+            i += 1
+
+        if cut >= 0:
+            code = body[:cut]
+            out.append(code + " " * (len(body) - cut) + line[len(body) :])
+        else:
+            code = body
+            out.append(line)
+        if not quote and _BLOCK_SCALAR_RE.search(code):
+            block_indent = indent
+    return "".join(out)
+
+
 def _tokens_in_obj(obj: Any, found: set[str]) -> None:
     """Collect every entity-ID-shaped token in a JSON-like value, into ``found``.
 
@@ -1685,8 +1754,10 @@ async def handle_get_broken_references(
             service identifier (``domain.service_name``) — the same shape as an
             entity ID, but never one. Checked by text position here, since YAML
             has no structure to key off the way ``_tokens_in_obj`` does for
-            storage-mode dashboards/config entries.
+            storage-mode dashboards/config entries. Comments are blanked
+            first: an ID that only appears in one is not a reference.
             """
+            text = _blank_yaml_comments(text)
             tokens: set[str] = set()
             for match in _Rewriter._TOKEN.finditer(text):  # noqa: SLF001
                 prefix = text[max(0, match.start() - 40) : match.start()]
