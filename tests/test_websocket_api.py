@@ -18,6 +18,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.entity_manager import _make_service_handler
 from custom_components.entity_manager.voice_assistant import async_setup_intents
 from custom_components.entity_manager.websocket_api import (
+    _blank_yaml_comments,
     _bulk_toggle,
     _match_sentence,
     _prune_entity,
@@ -1309,6 +1310,78 @@ async def test_ws_broken_references_finds_dangling_yaml_id(
             "entities": [{"entity_id": "light.ghost", "reason": None}],
         }
     ]
+
+
+async def test_ws_broken_references_ignores_yaml_comments(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """An ID that only appears in a YAML comment is not a reference."""
+    hass.config.config_dir = str(tmp_path)
+    entity_reg = er.async_get(hass)
+    _register(entity_reg, "light.real")
+    (tmp_path / "automations.yaml").write_text(
+        "# light.gone_whole_line used to live here\n"
+        "- entity_id: light.real  # replaced light.gone_trailing\n"
+        "#  - entity_id: light.gone_commented_out\n"
+        "- entity_id: light.ghost\n",
+        encoding="utf-8",
+    )
+
+    conn = _mock_conn()
+    handle_get_broken_references(
+        hass, conn, {"id": 65, "type": "entity_manager/get_broken_references"}
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    result = conn.send_result.call_args[0][1]
+    assert result["total"] == 1
+    assert result["sources"][0]["entities"] == [
+        {"entity_id": "light.ghost", "reason": None}
+    ]
+
+
+def test_blank_yaml_comments_keeps_length_and_lines() -> None:
+    text = "a: light.x # light.y\r\n# light.z\nb: 1\n"
+    out = _blank_yaml_comments(text)
+    assert out == "a: light.x " + " " * 9 + "\r\n" + " " * 9 + "\nb: 1\n"
+    assert len(out) == len(text)
+
+
+def test_blank_yaml_comments_leaves_hash_inside_quotes() -> None:
+    text = "a: \"x # light.y\"\nb: 'it''s # light.z'\nc: don't # light.w\n"
+    out = _blank_yaml_comments(text)
+    assert "light.y" in out
+    assert "light.z" in out
+    assert "light.w" not in out
+
+
+def test_blank_yaml_comments_needs_whitespace_before_hash() -> None:
+    text = "url: http://host/page#light.anchor\n"
+    assert _blank_yaml_comments(text) == text
+
+
+def test_blank_yaml_comments_leaves_block_scalars_alone() -> None:
+    """Inside ``|`` / ``>`` a # is literal text, and the block ends on dedent."""
+    text = (
+        "- alias: x\n"
+        "  value_template: >-  # light.in_comment\n"
+        "    {{ states('light.a') }} # light.literal\n"
+        "\n"
+        "    {# note #} {{ states('light.b') }}\n"
+        "  entity_id: light.c # light.after_block\n"
+    )
+    out = _blank_yaml_comments(text)
+    assert "light.in_comment" not in out
+    assert "light.literal" in out
+    assert "light.b" in out
+    assert "light.c" in out
+    assert "light.after_block" not in out
+
+
+def test_blank_yaml_comments_keeps_jinja_comment_close() -> None:
+    """The ``#}`` closing a Jinja comment does not hide the rest of the line."""
+    text = "value: \"{# note #} {{ states('light.a') }}\"\nv: {# n #} light.b\n"
+    assert _blank_yaml_comments(text) == text
 
 
 async def test_ws_broken_references_ignores_existing_id(

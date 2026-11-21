@@ -4443,7 +4443,7 @@ class EntityManagerPanel extends HTMLElement {
                 <li>When the rename log knows the ID was renamed, the row says what it is called now and offers <strong>Use …</strong> to repoint every reference there in one click</li>
                 <li><strong>Recent Renames</strong> (the next section) is that log: every entity rename Home Assistant has seen since Entity Manager started keeping it, from any source and any browser, newest first. <strong>Rename back</strong> restores the old ID and repoints references to it. It is offered only while the new ID exists and the old one is free</li>
                 <li>Click a row to see every place that ID is broken</li>
-                <li>Not reported: service-call targets, trigger platforms and glob filters like <code>sensor.shelly*cloud</code>. A domain with no surviving entities at all can't be detected</li>
+                <li>Not reported: IDs that appear only in a YAML comment, service-call targets, trigger platforms and glob filters like <code>sensor.shelly*cloud</code>. A domain with no surviving entities at all can't be detected</li>
               </ul>
             </div>
 
