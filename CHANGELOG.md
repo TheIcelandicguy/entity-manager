@@ -1,5 +1,17 @@
 # Changelog
 
+## Version 3.7.6 - YAML comments are skipped
+
+Broken References reported entity IDs that appear only in YAML comments: a
+commented-out card, or a note about what a sensor used to be called. Nothing was
+broken, and there was nothing to fix.
+
+### Broken References
+
+- **YAML comments are skipped.** An ID that appears only in a comment is no longer reported. Whole-line comments, trailing comments and commented-out entries are all covered
+- **Templates are still read.** Inside a block scalar (`key: |` or `key: >`) a `#` is ordinary text, so templates and shell commands are scanned as before. So is a `#` inside quotes or a URL
+- **Renames still reach comments.** Renaming an entity updates its ID inside comments too, so a commented-out block is still right if you restore it later
+
 ## Version 3.7.5 - A log of renames
 
 Undo lived in each browser's localStorage, so a rename made on the phone could not
