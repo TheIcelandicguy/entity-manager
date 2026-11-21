@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 3.7.6 - Comments are not references
+## Version 3.7.6 - YAML comments are skipped
 
 Broken References reported entity IDs that appear only in YAML comments: a
 commented-out card, or a note about what a sensor used to be called. Nothing was
